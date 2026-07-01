@@ -25,12 +25,17 @@
     <p id="status" class="muted"></p>
     <div id="result" hidden>
       <section class="cards" id="overview"></section>
-      <h2>一致性问题</h2>
-      <div id="checks"></div>
-      <h2>活动 / 体验条目</h2>
-      <div id="act-table" class="tablewrap"></div>
-      <h2>促销条目</h2>
-      <div id="promo-table" class="tablewrap"></div>
+
+      <h2>优先修复（按动作分组）</h2>
+      <div id="fixes"></div>
+
+      <details class="raw">
+        <summary>原始条目表（活动 / 促销）</summary>
+        <h3>活动 / 体验条目</h3>
+        <div id="act-table" class="tablewrap"></div>
+        <h3>促销条目</h3>
+        <div id="promo-table" class="tablewrap"></div>
+      </details>
     </div>
   </main>
 

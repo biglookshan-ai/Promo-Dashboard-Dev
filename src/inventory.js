@@ -160,23 +160,62 @@ export async function runInventory(ctx, { onProgress } = {}) {
   indexEntry(promoEntries, promoKeys.products, 'promo');
 
   const hitById = new Map(hits.map((h) => [h.id, h]));
+  const now = Date.now();
+
+  // Resolve a product's REF_KEYS metafield values (GID or JSON list of GIDs)
+  // back to the metaobject handle they point at.
+  const metaHandle = new Map();
+  for (const e of [...actEntries, ...promoEntries]) metaHandle.set(e.id, e.handle);
+  const refTargets = (hit) => {
+    const out = [];
+    for (const k of REF_KEYS) {
+      const v = hit.mf[k];
+      if (!v) continue;
+      let gids;
+      try { const j = JSON.parse(v); gids = Array.isArray(j) ? j : [j]; } catch { gids = [v]; }
+      for (const g of gids) out.push(metaHandle.get(g) || String(g).split('/').pop());
+    }
+    return out;
+  };
 
   const orphanTimers = hits.filter(
     (h) => timeKeys.some((k) => h.mf[k]) && !REF_KEYS.some((k) => h.mf[k])
   );
+  // Group orphan timers by their (start,end) signature — products sharing a
+  // window are almost certainly one campaign, so they can be fixed in one batch.
+  const startKey = timeKeys.find((k) => k.includes('start'));
+  const endKey = timeKeys.find((k) => k.includes('end'));
+  const gmap = new Map();
+  for (const h of orphanTimers) {
+    const start = startKey ? h.mf[startKey] || '' : '';
+    const end = endKey ? h.mf[endKey] || '' : '';
+    const key = start + '|' + end;
+    if (!gmap.has(key)) gmap.set(key, { start, end, expired: end ? Date.parse(end) < now : false, products: [] });
+    gmap.get(key).products.push({ title: h.title, handle: h.handle });
+  }
+  const orphanGroups = [...gmap.values()].sort((a, b) => b.products.length - a.products.length);
+
   const missingReverse = [];
   for (const [gid, labels] of listedBy) {
     const h = hitById.get(gid);
     const hasRef = h && REF_KEYS.some((k) => h.mf[k]);
     if (!hasRef) missingReverse.push({ gid, labels });
   }
-  const refButNotListed = hits.filter(
-    (h) => REF_KEYS.some((k) => h.mf[k]) && !listedBy.has(h.id)
-  );
+  const refButNotListed = hits
+    .filter((h) => REF_KEYS.some((k) => h.mf[k]) && !listedBy.has(h.id))
+    .map((h) => ({ title: h.title, handle: h.handle, targets: refTargets(h) }));
+  // Empty/invalid activity entries: no dates AND/OR zero products attached.
+  const emptyActivities = actEntries
+    .map((e) => ({
+      handle: e.handle,
+      title: fieldVal(e, actKeys.title) || e.displayName || '',
+      noDates: !fieldVal(e, actKeys.start) && !fieldVal(e, actKeys.end),
+      productCount: actKeys.products ? fieldRefs(e, actKeys.products).length : 0,
+    }))
+    .filter((e) => e.noDates || e.productCount === 0);
   const noDates = actEntries
     .filter((e) => !fieldVal(e, actKeys.start) && !fieldVal(e, actKeys.end))
     .map((e) => e.handle);
-  const now = Date.now();
   const expiredActive = actEntries
     .filter((e) => {
       const active = String(fieldVal(e, actKeys.active)).toLowerCase() === 'true';
@@ -217,7 +256,8 @@ export async function runInventory(ctx, { onProgress } = {}) {
       metafields: mfCounts,
     },
     tables: { activity: actRows, promotion: promoRows },
-    checks: { orphanTimers, missingReverse, refButNotListed, noDates, expiredActive },
+    groups: { orphanGroups, startKey, endKey },
+    checks: { orphanTimers, missingReverse, refButNotListed, noDates, expiredActive, emptyActivities },
     raw: { entries: { activity: actEntries, promotion: promoEntries }, hits },
   };
 }
