@@ -63,6 +63,13 @@ h2 { font-size: 16px; margin: 26px 0 10px; }
 .entries { display: flex; flex-direction: column; gap: 6px; }
 .entry { border: 1px solid var(--border); border-radius: 8px; }
 .entry--unused { background: #fffaf8; border-color: #f4c7c0; }
+.entry--exp { border-color: #f4c7c0; }
+.pctx { padding: 6px 14px 12px; border-top: 1px solid var(--border); }
+.refsec { margin-top: 10px; }
+.refsec__t { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: none; margin-bottom: 6px; }
+.refblk { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; background: var(--bg); }
+.refblk__h { font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.refblk .fields { padding: 4px 0 0; border-top: none; }
 .entry > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 13px; }
 .entry > summary::-webkit-details-marker { display: none; }
 .entry > summary::before { content: '▸'; color: var(--muted); font-size: 11px; }

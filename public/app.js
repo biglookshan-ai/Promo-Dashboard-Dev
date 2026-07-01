@@ -9,8 +9,13 @@ const adminBase = () => `https://admin.shopify.com/store/${DATA.store.handle}`;
 const productAdminUrl = (id) => `${adminBase()}/products/${id}`;
 const productFrontUrl = (handle) => `${DATA.store.storefrontUrl.replace(/\/$/, '')}/products/${handle}`;
 const entryAdminUrl = (type, id) => `${adminBase()}/content/entries/${type}/${id}`;
-const linkOut = (href, text, cls = '') => `<a class="lnk ${cls}" href="${esc(href)}" target="_blank" rel="noopener">${esc(text)} <span class="lnk__i">↗</span></a>`;
+// stopPropagation so clicking a link inside a <summary> doesn't toggle the <details>.
+const linkOut = (href, text, cls = '') => `<a class="lnk ${cls}" href="${esc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(text)} <span class="lnk__i">↗</span></a>`;
 const prodLinks = (p) => `${linkOut(productAdminUrl(p.id), '后台')}${linkOut(productFrontUrl(p.handle), '前台', 'lnk--front')}`;
+const nl2br = (s) => esc(s).replace(/\n/g, '<br>');
+const fieldsDl = (fields) => (fields && fields.length)
+  ? `<dl class="fields">${fields.map((f) => `<div class="field"><dt>${esc(f.name)}</dt><dd>${nl2br(f.value)}</dd></div>`).join('')}</dl>`
+  : '<p class="muted fields">（无内容）</p>';
 
 async function sessionToken() {
   if (!window.shopify || !window.shopify.idToken) throw new Error('请在 Shopify 后台里打开此 app(嵌入式)');
@@ -67,7 +72,6 @@ function table(rows, cols) {
 
 // ---- 种类目录 view ----
 function renderCatalog(d) {
-  const nl2br = (s) => esc(s).replace(/\n/g, '<br>');
   const mo = d.catalog.metaobjects.map((m) => {
     const usedRows = m.entries.filter((e) => e.inUse);
     const unusedRows = m.entries.filter((e) => !e.inUse);
@@ -80,9 +84,7 @@ function renderCatalog(d) {
         <span class="muted">${esc(e.handle)}</span>
         ${linkOut(entryAdminUrl(m.type, e.id), '后台')}
       </summary>
-      ${e.fields.length
-        ? `<dl class="fields">${e.fields.map((f) => `<div class="field"><dt>${esc(f.name)}</dt><dd>${nl2br(f.value)}</dd></div>`).join('')}</dl>`
-        : '<p class="muted fields">此条目所有字段为空</p>'}
+      ${fieldsDl(e.fields)}
     </details>`;
     const dups = (m.duplicates || []);
     const dupCount = dups.reduce((n, g) => n + g.count, 0);
@@ -141,23 +143,50 @@ function renderProducts() {
   if (q) rows = rows.filter((p) => (p.title + ' ' + p.handle).toLowerCase().includes(q));
   $('#prod-count').textContent = `${rows.length} / ${d.byProduct.length} 个产品`;
 
+  // handle -> full entry (with fields), for joining a product to its promo/activity content.
+  const byHandle = new Map();
+  for (const m of d.catalog.metaobjects)
+    for (const e of m.entries) byHandle.set(e.handle, { e, type: m.type, label: m.label });
+
   const chip = (t, cls) => `<span class="tag ${cls || ''}">${esc(t)}</span>`;
-  const body = rows.map((p) => {
-    const promo = p.promos.length ? p.promos.map((h) => chip(h)).join(' ') : '';
-    const act = p.activity.length ? p.activity.map((h) => chip('活动:' + h)).join(' ') : '';
-    const time = p.end
-      ? `${fmtDate(p.start) !== '—' ? fmtDate(p.start) + ' → ' : ''}${fmtDate(p.end)} ${p.expired ? chip('已过期', 'tag--danger') : chip('有效', 'tag--ok')}`
-      : (p.start ? fmtDate(p.start) + ' →' : '<span class="muted">—</span>');
-    return `<tr class="${p.expired ? 'row--exp' : ''}">
-      <td><b>${esc(p.title)}</b><div class="muted">${esc(p.handle)}</div></td>
-      <td>${promo || act || '<span class="muted">—</span>'}</td>
-      <td>${time}</td>
-      <td class="nowrap">${prodLinks(p)}</td>
-    </tr>`;
+  const refBlock = (handle) => {
+    const f = byHandle.get(handle);
+    if (!f) return `<div class="refblk"><div class="refblk__h"><b>${esc(handle)}</b> <span class="muted">(未找到条目)</span></div></div>`;
+    return `<div class="refblk">
+      <div class="refblk__h"><b>${esc(f.e.title || handle)}</b> <span class="muted">${esc(f.label)} · ${esc(handle)}</span> ${linkOut(entryAdminUrl(f.type, f.e.id), '后台')}</div>
+      ${fieldsDl(f.e.fields)}
+    </div>`;
+  };
+
+  const cards = rows.map((p) => {
+    const badges = [
+      p.end ? chip(p.expired ? '倒计时已过期' : '倒计时有效', p.expired ? 'tag--danger' : 'tag--ok') : '',
+      p.promos.length ? chip(`${p.promos.length} 促销`) : '',
+      p.activity.length ? chip(`${p.activity.length} 活动`) : '',
+    ].filter(Boolean).join(' ');
+    const timeLine = (p.end || p.start)
+      ? `<dl class="fields"><div class="field"><dt>限时倒计时</dt><dd>${p.start ? fmtDate(p.start) + ' → ' : ''}${fmtDate(p.end)} ${p.end ? (p.expired ? chip('已过期', 'tag--danger') : chip('有效', 'tag--ok')) : ''}</dd></div></dl>`
+      : '';
+    const promoBlocks = p.promos.map(refBlock).join('');
+    const actBlocks = p.activity.map(refBlock).join('');
+    const nothing = !timeLine && !promoBlocks && !actBlocks;
+    return `<details class="entry ${p.expired ? 'entry--exp' : ''}">
+      <summary>
+        <b>${esc(p.title)}</b>
+        ${badges}
+        <span class="entry__spacer"></span>
+        <span class="muted">${esc(p.handle)}</span>
+        ${prodLinks(p)}
+      </summary>
+      <div class="pctx">
+        ${timeLine}
+        ${promoBlocks ? `<div class="refsec"><div class="refsec__t">促销引用</div>${promoBlocks}</div>` : ''}
+        ${actBlocks ? `<div class="refsec"><div class="refsec__t">活动引用</div>${actBlocks}</div>` : ''}
+        ${nothing ? '<p class="muted fields">无促销上下文</p>' : ''}
+      </div>
+    </details>`;
   }).join('');
-  $('#products').innerHTML = `<table class="tbl">
-    <thead><tr><th>产品</th><th>促销 / 活动引用</th><th>限时倒计时</th><th>链接</th></tr></thead>
-    <tbody>${body || '<tr><td colspan="4" class="muted">无匹配</td></tr>'}</tbody></table>`;
+  $('#products').innerHTML = `<div class="entries">${cards || '<p class="muted">无匹配</p>'}</div>`;
 }
 
 function render(d) {
