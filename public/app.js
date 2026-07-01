@@ -67,16 +67,23 @@ function table(rows, cols) {
 
 // ---- 种类目录 view ----
 function renderCatalog(d) {
+  const nl2br = (s) => esc(s).replace(/\n/g, '<br>');
   const mo = d.catalog.metaobjects.map((m) => {
-    const unusedRows = m.entries.filter((e) => !e.inUse);
     const usedRows = m.entries.filter((e) => e.inUse);
-    const row = (e) => `<tr class="${e.inUse ? '' : 'row--unused'}">
-      <td><b>${esc(e.title || e.handle)}</b><div class="muted">${esc(e.handle)}</div></td>
-      <td class="num">${e.ownProducts}</td>
-      <td class="num">${e.refByProducts}</td>
-      <td>${e.inUse ? '<span class="tag tag--ok">在用</span>' : '<span class="tag tag--danger">未使用 · 可删</span>'}</td>
-      <td>${linkOut(entryAdminUrl(m.type, e.id), '打开')}</td>
-    </tr>`;
+    const unusedRows = m.entries.filter((e) => !e.inUse);
+    // Expandable entry: summary line + full field content on open.
+    const entry = (e) => `<details class="entry ${e.inUse ? '' : 'entry--unused'}">
+      <summary>
+        <b>${esc(e.title || e.handle)}</b>
+        ${e.inUse ? `<span class="tag tag--ok">被 ${e.refByProducts} 个产品引用</span>` : '<span class="tag tag--danger">未使用 · 可删</span>'}
+        <span class="entry__spacer"></span>
+        <span class="muted">${esc(e.handle)}</span>
+        ${linkOut(entryAdminUrl(m.type, e.id), '后台')}
+      </summary>
+      ${e.fields.length
+        ? `<dl class="fields">${e.fields.map((f) => `<div class="field"><dt>${esc(f.name)}</dt><dd>${nl2br(f.value)}</dd></div>`).join('')}</dl>`
+        : '<p class="muted fields">此条目所有字段为空</p>'}
+    </details>`;
     const dups = (m.duplicates || []);
     const dupCount = dups.reduce((n, g) => n + g.count, 0);
     const dupBlock = dups.length
@@ -100,10 +107,7 @@ function renderCatalog(d) {
         <span class="pill ${m.unused ? 'pill--danger' : ''}">未使用 ${m.unused}</span>
       </div>
       ${dupBlock}
-      <table class="tbl">
-        <thead><tr><th>条目</th><th class="num">列表内产品</th><th class="num">被产品引用</th><th>状态</th><th>链接</th></tr></thead>
-        <tbody>${[...usedRows, ...unusedRows].map(row).join('') || '<tr><td colspan="5" class="muted">无条目</td></tr>'}</tbody>
-      </table>
+      <div class="entries">${[...usedRows, ...unusedRows].map(entry).join('') || '<p class="muted">无条目</p>'}</div>
     </div>`;
   }).join('');
 

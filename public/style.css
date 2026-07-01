@@ -60,6 +60,20 @@ h2 { font-size: 16px; margin: 26px 0 10px; }
 .pill { font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1px 9px; }
 .pill--ok { background: #e3f5ec; color: var(--ok); border-color: #b6e2cd; }
 .pill--danger { background: #fdecea; color: var(--danger); border-color: #f4c7c0; }
+.entries { display: flex; flex-direction: column; gap: 6px; }
+.entry { border: 1px solid var(--border); border-radius: 8px; }
+.entry--unused { background: #fffaf8; border-color: #f4c7c0; }
+.entry > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 13px; }
+.entry > summary::-webkit-details-marker { display: none; }
+.entry > summary::before { content: '▸'; color: var(--muted); font-size: 11px; }
+.entry[open] > summary::before { content: '▾'; }
+.entry__spacer { flex: 1; }
+.fields { margin: 0; padding: 4px 14px 12px 26px; border-top: 1px solid var(--border); }
+.field { display: grid; grid-template-columns: 150px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.field:last-child { border-bottom: none; }
+.field dt { color: var(--muted); font-weight: 500; }
+.field dd { margin: 0; word-break: break-word; }
+
 .dupwrap { border: 1px solid #f4c7c0; background: #fffaf8; border-radius: 8px; padding: 6px 12px; margin-bottom: 12px; }
 .dupwrap > summary { cursor: pointer; font-size: 13px; padding: 6px 0; }
 .dupgrp { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }

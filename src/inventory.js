@@ -112,6 +112,39 @@ const fieldVal = (node, key) => (node.fields.find((f) => f.key === key) || {}).v
 const fieldRefs = (node, key) =>
   ((node.fields.find((f) => f.key === key) || {}).references?.nodes || []).filter((n) => n.__typename === 'Product');
 
+// Shopify rich_text_field stores a JSON AST — flatten it to readable plain text.
+function richToText(v) {
+  let j;
+  try { j = typeof v === 'string' ? JSON.parse(v) : v; } catch { return String(v || ''); }
+  const walk = (n) => {
+    if (!n) return '';
+    if (n.type === 'text') return n.value || '';
+    const inner = (n.children || []).map(walk).join('');
+    if (n.type === 'link') { const url = n.url ? ` (${n.url})` : ''; return inner + url; }
+    if (n.type === 'paragraph' || n.type === 'heading') return inner + '\n';
+    if (n.type === 'list-item') return '• ' + inner + '\n';
+    return inner;
+  };
+  return walk(j).replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Render every field of a metaobject entry into { key, name, type, value } rows,
+// resolving rich text and product references, skipping empties.
+function entryFields(entry, def) {
+  const names = def ? new Map(def.fieldDefinitions.map((f) => [f.key, f.name])) : new Map();
+  return entry.fields
+    .map((f) => {
+      const type = f.type || '';
+      let value;
+      const refs = (f.references?.nodes || []).filter((n) => n.__typename === 'Product');
+      if (refs.length) value = refs.map((n) => n.title || n.handle).join(', ');
+      else if (type.includes('rich_text')) value = richToText(f.value);
+      else value = f.value || '';
+      return { key: f.key, name: names.get(f.key) || f.key, type, value: String(value || '') };
+    })
+    .filter((f) => f.value.trim() !== '');
+}
+
 function findKey(def, hints, typeIncludes) {
   if (!def) return null;
   for (const fd of def.fieldDefinitions) {
@@ -238,7 +271,7 @@ export async function runInventory(ctx, { onProgress } = {}) {
   for (const h of hits) for (const t of new Set(refTargets(h))) refCount.set(t, (refCount.get(t) || 0) + 1);
 
   const normTitle = (t) => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  const metaCatalog = (entries, keys, type, label) => {
+  const metaCatalog = (entries, keys, def, type, label) => {
     const rows = entries.map((e) => {
       const own = keys.products ? fieldRefs(e, keys.products).length : 0;
       const refBy = refCount.get(e.handle) || 0;
@@ -249,6 +282,7 @@ export async function runInventory(ctx, { onProgress } = {}) {
         ownProducts: own,     // products listed inside the entry
         refByProducts: refBy, // products whose metafield points at this entry
         inUse: own > 0 || refBy > 0,
+        fields: entryFields(e, def), // full content of the entry
       };
     });
     // Duplicate clusters: entries sharing a normalized title (the "-2" pattern).
@@ -332,8 +366,8 @@ export async function runInventory(ctx, { onProgress } = {}) {
     groups: { orphanGroups, startKey, endKey },
     catalog: {
       metaobjects: [
-        metaCatalog(actEntries, actKeys, ACTIVITY_TYPE, '活动 / 体验'),
-        metaCatalog(promoEntries, promoKeys, PROMO_TYPE, '促销信息'),
+        metaCatalog(actEntries, actKeys, actDef, ACTIVITY_TYPE, '活动 / 体验'),
+        metaCatalog(promoEntries, promoKeys, promoDef, PROMO_TYPE, '促销信息'),
       ],
       productMetafields: productMetafieldCatalog,
     },
