@@ -237,6 +237,7 @@ export async function runInventory(ctx, { onProgress } = {}) {
   const refCount = new Map();
   for (const h of hits) for (const t of new Set(refTargets(h))) refCount.set(t, (refCount.get(t) || 0) + 1);
 
+  const normTitle = (t) => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const metaCatalog = (entries, keys, type, label) => {
     const rows = entries.map((e) => {
       const own = keys.products ? fieldRefs(e, keys.products).length : 0;
@@ -250,7 +251,24 @@ export async function runInventory(ctx, { onProgress } = {}) {
         inUse: own > 0 || refBy > 0,
       };
     });
-    return { type, label, total: rows.length, inUse: rows.filter((r) => r.inUse).length, unused: rows.filter((r) => !r.inUse).length, entries: rows };
+    // Duplicate clusters: entries sharing a normalized title (the "-2" pattern).
+    const dmap = new Map();
+    for (const r of rows) {
+      const k = normTitle(r.title);
+      if (!dmap.has(k)) dmap.set(k, []);
+      dmap.get(k).push(r);
+    }
+    const duplicates = [...dmap.values()]
+      .filter((g) => g.length > 1)
+      .map((g) => ({ title: g[0].title, count: g.length, entries: g.slice().sort((a, b) => b.inUse - a.inUse) }))
+      .sort((a, b) => b.count - a.count);
+    return {
+      type, label, total: rows.length,
+      inUse: rows.filter((r) => r.inUse).length,
+      unused: rows.filter((r) => !r.inUse).length,
+      duplicates,
+      entries: rows,
+    };
   };
 
   const productMetafieldCatalog = wanted.map((k) => {

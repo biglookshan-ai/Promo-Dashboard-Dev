@@ -60,6 +60,10 @@ h2 { font-size: 16px; margin: 26px 0 10px; }
 .pill { font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1px 9px; }
 .pill--ok { background: #e3f5ec; color: var(--ok); border-color: #b6e2cd; }
 .pill--danger { background: #fdecea; color: var(--danger); border-color: #f4c7c0; }
+.dupwrap { border: 1px solid #f4c7c0; background: #fffaf8; border-radius: 8px; padding: 6px 12px; margin-bottom: 12px; }
+.dupwrap > summary { cursor: pointer; font-size: 13px; padding: 6px 0; }
+.dupgrp { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+.dupgrp__title { font-weight: 500; font-size: 13px; }
 .row--unused { background: #fffaf8; }
 .row--exp { background: #fff8f7; }
 .tbl td.num, .tbl th.num { text-align: right; }

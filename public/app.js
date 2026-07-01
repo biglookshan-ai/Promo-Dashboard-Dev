@@ -77,6 +77,21 @@ function renderCatalog(d) {
       <td>${e.inUse ? '<span class="tag tag--ok">在用</span>' : '<span class="tag tag--danger">未使用 · 可删</span>'}</td>
       <td>${linkOut(entryAdminUrl(m.type, e.id), '打开')}</td>
     </tr>`;
+    const dups = (m.duplicates || []);
+    const dupCount = dups.reduce((n, g) => n + g.count, 0);
+    const dupBlock = dups.length
+      ? `<details class="dupwrap" open>
+          <summary><span class="pill pill--danger">${dups.length} 组重复 · 共 ${dupCount} 条</span> 同名条目（多半是同活动不同期,旧的可删）</summary>
+          ${dups.map((g) => `<div class="dupgrp">
+            <div class="dupgrp__title">${esc(g.title)} <span class="muted">× ${g.count}</span></div>
+            <ul class="plist">${g.entries.map((e) => `<li>
+              <span class="muted">${esc(e.handle)}</span>
+              ${e.inUse ? `<span class="tag tag--ok">在用 · 被 ${e.refByProducts} 个产品引用</span>` : '<span class="tag tag--danger">僵尸 · 可删</span>'}
+              ${linkOut(entryAdminUrl(m.type, e.id), '打开')}
+            </li>`).join('')}</ul>
+          </div>`).join('')}
+        </details>`
+      : '';
     return `<div class="catcard">
       <div class="catcard__head">
         <b>${esc(m.label)}</b> <span class="muted">${esc(m.type)}</span>
@@ -84,6 +99,7 @@ function renderCatalog(d) {
         <span class="pill pill--ok">在用 ${m.inUse}</span>
         <span class="pill ${m.unused ? 'pill--danger' : ''}">未使用 ${m.unused}</span>
       </div>
+      ${dupBlock}
       <table class="tbl">
         <thead><tr><th>条目</th><th class="num">列表内产品</th><th class="num">被产品引用</th><th>状态</th><th>链接</th></tr></thead>
         <tbody>${[...usedRows, ...unusedRows].map(row).join('') || '<tr><td colspan="5" class="muted">无条目</td></tr>'}</tbody>
