@@ -292,15 +292,18 @@ $$('#tabs .tab').forEach((btn) => {
 $('#filter-expired').addEventListener('change', () => DATA && renderProducts());
 $('#prod-search').addEventListener('input', () => DATA && renderProducts());
 
-async function run() {
+async function load(refresh) {
   const btn = $('#run');
   btn.disabled = true;
-  $('#status').textContent = '正在扫描全站产品与 metaobject,请稍候(视产品数量可能需要 10-60 秒)…';
+  $('#status').textContent = refresh
+    ? '正在重新扫描全站产品与 metaobject(10-60 秒)…'
+    : '加载中(若无缓存,首次会扫描全站,请稍候)…';
   try {
-    const d = await api('GET', '/api/inventory');
-    $('#status').textContent = `完成 · 店铺 ${d.shop} · ${new Date(d.generatedAt).toLocaleString()}`;
+    const d = await api('GET', '/api/inventory' + (refresh ? '?refresh=1' : ''));
+    const when = new Date(d.generatedAt).toLocaleString();
+    $('#status').textContent = `店铺 ${d.shop} · 数据时间 ${when}${d.cached ? ' · 缓存(点刷新更新)' : ' · 刚刷新'}`;
     render(d);
-    toast('盘点完成');
+    if (refresh) toast('盘点已刷新');
   } catch (e) {
     $('#status').textContent = '出错: ' + e.message;
     toast(e.message, false);
@@ -309,4 +312,6 @@ async function run() {
   }
 }
 
-$('#run').addEventListener('click', run);
+$('#run').addEventListener('click', () => load(true));
+// Auto-show last result the moment the app opens (no manual run needed).
+load(false);

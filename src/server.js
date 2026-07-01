@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { requireSession } from './auth-embedded.js';
 import { clearToken } from './token-store.js';
 import { runInventory } from './inventory.js';
+import { getCached, setCached } from './inventory-cache.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -50,7 +51,16 @@ const wrap = (fn) => async (req, res) => {
   catch (e) { console.error(e); res.status(500).json({ error: String(e.message || e) }); }
 };
 
-api.get('/inventory', wrap(async (req) => runInventory(req.ctx)));
+// Returns the cached result instantly; ?refresh=1 forces a fresh scan and re-caches.
+api.get('/inventory', wrap(async (req) => {
+  if (req.query.refresh !== '1') {
+    const cached = getCached(req.ctx.shop);
+    if (cached) return { ...cached, cached: true };
+  }
+  const data = await runInventory(req.ctx);
+  setCached(req.ctx.shop, data);
+  return { ...data, cached: false };
+}));
 api.post('/reconnect', wrap(async (req) => { clearToken(req.ctx.shop); return { ok: true }; }));
 
 app.use('/api', api);
