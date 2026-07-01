@@ -60,9 +60,12 @@ h2 { font-size: 16px; margin: 26px 0 10px; }
 .pill { font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1px 9px; }
 .pill--ok { background: #e3f5ec; color: var(--ok); border-color: #b6e2cd; }
 .pill--danger { background: #fdecea; color: var(--danger); border-color: #f4c7c0; }
+.pill--warn { background: #fff5d6; color: var(--warn); border-color: #f0e0a0; }
+.tag--warn { color: var(--warn); background: #fff5d6; border-color: #f0e0a0; }
 .entries { display: flex; flex-direction: column; gap: 6px; }
 .entry { border: 1px solid var(--border); border-radius: 8px; }
-.entry--unused { background: #fffaf8; border-color: #f4c7c0; }
+.entry--orphan { background: #fffdf5; border-color: #f0e0a0; }
+.entry--empty { background: #fffaf8; border-color: #f4c7c0; }
 .entry--exp { border-color: #f4c7c0; }
 .pctx { padding: 6px 14px 12px; border-top: 1px solid var(--border); }
 .refsec { margin-top: 10px; }

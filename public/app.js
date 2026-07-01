@@ -76,10 +76,14 @@ function renderCatalog(d) {
     const usedRows = m.entries.filter((e) => e.inUse);
     const unusedRows = m.entries.filter((e) => !e.inUse);
     // Expandable entry: summary line + full field content on open.
-    const entry = (e) => `<details class="entry ${e.inUse ? '' : 'entry--unused'}">
+    const badge = (e) => (
+      e.state === 'inUse' ? `<span class="tag tag--ok">被 ${e.refByProducts} 个产品引用</span>`
+      : e.state === 'orphan' ? '<span class="tag tag--warn">有内容 · 未关联产品</span>'
+      : '<span class="tag tag--danger">空条目 · 可删</span>');
+    const entry = (e) => `<details class="entry entry--${e.state}">
       <summary>
         <b>${esc(e.title || e.handle)}</b>
-        ${e.inUse ? `<span class="tag tag--ok">被 ${e.refByProducts} 个产品引用</span>` : '<span class="tag tag--danger">未使用 · 可删</span>'}
+        ${badge(e)}
         <span class="entry__spacer"></span>
         <span class="muted">${esc(e.handle)}</span>
         ${linkOut(entryAdminUrl(m.type, e.id), '后台')}
@@ -106,7 +110,8 @@ function renderCatalog(d) {
         <b>${esc(m.label)}</b> <span class="muted">${esc(m.type)}</span>
         <span class="pill">共 ${m.total}</span>
         <span class="pill pill--ok">在用 ${m.inUse}</span>
-        <span class="pill ${m.unused ? 'pill--danger' : ''}">未使用 ${m.unused}</span>
+        ${m.orphan ? `<span class="pill pill--warn">孤儿 ${m.orphan}</span>` : ''}
+        ${m.empty ? `<span class="pill pill--danger">空 ${m.empty}</span>` : ''}
       </div>
       ${dupBlock}
       <div class="entries">${[...usedRows, ...unusedRows].map(entry).join('') || '<p class="muted">无条目</p>'}</div>
@@ -237,14 +242,19 @@ function render(d) {
     body: driftItems.length ? `<ul class="plist">${driftItems.join('')}</ul>` : '<p class="muted">无</p>',
   });
 
-  // P3 — empty / invalid activity entries.
-  const ea = ck.emptyActivities || [];
+  // P3 — orphaned content: entries with real content but no product linked.
+  const orphans = [];
+  for (const m of d.catalog.metaobjects)
+    for (const e of m.entries) if (e.state === 'orphan') orphans.push({ ...e, type: m.type, label: m.label });
+  const emptyEntries = [];
+  for (const m of d.catalog.metaobjects)
+    for (const e of m.entries) if (e.state === 'empty') emptyEntries.push({ ...e, type: m.type });
   const p3 = fixBlock({
-    pri: 'P3', tone: 'neutral', count: ea.length,
-    title: '空 / 无效的活动条目',
-    note: '有内容的补齐日期与产品;纯占位的(0 产品且无日期)直接删除。',
-    body: ea.length
-      ? `<ul class="plist">${ea.map((e) => `<li><b>${esc(e.title || e.handle)}</b> <span class="muted">${esc(e.handle)}</span> — ${e.productCount} 个产品${e.noDates ? ' · 无日期' : ''}${e.productCount === 0 && e.noDates ? '<span class="tag tag--danger">建议删除</span>' : '<span class="tag">建议补齐</span>'}</li>`).join('')}</ul>`
+    pri: 'P3', tone: 'warn', count: orphans.length,
+    title: '有内容但没关联产品的条目（孤儿）',
+    note: '这些条目有真实内容,但没有任何产品指向它们,前台多半没显示。判断它属于哪个产品,到产品后台把对应引用字段指过去(根治:给活动 metaobject 加 Product 字段+同步)。',
+    body: orphans.length
+      ? `<ul class="plist">${orphans.map((e) => `<li><b>${esc(e.title || e.handle)}</b> <span class="muted">${esc(e.label)} · ${esc(e.handle)}</span> ${linkOut(entryAdminUrl(e.type, e.id), '后台')}</li>`).join('')}</ul>${emptyEntries.length ? `<p class="muted">另有 ${emptyEntries.length} 个真空条目(可直接删)在「种类目录」标红。</p>` : ''}`
       : '<p class="muted">无</p>',
   });
 

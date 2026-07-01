@@ -275,14 +275,21 @@ export async function runInventory(ctx, { onProgress } = {}) {
     const rows = entries.map((e) => {
       const own = keys.products ? fieldRefs(e, keys.products).length : 0;
       const refBy = refCount.get(e.handle) || 0;
+      const fields = entryFields(e, def);
+      // Content = any non-empty field other than the title/display name.
+      const hasContent = fields.some((f) => f.key !== keys.title && f.key !== 'title');
+      const inUse = own > 0 || refBy > 0;
       return {
         id: e.id.split('/').pop(),
         handle: e.handle,
         title: fieldVal(e, keys.title) || e.displayName || '',
         ownProducts: own,     // products listed inside the entry
         refByProducts: refBy, // products whose metafield points at this entry
-        inUse: own > 0 || refBy > 0,
-        fields: entryFields(e, def), // full content of the entry
+        inUse,
+        hasContent,
+        // orphan = real content but nothing links to it; empty = safe to delete.
+        state: inUse ? 'inUse' : (hasContent ? 'orphan' : 'empty'),
+        fields,
       };
     });
     // Duplicate clusters: entries sharing a normalized title (the "-2" pattern).
@@ -298,8 +305,9 @@ export async function runInventory(ctx, { onProgress } = {}) {
       .sort((a, b) => b.count - a.count);
     return {
       type, label, total: rows.length,
-      inUse: rows.filter((r) => r.inUse).length,
-      unused: rows.filter((r) => !r.inUse).length,
+      inUse: rows.filter((r) => r.state === 'inUse').length,
+      orphan: rows.filter((r) => r.state === 'orphan').length,
+      empty: rows.filter((r) => r.state === 'empty').length,
       duplicates,
       entries: rows,
     };
