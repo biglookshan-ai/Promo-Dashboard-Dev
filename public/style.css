@@ -49,6 +49,30 @@ h2 { font-size: 16px; margin: 26px 0 10px; }
 .raw > summary { cursor: pointer; font-size: 14px; font-weight: 500; padding: 8px 0; }
 .raw h3 { font-size: 14px; margin: 16px 0 8px; }
 
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 20px 0 16px; }
+.tab { border: none; background: none; padding: 9px 16px; font-size: 14px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab.is-active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
+.tabpane { display: none; }
+.tabpane.is-active { display: block; }
+
+.catcard { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+.catcard__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.pill { font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1px 9px; }
+.pill--ok { background: #e3f5ec; color: var(--ok); border-color: #b6e2cd; }
+.pill--danger { background: #fdecea; color: var(--danger); border-color: #f4c7c0; }
+.row--unused { background: #fffaf8; }
+.row--exp { background: #fff8f7; }
+.tbl td.num, .tbl th.num { text-align: right; }
+.tbl td.nowrap { white-space: nowrap; }
+
+.lnk { display: inline-block; font-size: 12px; color: var(--accent); text-decoration: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; margin-right: 5px; }
+.lnk--front { color: var(--ok); }
+.lnk__i { font-size: 10px; opacity: .7; }
+.tag--ok { color: var(--ok); background: #e3f5ec; border-color: #b6e2cd; }
+
+.prodfilter { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; font-size: 13px; }
+.prodfilter input[type=search] { flex: 1; min-width: 180px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+
 .tablewrap { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 .tbl th, .tbl td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }

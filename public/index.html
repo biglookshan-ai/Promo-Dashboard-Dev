@@ -26,8 +26,28 @@
     <div id="result" hidden>
       <section class="cards" id="overview"></section>
 
-      <h2>优先修复（按动作分组）</h2>
-      <div id="fixes"></div>
+      <nav class="tabs" id="tabs">
+        <button class="tab is-active" data-tab="fixes" type="button">优先修复</button>
+        <button class="tab" data-tab="catalog" type="button">种类目录</button>
+        <button class="tab" data-tab="products" type="button">按产品</button>
+      </nav>
+
+      <section class="tabpane is-active" id="pane-fixes">
+        <div id="fixes"></div>
+      </section>
+
+      <section class="tabpane" id="pane-catalog">
+        <div id="catalog"></div>
+      </section>
+
+      <section class="tabpane" id="pane-products">
+        <div class="prodfilter">
+          <label><input type="checkbox" id="filter-expired" /> 只看已过期</label>
+          <input type="search" id="prod-search" placeholder="搜索产品标题 / handle" />
+          <span id="prod-count" class="muted"></span>
+        </div>
+        <div id="products" class="tablewrap"></div>
+      </section>
 
       <details class="raw">
         <summary>原始条目表（活动 / 促销）</summary>

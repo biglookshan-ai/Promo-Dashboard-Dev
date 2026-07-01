@@ -58,6 +58,11 @@ async function getProductMetafieldDefs(ctx) {
   return d.metafieldDefinitions.nodes;
 }
 
+async function getShop(ctx) {
+  const d = await graphql(ctx, `query{ shop{ myshopifyDomain primaryDomain{ url host } } }`);
+  return d.shop;
+}
+
 function pickTimeKeys(defs) {
   return defs
     .filter((x) => {
@@ -118,10 +123,11 @@ function findKey(def, hints, typeIncludes) {
 }
 
 export async function runInventory(ctx, { onProgress } = {}) {
-  const [actDef, promoDef, prodDefs] = await Promise.all([
+  const [actDef, promoDef, prodDefs, shopInfo] = await Promise.all([
     getDefinition(ctx, ACTIVITY_TYPE),
     getDefinition(ctx, PROMO_TYPE),
     getProductMetafieldDefs(ctx),
+    getShop(ctx),
   ]);
   const timeKeys = pickTimeKeys(prodDefs);
 
@@ -166,17 +172,14 @@ export async function runInventory(ctx, { onProgress } = {}) {
   // back to the metaobject handle they point at.
   const metaHandle = new Map();
   for (const e of [...actEntries, ...promoEntries]) metaHandle.set(e.id, e.handle);
-  const refTargets = (hit) => {
-    const out = [];
-    for (const k of REF_KEYS) {
-      const v = hit.mf[k];
-      if (!v) continue;
-      let gids;
-      try { const j = JSON.parse(v); gids = Array.isArray(j) ? j : [j]; } catch { gids = [v]; }
-      for (const g of gids) out.push(metaHandle.get(g) || String(g).split('/').pop());
-    }
-    return out;
+  const resolveKey = (hit, key) => {
+    const v = hit.mf[key];
+    if (!v) return [];
+    let gids;
+    try { const j = JSON.parse(v); gids = Array.isArray(j) ? j : [j]; } catch { gids = [v]; }
+    return gids.map((g) => metaHandle.get(g) || String(g).split('/').pop());
   };
+  const refTargets = (hit) => REF_KEYS.flatMap((k) => resolveKey(hit, k));
 
   const orphanTimers = hits.filter(
     (h) => timeKeys.some((k) => h.mf[k]) && !REF_KEYS.some((k) => h.mf[k])
@@ -227,6 +230,57 @@ export async function runInventory(ctx, { onProgress } = {}) {
   const mfCounts = {};
   for (const k of wanted) mfCounts[k] = hits.filter((h) => h.mf[k]).length;
 
+  // ---- Catalog: per definition, entry counts + in-use / unused breakdown ----
+  const storeHandle = ctx.shop.replace('.myshopify.com', '');
+  const storefrontUrl = (shopInfo.primaryDomain && shopInfo.primaryDomain.url) || `https://${ctx.shop}`;
+  // How many products reference each metaobject entry (by handle).
+  const refCount = new Map();
+  for (const h of hits) for (const t of new Set(refTargets(h))) refCount.set(t, (refCount.get(t) || 0) + 1);
+
+  const metaCatalog = (entries, keys, type, label) => {
+    const rows = entries.map((e) => {
+      const own = keys.products ? fieldRefs(e, keys.products).length : 0;
+      const refBy = refCount.get(e.handle) || 0;
+      return {
+        id: e.id.split('/').pop(),
+        handle: e.handle,
+        title: fieldVal(e, keys.title) || e.displayName || '',
+        ownProducts: own,     // products listed inside the entry
+        refByProducts: refBy, // products whose metafield points at this entry
+        inUse: own > 0 || refBy > 0,
+      };
+    });
+    return { type, label, total: rows.length, inUse: rows.filter((r) => r.inUse).length, unused: rows.filter((r) => !r.inUse).length, entries: rows };
+  };
+
+  const productMetafieldCatalog = wanted.map((k) => {
+    const def = prodDefs.find((d) => d.key === k);
+    const list = hits.filter((h) => h.mf[k]);
+    const row = { key: k, name: def ? def.name : k, type: def ? def.type.name : '', productCount: list.length, isTime: timeKeys.includes(k) };
+    if (k === endKey) {
+      row.valid = list.filter((h) => Date.parse(h.mf[k]) >= now).length;
+      row.expired = list.filter((h) => Date.parse(h.mf[k]) < now).length;
+    }
+    return row;
+  });
+
+  // ---- By-product view: one row per product carrying any promo metafield ----
+  const byProduct = hits.map((h) => {
+    const end = endKey ? h.mf[endKey] || '' : '';
+    const start = startKey ? h.mf[startKey] || '' : '';
+    return {
+      id: h.id.split('/').pop(),
+      handle: h.handle,
+      title: h.title,
+      status: h.status,
+      activity: resolveKey(h, 'product_activity_event'),
+      promos: resolveKey(h, 'promotion_tag'),
+      start,
+      end,
+      expired: end ? Date.parse(end) < now : false,
+    };
+  }).sort((a, b) => (a.expired === b.expired ? 0 : a.expired ? -1 : 1)); // expired first
+
   // Flatten entries into compact rows for UI tables.
   const actRows = actEntries.map((e) => ({
     handle: e.handle,
@@ -255,8 +309,17 @@ export async function runInventory(ctx, { onProgress } = {}) {
       productsWithPromoMetafields: hits.length,
       metafields: mfCounts,
     },
+    store: { handle: storeHandle, storefrontUrl, myshopifyDomain: shopInfo.myshopifyDomain },
     tables: { activity: actRows, promotion: promoRows },
     groups: { orphanGroups, startKey, endKey },
+    catalog: {
+      metaobjects: [
+        metaCatalog(actEntries, actKeys, ACTIVITY_TYPE, '活动 / 体验'),
+        metaCatalog(promoEntries, promoKeys, PROMO_TYPE, '促销信息'),
+      ],
+      productMetafields: productMetafieldCatalog,
+    },
+    byProduct,
     checks: { orphanTimers, missingReverse, refButNotListed, noDates, expiredActive, emptyActivities },
     raw: { entries: { activity: actEntries, promotion: promoEntries }, hits },
   };

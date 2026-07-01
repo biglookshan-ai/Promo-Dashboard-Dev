@@ -1,5 +1,16 @@
 const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let DATA = null; // last inventory result, for tab re-render + filters
+
+// ---- Shopify deep links ----
+const adminBase = () => `https://admin.shopify.com/store/${DATA.store.handle}`;
+const productAdminUrl = (id) => `${adminBase()}/products/${id}`;
+const productFrontUrl = (handle) => `${DATA.store.storefrontUrl.replace(/\/$/, '')}/products/${handle}`;
+const entryAdminUrl = (type, id) => `${adminBase()}/content/entries/${type}/${id}`;
+const linkOut = (href, text, cls = '') => `<a class="lnk ${cls}" href="${esc(href)}" target="_blank" rel="noopener">${esc(text)} <span class="lnk__i">↗</span></a>`;
+const prodLinks = (p) => `${linkOut(productAdminUrl(p.id), '后台')}${linkOut(productFrontUrl(p.handle), '前台', 'lnk--front')}`;
 
 async function sessionToken() {
   if (!window.shopify || !window.shopify.idToken) throw new Error('请在 Shopify 后台里打开此 app(嵌入式)');
@@ -54,7 +65,83 @@ function table(rows, cols) {
   return `<table class="tbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
+// ---- 种类目录 view ----
+function renderCatalog(d) {
+  const mo = d.catalog.metaobjects.map((m) => {
+    const unusedRows = m.entries.filter((e) => !e.inUse);
+    const usedRows = m.entries.filter((e) => e.inUse);
+    const row = (e) => `<tr class="${e.inUse ? '' : 'row--unused'}">
+      <td><b>${esc(e.title || e.handle)}</b><div class="muted">${esc(e.handle)}</div></td>
+      <td class="num">${e.ownProducts}</td>
+      <td class="num">${e.refByProducts}</td>
+      <td>${e.inUse ? '<span class="tag tag--ok">在用</span>' : '<span class="tag tag--danger">未使用 · 可删</span>'}</td>
+      <td>${linkOut(entryAdminUrl(m.type, e.id), '打开')}</td>
+    </tr>`;
+    return `<div class="catcard">
+      <div class="catcard__head">
+        <b>${esc(m.label)}</b> <span class="muted">${esc(m.type)}</span>
+        <span class="pill">共 ${m.total}</span>
+        <span class="pill pill--ok">在用 ${m.inUse}</span>
+        <span class="pill ${m.unused ? 'pill--danger' : ''}">未使用 ${m.unused}</span>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>条目</th><th class="num">列表内产品</th><th class="num">被产品引用</th><th>状态</th><th>链接</th></tr></thead>
+        <tbody>${[...usedRows, ...unusedRows].map(row).join('') || '<tr><td colspan="5" class="muted">无条目</td></tr>'}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+
+  const pm = d.catalog.productMetafields.map((f) => {
+    const timeCells = f.isTime && f.valid != null
+      ? `<span class="tag tag--ok">有效 ${f.valid}</span> <span class="tag tag--danger">过期 ${f.expired}</span>`
+      : (f.isTime ? '<span class="muted">时间字段</span>' : '');
+    return `<tr>
+      <td><b>${esc(f.name)}</b><div class="muted">custom.${esc(f.key)}</div></td>
+      <td>${esc(f.type)}</td>
+      <td class="num">${f.productCount}</td>
+      <td>${timeCells}</td>
+    </tr>`;
+  }).join('');
+
+  $('#catalog').innerHTML = `
+    <h3>Metaobject 定义</h3>${mo}
+    <h3>产品 Metafield 定义</h3>
+    <div class="tablewrap"><table class="tbl">
+      <thead><tr><th>字段</th><th>类型</th><th class="num">应用产品数</th><th>时间有效性</th></tr></thead>
+      <tbody>${pm}</tbody></table></div>`;
+}
+
+// ---- 按产品 view (with filters) ----
+function renderProducts() {
+  const d = DATA;
+  const onlyExpired = $('#filter-expired').checked;
+  const q = ($('#prod-search').value || '').trim().toLowerCase();
+  let rows = d.byProduct;
+  if (onlyExpired) rows = rows.filter((p) => p.expired);
+  if (q) rows = rows.filter((p) => (p.title + ' ' + p.handle).toLowerCase().includes(q));
+  $('#prod-count').textContent = `${rows.length} / ${d.byProduct.length} 个产品`;
+
+  const chip = (t, cls) => `<span class="tag ${cls || ''}">${esc(t)}</span>`;
+  const body = rows.map((p) => {
+    const promo = p.promos.length ? p.promos.map((h) => chip(h)).join(' ') : '';
+    const act = p.activity.length ? p.activity.map((h) => chip('活动:' + h)).join(' ') : '';
+    const time = p.end
+      ? `${fmtDate(p.start) !== '—' ? fmtDate(p.start) + ' → ' : ''}${fmtDate(p.end)} ${p.expired ? chip('已过期', 'tag--danger') : chip('有效', 'tag--ok')}`
+      : (p.start ? fmtDate(p.start) + ' →' : '<span class="muted">—</span>');
+    return `<tr class="${p.expired ? 'row--exp' : ''}">
+      <td><b>${esc(p.title)}</b><div class="muted">${esc(p.handle)}</div></td>
+      <td>${promo || act || '<span class="muted">—</span>'}</td>
+      <td>${time}</td>
+      <td class="nowrap">${prodLinks(p)}</td>
+    </tr>`;
+  }).join('');
+  $('#products').innerHTML = `<table class="tbl">
+    <thead><tr><th>产品</th><th>促销 / 活动引用</th><th>限时倒计时</th><th>链接</th></tr></thead>
+    <tbody>${body || '<tr><td colspan="4" class="muted">无匹配</td></tr>'}</tbody></table>`;
+}
+
 function render(d) {
+  DATA = d;
   const c = d.counts;
   const mf = Object.entries(c.metafields || {}).map(([k, v]) => card('custom.' + k, v)).join('');
   $('#overview').innerHTML =
@@ -129,8 +216,22 @@ function render(d) {
     { label: '挂载产品数', get: (r) => r.productCount },
   ]);
 
+  renderCatalog(d);
+  renderProducts();
   $('#result').hidden = false;
 }
+
+// Tab switching
+$$('#tabs .tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.tab;
+    $$('#tabs .tab').forEach((b) => b.classList.toggle('is-active', b === btn));
+    $$('.tabpane').forEach((p) => p.classList.toggle('is-active', p.id === 'pane-' + t));
+  });
+});
+// Product filters
+$('#filter-expired').addEventListener('change', () => DATA && renderProducts());
+$('#prod-search').addEventListener('input', () => DATA && renderProducts());
 
 async function run() {
   const btn = $('#run');
