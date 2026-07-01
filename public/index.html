@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="shopify-api-key" content="%%API_KEY%%" />
+  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key="%%API_KEY%%"></script>
+  <title>促销活动管理</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <ui-nav-menu>
+    <a href="/" rel="home">数据盘点</a>
+  </ui-nav-menu>
+
+  <main class="content">
+    <div class="head">
+      <div>
+        <h1>促销数据盘点</h1>
+        <p class="muted">扫描活动 / 促销 metaobject 与产品 metafield,核对迁移前的一致性问题。</p>
+      </div>
+      <button id="run" class="btn btn-primary" type="button">运行盘点</button>
+    </div>
+
+    <p id="status" class="muted"></p>
+    <div id="result" hidden>
+      <section class="cards" id="overview"></section>
+      <h2>一致性问题</h2>
+      <div id="checks"></div>
+      <h2>活动 / 体验条目</h2>
+      <div id="act-table" class="tablewrap"></div>
+      <h2>促销条目</h2>
+      <div id="promo-table" class="tablewrap"></div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

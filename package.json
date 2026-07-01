@@ -1,0 +1,16 @@
+{
+  "name": "promo-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CineGearPro promotion manager: visualize & manage activity/promotion Metaobjects + product metafields (inventory, migration, sync). Embedded Shopify admin app.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "inventory": "node scripts/inventory.mjs"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
