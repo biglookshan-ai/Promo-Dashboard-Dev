@@ -23,7 +23,8 @@ export function setCached(shop, data) {
   try {
     fs.mkdirSync(DIR, { recursive: true });
     fs.writeFileSync(fileFor(shop), JSON.stringify(data));
+    console.log('[cache] wrote', fileFor(shop));
   } catch (e) {
-    console.error('inventory cache disk write failed (mount a volume at DATA_DIR):', e.message);
+    console.error('[cache] disk write FAILED (mount a volume at DATA_DIR):', e.message);
   }
 }

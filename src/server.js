@@ -55,7 +55,10 @@ const wrap = (fn) => async (req, res) => {
 api.get('/inventory', wrap(async (req) => {
   if (req.query.refresh !== '1') {
     const cached = getCached(req.ctx.shop);
-    if (cached) return { ...cached, cached: true };
+    if (cached) { console.log('[inventory] cache HIT', req.ctx.shop); return { ...cached, cached: true }; }
+    console.log('[inventory] cache MISS → scanning', req.ctx.shop);
+  } else {
+    console.log('[inventory] refresh requested → scanning', req.ctx.shop);
   }
   const data = await runInventory(req.ctx);
   setCached(req.ctx.shop, data);
