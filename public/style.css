@@ -75,6 +75,12 @@ h2 { font-size: 16px; margin: 26px 0 10px; }
 
 /* 明细页 */
 .btn-back { margin-bottom: 14px; }
+/* 全局 .tbl 是 nowrap,长产品标题会把后面的列顶出屏幕 —— 明细表允许换行 */
+.tbl--detail th, .tbl--detail td { white-space: normal; }
+.tbl--detail .cell-res { min-width: 280px; }
+.resline { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.reslink { color: var(--accent); text-decoration: none; font-weight: 500; }
+.reslink:hover { text-decoration: underline; }
 .drillval { max-width: 460px; font-size: 12px; word-break: break-word; white-space: pre-wrap; }
 .drill { font-weight: 500; }
 

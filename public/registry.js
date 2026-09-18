@@ -177,26 +177,31 @@ function renderMetafieldDetail(d) {
   if (!d.ok) return `<p class="muted">${esc(d.reason)}</p>`;
   if (!d.rows.length) return '<p class="muted">没查到有值的资源</p>';
   const rows = d.rows.map((r) => {
-    const admin = resourceAdminUrl(r.linkKind, r.linkId);
-    const front = r.linkHandle
-      ? `${regFront()}/${r.linkKind === 'Collection' ? 'collections' : 'products'}/${r.linkHandle}`
+    // linkKind/linkId/linkHandle 由后端算好(变体已指向父产品);
+    // 万一拿到的是旧结构 payload,就从 ownerType + id 兜底,别让链接整列消失。
+    const kind = r.linkKind || (d.ownerType === 'COLLECTION' ? 'Collection' : 'Product');
+    const admin = resourceAdminUrl(kind, r.linkId || r.id);
+    const handle = r.linkHandle || r.handle || '';
+    const front = handle
+      ? `${regFront()}/${kind === 'Collection' ? 'collections' : 'products'}/${handle}`
       : null;
+    // 标题本身就是后台链接 —— 直接点产品名进后台,别再单开一列(会被长标题挤出屏幕)
+    const title = admin
+      ? `<a class="reslink" href="${esc(admin)}" target="_blank" rel="noopener">${esc(r.title)}</a>`
+      : `<b>${esc(r.title)}</b>`;
     return `<tr>
-      <td>
-        <b>${esc(r.title)}</b>
+      <td class="cell-res">
+        <div class="resline">${title}${front ? out(front, '前台', 'lnk--front') : ''}</div>
         ${r.parentTitle ? `<div class="muted">${esc(r.parentTitle)}</div>` : ''}
         ${r.sku ? `<div class="muted mono">SKU ${esc(r.sku)}</div>` : ''}
         ${r.status && r.status !== 'ACTIVE' ? `<span class="tag tag--warn">${esc(r.status)}</span>` : ''}
       </td>
       <td class="drillval">${esc(r.value).slice(0, 400)}</td>
-      <td class="nowrap">
-        ${admin ? out(admin, '后台') : ''}
-        ${front ? out(front, '前台', 'lnk--front') : ''}
-      </td>
     </tr>`;
   }).join('');
-  return `<div class="tablewrap"><table class="tbl">
-    <thead><tr><th>资源</th><th>值</th><th>链接</th></tr></thead>
+  return `<p class="muted">共 ${d.count} 个资源 · 点产品名进后台</p>
+    <div class="tablewrap"><table class="tbl tbl--detail">
+    <thead><tr><th>资源</th><th>值</th></tr></thead>
     <tbody>${rows}</tbody></table></div>
     ${d.truncated ? '<p class="muted">结果过多,只显示前 500 条</p>' : ''}`;
 }
@@ -211,12 +216,14 @@ function renderMetaobjectDetail(d) {
     const refs = e.refs.length
       ? `<ul class="plist">${e.refs.map((r) => {
           const url = resourceAdminUrl(r.kind, r.linkId);
+          const title = url
+            ? `<a class="reslink" href="${esc(url)}" target="_blank" rel="noopener">${esc(r.title)}</a>`
+            : `<b>${esc(r.title)}</b>`;
           return `<li>
             <span class="tag">${esc(r.kind)}</span>
-            <b>${esc(r.title)}</b>
+            ${title}
             ${r.parentTitle ? `<span class="muted">(${esc(r.parentTitle)})</span>` : ''}
             <span class="muted mono">via ${esc(r.viaField)}</span>
-            ${url ? out(url, '后台') : ''}
             ${r.handle ? out(`${regFront()}/products/${r.handle}`, '前台', 'lnk--front') : ''}
           </li>`;
         }).join('')}</ul>`
