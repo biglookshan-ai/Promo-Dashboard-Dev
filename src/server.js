@@ -97,7 +97,12 @@ api.get('/registry', wrap(async (req) => {
 api.get('/drill/metafield', wrap(async (req) => {
   const { ownerType, namespace, key } = req.query;
   if (!ownerType || !namespace || !key) throw new Error('缺少 ownerType / namespace / key');
-  return resourcesWithMetafield(req.ctx, { ownerType, namespace, key });
+  // expected 来自总账的 metafieldsCount:找齐就提前停,不必扫完全店
+  const expected = Number.parseInt(req.query.expected, 10);
+  return resourcesWithMetafield(req.ctx, {
+    ownerType, namespace, key,
+    expected: Number.isFinite(expected) && expected > 0 ? expected : 0,
+  });
 }));
 api.get('/drill/metaobject', wrap(async (req) => {
   if (!req.query.type) throw new Error('缺少 type');

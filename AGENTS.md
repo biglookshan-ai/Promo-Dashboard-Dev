@@ -47,6 +47,17 @@
 - 骨架照搬 search-panel-dev(App Bridge session token + OAuth token exchange)。
 - 缓存两层(内存 + DATA_DIR 卷),`getCached(shop, name)` 按 name 区分 inventory / registry。
 
+### ⛔ 坑:别用 metafield「存在性」筛选产品
+
+`products(query: "metafields.{ns}.{key}:*")` **不要用**。官方只支持按**值**筛
+(`metafields.{ns}.{key}:{value}`);这种存在性写法 Shopify **不报错、直接忽略
+整个筛选条件**,把全店产品都返回来。症状:不同字段点进明细,列表一模一样,
+数量还正好等于分页上限(2026-09 踩过)。
+
+正确做法(`src/drilldown.js`):分页取回后**逐条核对 `metafield.value` 非空**,
+只信实际取到的数据;并用总账的 `metafieldsCount` 当 `expected`,找齐就提前停。
+明细页会显示「命中 N（扫描 M 个）」,对不上还会标黄警告 —— 别把这个提示去掉。
+
 ### ⛔ 注意
 
 - 还没有任何写操作(标注只写本地 JSON,不回写 Shopify)。加 mutation 前先确认设计。

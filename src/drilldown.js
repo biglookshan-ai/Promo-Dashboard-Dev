@@ -1,28 +1,35 @@
 // 钻取:从一个定义进到「具体哪些资源有数据 / 哪些产品引用了这个条目」。
 //
-// 两条都不用扫全站:
-//  · metafield → products(query:"metafields.{ns}.{key}:*") 官方支持的筛选器,只返命中的
-//  · metaobject → Metaobject.referencedBy 直接给反向引用(就是后台 References 面板)
+//  · metaobject → Metaobject.referencedBy 直接给反向引用(就是后台 References 面板),很快
+//  · metafield → 只能分页扫 + 逐条核对
+//
+// ⚠️ 别再用 products(query:"metafields.{ns}.{key}:*") 来筛!
+// 官方只支持按**值**筛(metafields.{ns}.{key}:{value}),这种「存在性」写法
+// Shopify **不报错、直接忽略整个筛选条件**,结果是把全店产品都返回来 ——
+// 症状就是不同字段点进去列表一模一样(见 2026-09 的 bug)。
+// 所以这里改成:分页取回后逐条核对 metafield 确实有值,只信实际取到的数据。
 import { graphql } from './shopify.js';
 import { richToText } from './inventory.js';
 
-const PAGE = 50;
 const MAX_ROWS = 500; // 单次钻取上限,够看够管;超了前端提示用筛选缩小
 
-// 按 owner 类型选查询根。collections/productVariants 不一定支持 metafields 筛选,
-// 不支持就如实报错,不偷偷退化成全站扫描(那会很慢且没提示)。
+// 按 owner 类型选查询根。page 取大一点减少往返,但要控制查询成本
+// (每个节点多一个 metafield 对象,250 个变体那种容易顶到成本上限)。
 const ROOTS = {
   PRODUCT: {
     root: 'products',
-    fields: 'id title handle status featuredImage{ url altText }',
+    fields: 'id title handle status',
+    page: 250,
   },
   PRODUCTVARIANT: {
     root: 'productVariants',
     fields: 'id title sku product{ id title handle }',
+    page: 100,
   },
   COLLECTION: {
     root: 'collections',
     fields: 'id title handle',
+    page: 250,
   },
 };
 
@@ -33,22 +40,23 @@ function displayValue(mf) {
   return String(mf.value ?? '');
 }
 
-// 列出某个 metafield 定义下「有值」的资源。
-export async function resourcesWithMetafield(ctx, { ownerType, namespace, key }) {
+// 列出某个 metafield 定义下「确实有值」的资源。
+// expected = 总账里的 metafieldsCount,找齐就提前收工,不用扫完全店。
+export async function resourcesWithMetafield(ctx, { ownerType, namespace, key, expected = 0 }) {
   const spec = ROOTS[ownerType];
   if (!spec) return { ok: false, reason: `暂不支持钻取该资源类型: ${ownerType}` };
 
-  const q = `metafields.${namespace}.${key}:*`; // exists 查询
   const rows = [];
   let cursor = null;
   let truncated = false;
+  let scanned = 0;
 
   try {
     do {
       const d = await graphql(
         ctx,
-        `query($q:String!,$cursor:String,$ns:String!,$key:String!){
-          ${spec.root}(first:${PAGE}, after:$cursor, query:$q){
+        `query($cursor:String,$ns:String!,$key:String!){
+          ${spec.root}(first:${spec.page}, after:$cursor){
             pageInfo{ hasNextPage endCursor }
             nodes{
               ${spec.fields}
@@ -56,10 +64,15 @@ export async function resourcesWithMetafield(ctx, { ownerType, namespace, key })
             }
           }
         }`,
-        { q, cursor, ns: namespace, key }
+        { cursor, ns: namespace, key }
       );
       const c = d[spec.root];
+      scanned += c.nodes.length;
       for (const n of c.nodes) {
+        // 核心:只收真的有值的。不能信任查询筛选(见文件顶部说明)。
+        const v = n.metafield?.value;
+        if (v == null || v === '') continue;
+
         // 变体在后台没有独立页面,后台/前台链接都要指向它所属的产品。
         const isVariant = ownerType === 'PRODUCTVARIANT';
         const linkKind = ownerType === 'COLLECTION' ? 'Collection' : 'Product';
@@ -71,7 +84,6 @@ export async function resourcesWithMetafield(ctx, { ownerType, namespace, key })
           status: n.status || '',
           sku: n.sku || '',
           parentTitle: n.product?.title || '',
-          image: n.featuredImage?.url || '',
           linkKind,
           linkId,
           linkHandle,
@@ -79,13 +91,14 @@ export async function resourcesWithMetafield(ctx, { ownerType, namespace, key })
         });
       }
       cursor = c.pageInfo.hasNextPage ? c.pageInfo.endCursor : null;
+      if (expected > 0 && rows.length >= expected) break;      // 已找齐,收工
       if (rows.length >= MAX_ROWS) { truncated = true; break; }
     } while (cursor);
   } catch (e) {
-    return { ok: false, reason: `按字段筛选失败(该资源类型可能不支持): ${e.message}` };
+    return { ok: false, reason: `扫描失败: ${e.message}` };
   }
 
-  return { ok: true, ownerType, namespace, key, count: rows.length, truncated, rows };
+  return { ok: true, ownerType, namespace, key, count: rows.length, scanned, expected, truncated, rows };
 }
 
 // 列出某个 metaobject 定义的条目,每条带字段内容 + 谁引用了它。

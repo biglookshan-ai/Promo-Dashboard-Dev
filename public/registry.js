@@ -79,7 +79,8 @@ function countCell(count, attrs) {
 function mfRow(r) {
   const attrs = `data-kind="mf" data-owner="${esc(r.ownerType)}" data-ns="${esc(r.namespace)}"`
     + ` data-key="${esc(r.key)}" data-name="${esc(r.name)}" data-full="${esc(r.full)}"`
-    + ` data-type="${esc(r.type)}" data-ownerlabel="${esc(r.ownerLabel)}"`;
+    + ` data-type="${esc(r.type)}" data-ownerlabel="${esc(r.ownerLabel)}"`
+    + ` data-expected="${r.dataCount ?? 0}"`;
   return `<tr class="${r.stale ? 'row--stale' : ''}">
     <td>
       <b>${esc(r.name)}</b>
@@ -199,7 +200,10 @@ function renderMetafieldDetail(d) {
       <td class="drillval">${esc(r.value).slice(0, 400)}</td>
     </tr>`;
   }).join('');
-  return `<p class="muted">共 ${d.count} 个资源 · 点产品名进后台</p>
+  // 实际命中数和总账计数对不上时明说,别让「筛选没生效」这类问题再悄悄混过去
+  const mismatch = d.expected && d.count !== d.expected
+    ? ` <span class="tag tag--warn">总账计数 ${d.expected},实际命中 ${d.count}</span>` : '';
+  return `<p class="muted">命中 ${d.count} 个资源（扫描 ${d.scanned ?? '?'} 个）· 点产品名进后台${mismatch}</p>
     <div class="tablewrap"><table class="tbl tbl--detail">
     <thead><tr><th>资源</th><th>值</th></tr></thead>
     <tbody>${rows}</tbody></table></div>
@@ -264,12 +268,15 @@ async function openDetail(btn) {
   const body = $('#detail-body');
   if (detailCache.has(cacheKey)) { body.innerHTML = detailCache.get(cacheKey); return; }
 
-  body.innerHTML = '<p class="muted">加载中…</p>';
+  body.innerHTML = isMf
+    ? '<p class="muted">正在扫描并逐条核对…（命中越少扫得越久,最多几十秒）</p>'
+    : '<p class="muted">加载中…</p>';
   try {
     let html;
     if (isMf) {
       const d = await api('GET', `/api/drill/metafield?ownerType=${encodeURIComponent(ds.owner)}`
-        + `&namespace=${encodeURIComponent(ds.ns)}&key=${encodeURIComponent(ds.key)}`);
+        + `&namespace=${encodeURIComponent(ds.ns)}&key=${encodeURIComponent(ds.key)}`
+        + `&expected=${encodeURIComponent(ds.expected || 0)}`);
       html = renderMetafieldDetail(d);
     } else {
       const d = await api('GET', `/api/drill/metaobject?type=${encodeURIComponent(ds.type)}`);
