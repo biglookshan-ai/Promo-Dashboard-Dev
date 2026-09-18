@@ -73,11 +73,12 @@ api.get('/inventory', wrap(async (req) => {
 api.get('/registry', wrap(async (req) => {
   if (req.query.refresh !== '1') {
     const cached = getCached(req.ctx.shop, 'registry');
-    if (cached) {
+    // 旧版本写的缓存没有 store 字段(前端拼深链要用),结构不对就当没命中重建。
+    if (cached && cached.store) {
       console.log('[registry] cache HIT', req.ctx.shop);
       return { ...cached, annotations: getAnnotations(req.ctx.shop), cached: true };
     }
-    console.log('[registry] cache MISS → building', req.ctx.shop);
+    console.log('[registry] cache MISS/过期结构 → building', req.ctx.shop);
   } else {
     console.log('[registry] refresh requested', req.ctx.shop);
   }

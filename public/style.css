@@ -73,12 +73,9 @@ h2 { font-size: 16px; margin: 26px 0 10px; }
 .usagelist code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 .snip { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; margin: 2px 0 6px; }
 
-/* 钻取明细 */
-.drillrow > td { background: var(--bg); padding: 0; }
-.drillbox { padding: 12px 16px; border-top: 1px solid var(--border); }
-.tbl--inner { background: var(--surface); }
-.tbl--inner th { background: var(--surface); }
-.drillval { max-width: 420px; font-size: 12px; word-break: break-word; white-space: pre-wrap; }
+/* 明细页 */
+.btn-back { margin-bottom: 14px; }
+.drillval { max-width: 460px; font-size: 12px; word-break: break-word; white-space: pre-wrap; }
 .drill { font-weight: 500; }
 
 /* 人工标注 */
