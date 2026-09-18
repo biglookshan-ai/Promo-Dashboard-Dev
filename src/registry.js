@@ -112,9 +112,11 @@ async function metaobjectDefinitions(ctx) {
 
 // 组装总账。themeIndex 来自 theme-scan.js(可为 null —— 没有 read_themes 权限时)。
 export async function buildRegistry(ctx, { themeIndex = null } = {}) {
-  const [defsByOwner, moDefs] = await Promise.all([
+  const [defsByOwner, moDefs, shopInfo] = await Promise.all([
     Promise.all(OWNER_TYPES.map((t) => definitionsFor(ctx, t).then((nodes) => [t, nodes]))),
     metaobjectDefinitions(ctx),
+    // 前端拼后台/前台深链要用
+    graphql(ctx, `query{ shop{ primaryDomain{ url } } }`).catch(() => null),
   ]);
 
   const metafields = [];
@@ -150,6 +152,8 @@ export async function buildRegistry(ctx, { themeIndex = null } = {}) {
       id: m.id,
       name: m.name,
       type: m.type,
+      // metaobject 也要有 source,否则「来源」筛选一开就把它们全滤掉。
+      source: m.createdByApp ? 'App 创建' : (m.createdByStaff ? '人工创建' : '未知来源'),
       description: m.description || '',
       entryCount: m.metaobjectsCount ?? null,
       createdByApp: m.createdByApp?.title || null,
@@ -172,6 +176,10 @@ export async function buildRegistry(ctx, { themeIndex = null } = {}) {
   return {
     generatedAt: new Date().toISOString(),
     shop: ctx.shop,
+    store: {
+      handle: ctx.shop.replace('.myshopify.com', ''),
+      storefrontUrl: shopInfo?.shop?.primaryDomain?.url || `https://${ctx.shop}`,
+    },
     ownerTypes: OWNER_TYPES.map((t) => ({ type: t, label: OWNER_LABEL[t] || t })),
     metafields,
     metaobjects,

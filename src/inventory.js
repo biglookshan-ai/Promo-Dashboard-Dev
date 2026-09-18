@@ -113,7 +113,8 @@ const fieldRefs = (node, key) =>
   ((node.fields.find((f) => f.key === key) || {}).references?.nodes || []).filter((n) => n.__typename === 'Product');
 
 // Shopify rich_text_field stores a JSON AST — flatten it to readable plain text.
-function richToText(v) {
+// 也被 drilldown.js 复用(展示 metaobject 条目/产品字段的值)。
+export function richToText(v) {
   let j;
   try { j = typeof v === 'string' ? JSON.parse(v) : v; } catch { return String(v || ''); }
   const walk = (n) => {

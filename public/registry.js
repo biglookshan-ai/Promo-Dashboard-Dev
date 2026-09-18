@@ -1,7 +1,24 @@
-// 元数据总账前端。复用 app.js 里的 $ / $$ / esc / api / toast / linkOut 等全局帮手
+// 元数据总账前端。复用 app.js 里的 $ / $$ / esc / api / toast / card 等全局帮手
 // (app.js 先加载,顶层 const 在全局词法作用域里,这里直接用)。
+// 注意:不要用 app.js 里的 adminBase/productAdminUrl —— 那几个读的是促销模块的
+// DATA,促销没加载时是 null。总账用下面这套自己的。
 
 let REG = null;
+const drillCache = new Map(); // id -> 已加载的 HTML,展开过就不重复请求
+
+const regAdmin = () => `https://admin.shopify.com/store/${REG.store.handle}`;
+const regFront = () => (REG.store.storefrontUrl || '').replace(/\/$/, '');
+const slug = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
+
+// 资源类型 → 后台链接
+function resourceAdminUrl(kind, id) {
+  const map = { Product: 'products', ProductVariant: 'products', Collection: 'collections' };
+  const seg = map[kind];
+  return seg ? `${regAdmin()}/${seg}/${id}` : null;
+}
+const entryAdminUrlReg = (type, id) => `${regAdmin()}/content/entries/${type}/${id}`;
+const out = (href, text, cls = '') =>
+  `<a class="lnk ${cls}" href="${esc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(text)} <span class="lnk__i">↗</span></a>`;
 
 // ---- 顶层大板块切换:总账 / 促销盘点 ----
 $$('#toptabs .toptab').forEach((btn) => {
@@ -15,7 +32,6 @@ $$('#toptabs .toptab').forEach((btn) => {
 
 const annotationOf = (key) => (REG.annotations && REG.annotations[key]) || {};
 
-// 主题命中:显示「主题在用」+ 文件:行号(悬停看代码片段)
 function themeCell(row) {
   if (row.themeUsage === null) return '<span class="muted">未扫描</span>';
   if (!row.themeUsage.length) return '<span class="tag">主题未引用</span>';
@@ -45,8 +61,16 @@ function annCell(key) {
   </div>`;
 }
 
+// 「有数据」单元格:数量 + 点进去看具体是哪些
+function countCell(count, drillAttrs, id) {
+  if (count == null) return '<span class="muted">—</span>';
+  if (count === 0) return '<b>0</b>';
+  return `<b>${count}</b><br><button class="linkbtn drill" data-drill="${id}" ${drillAttrs} type="button">查看明细</button>`;
+}
+
 function mfRow(r) {
-  const count = r.dataCount == null ? '—' : r.dataCount;
+  const id = slug(r.annotationKey);
+  const attrs = `data-kind="mf" data-owner="${esc(r.ownerType)}" data-ns="${esc(r.namespace)}" data-key="${esc(r.key)}"`;
   return `<tr class="${r.stale ? 'row--stale' : ''}">
     <td>
       <b>${esc(r.name)}</b>
@@ -55,15 +79,17 @@ function mfRow(r) {
     </td>
     <td><span class="tag">${esc(r.ownerLabel)}</span></td>
     <td class="mono">${esc(r.type)}</td>
-    <td class="num"><b>${count}</b></td>
+    <td class="num">${countCell(r.dataCount, attrs, id)}</td>
     <td>${esc(r.source)}<div class="muted">${esc(r.ownerGuess)}</div></td>
     <td>${themeCell(r)}</td>
     <td>${annCell(r.annotationKey)}</td>
-  </tr>`;
+  </tr>
+  <tr class="drillrow" id="d-${id}" hidden><td colspan="7"><div class="drillbox">加载中…</div></td></tr>`;
 }
 
 function moRow(r) {
-  const count = r.entryCount == null ? '—' : r.entryCount;
+  const id = slug(r.annotationKey);
+  const attrs = `data-kind="mo" data-type="${esc(r.type)}"`;
   const by = r.createdByApp
     ? `<span class="tag tag--ok">App: ${esc(r.createdByApp)}</span>`
     : (r.createdByStaff ? `<span class="tag">人工: ${esc(r.createdByStaff)}</span>` : '<span class="muted">未知</span>');
@@ -74,11 +100,12 @@ function moRow(r) {
       <div class="muted mono">${esc(r.type)}</div>
     </td>
     <td class="num">${r.fieldCount}</td>
-    <td class="num"><b>${count}</b></td>
+    <td class="num">${countCell(r.entryCount, attrs, id)}</td>
     <td>${by}</td>
     <td>${themeCell(r)}</td>
     <td>${annCell(r.annotationKey)}</td>
-  </tr>`;
+  </tr>
+  <tr class="drillrow" id="d-${id}" hidden><td colspan="6"><div class="drillbox">加载中…</div></td></tr>`;
 }
 
 function renderRegistry() {
@@ -98,6 +125,8 @@ function renderRegistry() {
   const mfs = REG.metafields.filter((r) => (!owner || r.ownerType === owner) && match(r, `${r.name} ${r.full}`));
   const mos = REG.metaobjects.filter((r) => (!owner || owner === 'METAOBJECT') && match(r, `${r.name} ${r.type}`));
   $('#reg-count').textContent = `${mfs.length} 个字段 · ${mos.length} 个 metaobject`;
+
+  drillCache.clear(); // 表格重绘了,展开状态一并重置
 
   const mfHead = `<thead><tr>
     <th>字段</th><th>资源</th><th>类型</th><th class="num">有数据</th>
@@ -131,22 +160,120 @@ function renderOverview() {
     card('疑似废弃', staleCount) +
     card('已标注用途', annotated);
 
-  // 下拉筛选项
   const owners = REG.ownerTypes.map((o) => `<option value="${esc(o.type)}">${esc(o.label)}</option>`).join('');
   $('#reg-owner').innerHTML = `<option value="">全部资源类型</option>${owners}<option value="METAOBJECT">仅 Metaobject</option>`;
-  const sources = [...new Set([...mf.map((r) => r.source)])].sort();
+  // 来源下拉要把 metaobject 的来源也算进去,否则选了某个来源会把 metaobject 整表滤空
+  const sources = [...new Set([...mf.map((r) => r.source), ...mo.map((r) => r.source)])].filter(Boolean).sort();
   $('#reg-source').innerHTML = `<option value="">全部来源</option>` +
     sources.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
 }
 
-// ---- 标注编辑(事件委托,表格重绘也不会失效) ----
+// ---- 钻取渲染 ----
+function renderMetafieldDrill(d) {
+  if (!d.ok) return `<p class="muted">${esc(d.reason)}</p>`;
+  if (!d.rows.length) return '<p class="muted">没查到有值的资源</p>';
+  const rows = d.rows.map((r) => {
+    // linkKind/linkId/linkHandle 由后端算好(变体已指向其父产品)
+    const admin = resourceAdminUrl(r.linkKind, r.linkId);
+    const front = r.linkHandle
+      ? `${regFront()}/${r.linkKind === 'Collection' ? 'collections' : 'products'}/${r.linkHandle}`
+      : null;
+    return `<tr>
+      <td>
+        <b>${esc(r.title)}</b>
+        ${r.parentTitle ? `<div class="muted">${esc(r.parentTitle)}</div>` : ''}
+        ${r.sku ? `<div class="muted mono">SKU ${esc(r.sku)}</div>` : ''}
+      </td>
+      <td class="drillval">${esc(r.value).slice(0, 300)}</td>
+      <td class="nowrap">
+        ${admin ? out(admin, '后台') : ''}
+        ${front ? out(front, '前台', 'lnk--front') : ''}
+      </td>
+    </tr>`;
+  }).join('');
+  return `<div class="tablewrap"><table class="tbl tbl--inner">
+    <thead><tr><th>资源</th><th>值</th><th>链接</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    ${d.truncated ? '<p class="muted">结果过多,只显示前 500 条</p>' : ''}`;
+}
+
+function renderMetaobjectDrill(d) {
+  if (!d.ok) return `<p class="muted">${esc(d.reason || '查询失败')}</p>`;
+  if (!d.rows.length) return '<p class="muted">这个 metaobject 还没有条目</p>';
+  const items = d.rows.map((e) => {
+    const fields = e.fields.length
+      ? `<dl class="fields">${e.fields.map((f) => `<div class="field"><dt>${esc(f.key)}</dt><dd>${esc(f.value).slice(0, 400)}</dd></div>`).join('')}</dl>`
+      : '<p class="muted fields">所有字段为空</p>';
+    const refs = e.refs.length
+      ? `<ul class="plist">${e.refs.map((r) => {
+          const url = resourceAdminUrl(r.kind, r.linkId);
+          return `<li>
+            <span class="tag">${esc(r.kind)}</span>
+            <b>${esc(r.title)}</b>
+            ${r.parentTitle ? `<span class="muted">(${esc(r.parentTitle)})</span>` : ''}
+            <span class="muted mono">via ${esc(r.viaField)}</span>
+            ${url ? out(url, '后台') : ''}
+            ${r.handle ? out(`${regFront()}/products/${r.handle}`, '前台', 'lnk--front') : ''}
+          </li>`;
+        }).join('')}</ul>`
+      : '<p class="muted">没有任何资源引用这条 —— 可能是孤儿</p>';
+    return `<details class="entry ${e.refCount ? '' : 'entry--orphan'}">
+      <summary>
+        <b>${esc(e.title)}</b>
+        ${e.refCount
+          ? `<span class="tag tag--ok">被 ${e.refCount} 处引用</span>`
+          : '<span class="tag tag--warn">无引用</span>'}
+        <span class="entry__spacer"></span>
+        <span class="muted mono">${esc(e.handle)}</span>
+        ${out(entryAdminUrlReg(d.type, e.id), '后台')}
+      </summary>
+      <div class="pctx">
+        ${fields}
+        <div class="refsec"><div class="refsec__t">被谁引用</div>${refs}</div>
+      </div>
+    </details>`;
+  }).join('');
+  return `<div class="entries">${items}</div>${d.truncated ? '<p class="muted">条目过多,只显示前 500 条</p>' : ''}`;
+}
+
+async function toggleDrill(btn) {
+  const id = btn.dataset.drill;
+  const row = document.getElementById('d-' + id);
+  if (!row) return;
+  if (!row.hidden) { row.hidden = true; btn.textContent = '查看明细'; return; }
+
+  row.hidden = false;
+  btn.textContent = '收起';
+  if (drillCache.has(id)) { row.querySelector('.drillbox').innerHTML = drillCache.get(id); return; }
+
+  const box = row.querySelector('.drillbox');
+  box.innerHTML = '<span class="muted">加载中…</span>';
+  try {
+    let html;
+    if (btn.dataset.kind === 'mf') {
+      const d = await api('GET', `/api/drill/metafield?ownerType=${encodeURIComponent(btn.dataset.owner)}`
+        + `&namespace=${encodeURIComponent(btn.dataset.ns)}&key=${encodeURIComponent(btn.dataset.key)}`);
+      html = renderMetafieldDrill(d);
+    } else {
+      const d = await api('GET', `/api/drill/metaobject?type=${encodeURIComponent(btn.dataset.type)}`);
+      html = renderMetaobjectDrill(d);
+    }
+    drillCache.set(id, html);
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = `<p class="muted">出错: ${esc(e.message)}</p>`;
+  }
+}
+
+// ---- 事件委托:标注编辑 + 钻取(表格重绘也不失效) ----
 $('#registry').addEventListener('click', (e) => {
+  const drillBtn = e.target.closest('.drill');
+  if (drillBtn) return toggleDrill(drillBtn);
   const editBtn = e.target.closest('.ann__edit');
   if (editBtn) return openEditor(editBtn.closest('.ann'));
   const saveBtn = e.target.closest('.ann__save');
   if (saveBtn) return saveEditor(saveBtn.closest('.ann'));
-  const cancelBtn = e.target.closest('.ann__cancel');
-  if (cancelBtn) { renderRegistry(); }
+  if (e.target.closest('.ann__cancel')) renderRegistry();
 });
 
 function openEditor(box) {
@@ -215,5 +342,4 @@ $('#reg-refresh').addEventListener('click', () => loadRegistry(true));
   $(sel).addEventListener('input', () => REG && renderRegistry())
 );
 
-// 打开 app 默认进总账
 loadRegistry(false);

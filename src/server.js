@@ -9,6 +9,7 @@ import { getCached, setCached } from './inventory-cache.js';
 import { buildRegistry } from './registry.js';
 import { scanTheme } from './theme-scan.js';
 import { getAll as getAnnotations, setOne as setAnnotation } from './annotations.js';
+import { resourcesWithMetafield, metaobjectEntriesWithRefs } from './drilldown.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -89,6 +90,17 @@ api.get('/registry', wrap(async (req) => {
   data.themes = scan.ok ? scan.themes : [];
   setCached(req.ctx.shop, data, 'registry');
   return { ...data, annotations: getAnnotations(req.ctx.shop), cached: false };
+}));
+
+// 钻取:按需查,不缓存(数据要实时,量也不大)
+api.get('/drill/metafield', wrap(async (req) => {
+  const { ownerType, namespace, key } = req.query;
+  if (!ownerType || !namespace || !key) throw new Error('缺少 ownerType / namespace / key');
+  return resourcesWithMetafield(req.ctx, { ownerType, namespace, key });
+}));
+api.get('/drill/metaobject', wrap(async (req) => {
+  if (!req.query.type) throw new Error('缺少 type');
+  return metaobjectEntriesWithRefs(req.ctx, { type: req.query.type });
 }));
 
 api.get('/annotations', wrap(async (req) => ({ annotations: getAnnotations(req.ctx.shop) })));
