@@ -1,16 +1,19 @@
 // 元数据总账前端。复用 app.js 的 $ / $$ / esc / api / toast 全局帮手。
 // 注意:别用 app.js 的 adminBase/productAdminUrl —— 那些读的是促销模块的 DATA,
 // 促销没加载时是 null。总账用下面这套自己的。
+//
+// 列表只放「名称 / 数量 / 来源 / 有标注才显示标注」,一行一条尽量密;
+// key、类型、主题引用明细、标注编辑全部在详情页 —— 列表页保持可扫。
 
 let REG = null;
-const detailCache = new Map();
+const dataCache = new Map();   // 详情页的数据区(资源列表/条目),按定义缓存
+let current = null;            // 当前详情页 { kind, row }
 const state = {
   metafields: { page: 1, size: 25 },
   metaobjects: { page: 1, size: 25 },
 };
-let lastModule = 'metafields'; // 明细页返回时回到这里
+let lastModule = 'metafields';
 
-// 老版本缓存没有 store 字段,从 shop 兜底,别让深链把整页打挂
 const regStore = () => REG.store || {
   handle: String(REG.shop || '').replace('.myshopify.com', ''),
   storefrontUrl: `https://${REG.shop || ''}`,
@@ -75,105 +78,50 @@ $$('#modnav .modnav__item').forEach((btn) => {
 $('#detail-back').addEventListener('click', () => showSection(lastModule));
 
 const annotationOf = (key) => (REG.annotations && REG.annotations[key]) || {};
+const statusCls = (s) => s === '已废弃' || s === '待废弃' ? 'tag--danger' : s === '在用' ? 'tag--ok' : 'tag--warn';
 
-function themeCell(row) {
-  if (row.themeUsage === null) return '<span class="tag">未扫描</span>';
-  if (!row.themeUsage.length) return '<span class="tag">未引用</span>';
-  const files = [...new Set(row.themeUsage.map((h) => h.file))];
-  const list = row.themeUsage.slice(0, 12)
-    .map((h) => `<li><code>${esc(h.file)}:${h.line}</code><div class="snip">${esc(h.snippet)}</div></li>`).join('');
-  return `<details class="usage"><summary><span class="tag tag--ok"><span class="dot"></span>${files.length} 个文件在用</span></summary>
-    <ul class="usagelist">${list}</ul></details>`;
-}
-
-function annCell(key) {
+// ---- 列表行:一行一条,只放名称/标注/来源/数量 ----
+function annInline(key) {
   const a = annotationOf(key);
-  const s = a.status || '';
-  const cls = s === '已废弃' || s === '待废弃' ? 'tag--danger' : s === '在用' ? 'tag--ok' : s ? 'tag--warn' : '';
-  return `<span class="ann" data-key="${esc(key)}">
-    <span class="ann__view">
-      ${a.purpose ? `<span class="ann__purpose">${esc(a.purpose)}</span>` : '<span class="muted">未标注</span>'}
-      ${a.project ? `<span class="tag tag--accent">${esc(a.project)}</span>` : ''}
-      ${s ? `<span class="tag ${cls}">${esc(s)}</span>` : ''}
-      <button class="linkbtn ann__edit" type="button">${a.purpose || a.project || s ? '编辑' : '标注'}</button>
-    </span></span>`;
+  return [
+    a.purpose ? `<span class="rw__ann">${esc(a.purpose)}</span>` : '',
+    a.project ? `<span class="tag tag--accent">${esc(a.project)}</span>` : '',
+    a.status ? `<span class="tag ${statusCls(a.status)}">${esc(a.status)}</span>` : '',
+  ].join('');
 }
+const themeDot = (r) => (Array.isArray(r.themeUsage) && r.themeUsage.length)
+  ? '<span class="tag tag--ok"><span class="dot"></span>主题</span>' : '';
 
-// ---- 卡片 ----
-function mfCard(r) {
-  const attrs = `data-kind="mf" data-owner="${esc(r.ownerType)}" data-ns="${esc(r.namespace)}"`
-    + ` data-key="${esc(r.key)}" data-name="${esc(r.name)}" data-full="${esc(r.full)}"`
-    + ` data-type="${esc(r.type)}" data-ownerlabel="${esc(r.ownerLabel)}" data-expected="${r.dataCount ?? 0}"`;
-  const count = r.dataCount == null ? '—' : r.dataCount;
-  return `<article class="mcard ${r.stale ? 'mcard--stale' : ''}">
-    <div class="mcard__top">
-      <span class="mcard__icon">${svg(typeIcon(r.type))}</span>
-      <div class="mcard__main">
-        <div class="mcard__name">${esc(r.name)}
-          <span class="tag">${esc(r.ownerLabel)}</span>
-          <span class="tag mono">${esc(r.type)}</span>
-          ${r.stale ? '<span class="tag tag--danger">疑似废弃</span>' : ''}
-        </div>
-        <div class="mcard__key">${esc(r.full)}</div>
-      </div>
-      <div class="mcard__count">
-        <div class="count__n ${count ? '' : 'count__n--zero'}">${count}</div>
-        <div class="count__l">${r.dataCount ? `<button class="linkbtn drill" ${attrs} type="button">查看明细 →</button>` : '无数据'}</div>
-      </div>
-    </div>
-    <div class="mcard__meta">
-      <span class="meta"><span class="meta__k">来源</span><span class="meta__v">${esc(r.source)}</span></span>
-      <span class="meta"><span class="meta__k">主题</span><span class="meta__v">${themeCell(r)}</span></span>
-      <span class="meta meta--grow"><span class="meta__k">备注</span><span class="meta__v">${annCell(r.annotationKey)}</span></span>
-    </div>
-  </article>`;
+function rowHtml({ akey, kind, icon, name, stale, source, count }) {
+  return `<button class="rw ${stale ? 'rw--stale' : ''}" data-akey="${esc(akey)}" data-kind="${kind}" type="button">
+    <span class="rw__icon">${svg(icon)}</span>
+    <span class="rw__name">${esc(name)}${stale ? '<span class="tag tag--danger">疑似废弃</span>' : ''}${annInline(akey)}</span>
+    <span class="rw__src">${esc(source)}</span>
+    <span class="rw__n ${count ? '' : 'rw__n--zero'}">${count == null ? '—' : count}</span>
+    <span class="rw__go" aria-hidden="true">›</span>
+  </button>`;
 }
-
-function moCard(r) {
-  const attrs = `data-kind="mo" data-type="${esc(r.type)}" data-name="${esc(r.name)}"`;
-  const count = r.entryCount == null ? '—' : r.entryCount;
-  const by = r.createdByApp ? `<span class="tag tag--accent">App · ${esc(r.createdByApp)}</span>`
-    : r.createdByStaff ? `<span class="tag">人工 · ${esc(r.createdByStaff)}</span>`
-    : '<span class="tag">未知</span>';
-  return `<article class="mcard ${r.stale ? 'mcard--stale' : ''}">
-    <div class="mcard__top">
-      <span class="mcard__icon">${svg(ICONS.cube)}</span>
-      <div class="mcard__main">
-        <div class="mcard__name">${esc(r.name)}
-          <span class="tag">${r.fieldCount} 个字段</span>
-          ${r.stale ? '<span class="tag tag--danger">疑似废弃</span>' : ''}
-        </div>
-        <div class="mcard__key">${esc(r.type)}</div>
-      </div>
-      <div class="mcard__count">
-        <div class="count__n ${count ? '' : 'count__n--zero'}">${count}</div>
-        <div class="count__l">${r.entryCount ? `<button class="linkbtn drill" ${attrs} type="button">查看条目 →</button>` : '无条目'}</div>
-      </div>
-    </div>
-    <div class="mcard__meta">
-      <span class="meta"><span class="meta__k">创建者</span><span class="meta__v">${by}</span></span>
-      <span class="meta"><span class="meta__k">主题</span><span class="meta__v">${themeCell(r)}</span></span>
-      <span class="meta meta--grow"><span class="meta__k">备注</span><span class="meta__v">${annCell(r.annotationKey)}</span></span>
-    </div>
-  </article>`;
-}
+const mfRow = (r) => rowHtml({
+  akey: r.annotationKey, kind: 'mf', icon: typeIcon(r.type), name: r.name,
+  stale: r.stale, source: r.source, count: r.dataCount,
+});
+const moRow = (r) => rowHtml({
+  akey: r.annotationKey, kind: 'mo', icon: ICONS.cube, name: r.name,
+  stale: r.stale, source: r.source, count: r.entryCount,
+});
 
 // ---- 分页 ----
 function pagerHtml(mod, total, page, size) {
-  const pages = Math.max(1, Math.ceil(total / size));
   if (total === 0) return '';
-  const from = (page - 1) * size + 1;
-  const to = Math.min(total, page * size);
-  // 页码:首尾 + 当前附近,中间用省略号
+  const pages = Math.max(1, Math.ceil(total / size));
+  const from = (page - 1) * size + 1, to = Math.min(total, page * size);
   const nums = [];
   for (let i = 1; i <= pages; i++) {
     if (i === 1 || i === pages || Math.abs(i - page) <= 1) nums.push(i);
     else if (nums[nums.length - 1] !== '…') nums.push('…');
   }
-  const btns = nums.map((n) => n === '…'
-    ? '<span class="pgdots">…</span>'
-    : `<button class="pgbtn ${n === page ? 'is-active' : ''}" data-mod="${mod}" data-go="${n}" type="button">${n}</button>`
-  ).join('');
+  const btns = nums.map((n) => n === '…' ? '<span class="pgdots">…</span>'
+    : `<button class="pgbtn ${n === page ? 'is-active' : ''}" data-mod="${mod}" data-go="${n}" type="button">${n}</button>`).join('');
   return `<div class="pager__info">第 ${from}–${to} 条,共 ${total} 条 · ${pages} 页</div>
     <div class="pager__btns">
       <button class="pgbtn" data-mod="${mod}" data-go="${page - 1}" type="button" ${page <= 1 ? 'disabled' : ''}>上一页</button>
@@ -203,16 +151,13 @@ function renderMetafields() {
   const owner = $('#mf-owner').value, source = $('#mf-source').value, usage = $('#mf-usage').value;
   const st = state.metafields;
   st.size = Number($('#mf-size').value) || 25;
-
   const rows = REG.metafields.filter((r) =>
     (!owner || r.ownerType === owner) && (!source || r.source === source)
     && usageMatch(r, usage, r.dataCount) && textMatch(r, q, `${r.name} ${r.full}`));
-
   const pages = Math.max(1, Math.ceil(rows.length / st.size));
   if (st.page > pages) st.page = pages;
   const slice = rows.slice((st.page - 1) * st.size, st.page * st.size);
-
-  $('#mf-list').innerHTML = slice.length ? slice.map(mfCard).join('') : emptyState('没有匹配的字段');
+  $('#mf-list').innerHTML = slice.length ? slice.map(mfRow).join('') : emptyState('没有匹配的字段');
   $('#mf-pager').innerHTML = pagerHtml('metafields', rows.length, st.page, st.size);
 }
 
@@ -221,16 +166,13 @@ function renderMetaobjects() {
   const source = $('#mo-source').value, usage = $('#mo-usage').value;
   const st = state.metaobjects;
   st.size = Number($('#mo-size').value) || 25;
-
   const rows = REG.metaobjects.filter((r) =>
     (!source || r.source === source) && usageMatch(r, usage, r.entryCount)
     && textMatch(r, q, `${r.name} ${r.type}`));
-
   const pages = Math.max(1, Math.ceil(rows.length / st.size));
   if (st.page > pages) st.page = pages;
   const slice = rows.slice((st.page - 1) * st.size, st.page * st.size);
-
-  $('#mo-list').innerHTML = slice.length ? slice.map(moCard).join('') : emptyState('没有匹配的 metaobject');
+  $('#mo-list').innerHTML = slice.length ? slice.map(moRow).join('') : emptyState('没有匹配的 metaobject');
   $('#mo-pager').innerHTML = pagerHtml('metaobjects', rows.length, st.page, st.size);
 }
 
@@ -240,32 +182,71 @@ function renderStats() {
   const mf = REG.metafields, mo = REG.metaobjects;
   $('#n-mf').textContent = mf.length;
   $('#n-mo').textContent = mo.length;
-
   $('#mf-stats').innerHTML =
     stat(mf.length, '字段定义总数') +
     stat(mf.filter((r) => (r.dataCount || 0) > 0).length, '有数据', 'stat--ok') +
     stat(mf.filter((r) => Array.isArray(r.themeUsage) && r.themeUsage.length).length, '主题在用') +
     stat(mf.filter((r) => r.stale).length, '疑似废弃', 'stat--danger') +
     stat(Object.keys(REG.annotations || {}).length, '已标注用途');
-
   $('#mo-stats').innerHTML =
     stat(mo.length, '对象定义总数') +
     stat(mo.filter((r) => (r.entryCount || 0) > 0).length, '有条目', 'stat--ok') +
     stat(mo.filter((r) => r.createdByApp).length, 'App 创建') +
     stat(mo.filter((r) => r.stale).length, '疑似废弃', 'stat--danger');
-
   const owners = REG.ownerTypes.map((o) => `<option value="${esc(o.type)}">${esc(o.label)}</option>`).join('');
   $('#mf-owner').innerHTML = `<option value="">全部资源</option>${owners}`;
-  const mfSources = [...new Set(mf.map((r) => r.source))].filter(Boolean).sort();
-  $('#mf-source').innerHTML = `<option value="">全部来源</option>`
-    + mfSources.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
-  const moSources = [...new Set(mo.map((r) => r.source))].filter(Boolean).sort();
-  $('#mo-source').innerHTML = `<option value="">全部创建者</option>`
-    + moSources.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  const mfSrc = [...new Set(mf.map((r) => r.source))].filter(Boolean).sort();
+  $('#mf-source').innerHTML = `<option value="">全部来源</option>` + mfSrc.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  const moSrc = [...new Set(mo.map((r) => r.source))].filter(Boolean).sort();
+  $('#mo-source').innerHTML = `<option value="">全部创建者</option>` + moSrc.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
 }
 
-// ---- 明细页 ----
-function renderMetafieldDetail(d) {
+// ---- 详情页:定义信息 + 标注设置 + 数据 ----
+function themeBlock(row) {
+  if (row.themeUsage === null) return '<span class="muted">未扫描主题</span>';
+  if (!row.themeUsage.length) return '<span class="tag">主题未引用</span>';
+  const files = [...new Set(row.themeUsage.map((h) => h.file))];
+  return `<details class="usage" open><summary><span class="tag tag--ok"><span class="dot"></span>${files.length} 个文件在用</span></summary>
+    <ul class="usagelist">${row.themeUsage.slice(0, 20)
+      .map((h) => `<li><code>${esc(h.file)}:${h.line}</code><div class="snip">${esc(h.snippet)}</div></li>`).join('')}</ul></details>`;
+}
+
+function renderDetailInfo() {
+  const { kind, row } = current;
+  const a = annotationOf(row.annotationKey);
+  const info = kind === 'mf'
+    ? [['字段', `<span class="mono">${esc(row.full)}</span>`],
+       ['类型', `<span class="mono">${esc(row.type)}</span>`],
+       ['资源', esc(row.ownerLabel)],
+       ['来源', `${esc(row.source)} <span class="muted">${esc(row.ownerGuess)}</span>`],
+       ['有数据', `<b>${row.dataCount ?? '—'}</b> 个资源`],
+       ['主题引用', themeBlock(row)]]
+    : [['类型', `<span class="mono">${esc(row.type)}</span>`],
+       ['字段数', String(row.fieldCount)],
+       ['条目数', `<b>${row.entryCount ?? '—'}</b>`],
+       ['创建者', row.createdByApp ? `App · ${esc(row.createdByApp)}` : (row.createdByStaff ? `人工 · ${esc(row.createdByStaff)}` : '未知')],
+       ['主题引用', themeBlock(row)]];
+
+  const opts = ['', '在用', '待确认', '待废弃', '已废弃']
+    .map((s) => `<option value="${s}" ${s === (a.status || '') ? 'selected' : ''}>${s || '(未设状态)'}</option>`).join('');
+
+  $('#detail-info').innerHTML = `
+    <div class="infocard">
+      ${info.map(([k, v]) => `<div class="inforow"><span class="info__k">${esc(k)}</span><span class="info__v">${v}</span></div>`).join('')}
+    </div>
+    <div class="infocard annopanel" data-key="${esc(row.annotationKey)}">
+      <div class="annopanel__t">用途标注</div>
+      <div class="annoform">
+        <input class="ann__purpose-in" placeholder="用途:这个字段/对象是干什么的" value="${esc(a.purpose || '')}" />
+        <input class="ann__project-in" placeholder="归属项目,如 Setup Kit / 搜索引擎" value="${esc(a.project || '')}" />
+        <select class="ann__status-in">${opts}</select>
+        <button class="btn btn-primary btn-sm ann__save" type="button">保存</button>
+      </div>
+      ${a.updatedAt ? `<div class="muted">上次更新 ${new Date(a.updatedAt).toLocaleString()}</div>` : ''}
+    </div>`;
+}
+
+function renderMetafieldData(d) {
   if (!d.ok) return `<p class="muted">${esc(d.reason)}</p>`;
   if (!d.rows.length) return emptyState('没查到有值的资源');
   const mismatch = d.expected && d.count !== d.expected
@@ -275,9 +256,7 @@ function renderMetafieldDetail(d) {
     const admin = resourceAdminUrl(kind, r.linkId || r.id);
     const handle = r.linkHandle || r.handle || '';
     const front = handle ? `${regFront()}/${kind === 'Collection' ? 'collections' : 'products'}/${handle}` : null;
-    const title = admin
-      ? `<a class="reslink" href="${esc(admin)}" target="_blank" rel="noopener">${esc(r.title)}</a>`
-      : `<b>${esc(r.title)}</b>`;
+    const title = admin ? `<a class="reslink" href="${esc(admin)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : `<b>${esc(r.title)}</b>`;
     return `<tr>
       <td class="cell-res">
         <div class="resline">${title}${front ? out(front, '前台', 'lnk--front') : ''}</div>
@@ -288,13 +267,14 @@ function renderMetafieldDetail(d) {
       <td class="drillval">${esc(r.value).slice(0, 400)}</td>
     </tr>`;
   }).join('');
-  return `<div class="detbar">命中 <b>${d.count}</b> 个资源 · 扫描 ${d.scanned ?? '?'} 个 · 点产品名进后台 ${mismatch}</div>
+  return `<h3>使用这个字段的资源</h3>
+    <div class="detbar">命中 <b>${d.count}</b> 个 · 扫描 ${d.scanned ?? '?'} 个 · 点名称进后台 ${mismatch}</div>
     <div class="tablewrap"><table class="tbl tbl--detail">
       <thead><tr><th>资源</th><th>值</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${d.truncated ? '<p class="muted">结果过多,只显示前 500 条</p>' : ''}`;
 }
 
-function renderMetaobjectDetail(d) {
+function renderMetaobjectData(d) {
   if (!d.ok) return `<p class="muted">${esc(d.reason || '查询失败')}</p>`;
   if (!d.rows.length) return emptyState('这个 metaobject 还没有条目');
   const items = d.rows.map((e) => {
@@ -320,55 +300,55 @@ function renderMetaobjectDetail(d) {
       <div class="pctx">${fields}<div class="refsec"><div class="refsec__t">被谁引用</div>${refs}</div></div>
     </details>`;
   }).join('');
-  return `<div class="detbar">共 <b>${d.count}</b> 个条目</div><div class="entries">${items}</div>
-    ${d.truncated ? '<p class="muted">条目过多,只显示前 500 条</p>' : ''}`;
+  return `<h3>条目</h3><div class="detbar">共 <b>${d.count}</b> 个条目</div>
+    <div class="entries">${items}</div>${d.truncated ? '<p class="muted">条目过多,只显示前 500 条</p>' : ''}`;
 }
 
-async function openDetail(btn) {
-  const ds = btn.dataset;
-  const isMf = ds.kind === 'mf';
-  const cacheKey = isMf ? `mf:${ds.owner}:${ds.ns}.${ds.key}` : `mo:${ds.type}`;
-
+async function openDetail(kind, row) {
+  current = { kind, row };
+  const isMf = kind === 'mf';
   showSection('detail');
-  $('#detail-title').textContent = ds.name || (isMf ? ds.full : ds.type);
-  $('#detail-sub').textContent = isMf ? `${ds.full} · ${ds.type} · ${ds.ownerlabel}` : `metaobject · ${ds.type}`;
+  $('#detail-title').textContent = row.name;
+  $('#detail-sub').textContent = isMf ? row.full : row.type;
   $('#detail-actions').innerHTML = isMf
     ? out(`${regAdmin()}/settings/custom_data`, '定义设置')
-    : out(`${regAdmin()}/content/entries/${ds.type}`, '后台条目列表');
+    : out(`${regAdmin()}/content/entries/${row.type}`, '后台条目列表');
+  renderDetailInfo();
 
   const body = $('#detail-body');
-  if (detailCache.has(cacheKey)) { body.innerHTML = detailCache.get(cacheKey); return; }
+  const count = isMf ? row.dataCount : row.entryCount;
+  if (!count) { body.innerHTML = emptyState(isMf ? '这个字段还没有任何资源填值' : '这个 metaobject 还没有条目'); return; }
+
+  const cacheKey = isMf ? `mf:${row.ownerType}:${row.full}` : `mo:${row.type}`;
+  if (dataCache.has(cacheKey)) { body.innerHTML = dataCache.get(cacheKey); return; }
   body.innerHTML = isMf
     ? '<p class="muted">正在扫描并逐条核对…（命中越少扫得越久,最多几十秒）</p>'
     : '<p class="muted">加载中…</p>';
   try {
     let html;
     if (isMf) {
-      const d = await api('GET', `/api/drill/metafield?ownerType=${encodeURIComponent(ds.owner)}`
-        + `&namespace=${encodeURIComponent(ds.ns)}&key=${encodeURIComponent(ds.key)}`
-        + `&expected=${encodeURIComponent(ds.expected || 0)}`);
-      html = renderMetafieldDetail(d);
+      const d = await api('GET', `/api/drill/metafield?ownerType=${encodeURIComponent(row.ownerType)}`
+        + `&namespace=${encodeURIComponent(row.namespace)}&key=${encodeURIComponent(row.key)}`
+        + `&expected=${encodeURIComponent(row.dataCount || 0)}`);
+      html = renderMetafieldData(d);
     } else {
-      const d = await api('GET', `/api/drill/metaobject?type=${encodeURIComponent(ds.type)}`);
-      html = renderMetaobjectDetail(d);
+      const d = await api('GET', `/api/drill/metaobject?type=${encodeURIComponent(row.type)}`);
+      html = renderMetaobjectData(d);
     }
-    detailCache.set(cacheKey, html);
+    dataCache.set(cacheKey, html);
     body.innerHTML = html;
   } catch (e) {
     body.innerHTML = `<p class="muted">出错: ${esc(e.message)}</p>`;
   }
 }
 
-// ---- 事件委托 ----
-function wireList(listSel, pagerSel, rerender, mod) {
+// ---- 事件 ----
+function wireList(listSel, pagerSel, rerender, mod, pool) {
   $(listSel).addEventListener('click', (e) => {
-    const drill = e.target.closest('.drill');
-    if (drill) return openDetail(drill);
-    const edit = e.target.closest('.ann__edit');
-    if (edit) return openEditor(edit.closest('.ann'));
-    const save = e.target.closest('.ann__save');
-    if (save) return saveEditor(save.closest('.ann'), rerender);
-    if (e.target.closest('.ann__cancel')) rerender();
+    const row = e.target.closest('.rw');
+    if (!row) return;
+    const item = REG[pool].find((x) => x.annotationKey === row.dataset.akey);
+    if (item) openDetail(row.dataset.kind, item);
   });
   $(pagerSel).addEventListener('click', (e) => {
     const b = e.target.closest('.pgbtn');
@@ -378,44 +358,34 @@ function wireList(listSel, pagerSel, rerender, mod) {
     window.scrollTo(0, 0);
   });
 }
-wireList('#mf-list', '#mf-pager', renderMetafields, 'metafields');
-wireList('#mo-list', '#mo-pager', renderMetaobjects, 'metaobjects');
+wireList('#mf-list', '#mf-pager', renderMetafields, 'metafields', 'metafields');
+wireList('#mo-list', '#mo-pager', renderMetaobjects, 'metaobjects', 'metaobjects');
 
-function openEditor(box) {
-  const key = box.dataset.key;
-  const a = annotationOf(key);
-  const opts = ['', '在用', '待确认', '待废弃', '已废弃']
-    .map((s) => `<option value="${s}" ${s === (a.status || '') ? 'selected' : ''}>${s || '(未设状态)'}</option>`).join('');
-  box.innerHTML = `<span class="ann__edit-form">
-    <input class="ann__purpose-in" placeholder="用途:这个字段干什么的" value="${esc(a.purpose || '')}" />
-    <input class="ann__project-in" placeholder="归属项目" value="${esc(a.project || '')}" />
-    <select class="ann__status-in">${opts}</select>
-    <button class="btn btn-sm btn-primary ann__save" type="button">保存</button>
-    <button class="btn btn-sm ann__cancel" type="button">取消</button>
-  </span>`;
-  box.querySelector('.ann__purpose-in').focus();
-}
-
-async function saveEditor(box, rerender) {
-  const key = box.dataset.key;
+// 详情页的标注保存
+$('#detail-info').addEventListener('click', async (e) => {
+  if (!e.target.closest('.ann__save')) return;
+  const panel = e.target.closest('.annopanel');
+  const key = panel.dataset.key;
   const payload = {
     key,
-    purpose: box.querySelector('.ann__purpose-in').value.trim(),
-    project: box.querySelector('.ann__project-in').value.trim(),
-    status: box.querySelector('.ann__status-in').value,
+    purpose: panel.querySelector('.ann__purpose-in').value.trim(),
+    project: panel.querySelector('.ann__project-in').value.trim(),
+    status: panel.querySelector('.ann__status-in').value,
   };
   try {
     const res = await api('PUT', '/api/annotations', payload);
     REG.annotations = REG.annotations || {};
     if (!payload.purpose && !payload.project && !payload.status) delete REG.annotations[key];
     else REG.annotations[key] = res.value;
+    renderDetailInfo();
     renderStats();
-    rerender();
+    renderMetafields();
+    renderMetaobjects();
     toast('已保存标注');
-  } catch (e) {
-    toast(e.message, false);
+  } catch (err) {
+    toast(err.message, false);
   }
-}
+});
 
 async function loadRegistry(refresh) {
   const btn = $('#reg-refresh');
@@ -424,7 +394,7 @@ async function loadRegistry(refresh) {
   try {
     const d = await api('GET', '/api/registry' + (refresh ? '?refresh=1' : ''));
     REG = d;
-    if (refresh) { detailCache.clear(); state.metafields.page = 1; state.metaobjects.page = 1; }
+    if (refresh) { dataCache.clear(); state.metafields.page = 1; state.metaobjects.page = 1; }
     const when = new Date(d.generatedAt).toLocaleString();
     const theme = d.themeScanned
       ? `主题「${d.theme.name}」已扫 ${d.theme.fileCount} 个文件`
@@ -443,7 +413,6 @@ async function loadRegistry(refresh) {
 }
 
 $('#reg-refresh').addEventListener('click', () => loadRegistry(true));
-// 改筛选条件时回到第一页,否则会停在一个空页上
 ['#mf-search', '#mf-owner', '#mf-source', '#mf-usage', '#mf-size'].forEach((s) =>
   $(s).addEventListener('input', () => { state.metafields.page = 1; if (REG) renderMetafields(); }));
 ['#mo-search', '#mo-source', '#mo-usage', '#mo-size'].forEach((s) =>
