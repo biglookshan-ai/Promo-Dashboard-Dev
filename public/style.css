@@ -98,16 +98,26 @@ h3 { font-size: 14px; font-weight: 600; margin: 22px 0 10px; }
 .rw__n--zero { color: var(--text-3); font-weight: 400; }
 .rw__go { color: var(--text-3); font-size: 17px; line-height: 1; text-align: right; }
 
-/* ---------- 详情页信息卡 ---------- */
+/* ---------- 详情页:左数据 / 右固定信息 ---------- */
+.detgrid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
+.detmain { min-width: 0; }
+.detside { position: sticky; top: 14px; }
+.detside .infocard:last-child { margin-bottom: 0; }
+@media (max-width: 1040px) {
+  .detgrid { grid-template-columns: 1fr; }
+  .detside { position: static; order: -1; }  /* 窄屏时信息放到列表上面 */
+}
+
 .infocard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px 16px; margin-bottom: 12px; }
-.inforow { display: grid; grid-template-columns: 90px 1fr; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; align-items: baseline; }
+.inforow { display: grid; grid-template-columns: 74px 1fr; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; align-items: baseline; }
 .inforow:last-child { border-bottom: none; }
 .info__k { color: var(--text-3); font-size: 12px; }
-.info__v { min-width: 0; }
+/* 长 namespace.key 是等宽不换行的,不强制断词会把右栏撑出屏幕 */
+.info__v { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
 .annopanel { padding: 14px 16px; }
 .annopanel__t { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
 .annoform { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.annoform input { flex: 1; min-width: 180px; padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-family: inherit; }
+.annoform input { flex: 1 1 100%; min-width: 0; padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-family: inherit; }
 .annoform select { padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-family: inherit; background: var(--surface); }
 .annoform input:focus, .annoform select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 
@@ -155,7 +165,10 @@ h3 { font-size: 14px; font-weight: 600; margin: 22px 0 10px; }
 .tbl tbody tr:hover { background: var(--surface-2); }
 .tbl td.num, .tbl th.num { text-align: right; white-space: nowrap; }
 .tbl td.nowrap { white-space: nowrap; }
-.tbl--detail .cell-res { min-width: 280px; }
+/* 资源名很长会把「值」列挤成一个字符宽 —— 固定两列比例 */
+.tbl--detail { table-layout: fixed; }
+.tbl--detail th:first-child, .tbl--detail td:first-child { width: 60%; }
+.tbl--detail th:last-child, .tbl--detail td:last-child { width: 40%; }
 .row--stale, .row--exp, .row--unused { background: #fffcfb; }
 
 /* ---------- expandable entry (metaobject detail + promo catalog) ---------- */

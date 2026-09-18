@@ -6,8 +6,9 @@
 // key、类型、主题引用明细、标注编辑全部在详情页 —— 列表页保持可扫。
 
 let REG = null;
-const dataCache = new Map();   // 详情页的数据区(资源列表/条目),按定义缓存
-let current = null;            // 当前详情页 { kind, row }
+const dataCache = new Map();   // 详情页原始数据(不是 HTML —— 要能翻页重渲染)
+let current = null;            // 当前详情页 { kind, row, data }
+const detailPage = { page: 1, size: 20 };
 const state = {
   metafields: { page: 1, size: 25 },
   metaobjects: { page: 1, size: 25 },
@@ -246,12 +247,22 @@ function renderDetailInfo() {
     </div>`;
 }
 
-function renderMetafieldData(d) {
+// 引用类字段的值可能是几十个名字,别整条糊上去
+function valueText(r) {
+  if (r.refNames && r.refNames.length) {
+    return r.refNames.length > 3
+      ? `${r.refNames.slice(0, 3).join(', ')} …等 ${r.refNames.length} 个`
+      : r.refNames.join(', ');
+  }
+  return String(r.value || '');
+}
+
+function renderMetafieldData(d, page, size) {
   if (!d.ok) return `<p class="muted">${esc(d.reason)}</p>`;
   if (!d.rows.length) return emptyState('没查到有值的资源');
   const mismatch = d.expected && d.count !== d.expected
     ? `<span class="tag tag--warn">总账计数 ${d.expected},实际命中 ${d.count}</span>` : '';
-  const rows = d.rows.map((r) => {
+  const rows = d.rows.slice((page - 1) * size, page * size).map((r) => {
     const kind = r.linkKind || (d.ownerType === 'COLLECTION' ? 'Collection' : 'Product');
     const admin = resourceAdminUrl(kind, r.linkId || r.id);
     const handle = r.linkHandle || r.handle || '';
@@ -264,7 +275,7 @@ function renderMetafieldData(d) {
         ${r.sku ? `<div class="muted mono">SKU ${esc(r.sku)}</div>` : ''}
         ${r.status && r.status !== 'ACTIVE' ? `<span class="tag tag--warn">${esc(r.status)}</span>` : ''}
       </td>
-      <td class="drillval">${esc(r.value).slice(0, 400)}</td>
+      <td class="drillval">${esc(valueText(r)).slice(0, 300)}</td>
     </tr>`;
   }).join('');
   return `<h3>使用这个字段的资源</h3>
@@ -274,10 +285,10 @@ function renderMetafieldData(d) {
     ${d.truncated ? '<p class="muted">结果过多,只显示前 500 条</p>' : ''}`;
 }
 
-function renderMetaobjectData(d) {
+function renderMetaobjectData(d, page, size) {
   if (!d.ok) return `<p class="muted">${esc(d.reason || '查询失败')}</p>`;
   if (!d.rows.length) return emptyState('这个 metaobject 还没有条目');
-  const items = d.rows.map((e) => {
+  const items = d.rows.slice((page - 1) * size, page * size).map((e) => {
     const fields = e.fields.length
       ? `<dl class="fields">${e.fields.map((f) => `<div class="field"><dt>${esc(f.key)}</dt><dd>${esc(f.value).slice(0, 400)}</dd></div>`).join('')}</dl>`
       : '<p class="muted fields">所有字段为空</p>';
@@ -304,8 +315,21 @@ function renderMetaobjectData(d) {
     <div class="entries">${items}</div>${d.truncated ? '<p class="muted">条目过多,只显示前 500 条</p>' : ''}`;
 }
 
+// 左栏(资源/条目)重绘 —— 翻页时只动这里,右侧信息面板不变
+function renderDetailData() {
+  const { kind, data } = current;
+  if (!data) return;
+  const { page, size } = detailPage;
+  $('#detail-body').innerHTML = kind === 'mf'
+    ? renderMetafieldData(data, page, size)
+    : renderMetaobjectData(data, page, size);
+  const total = data.ok ? data.rows.length : 0;
+  $('#detail-pager').innerHTML = pagerHtml('detail', total, page, size);
+}
+
 async function openDetail(kind, row) {
-  current = { kind, row };
+  current = { kind, row, data: null };
+  detailPage.page = 1;
   const isMf = kind === 'mf';
   showSection('detail');
   $('#detail-title').textContent = row.name;
@@ -316,31 +340,37 @@ async function openDetail(kind, row) {
   renderDetailInfo();
 
   const body = $('#detail-body');
+  $('#detail-pager').innerHTML = '';
   const count = isMf ? row.dataCount : row.entryCount;
   if (!count) { body.innerHTML = emptyState(isMf ? '这个字段还没有任何资源填值' : '这个 metaobject 还没有条目'); return; }
 
   const cacheKey = isMf ? `mf:${row.ownerType}:${row.full}` : `mo:${row.type}`;
-  if (dataCache.has(cacheKey)) { body.innerHTML = dataCache.get(cacheKey); return; }
+  if (dataCache.has(cacheKey)) { current.data = dataCache.get(cacheKey); renderDetailData(); return; }
+
   body.innerHTML = isMf
     ? '<p class="muted">正在扫描并逐条核对…（命中越少扫得越久,最多几十秒）</p>'
     : '<p class="muted">加载中…</p>';
   try {
-    let html;
-    if (isMf) {
-      const d = await api('GET', `/api/drill/metafield?ownerType=${encodeURIComponent(row.ownerType)}`
-        + `&namespace=${encodeURIComponent(row.namespace)}&key=${encodeURIComponent(row.key)}`
-        + `&expected=${encodeURIComponent(row.dataCount || 0)}`);
-      html = renderMetafieldData(d);
-    } else {
-      const d = await api('GET', `/api/drill/metaobject?type=${encodeURIComponent(row.type)}`);
-      html = renderMetaobjectData(d);
-    }
-    dataCache.set(cacheKey, html);
-    body.innerHTML = html;
+    const d = isMf
+      ? await api('GET', `/api/drill/metafield?ownerType=${encodeURIComponent(row.ownerType)}`
+          + `&namespace=${encodeURIComponent(row.namespace)}&key=${encodeURIComponent(row.key)}`
+          + `&expected=${encodeURIComponent(row.dataCount || 0)}`)
+      : await api('GET', `/api/drill/metaobject?type=${encodeURIComponent(row.type)}`);
+    dataCache.set(cacheKey, d);
+    // 扫描期间用户可能已经返回并点了别的定义,别把结果画到错的页面上
+    if (current && current.row.annotationKey === row.annotationKey) { current.data = d; renderDetailData(); }
   } catch (e) {
     body.innerHTML = `<p class="muted">出错: ${esc(e.message)}</p>`;
   }
 }
+
+$('#detail-pager').addEventListener('click', (e) => {
+  const b = e.target.closest('.pgbtn');
+  if (!b || b.disabled) return;
+  detailPage.page = Number(b.dataset.go);
+  renderDetailData();
+  window.scrollTo(0, 0);
+});
 
 // ---- 事件 ----
 function wireList(listSel, pagerSel, rerender, mod, pool) {
