@@ -1,7 +1,7 @@
 # 进度 · Promo Dashboard(元数据管理)
 
 - **状态**: 开发中 / 已部署可用(只读)
-- **进度**: 55%
+- **进度**: 65%
 - **一句话**: 已从「只管促销」扩成「全店元数据总账」——metafield/metaobject 定义总账 + 主题引用扫描 + 人工用途标注 + 钻取到具体资源并可点进后台,全部只读零 mutation;促销盘点降级为其中一个专题模块。
 - **分类**: Shopify App
 
@@ -16,6 +16,8 @@
 - 清理动作(删废弃定义/批量清过期)仍需 write scope,未开。
 
 ## 🏁 最近完成
+- **界面重做**(2026-09):Metafield / Metaobject 拆成两个独立顶层模块 + 促销盘点;卡片式列表(类型图标/徽章/层级排版)取代裸表格;分页(默认 25,可 50/100);每模块独立搜索与筛选;统一设计系统。引用类字段的 gid 批量解析成可读名称。
+- **修 bug**:metafield 存在性筛选被 Shopify 静默忽略,导致明细返回全店产品(见 AGENTS.md 的坑)。
 - **钻取**(2026-09):`src/drilldown.js` —— metafield 用 `products(query:"metafields.{ns}.{key}:*")` 官方筛选器只返命中的资源;metaobject 用 `Metaobject.referencedBy` 直接拿反向引用。两条都不用扫全站。明细带后台/前台深链(变体链接指向父产品)。
 - **修 bug**:metaobject 行缺 `source` 字段,一选「来源」筛选就整表滤空(126 个定义显示无匹配)。
 - **元数据总账**(2026-09):`src/registry.js` 列出三类 owner 的全部 metafield 定义 + 全部 metaobject 定义,带数据量计数、命名空间来源推断、`createdByApp` 创建者、疑似废弃标记。
