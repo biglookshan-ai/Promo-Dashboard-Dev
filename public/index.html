@@ -10,48 +10,108 @@
 </head>
 <body>
   <ui-nav-menu>
-    <a href="/" rel="home">元数据总账</a>
+    <a href="/" rel="home">元数据管理</a>
   </ui-nav-menu>
 
   <main class="content">
-    <nav class="toptabs" id="toptabs">
-      <button class="toptab is-active" data-section="registry" type="button">元数据总账</button>
-      <button class="toptab" data-section="promo" type="button">促销盘点</button>
+    <header class="apphead">
+      <div class="apphead__brand">
+        <span class="apphead__logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>
+          </svg>
+        </span>
+        <div>
+          <h1>元数据管理</h1>
+          <p class="apphead__sub" id="app-sub">全店自定义字段与对象的总账</p>
+        </div>
+      </div>
+      <button id="reg-refresh" class="btn btn-primary" type="button">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+        刷新
+      </button>
+    </header>
+
+    <nav class="modnav" id="modnav">
+      <button class="modnav__item is-active" data-section="metafields" type="button">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 8.4 12 17l-4-4"/><path d="M3 7h6M3 12h4M3 17h4"/></svg>
+        <span>Metafield 字段</span><span class="modnav__n" id="n-mf">—</span>
+      </button>
+      <button class="modnav__item" data-section="metaobjects" type="button">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7l9 5 9-5-9-5Z"/><path d="m3 17 9 5 9-5"/><path d="m3 12 9 5 9-5"/></svg>
+        <span>Metaobject 对象</span><span class="modnav__n" id="n-mo">—</span>
+      </button>
+      <button class="modnav__item" data-section="promo" type="button">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 12.5 12.5 20.6a2 2 0 0 1-2.8 0l-6.3-6.3a2 2 0 0 1-.6-1.4V4.5a2 2 0 0 1 2-2h8.4a2 2 0 0 1 1.4.6l6 6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>
+        <span>促销盘点</span>
+      </button>
     </nav>
 
-    <!-- ========== 元数据总账 ========== -->
-    <section class="section is-active" id="section-registry">
-      <div class="head">
-        <div>
-          <h1>元数据总账</h1>
-          <p class="muted">全店自定义 metafield / metaobject:多少条数据在用、来源归属、主题哪里在读、你的用途备注。</p>
+    <p id="reg-status" class="statusbar"></p>
+
+    <!-- ========== Metafield 模块 ========== -->
+    <section class="section is-active" id="section-metafields">
+      <div class="stats" id="mf-stats"></div>
+      <div class="toolbar">
+        <div class="field-search">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="mf-search" placeholder="搜索名称 / namespace.key / 备注" />
         </div>
-        <button id="reg-refresh" class="btn btn-primary" type="button">刷新总账</button>
+        <select id="mf-owner" class="sel"><option value="">全部资源</option></select>
+        <select id="mf-source" class="sel"><option value="">全部来源</option></select>
+        <select id="mf-usage" class="sel">
+          <option value="">全部状态</option>
+          <option value="stale">疑似废弃</option>
+          <option value="nodata">零数据</option>
+          <option value="theme">主题在用</option>
+          <option value="notheme">主题未引用</option>
+        </select>
+        <select id="mf-size" class="sel">
+          <option value="25">每页 25</option>
+          <option value="50">每页 50</option>
+          <option value="100">每页 100</option>
+        </select>
       </div>
-
-      <p id="reg-status" class="muted"></p>
-      <div id="reg-result" hidden>
-        <section class="cards" id="reg-overview"></section>
-
-        <div class="regfilter">
-          <input type="search" id="reg-search" placeholder="搜索名称 / namespace.key / 备注" />
-          <select id="reg-owner"><option value="">全部资源类型</option></select>
-          <select id="reg-source"><option value="">全部来源</option></select>
-          <label><input type="checkbox" id="reg-stale" /> 只看疑似废弃</label>
-          <span id="reg-count" class="muted"></span>
-        </div>
-
-        <div id="registry"></div>
-      </div>
+      <div id="mf-list" class="cardlist"></div>
+      <div id="mf-pager" class="pager"></div>
     </section>
 
-    <!-- ========== 明细页(从总账点进来) ========== -->
+    <!-- ========== Metaobject 模块 ========== -->
+    <section class="section" id="section-metaobjects">
+      <div class="stats" id="mo-stats"></div>
+      <div class="toolbar">
+        <div class="field-search">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="mo-search" placeholder="搜索名称 / type / 备注" />
+        </div>
+        <select id="mo-source" class="sel"><option value="">全部创建者</option></select>
+        <select id="mo-usage" class="sel">
+          <option value="">全部状态</option>
+          <option value="stale">疑似废弃</option>
+          <option value="nodata">零条目</option>
+          <option value="theme">主题在用</option>
+          <option value="notheme">主题未引用</option>
+        </select>
+        <select id="mo-size" class="sel">
+          <option value="25">每页 25</option>
+          <option value="50">每页 50</option>
+          <option value="100">每页 100</option>
+        </select>
+      </div>
+      <div id="mo-list" class="cardlist"></div>
+      <div id="mo-pager" class="pager"></div>
+    </section>
+
+    <!-- ========== 明细页 ========== -->
     <section class="section" id="section-detail">
-      <button id="detail-back" class="btn btn-back" type="button">← 返回总账</button>
-      <div class="head">
+      <button id="detail-back" class="btn btn-ghost btn-back" type="button">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        返回
+      </button>
+      <div class="dethead">
         <div>
-          <h1 id="detail-title">明细</h1>
-          <p class="muted" id="detail-sub"></p>
+          <h2 id="detail-title">明细</h2>
+          <p class="mono muted" id="detail-sub"></p>
         </div>
         <div id="detail-actions"></div>
       </div>
@@ -62,10 +122,10 @@
     <section class="section" id="section-promo">
       <div class="head">
         <div>
-          <h1>促销数据盘点</h1>
+          <h2>促销数据盘点</h2>
           <p class="muted">扫描活动 / 促销 metaobject 与产品 metafield,核对迁移前的一致性问题。</p>
         </div>
-        <button id="run" class="btn btn-primary" type="button">刷新盘点</button>
+        <button id="run" class="btn" type="button">刷新盘点</button>
       </div>
 
       <p id="status" class="muted"></p>
@@ -78,14 +138,8 @@
           <button class="tab" data-tab="products" type="button">按产品</button>
         </nav>
 
-        <section class="tabpane is-active" id="pane-fixes">
-          <div id="fixes"></div>
-        </section>
-
-        <section class="tabpane" id="pane-catalog">
-          <div id="catalog"></div>
-        </section>
-
+        <section class="tabpane is-active" id="pane-fixes"><div id="fixes"></div></section>
+        <section class="tabpane" id="pane-catalog"><div id="catalog"></div></section>
         <section class="tabpane" id="pane-products">
           <div class="prodfilter">
             <label><input type="checkbox" id="filter-expired" /> 只看已过期</label>

@@ -40,6 +40,48 @@ function displayValue(mf) {
   return String(mf.value ?? '');
 }
 
+const GID_RE = /gid:\/\/shopify\/[A-Za-z]+\/\d+/g;
+
+// 引用类字段的值是一串 gid,直接显示没人看得懂。
+// 收集所有 gid 批量换成名字 —— 一次额外查询,比在扫描时逐节点取 references 便宜得多。
+async function resolveRefNames(ctx, rows) {
+  const ids = new Set();
+  for (const r of rows) for (const g of String(r.value).match(GID_RE) || []) ids.add(g);
+  if (!ids.size) return;
+
+  const nameById = new Map();
+  const all = [...ids];
+  for (let i = 0; i < all.length; i += 100) {
+    const chunk = all.slice(i, i + 100);
+    try {
+      const d = await graphql(
+        ctx,
+        `query($ids:[ID!]!){ nodes(ids:$ids){
+          __typename
+          ... on Metaobject { id displayName type }
+          ... on Product { id title }
+          ... on Collection { id title }
+          ... on ProductVariant { id title }
+        }}`,
+        { ids: chunk }
+      );
+      for (const n of d.nodes || []) {
+        if (!n || !n.id) continue;
+        nameById.set(n.id, n.displayName || n.title || n.id.split('/').pop());
+      }
+    } catch (e) {
+      console.warn('[drill] 解析引用名失败,退回显示 ID:', e.message);
+    }
+  }
+
+  for (const r of rows) {
+    const gids = String(r.value).match(GID_RE);
+    if (!gids) continue;
+    r.refNames = gids.map((g) => nameById.get(g) || g.split('/').pop());
+    r.value = r.refNames.join(', ');
+  }
+}
+
 // 列出某个 metafield 定义下「确实有值」的资源。
 // expected = 总账里的 metafieldsCount,找齐就提前收工,不用扫完全店。
 export async function resourcesWithMetafield(ctx, { ownerType, namespace, key, expected = 0 }) {
@@ -98,6 +140,7 @@ export async function resourcesWithMetafield(ctx, { ownerType, namespace, key, e
     return { ok: false, reason: `扫描失败: ${e.message}` };
   }
 
+  await resolveRefNames(ctx, rows); // gid → 可读名字
   return { ok: true, ownerType, namespace, key, count: rows.length, scanned, expected, truncated, rows };
 }
 
@@ -169,5 +212,8 @@ export async function metaobjectEntriesWithRefs(ctx, { type }) {
     cursor = c.pageInfo.hasNextPage ? c.pageInfo.endCursor : null;
   } while (cursor);
 
+  // 条目字段里也常是 gid(引用其它 metaobject/产品),一并换成名字。
+  // fields 是对象引用,resolveRefNames 会就地改写它们的 value。
+  await resolveRefNames(ctx, rows.flatMap((r) => r.fields));
   return { ok: true, type, count: rows.length, truncated, rows };
 }
