@@ -5,61 +5,96 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="shopify-api-key" content="%%API_KEY%%" />
   <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key="%%API_KEY%%"></script>
-  <title>促销活动管理</title>
+  <title>元数据管理</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <ui-nav-menu>
-    <a href="/" rel="home">数据盘点</a>
+    <a href="/" rel="home">元数据总账</a>
   </ui-nav-menu>
 
   <main class="content">
-    <div class="head">
-      <div>
-        <h1>促销数据盘点</h1>
-        <p class="muted">扫描活动 / 促销 metaobject 与产品 metafield,核对迁移前的一致性问题。</p>
-      </div>
-      <button id="run" class="btn btn-primary" type="button">刷新盘点</button>
-    </div>
+    <nav class="toptabs" id="toptabs">
+      <button class="toptab is-active" data-section="registry" type="button">元数据总账</button>
+      <button class="toptab" data-section="promo" type="button">促销盘点</button>
+    </nav>
 
-    <p id="status" class="muted"></p>
-    <div id="result" hidden>
-      <section class="cards" id="overview"></section>
-
-      <nav class="tabs" id="tabs">
-        <button class="tab is-active" data-tab="fixes" type="button">优先修复</button>
-        <button class="tab" data-tab="catalog" type="button">种类目录</button>
-        <button class="tab" data-tab="products" type="button">按产品</button>
-      </nav>
-
-      <section class="tabpane is-active" id="pane-fixes">
-        <div id="fixes"></div>
-      </section>
-
-      <section class="tabpane" id="pane-catalog">
-        <div id="catalog"></div>
-      </section>
-
-      <section class="tabpane" id="pane-products">
-        <div class="prodfilter">
-          <label><input type="checkbox" id="filter-expired" /> 只看已过期</label>
-          <input type="search" id="prod-search" placeholder="搜索产品标题 / handle" />
-          <span id="prod-count" class="muted"></span>
+    <!-- ========== 元数据总账 ========== -->
+    <section class="section is-active" id="section-registry">
+      <div class="head">
+        <div>
+          <h1>元数据总账</h1>
+          <p class="muted">全店自定义 metafield / metaobject:多少条数据在用、来源归属、主题哪里在读、你的用途备注。</p>
         </div>
-        <div id="products" class="tablewrap"></div>
-      </section>
+        <button id="reg-refresh" class="btn btn-primary" type="button">刷新总账</button>
+      </div>
 
-      <details class="raw">
-        <summary>原始条目表（活动 / 促销）</summary>
-        <h3>活动 / 体验条目</h3>
-        <div id="act-table" class="tablewrap"></div>
-        <h3>促销条目</h3>
-        <div id="promo-table" class="tablewrap"></div>
-      </details>
-    </div>
+      <p id="reg-status" class="muted"></p>
+      <div id="reg-result" hidden>
+        <section class="cards" id="reg-overview"></section>
+
+        <div class="regfilter">
+          <input type="search" id="reg-search" placeholder="搜索名称 / namespace.key / 备注" />
+          <select id="reg-owner"><option value="">全部资源类型</option></select>
+          <select id="reg-source"><option value="">全部来源</option></select>
+          <label><input type="checkbox" id="reg-stale" /> 只看疑似废弃</label>
+          <span id="reg-count" class="muted"></span>
+        </div>
+
+        <div id="registry"></div>
+      </div>
+    </section>
+
+    <!-- ========== 促销盘点(原有模块) ========== -->
+    <section class="section" id="section-promo">
+      <div class="head">
+        <div>
+          <h1>促销数据盘点</h1>
+          <p class="muted">扫描活动 / 促销 metaobject 与产品 metafield,核对迁移前的一致性问题。</p>
+        </div>
+        <button id="run" class="btn btn-primary" type="button">刷新盘点</button>
+      </div>
+
+      <p id="status" class="muted"></p>
+      <div id="result" hidden>
+        <section class="cards" id="overview"></section>
+
+        <nav class="tabs" id="tabs">
+          <button class="tab is-active" data-tab="fixes" type="button">优先修复</button>
+          <button class="tab" data-tab="catalog" type="button">种类目录</button>
+          <button class="tab" data-tab="products" type="button">按产品</button>
+        </nav>
+
+        <section class="tabpane is-active" id="pane-fixes">
+          <div id="fixes"></div>
+        </section>
+
+        <section class="tabpane" id="pane-catalog">
+          <div id="catalog"></div>
+        </section>
+
+        <section class="tabpane" id="pane-products">
+          <div class="prodfilter">
+            <label><input type="checkbox" id="filter-expired" /> 只看已过期</label>
+            <input type="search" id="prod-search" placeholder="搜索产品标题 / handle" />
+            <span id="prod-count" class="muted"></span>
+          </div>
+          <div id="products" class="tablewrap"></div>
+        </section>
+
+        <details class="raw">
+          <summary>原始条目表（活动 / 促销）</summary>
+          <h3>活动 / 体验条目</h3>
+          <div id="act-table" class="tablewrap"></div>
+          <h3>促销条目</h3>
+          <div id="promo-table" class="tablewrap"></div>
+        </details>
+      </div>
+    </section>
   </main>
 
   <div id="toast" class="toast" hidden></div>
   <script src="app.js"></script>
+  <script src="registry.js"></script>
 </body>
 </html>

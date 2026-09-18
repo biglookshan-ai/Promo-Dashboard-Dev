@@ -6,6 +6,9 @@ import { requireSession } from './auth-embedded.js';
 import { clearToken } from './token-store.js';
 import { runInventory } from './inventory.js';
 import { getCached, setCached } from './inventory-cache.js';
+import { buildRegistry } from './registry.js';
+import { scanTheme } from './theme-scan.js';
+import { getAll as getAnnotations, setOne as setAnnotation } from './annotations.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -64,6 +67,37 @@ api.get('/inventory', wrap(async (req) => {
   setCached(req.ctx.shop, data);
   return { ...data, cached: false };
 }));
+// ---- 元数据总账 ----
+// 定义 + 计数走 API(秒出);主题扫描需要 read_themes,没权限时降级(少一列,不报错)。
+api.get('/registry', wrap(async (req) => {
+  if (req.query.refresh !== '1') {
+    const cached = getCached(req.ctx.shop, 'registry');
+    if (cached) {
+      console.log('[registry] cache HIT', req.ctx.shop);
+      return { ...cached, annotations: getAnnotations(req.ctx.shop), cached: true };
+    }
+    console.log('[registry] cache MISS → building', req.ctx.shop);
+  } else {
+    console.log('[registry] refresh requested', req.ctx.shop);
+  }
+
+  const scan = await scanTheme(req.ctx, { themeId: req.query.themeId || null });
+  // buildRegistry 已把命中的文件/行号直接写进每一行的 themeUsage,
+  // 所以原始索引(Map)不用进缓存,省体积。
+  const data = await buildRegistry(req.ctx, { themeIndex: scan.ok ? scan : null });
+  data.themeScanError = scan.ok ? null : scan.reason;
+  data.themes = scan.ok ? scan.themes : [];
+  setCached(req.ctx.shop, data, 'registry');
+  return { ...data, annotations: getAnnotations(req.ctx.shop), cached: false };
+}));
+
+api.get('/annotations', wrap(async (req) => ({ annotations: getAnnotations(req.ctx.shop) })));
+api.put('/annotations', wrap(async (req) => {
+  const { key, purpose, project, status } = req.body || {};
+  if (!key) throw new Error('缺少 key');
+  return { key, value: setAnnotation(req.ctx.shop, key, { purpose, project, status }) };
+}));
+
 api.post('/reconnect', wrap(async (req) => { clearToken(req.ctx.shop); return { ok: true }; }));
 
 app.use('/api', api);

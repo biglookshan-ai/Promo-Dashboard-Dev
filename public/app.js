@@ -313,5 +313,11 @@ async function load(refresh) {
 }
 
 $('#run').addEventListener('click', () => load(true));
-// Auto-show last result the moment the app opens (no manual run needed).
-load(false);
+// 促销盘点现在是次级模块 —— 切到那个标签时才加载(见 registry.js),
+// 否则打开 app 就会触发一次全站扫描,拖慢总账。
+let promoLoaded = false;
+window.loadPromoOnce = () => {
+  if (promoLoaded) return;
+  promoLoaded = true;
+  load(false);
+};

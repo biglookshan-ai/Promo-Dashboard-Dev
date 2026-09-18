@@ -29,3 +29,26 @@
 ## 多 AI 协作
 - 多个 AI 工具可能同时在不同项目/文件工作,**看到多出来的文件是正常的**。
 - 「谁在做什么」登记在飞书任务板,避免撞车;跨项目大改动先在中枢开个任务。
+
+## 本项目专属:关键与禁忌(所有 AI 工具都要读)
+
+**定位**:全店 **Metafield / Metaobject 元数据管理** app(原名促销面板,已扩展)。**已部署在 Railway 并在 Shopify 后台可用**,当前**全部只读、零 mutation**。
+
+两个板块:
+1. **元数据总账**(主):所有自定义 metafield / metaobject 定义 —— 有多少条数据、来源归属、主题哪个文件在读、人工用途备注。
+2. **促销盘点**(原有专题):促销/活动/倒计时的一致性检查。
+
+### 关键
+
+- **计数不用扫全站**:`metafieldsCount` / `metaobjectsCount` 由 API 直接给,总账秒出。只有促销盘点那套才需要扫 3938 个产品(所以它改成切到标签页才懒加载)。
+- **Metafield 查不到「哪个 app 创建」** —— Shopify 没这个字段。归属只能靠三条线索:命名空间推断 + 主题扫描(`read_themes`,最硬证据)+ 人工标注(`src/annotations.js`,存 DATA_DIR)。
+- **Metaobject 可以** —— `MetaobjectDefinition.createdByApp` / `createdByStaff` 直接给。
+- 「疑似废弃」判据 = 零数据 **且** 主题扫描确认没引用;没扫主题时不下这个结论。
+- 骨架照搬 search-panel-dev(App Bridge session token + OAuth token exchange)。
+- 缓存两层(内存 + DATA_DIR 卷),`getCached(shop, name)` 按 name 区分 inventory / registry。
+
+### ⛔ 注意
+
+- 还没有任何写操作(标注只写本地 JSON,不回写 Shopify)。加 mutation 前先确认设计。
+- 主题扫描**只读**,绝不改主题文件。
+- Railway 的 App URL 必须是公网域名(`*.up.railway.app`),别填 `*.railway.internal`(内网,Shopify 解析不到)。

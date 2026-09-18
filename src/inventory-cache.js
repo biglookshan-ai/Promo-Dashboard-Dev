@@ -6,24 +6,28 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const DIR = process.env.DATA_DIR || path.join(process.cwd(), '.data');
-const fileFor = (shop) => path.join(DIR, `inventory-${String(shop).replace(/[^a-z0-9.-]/gi, '_')}.json`);
+const safe = (s) => String(s).replace(/[^a-z0-9.-]/gi, '_');
+// name 区分不同数据集(inventory / registry …),默认沿用原来的 inventory。
+const fileFor = (shop, name) => path.join(DIR, `${name}-${safe(shop)}.json`);
+const memKey = (shop, name) => `${name}:${shop}`;
 const mem = new Map();
 
-export function getCached(shop) {
-  if (mem.has(shop)) return mem.get(shop);
+export function getCached(shop, name = 'inventory') {
+  const k = memKey(shop, name);
+  if (mem.has(k)) return mem.get(k);
   try {
-    const data = JSON.parse(fs.readFileSync(fileFor(shop), 'utf8'));
-    mem.set(shop, data);
+    const data = JSON.parse(fs.readFileSync(fileFor(shop, name), 'utf8'));
+    mem.set(k, data);
     return data;
   } catch { return null; }
 }
 
-export function setCached(shop, data) {
-  mem.set(shop, data);
+export function setCached(shop, data, name = 'inventory') {
+  mem.set(memKey(shop, name), data);
   try {
     fs.mkdirSync(DIR, { recursive: true });
-    fs.writeFileSync(fileFor(shop), JSON.stringify(data));
-    console.log('[cache] wrote', fileFor(shop));
+    fs.writeFileSync(fileFor(shop, name), JSON.stringify(data));
+    console.log('[cache] wrote', fileFor(shop, name));
   } catch (e) {
     console.error('[cache] disk write FAILED (mount a volume at DATA_DIR):', e.message);
   }
