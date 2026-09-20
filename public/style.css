@@ -64,7 +64,9 @@ h3 { font-size: 14px; font-weight: 600; margin: 22px 0 10px; }
 
 /* ---------- stat cards ---------- */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
-.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; text-align: left; font-family: inherit; color: inherit; cursor: pointer; }
+.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
+.stat.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .stat__n { font-size: 24px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
 .stat__l { font-size: 12px; color: var(--text-3); margin-top: 2px; }
 .stat--danger .stat__n { color: var(--danger); }
@@ -81,7 +83,7 @@ h3 { font-size: 14px; font-weight: 600; margin: 22px 0 10px; }
 /* ---------- 列表行(一行一条,尽量密) ---------- */
 .cardlist { display: flex; flex-direction: column; gap: 5px; }
 .rw {
-  display: grid; grid-template-columns: 28px minmax(0,1fr) auto 56px 14px;
+  display: grid; grid-template-columns: 28px minmax(0,1fr) auto 14px;
   align-items: center; gap: 12px; width: 100%; text-align: left;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 8px 14px; cursor: pointer; font: inherit; color: inherit;
@@ -92,11 +94,28 @@ h3 { font-size: 14px; font-weight: 600; margin: 22px 0 10px; }
 .rw__icon svg { width: 15px; height: 15px; }
 .rw--stale .rw__icon { background: var(--danger-soft); color: var(--danger); }
 .rw__name { font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 7px; min-width: 0; flex-wrap: wrap; }
+.rw__t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+/* 数量紧跟名字 */
+.cnt { font-size: 12px; font-weight: 600; background: var(--accent-soft); color: var(--accent); border-radius: 20px; padding: 1px 9px; flex: none; }
+.cnt--zero { background: var(--surface-2); color: var(--text-3); font-weight: 400; border: 1px solid var(--border); }
+.rw--stale .cnt--zero { background: var(--danger-soft); color: var(--danger); border-color: #f3ccc8; }
 .rw__ann { font-weight: 400; font-size: 12.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
 .rw__src { font-size: 12px; color: var(--text-3); white-space: nowrap; }
-.rw__n { font-size: 15px; font-weight: 600; text-align: right; }
-.rw__n--zero { color: var(--text-3); font-weight: 400; }
 .rw__go { color: var(--text-3); font-size: 17px; line-height: 1; text-align: right; }
+
+/* ---------- 详情页:资源行(点开看完整值) ---------- */
+.reslist { display: flex; flex-direction: column; gap: 5px; }
+.resrow { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.resrow > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; padding: 10px 14px; font-size: 13px; }
+.resrow > summary::-webkit-details-marker { display: none; }
+.resrow > summary::before { content: '▸'; color: var(--text-3); font-size: 10px; flex: none; }
+.resrow[open] > summary::before { content: '▾'; }
+.resrow__main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.resrow__hint { font-size: 11.5px; color: var(--text-3); flex: none; }
+.resrow__val { padding: 10px 14px 12px 34px; border-top: 1px solid var(--border); font-size: 12.5px; }
+.vallist { margin: 0; padding-left: 18px; line-height: 1.8; }
+.valpre { margin: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 11.5px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+.valtext { white-space: pre-wrap; word-break: break-word; color: var(--text-2); }
 
 /* ---------- 详情页:左数据 / 右固定信息 ---------- */
 .detgrid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
@@ -152,9 +171,6 @@ h3 { font-size: 14px; font-weight: 600; margin: 22px 0 10px; }
 .detbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12.5px; color: var(--text-3); }
 .reslink { color: var(--text); text-decoration: none; font-weight: 500; }
 .reslink:hover { color: var(--accent); text-decoration: underline; }
-.resline { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.drillval { font-size: 12px; color: var(--text-2); word-break: break-word; white-space: pre-wrap; }
-.reflist { display: flex; flex-direction: column; gap: 6px; }
 
 /* ---------- tables (detail + promo module) ---------- */
 .tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
@@ -165,10 +181,6 @@ h3 { font-size: 14px; font-weight: 600; margin: 22px 0 10px; }
 .tbl tbody tr:hover { background: var(--surface-2); }
 .tbl td.num, .tbl th.num { text-align: right; white-space: nowrap; }
 .tbl td.nowrap { white-space: nowrap; }
-/* 资源名很长会把「值」列挤成一个字符宽 —— 固定两列比例 */
-.tbl--detail { table-layout: fixed; }
-.tbl--detail th:first-child, .tbl--detail td:first-child { width: 60%; }
-.tbl--detail th:last-child, .tbl--detail td:last-child { width: 40%; }
 .row--stale, .row--exp, .row--unused { background: #fffcfb; }
 
 /* ---------- expandable entry (metaobject detail + promo catalog) ---------- */

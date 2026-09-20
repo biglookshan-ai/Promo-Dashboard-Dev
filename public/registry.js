@@ -93,12 +93,16 @@ function annInline(key) {
 const themeDot = (r) => (Array.isArray(r.themeUsage) && r.themeUsage.length)
   ? '<span class="tag tag--ok"><span class="dot"></span>主题</span>' : '';
 
+// 数量紧跟名字 —— 扫一眼名字立刻知道用了多少,不用横跨整行去右边找
 function rowHtml({ akey, kind, icon, name, stale, source, count }) {
   return `<button class="rw ${stale ? 'rw--stale' : ''}" data-akey="${esc(akey)}" data-kind="${kind}" type="button">
     <span class="rw__icon">${svg(icon)}</span>
-    <span class="rw__name">${esc(name)}${stale ? '<span class="tag tag--danger">疑似废弃</span>' : ''}${annInline(akey)}</span>
+    <span class="rw__name">
+      <span class="rw__t">${esc(name)}</span>
+      <span class="cnt ${count ? '' : 'cnt--zero'}">${count == null ? '—' : count}</span>
+      ${stale ? '<span class="tag tag--danger">疑似废弃</span>' : ''}${annInline(akey)}
+    </span>
     <span class="rw__src">${esc(source)}</span>
-    <span class="rw__n ${count ? '' : 'rw__n--zero'}">${count == null ? '—' : count}</span>
     <span class="rw__go" aria-hidden="true">›</span>
   </button>`;
 }
@@ -136,9 +140,11 @@ const emptyState = (msg) => `<div class="empty">${svg(ICONS.empty)}<div>${esc(ms
 function usageMatch(r, mode, count) {
   if (!mode) return true;
   if (mode === 'stale') return !!r.stale;
+  if (mode === 'hasdata') return (count || 0) > 0;
   if (mode === 'nodata') return (count || 0) === 0;
   if (mode === 'theme') return Array.isArray(r.themeUsage) && r.themeUsage.length > 0;
   if (mode === 'notheme') return Array.isArray(r.themeUsage) && r.themeUsage.length === 0;
+  if (mode === 'annotated') return !!(REG.annotations || {})[r.annotationKey];
   return true;
 }
 function textMatch(r, q, hay) {
@@ -177,23 +183,28 @@ function renderMetaobjects() {
   $('#mo-pager').innerHTML = pagerHtml('metaobjects', rows.length, st.page, st.size);
 }
 
-const stat = (n, label, tone = '') => `<div class="stat ${tone}"><div class="stat__n">${esc(n)}</div><div class="stat__l">${esc(label)}</div></div>`;
+// 统计卡可点 —— 点一下就把列表筛成那一类
+const stat = (n, label, tone = '', filter = '') =>
+  `<button class="stat ${tone}" data-usage="${esc(filter)}" type="button">
+    <div class="stat__n">${esc(n)}</div><div class="stat__l">${esc(label)}</div></button>`;
 
 function renderStats() {
   const mf = REG.metafields, mo = REG.metaobjects;
+  const annotated = (list) => list.filter((r) => (REG.annotations || {})[r.annotationKey]).length;
   $('#n-mf').textContent = mf.length;
   $('#n-mo').textContent = mo.length;
   $('#mf-stats').innerHTML =
-    stat(mf.length, '字段定义总数') +
-    stat(mf.filter((r) => (r.dataCount || 0) > 0).length, '有数据', 'stat--ok') +
-    stat(mf.filter((r) => Array.isArray(r.themeUsage) && r.themeUsage.length).length, '主题在用') +
-    stat(mf.filter((r) => r.stale).length, '疑似废弃', 'stat--danger') +
-    stat(Object.keys(REG.annotations || {}).length, '已标注用途');
+    stat(mf.length, '字段定义总数', '', '') +
+    stat(mf.filter((r) => (r.dataCount || 0) > 0).length, '有数据', 'stat--ok', 'hasdata') +
+    stat(mf.filter((r) => Array.isArray(r.themeUsage) && r.themeUsage.length).length, '主题在用', '', 'theme') +
+    stat(mf.filter((r) => r.stale).length, '疑似废弃', 'stat--danger', 'stale') +
+    stat(annotated(mf), '已标注用途', '', 'annotated');
   $('#mo-stats').innerHTML =
-    stat(mo.length, '对象定义总数') +
-    stat(mo.filter((r) => (r.entryCount || 0) > 0).length, '有条目', 'stat--ok') +
-    stat(mo.filter((r) => r.createdByApp).length, 'App 创建') +
-    stat(mo.filter((r) => r.stale).length, '疑似废弃', 'stat--danger');
+    stat(mo.length, '对象定义总数', '', '') +
+    stat(mo.filter((r) => (r.entryCount || 0) > 0).length, '有条目', 'stat--ok', 'hasdata') +
+    stat(mo.filter((r) => r.stale).length, '疑似废弃', 'stat--danger', 'stale') +
+    stat(annotated(mo), '已标注用途', '', 'annotated');
+  markActiveStats();
   const owners = REG.ownerTypes.map((o) => `<option value="${esc(o.type)}">${esc(o.label)}</option>`).join('');
   $('#mf-owner').innerHTML = `<option value="">全部资源</option>${owners}`;
   const mfSrc = [...new Set(mf.map((r) => r.source))].filter(Boolean).sort();
@@ -247,19 +258,38 @@ function renderDetailInfo() {
     </div>`;
 }
 
-// 引用类字段的值可能是几十个名字,别整条糊上去
-function valueText(r) {
+// 按字段类型把原始值渲染成人能读的样子。列表里不再摆「值」那一列
+// (永远截断、永远看不全),改成点开某一条才展开完整值。
+function formatValue(r, type = '') {
+  const t = String(type).toLowerCase();
   if (r.refNames && r.refNames.length) {
-    return r.refNames.length > 3
-      ? `${r.refNames.slice(0, 3).join(', ')} …等 ${r.refNames.length} 个`
-      : r.refNames.join(', ');
+    return `<ul class="vallist">${r.refNames.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`;
   }
-  return String(r.value || '');
+  const v = String(r.value ?? '').trim();
+  if (!v) return '<span class="muted">（空）</span>';
+  if (t.includes('boolean')) return v === 'true' ? '是' : '否';
+  if (t.includes('date')) {
+    const d = new Date(v);
+    return isNaN(d) ? esc(v) : esc(d.toLocaleString());
+  }
+  try {
+    const j = JSON.parse(v);
+    // 基本类型别丢进代码块:"true" 就该显示「是」,数字就显示数字
+    if (typeof j === 'boolean') return j ? '是' : '否';
+    if (typeof j === 'number' || typeof j === 'string') return `<div class="valtext">${esc(String(j))}</div>`;
+    if (j && typeof j === 'object' && !Array.isArray(j) && 'amount' in j) {
+      return `${esc(j.currency_code || '')} ${esc(j.amount)}`;
+    }
+    if (Array.isArray(j)) return `<ul class="vallist">${j.map((x) => `<li>${esc(typeof x === 'object' ? JSON.stringify(x) : x)}</li>`).join('')}</ul>`;
+    return `<pre class="valpre">${esc(JSON.stringify(j, null, 2))}</pre>`;
+  } catch { /* 不是 JSON,当纯文本 */ }
+  return `<div class="valtext">${esc(v)}</div>`;
 }
 
 function renderMetafieldData(d, page, size) {
   if (!d.ok) return `<p class="muted">${esc(d.reason)}</p>`;
   if (!d.rows.length) return emptyState('没查到有值的资源');
+  const type = current?.row?.type || '';
   const mismatch = d.expected && d.count !== d.expected
     ? `<span class="tag tag--warn">总账计数 ${d.expected},实际命中 ${d.count}</span>` : '';
   const rows = d.rows.slice((page - 1) * size, page * size).map((r) => {
@@ -268,20 +298,23 @@ function renderMetafieldData(d, page, size) {
     const handle = r.linkHandle || r.handle || '';
     const front = handle ? `${regFront()}/${kind === 'Collection' ? 'collections' : 'products'}/${handle}` : null;
     const title = admin ? `<a class="reslink" href="${esc(admin)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : `<b>${esc(r.title)}</b>`;
-    return `<tr>
-      <td class="cell-res">
-        <div class="resline">${title}${front ? out(front, '前台', 'lnk--front') : ''}</div>
-        ${r.parentTitle ? `<div class="muted">${esc(r.parentTitle)}</div>` : ''}
-        ${r.sku ? `<div class="muted mono">SKU ${esc(r.sku)}</div>` : ''}
-        ${r.status && r.status !== 'ACTIVE' ? `<span class="tag tag--warn">${esc(r.status)}</span>` : ''}
-      </td>
-      <td class="drillval">${esc(valueText(r)).slice(0, 300)}</td>
-    </tr>`;
+    return `<details class="resrow">
+      <summary>
+        <span class="resrow__main">
+          ${title}
+          ${r.parentTitle ? `<span class="muted">${esc(r.parentTitle)}</span>` : ''}
+          ${r.sku ? `<span class="muted mono">SKU ${esc(r.sku)}</span>` : ''}
+          ${r.status && r.status !== 'ACTIVE' ? `<span class="tag tag--warn">${esc(r.status)}</span>` : ''}
+        </span>
+        ${front ? out(front, '前台', 'lnk--front') : ''}
+        <span class="resrow__hint">值</span>
+      </summary>
+      <div class="resrow__val">${formatValue(r, type)}</div>
+    </details>`;
   }).join('');
   return `<h3>使用这个字段的资源</h3>
-    <div class="detbar">命中 <b>${d.count}</b> 个 · 扫描 ${d.scanned ?? '?'} 个 · 点名称进后台 ${mismatch}</div>
-    <div class="tablewrap"><table class="tbl tbl--detail">
-      <thead><tr><th>资源</th><th>值</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="detbar">命中 <b>${d.count}</b> 个 · 扫描 ${d.scanned ?? '?'} 个 · 点名称进后台,点行展开看值 ${mismatch}</div>
+    <div class="reslist">${rows}</div>
     ${d.truncated ? '<p class="muted">结果过多,只显示前 500 条</p>' : ''}`;
 }
 
@@ -391,6 +424,29 @@ function wireList(listSel, pagerSel, rerender, mod, pool) {
 wireList('#mf-list', '#mf-pager', renderMetafields, 'metafields', 'metafields');
 wireList('#mo-list', '#mo-pager', renderMetaobjects, 'metaobjects', 'metaobjects');
 
+// 统计卡 ←→ 状态筛选:点卡片套用筛选,当前生效的卡片高亮
+function markActiveStats() {
+  const pairs = [['#mf-stats', '#mf-usage'], ['#mo-stats', '#mo-usage']];
+  for (const [statsSel, selSel] of pairs) {
+    const cur = $(selSel).value;
+    $$(`${statsSel} .stat`).forEach((b) => b.classList.toggle('is-active', b.dataset.usage === cur));
+  }
+}
+function wireStats(statsSel, selSel, mod, rerender) {
+  $(statsSel).addEventListener('click', (e) => {
+    const s = e.target.closest('.stat');
+    if (!s) return;
+    const sel = $(selSel);
+    // 再点一次已生效的卡片 = 取消筛选
+    sel.value = sel.value === s.dataset.usage ? '' : s.dataset.usage;
+    state[mod].page = 1;
+    markActiveStats();
+    rerender();
+  });
+}
+wireStats('#mf-stats', '#mf-usage', 'metafields', renderMetafields);
+wireStats('#mo-stats', '#mo-usage', 'metaobjects', renderMetaobjects);
+
 // 详情页的标注保存
 $('#detail-info').addEventListener('click', async (e) => {
   if (!e.target.closest('.ann__save')) return;
@@ -444,8 +500,8 @@ async function loadRegistry(refresh) {
 
 $('#reg-refresh').addEventListener('click', () => loadRegistry(true));
 ['#mf-search', '#mf-owner', '#mf-source', '#mf-usage', '#mf-size'].forEach((s) =>
-  $(s).addEventListener('input', () => { state.metafields.page = 1; if (REG) renderMetafields(); }));
+  $(s).addEventListener('input', () => { state.metafields.page = 1; markActiveStats(); if (REG) renderMetafields(); }));
 ['#mo-search', '#mo-source', '#mo-usage', '#mo-size'].forEach((s) =>
-  $(s).addEventListener('input', () => { state.metaobjects.page = 1; if (REG) renderMetaobjects(); }));
+  $(s).addEventListener('input', () => { state.metaobjects.page = 1; markActiveStats(); if (REG) renderMetaobjects(); }));
 
 loadRegistry(false);
