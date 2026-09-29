@@ -60,13 +60,28 @@ for (const sct of Object.values(hg.sections)) {
 const human = (h) => h.replace(/(\d)-(\d)/g, '$1.$2').split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
 const linkText = fs.readFileSync(path.join(THEME, 'templates/index.json'), 'utf8') + fs.readFileSync(path.join(THEME, 'sections/header-group.json'), 'utf8');
 const handles = (kind) => [...new Set([...linkText.matchAll(new RegExp(`(?:shopify://|cinegearpro\\.co\\.uk/)${kind}/([a-z0-9-]+)`, 'g'))].map((m) => m[1]))].sort();
-const collections = handles('collections').filter((h) => h !== 'frontpage').map((h) => ({ handle: h, title: human(h) }));
-const products = handles('products').map((h) => ({ id: 'demo-' + h, handle: h, title: human(h) }));
+// 有 scripts/demo-catalog.json(fetch-demo-catalog.mjs 从前台公开 JSON 读的)就用真实的产品数 / 标签数 / 产品图
+const CATALOG = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-catalog.json');
+const cat = fs.existsSync(CATALOG) ? JSON.parse(fs.readFileSync(CATALOG, 'utf8')) : null;
+const small = (src) => (src ? src.replace(/(\.[a-z]+)(\?|$)/i, '_200x$1$2') : '');
+const collections = cat
+  ? cat.collections.filter((c) => !c.missing).map((c) => ({ id: c.id, handle: c.handle, title: c.title, count: c.count }))
+  : handles('collections').filter((h) => h !== 'frontpage').map((h) => ({ handle: h, title: human(h) }));
+const catProduct = (h) => cat?.products.find((p) => p.handle === h);
+const toP = (p) => ({ id: p.id, handle: p.handle, title: p.title, image: small(p.image) });
+const products = [
+  ...handles('products').map((h) => (catProduct(h) ? toP(catProduct(h)) : { id: null, handle: h, title: human(h) })),
+  ...(cat ? cat.products.filter((p) => p.tags.includes('New Gear')).slice(0, 150).map(toP) : []),
+].filter((p, i, a) => a.findIndex((q) => q.handle === p.handle) === i);
+const USED_TAGS = ['Clearance', 'DZOFILM Prime Lens', 'BFCM', 'Gift idea', 'DailySale'];
+const tagCounts = cat
+  ? Object.fromEntries(Object.entries(cat.tagCounts).filter(([t, n]) => n >= 10 || USED_TAGS.includes(t)).sort((a, b) => b[1] - a[1]).slice(0, 120))
+  : {};
 
 const live = slides.filter((s) => !s.disabled);
 const off = slides.filter((s) => s.disabled);
 
-let saleEnd = [5, 12, 20, 26];
+let saleEnd = [2, 12, 20, 26];
 const banners = [];
 live.forEach((s, i) => {
   const isSale = s.tag === 'sale';
@@ -103,7 +118,7 @@ const topbar = [
     pendingChange: { text: 'Free UK Delivery on orders over £100 · Next-day available', by: 'u2', at: -0.2 } },
   { id: 't2', emoji: '🍂', text: 'Autumn Sale — up to 30% off cine lenses', link: '/collections/autumn-sale', category: '促销', campaign: 'c1', start: null, end: null, state: 'approved', by: 'u1', order: 1 },
   { id: 't3', emoji: '🆕', text: 'DZOFILM Arles Zoom now available', link: '/collections/dzofilm', category: '新品', start: 9, end: 30, state: 'approved', by: 'u1', order: 2 },
-  { id: 't4', emoji: '🎄', text: 'Order by 20 Dec for Christmas delivery', link: '', category: '节日', start: 63, end: 82, state: 'approved', by: 'u1', order: 3 },
+  { id: 't4', emoji: '🎄', text: 'Order by 20 Dec for Christmas delivery', link: '', category: '节日', start: '2026-11-20', end: '2026-12-21', state: 'approved', by: 'u1', order: 3 },
   { id: 't5', emoji: '🛒', text: 'Limited-time Deals on DZOFILM Vespid lenses 🔥', link: '/collections/dzofilm-vespid-prime-cine-lens', category: '促销', campaign: 'c3', start: null, end: null, state: 'approved', by: 'u1', order: 4 },
   { id: 't6', emoji: '🏖️', text: 'Spring Bank Holiday Deals', link: '/collections/spring-bank-holiday', category: '促销', campaign: 'c6', start: null, end: null, state: 'approved', by: 'u1', order: 5 },
   { id: 't7', emoji: '🎁', text: 'Holiday Deals — gifts for filmmakers', link: '/collections/holiday-deals', category: '节日', campaign: 'c5', start: null, end: null, state: 'draft', by: 'u2', order: 6 },
@@ -113,19 +128,32 @@ const topbar = [
 const P = (h) => products.find((p) => p.handle === h) || { id: 'demo-' + h, handle: h, title: human(h) };
 const C = (h) => collections.find((c) => c.handle === h) || { handle: h, title: human(h) };
 const campaigns = [
-  { id: 'c1', name: 'Autumn Sale', start: 4, end: 13, collections: [C('dzofilm-sale'), C('cinediskpro-sale')], tags: ['autumn-sale'],
+  { id: 'c1', name: 'Autumn Sale', start: 4, end: 13, collections: [C('cinediskpro-sale'), C('flash-sale')], tags: ['Clearance'],
     products: [P('blazar-talon-1-5x-autofocus-full-frame-anamorphic-lens')], badge: 'Autumn Sale', countdown: true, priority: 10, state: 'approved', by: 'u1' },
   { id: 'c2', name: 'Fujifilm Cashback', start: -28, end: 32, collections: [C('fujifilm-cashback')], tags: [], products: [],
     badge: 'Claim cashback', countdown: false, priority: 5, state: 'approved', by: 'u1' },
-  { id: 'c3', name: 'DZOFILM Vespid Limited Offer', start: -9, end: 5, collections: [C('dzofilm-vespid-prime-cine-lens'), C('dzofilm-vespid-prime-ii-cine-lens')], tags: [], products: [],
+  { id: 'c3', name: 'DZOFILM Vespid Limited Offer', start: -9, end: 2, collections: [C('dzofilm-vespid-prime-cine-lens'), C('dzofilm-vespid-prime-ii-cine-lens')], tags: ['DZOFILM Prime Lens'], products: [],
     badge: 'Limited Time Offer', countdown: true, priority: 15, state: 'approved', by: 'u1' },
-  { id: 'c4', name: 'Black Friday 2026', start: 52, end: 63, collections: [C('flash-sale')], tags: ['black-friday'], products: [],
+  { id: 'c4', name: 'Black Friday 2026', start: '2026-11-20', end: '2026-12-01', collections: [C('flash-sale')], tags: ['BFCM'], products: [],
     badge: 'Black Friday', countdown: true, priority: 20, state: 'draft', by: 'u1' },
-  { id: 'c5', name: 'Holiday Deals', start: 70, end: 95, collections: [C('holiday-deals')], tags: ['gift'],
+  { id: 'c5', name: 'Holiday Deals', start: '2026-12-08', end: '2027-01-02', collections: [C('holiday-deals')], tags: ['Gift idea'],
     products: [P('tilta-boulder-36-camera-cart'), P('pdmovie-3d-air-solo-3d-filming-system')], badge: 'Holiday Deals', countdown: true, priority: 10, state: 'approved', by: 'u1' },
   { id: 'c6', name: 'Spring Bank Holiday Deals', start: -125, end: -118, collections: [C('spring-bank-holiday')], tags: [], products: [],
     badge: 'Bank Holiday', countdown: true, priority: 5, state: 'approved', by: 'u1' },
 ];
+
+// ---- 顶栏样式(节日主题):默认 = 主题里现在的配色;其他按时间或跟随活动自动换 ----
+const tbstyles = [
+  { id: 's0', name: '默认样式', isDefault: true, bg: topbarStyle.bg, color: topbarStyle.color, accent: '#fcc900', effect: 'none', decoLeft: '', decoRight: '',
+    start: null, end: null, state: 'approved', by: 'u1', priority: 0 },
+  { id: 's1', name: 'Black Friday', bg: '#0b0b0b', color: '#ffd400', accent: '#ffffff', effect: 'sparkle', decoLeft: '⚡', decoRight: '⚡',
+    campaign: 'c4', start: null, end: null, state: 'approved', by: 'u1', priority: 20 },
+  { id: 's2', name: '圣诞节', bg: '#9b1c1c', color: '#ffffff', accent: '#f5d06f', effect: 'snow', decoLeft: '🎄', decoRight: '🎅',
+    start: '2026-12-01', end: '2026-12-27', state: 'approved', by: 'u1', priority: 10 },
+  { id: 's3', name: '新年', bg: '#1b2a4a', color: '#ffffff', accent: '#f5d06f', effect: 'confetti', decoLeft: '🎉', decoRight: '',
+    start: '2026-12-31', end: '2027-01-03', state: 'draft', by: 'u2', priority: 10 },
+];
+
 // 挂到活动下、跟随活动时间的 Banner
 const vespid = banners.find((b) => /vespid prime sale/i.test(b.title));
 if (vespid) Object.assign(vespid, { campaign: 'c3', start: null, end: null });
@@ -141,9 +169,10 @@ const seed = {
   ],
   me: 'u1',
   site: { slide: slideStyle, topbar: topbarStyle },
-  collections, products,
-  tagSuggestions: ['autumn-sale', 'black-friday', 'gift', 'clearance', 'DZOFILM', 'Anamorphic', 'cat:cine-lens', 'fit:sony-e'],
-  banners, topbar, campaigns,
+  store: { handle: 'cinegearpro', domain: 'https://www.cinegearpro.co.uk' },
+  catalogFetchedAt: cat?.fetchedAt || null,
+  collections, products, tagCounts,
+  banners, topbar, tbstyles, campaigns,
   log: [
     { at: -0.5, action: 'down', kind: 'banner', title: 'Spring Bank Holiday Deals', note: '到期自动下线' },
     { at: -1.2, action: 'up', kind: 'topbar', title: 'Free UK Delivery', note: '长期显示' },
@@ -152,7 +181,7 @@ const seed = {
   ],
   settings: {
     larkWebhook: '',
-    notify: { submit: true, decision: true, dayBefore: true, upDown: true, unapproved: true, failure: true },
+    notify: { submit: true, decision: true, dayBefore: true, endingSoon: true, upDown: true, unapproved: true, failure: true },
   },
 };
 
