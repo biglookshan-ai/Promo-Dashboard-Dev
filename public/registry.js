@@ -63,18 +63,26 @@ function typeIcon(t = '') {
 }
 
 // ---- 板块切换 ----
+// 所有板块(排期 + 工具)共用这一个切换函数;schedule.js 也调用它。
+const TOOL_SECTIONS = ['metafields', 'metaobjects', 'promo', 'detail'];
+let registryLoaded = false;
+function ensureRegistry() { if (registryLoaded) return; registryLoaded = true; loadRegistry(false); }
 function showSection(name) {
   $$('.section').forEach((p) => p.classList.toggle('is-active', p.id === 'section-' + name));
-  $$('#modnav .modnav__item').forEach((b) => b.classList.toggle('is-active', b.dataset.section === name));
+  // 主导航:「工具」一项代表一组板块(data-group)
+  $$('#modnav .modnav__item').forEach((b) =>
+    b.classList.toggle('is-active', (b.dataset.group || b.dataset.section).split(' ').includes(name)));
+  const inTools = TOOL_SECTIONS.includes(name);
+  $('#toolnav').hidden = !inTools;
+  $('#reg-status').hidden = !inTools || name === 'promo';
+  $$('#toolnav .toolnav__item').forEach((b) => b.classList.toggle('is-active', b.dataset.section === name));
+  if (name === 'metafields' || name === 'metaobjects') ensureRegistry(); // 工具按需加载,打开 app 不打 API
+  if (name === 'promo') window.loadPromoOnce();
   if (name !== 'detail') lastModule = name;
   window.scrollTo(0, 0);
 }
-$$('#modnav .modnav__item').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const s = btn.dataset.section;
-    showSection(s);
-    if (s === 'promo') window.loadPromoOnce();
-  });
+$$('#modnav .modnav__item, #toolnav .toolnav__item').forEach((btn) => {
+  btn.addEventListener('click', () => showSection(btn.dataset.section));
 });
 $('#detail-back').addEventListener('click', () => showSection(lastModule));
 
@@ -504,4 +512,4 @@ $('#reg-refresh').addEventListener('click', () => loadRegistry(true));
 ['#mo-search', '#mo-source', '#mo-usage', '#mo-size'].forEach((s) =>
   $(s).addEventListener('input', () => { state.metaobjects.page = 1; markActiveStats(); if (REG) renderMetaobjects(); }));
 
-loadRegistry(false);
+// 不再在打开 app 时加载 —— 切到「工具」才加载(见 ensureRegistry)

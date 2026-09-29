@@ -56,6 +56,8 @@
 
 ### 关键
 
+- **排期界面目前是演示模式**(`public/schedule.js`):数据来自 `public/demo-seed.json`,状态只存浏览器 localStorage,**没有任何写接口**。阶段 1b 接真实数据时只换 `load()` / `save()` 和各动作的数据层,界面不动。本地看界面:`node scripts/demo-preview.mjs`(去掉 App Bridge,端口 4790)。
+- 后台跑在 Shopify 后台的 iframe 里:**别用 `prompt()` / `confirm()` / `alert()`**(跨域 iframe 可能被浏览器拦截),用页面内输入框和「再点一次确认」。
 - **计数不用扫全站**:`metafieldsCount` / `metaobjectsCount` 由 API 直接给,总账秒出。只有促销盘点那套才需要扫 3938 个产品(所以它改成切到标签页才懒加载)。
 - **Metafield 查不到「哪个 app 创建」** —— Shopify 没这个字段。归属只能靠三条线索:命名空间推断 + 主题扫描(`read_themes`,最硬证据)+ 人工标注(`src/annotations.js`,存 DATA_DIR)。
 - **Metaobject 可以** —— `MetaobjectDefinition.createdByApp` / `createdByStaff` 直接给。
