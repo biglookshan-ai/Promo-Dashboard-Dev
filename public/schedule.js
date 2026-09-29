@@ -809,7 +809,8 @@
     const N = S.settings.notify;
     const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
     $('#st-root').innerHTML = `
-      ${pageHead('设置', '成员与审核、飞书通知、定时器和操作日志')}
+      ${pageHead('设置', '店铺连接、成员与审核、飞书通知、定时器和操作日志')}
+      <section class="panel conn" id="st-conn"><div class="panel__h"><h3>店铺连接(正式数据)</h3><span class="tag tag--accent">阶段 1a</span></div><p class="muted">检查中…</p></section>
       <div class="stgrid">
         <section class="panel">
           <div class="panel__h"><h3>当前身份</h3><span class="tag tag--warn">演示用</span></div>
@@ -854,6 +855,59 @@
     $$('[data-notify]').forEach((c) => c.addEventListener('change', () => { N[c.dataset.notify] = c.checked; save(); }));
     $('#st-hook').addEventListener('change', (e) => { S.settings.larkWebhook = e.target.value.trim(); save(); toast('已保存 Webhook 地址(演示)'); });
     $('#st-test').addEventListener('click', () => toast('演示模式:不会真的发送。正式版会往飞书群发一条测试消息。'));
+    renderConn();
+  }
+
+  // ---- 店铺连接(真实接口):权限 / 4 个内容类型 / 定时器 ----
+  // 只有在 Shopify 后台里打开才有 session token;本地预览会提示。
+  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式' };
+  let connCache = null;
+  async function renderConn(force) {
+    const box = $('#st-conn'); if (!box) return;
+    const head = '<div class="panel__h"><h3>店铺连接(正式数据)</h3><span class="tag tag--accent">阶段 1a</span></div>';
+    let st = !force && connCache;
+    if (!st) {
+      try { st = connCache = await api('GET', '/api/schedule/status'); }
+      catch (e) {
+        box.innerHTML = `${head}<p class="muted">${/后台里打开/.test(e.message) ? '本地预览连不到店铺。在 Shopify 后台里打开这个 app,这里会显示权限、内容类型和定时器的真实状态。' : `读取失败:${esc(e.message)}`}</p>
+          ${/后台里打开/.test(e.message) ? '' : '<button class="btn btn-sm" data-conn="retry" type="button">重试</button>'}`;
+        box.querySelector('[data-conn=retry]')?.addEventListener('click', () => renderConn(true));
+        return;
+      }
+    }
+    const ok = (b) => (b ? '<span class="ok">✓</span>' : '<span class="no">✗</span>');
+    const missingDefs = st.definitions.filter((d) => !d.exists);
+    const canSetup = !st.missingScopes.length && missingDefs.length;
+    box.innerHTML = `${head}
+      <div class="conn__grid">
+        <div><div class="conn__k">1. 权限</div>
+          ${st.requiredScopes.map((s) => `<div class="conn__r">${ok(!st.missingScopes.includes(s))}<span class="mono">${s}</span></div>`).join('')}
+          ${st.missingScopes.length ? `<div class="note note--warn">还缺 ${st.missingScopes.length} 个权限。在 Partner 后台 → 应用「Promo Dashboard Dev」→ 配置 → 访问权限里加上,发布新版本,再回店铺后台打开这个 app 点同意。
+            <button class="btn btn-sm" data-conn="reconnect" type="button">已同意,重新检查</button></div>` : ''}</div>
+        <div><div class="conn__k">2. 店里的内容类型</div>
+          ${st.definitions.map((d) => `<div class="conn__r">${ok(d.exists)}<span>${DEF_CN[d.type] || d.type}</span><span class="mono muted">${d.type}</span>${d.exists ? `<span class="muted">${d.entries} 条</span>` : ''}</div>`).join('')}
+          ${missingDefs.length ? `<p class="muted">点下面的按钮在店里建好 ${missingDefs.length} 个空的内容类型。<b>前台不会读取它们,顾客看不到任何变化</b>;要等主题改造(阶段 1d)发布后才会用上。可以重复点,已建的会跳过。</p>
+            <button class="btn btn-sm btn-primary" data-conn="setup" type="button" ${canSetup ? '' : 'disabled'}>在店里创建内容类型</button>${st.missingScopes.length ? '<span class="muted"> 先补齐权限</span>' : ''}` : '<p class="muted">都建好了。</p>'}</div>
+        <div><div class="conn__k">3. 定时器</div>
+          <div class="conn__r">${ok(st.scheduler.running)}<span>${st.scheduler.running ? `运行中 · 每 ${st.scheduler.intervalSec} 秒检查一次` : '没有运行'}</span></div>
+          <div class="conn__r"><span class="muted">上次检查</span><span>${st.scheduler.lastRun ? fDT(st.scheduler.lastRun) : '还没有需要检查的内容'}</span></div>
+          ${st.scheduler.lastError ? `<div class="note note--danger">上次出错:${esc(st.scheduler.lastError)}</div>` : ''}
+          <p class="muted">现在店里还没有排期内容,定时器空转;阶段 1b 把界面接上真实数据后开始工作。</p></div>
+      </div>`;
+    box.querySelector('[data-conn=reconnect]')?.addEventListener('click', async () => {
+      try { await api('POST', '/api/reconnect'); } catch (e) { /* 忽略,下面重新检查 */ }
+      renderConn(true);
+    });
+    box.querySelector('[data-conn=setup]')?.addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认创建'; return; }
+      b.disabled = true; b.textContent = '创建中…';
+      try {
+        const r = await api('POST', '/api/schedule/setup', { by: me().name });
+        toast(r.errors.length ? `建好 ${r.created.length} 个,失败 ${r.errors.length} 个:${r.errors[0].message}` : `已建好 ${r.created.length} 个内容类型`, !r.errors.length);
+      } catch (err) { toast('创建失败:' + err.message, false); }
+      renderConn(true);
+    });
   }
 
   // ================= 编辑抽屉 =================

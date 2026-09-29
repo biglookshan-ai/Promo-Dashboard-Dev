@@ -34,7 +34,7 @@
 
 **定位**:**全站内容排期与监控系统**(2026-09-29 起的新方向,设计真源见 **`PLAN.md`**)。
 顶栏 / 首页 Banner / 产品页徽章与倒计时等要定期更新的内容,在这里统一编排、排期、查看,到点自动上线、到期全站自动消失。
-**已部署在 Railway 并在 Shopify 后台可用**;目前已上线的部分**全部只读、零 mutation**(排期功能尚未开发)。
+**已部署在 Railway 并在 Shopify 后台可用**。排期界面目前是演示模式;阶段 1a 起有两类写操作:建 4 个内容类型(用户点按钮)、定时器切 ACTIVE/DRAFT(只动 app 自己建的 `cgp_*` 条目)。
 
 现有板块(保留为「工具」):
 1. **元数据总账**:所有自定义 metafield / metaobject 定义 —— 数据量、来源归属、主题哪个文件在读、人工用途备注。
@@ -57,6 +57,8 @@
 
 ### 关键
 
+- **阶段 1a 服务端**:`src/schedule-core.js`(上下线规则,纯函数;前端 `public/schedule.js` 的 `status()/win()` 是同一套,**改一处要同步另一处**)、`src/schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`)、`src/metaobjects.js`(4 个内容类型定义 + 切 ACTIVE/DRAFT)、`src/scheduler.js`(每分钟对齐,`SCHEDULER_DISABLED=1` 可关)。改这些先跑 `npm test`。
+- **建内容类型只能由用户在「设置 → 店铺连接」点按钮触发**,别在部署 / 启动时自动建。
 - **排期界面目前是演示模式**(`public/schedule.js`):数据来自 `public/demo-seed.json`,状态只存浏览器 localStorage,**没有任何写接口**。阶段 1b 接真实数据时只换 `load()` / `save()` 和各动作的数据层,界面不动。本地看界面:`node scripts/demo-preview.mjs`(去掉 App Bridge,端口 4790)。
 - 后台跑在 Shopify 后台的 iframe 里:**别用 `prompt()` / `confirm()` / `alert()`**(跨域 iframe 可能被浏览器拦截),用页面内输入框和「再点一次确认」。
 - **计数不用扫全站**:`metafieldsCount` / `metaobjectsCount` 由 API 直接给,总账秒出。只有促销盘点那套才需要扫 3938 个产品(所以它改成切到标签页才懒加载)。
@@ -79,6 +81,6 @@
 
 ### ⛔ 注意
 
-- 还没有任何写操作(标注只写本地 JSON,不回写 Shopify)。加 mutation 前先确认设计。
+- 写操作只限:建 `cgp_*` 内容类型、写 / 切换 `cgp_*` 条目、上传 Banner 图片。**别碰产品、主题、别的 app 的数据**;新增任何其他 mutation 前先和用户确认设计。
 - 主题扫描**只读**,绝不改主题文件。
 - Railway 的 App URL 必须是公网域名(`*.up.railway.app`),别填 `*.railway.internal`(内网,Shopify 解析不到)。

@@ -10,6 +10,9 @@ import { buildRegistry } from './registry.js';
 import { scanTheme } from './theme-scan.js';
 import { getAll as getAnnotations, setOne as setAnnotation } from './annotations.js';
 import { resourcesWithMetafield, metaobjectEntriesWithRefs } from './drilldown.js';
+import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQUIRED_SCOPES } from './metaobjects.js';
+import { startScheduler, schedulerInfo } from './scheduler.js';
+import { load as loadSchedule, update as updateSchedule, appendLog } from './schedule-store.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -118,6 +121,32 @@ api.put('/annotations', wrap(async (req) => {
 
 api.post('/reconnect', wrap(async (req) => { clearToken(req.ctx.shop); return { ok: true }; }));
 
+// ---- 排期系统 · 阶段 1a:店铺连接状态 + 建内容类型 ----
+// 状态:权限够不够、4 个内容类型建了没有、定时器在不在跑。只读。
+api.get('/schedule/status', wrap(async (req) => {
+  const granted = await grantedScopes(req.ctx);
+  const missing = missingScopes(granted);
+  const definitions = await definitionStatus(req.ctx);
+  const st = loadSchedule(req.ctx.shop);
+  return {
+    shop: req.ctx.shop, requiredScopes: REQUIRED_SCOPES, missingScopes: missing,
+    definitions, scheduler: schedulerInfo(req.ctx.shop),
+    items: Object.fromEntries(Object.entries(st.items).map(([k, v]) => [k, v.length])),
+  };
+}));
+// 建内容类型:第一次写店铺,只在用户在「设置」里点按钮时执行;已存在的跳过,可以重复点。
+api.post('/schedule/setup', wrap(async (req) => {
+  const missing = missingScopes(await grantedScopes(req.ctx));
+  if (missing.length) throw new Error(`还缺权限:${missing.join(', ')}。请先在应用配置里加上并在店铺里同意。`);
+  const r = await ensureDefinitions(req.ctx);
+  updateSchedule(req.ctx.shop, (s) => appendLog(s, {
+    action: 'setup', kind: 'system', title: '建内容类型',
+    note: `新建 ${r.created.length} 个${r.existing.length ? `,已存在 ${r.existing.length} 个` : ''}${r.errors.length ? `,失败 ${r.errors.length} 个` : ''}`,
+    by: req.body?.by || '审核人',
+  }));
+  return { ...r, definitions: await definitionStatus(req.ctx) };
+}));
+
 app.use('/api', api);
 
 // SPA fallback for App Bridge nav links.
@@ -125,3 +154,4 @@ app.get(/^\/(?!api(?:\/|$)).*/, sendIndex);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`promo-manager (embedded) on :${PORT}`));
+startScheduler();

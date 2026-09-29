@@ -145,25 +145,38 @@ lark-ops 是本地工具(用你个人的飞书登录 token,存在本机),没有�
 |---|---|
 | image | file_reference(图片) |
 | title / subtitle / description | text |
-| button1_text / button1_url / button2_text / button2_url | text / url |
+| button1_text / button1_url / button2_text / button2_url | single_line_text(存站内路径 `/collections/…`,`shopify://` 链接导入时转换) |
 | tag | 选项 `none / new / sale / event` —— 既是 Banner 上的角标,也是后台的「类型」筛选 |
+| position | number_integer —— 轮播位置,数字小的在前;已排期的也有位置,上线时按它插进去 |
 | campaign | metaobject_reference → cgp_campaign(可选) |
-| starts_at / ends_at | date_time(可选,优先于活动) |
-| priority | number_integer |
+| starts_at / ends_at | date_time(仅记录;上下线靠 publishable 状态) |
 
 **`cgp_topbar_message` 顶栏公告**
 | 字段 | 类型 |
 |---|---|
-| emoji / text | single_line_text |
-| link | url |
-| category | 选项 `公告 / 促销 / 新品 / 服务 / 节日`(只用于后台筛选和时间轴配色,前台不显示) |
+| emoji / text / link | single_line_text |
+| position | number_integer —— 轮播顺序 |
 | campaign | metaobject_reference → cgp_campaign(可选) |
-| starts_at / ends_at | date_time(可选) |
-| priority | number_integer |
+| starts_at / ends_at | date_time(仅记录) |
+(分类 `公告 / 促销 / 新品 / 服务 / 节日` 只在 app 里用于筛选,不进 Shopify)
 
-### app 数据库(Railway Postgres)
-草稿 / 待审核改动、审核记录(谁、何时、意见)、暂停开关、员工显示名与审核人名单、定时器操作日志、飞书 webhook 配置。
-JSON 文件扛不住多人同时编辑和审计,所以这期起上 Postgres(search-panel-dev 已有同样的用法可参考)。
+**`cgp_topbar_style` 顶栏样式(节日主题)**(2026-09-29 用户新增需求:圣诞等节日顶栏外观不一样)
+| 字段 | 类型 |
+|---|---|
+| name | single_line_text |
+| background / text_color / accent_color | color |
+| effect | 选项 `none / snow / sparkle / confetti`(飘雪 / 闪光 / 彩带,纯 CSS 轻动画,只在顶栏里) |
+| deco_left / deco_right | single_line_text(公告前后的装饰 emoji) |
+| priority | number_integer —— 时间重叠时大的生效 |
+| is_default | boolean —— 默认样式永远 ACTIVE,没有其他样式生效时用它 |
+| campaign / starts_at / ends_at | 同上 |
+公告和样式分开管:公告决定说什么,样式决定长什么样;样式到点自动换装,结束回默认。
+
+### app 数据(Railway 数据卷上的 JSON,`src/schedule-store.js`)
+草稿 / 待审核改动、审核记录(谁、何时、意见)、暂停开关、员工显示名与审核人名单、定时器操作日志、飞书 webhook 配置、待审核的轮播顺序。
+**2026-09-29 决定:先不上 Postgres**,用已经挂好的 `/data` 数据卷存每个店铺一个 JSON(先写临时文件再改名,不会写坏)。
+理由:内容量只有几十到几百条、单个服务进程、编辑人数少;省掉一个要用户去 Railway 配的服务。
+存取都收在 `schedule-store.js` 里,以后要多实例或量大了再换 Postgres,只换这一个文件。
 
 ---
 
@@ -215,14 +228,14 @@ JSON 文件扛不住多人同时编辑和审计,所以这期起上 Postgres(sear
 - **工具**:元数据总账、促销盘点(现有功能)
 - **设置**:审核人、员工显示名、飞书 webhook、操作日志
 
-技术栈沿用 Express + 原生 JS + App Bridge,Railway 托管,新增 Postgres。
+技术栈沿用 Express + 原生 JS + App Bridge,Railway 托管,数据存已有的 `/data` 数据卷(见上)。
 
 ### 需要新增的权限
 | 权限 | 用途 |
 |---|---|
 | `write_metaobject_definitions` | 创建三个定义 |
 | `write_metaobjects` | 建/改条目、切上线状态 |
-| `read_files` / `write_files` | 上传 Banner 图片 |
+| `write_files`(含 read) | 上传 Banner 图片 |
 
 **不需要** `write_products`、**不需要** `write_themes`。
 
@@ -235,8 +248,10 @@ JSON 文件扛不住多人同时编辑和审计,所以这期起上 Postgres(sear
   ⚠️ 不要在主工作区拉:FAQ 项目有未提交改动(含 `main-product.liquid`),会被覆盖。
 - 把产品页 11 个 custom_liquid 块抽成正式文件,外观零变化,在复制主题上对比确认。
 
-### 阶段 1a · 数据层 + 定时器
-- 加权限 → 建 Postgres → 建三个 metaobject 定义 → 定时器 + 操作日志
+### 阶段 1a · 数据层 + 定时器 ✅ 代码完成(2026-09-29)
+- 加权限 → 数据存 `/data` 卷 → 建 **4 个** metaobject 定义(活动 / Banner / 顶栏公告 / 顶栏样式)→ 定时器 + 操作日志
+- 建定义由用户在「设置 → 店铺连接」里点按钮触发(第一次写店铺由用户自己按);已存在的跳过
+- 定时器 `src/scheduler.js`:每分钟按当前时间对齐每条内容的 ACTIVE/DRAFT,启动后先补跑一次;22 个自动化测试(`npm test`)覆盖上线 / 下线 / 跟随活动 / 暂停 / 宕机补跑 / 出错重试
 - 可直接在正式店做:新类型的数据在主题改造上线前**不会被任何页面读取**,零影响
 - **首次写操作上线前再征得用户同意**
 

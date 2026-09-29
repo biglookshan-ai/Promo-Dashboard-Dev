@@ -11,8 +11,8 @@
 ## Partner app 配置（Promo Dashboard Dev）
 - **embedded: true**，Use legacy install flow: **false**（managed install）
 - **App URL**: `https://<railway-url>`（先部署再回填，别留 example.com）
-- **Scopes**: `read_products, read_metaobjects, read_metaobject_definitions`
-  （之后做迁移/同步再加 `write_metaobjects, write_products`）
+- **Scopes**: `read_products, read_metaobjects, read_metaobject_definitions, read_themes`
+  + 排期系统(阶段 1a 起):`write_metaobject_definitions, write_metaobjects, write_files`(不需要 write_products / write_themes)
 - **Distribution → Custom distribution** → cinegearpro 店铺 → install。
 
 ## 部署（Railway）

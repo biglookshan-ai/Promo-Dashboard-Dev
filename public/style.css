@@ -695,3 +695,14 @@ textarea.inp { resize: vertical; }
 .rvord__n { position: absolute; top: -6px; left: -6px; z-index: 5; background: var(--text); color: #fff; font-size: 10.5px; font-weight: 700; border-radius: 9px; min-width: 18px; height: 18px; display: grid; place-items: center; }
 .rvord__tb { font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
 .rv__bar { width: 420px; flex: none; }
+
+/* 店铺连接(阶段 1a) */
+.conn { border-color: #d5dcff; }
+.conn__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.conn__k { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.conn__r { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; flex-wrap: wrap; }
+.conn__r .muted { margin: 0; font-size: 12px; }
+.conn .ok { color: var(--ok); font-weight: 700; }
+.conn .no { color: var(--danger); font-weight: 700; }
+.conn .note { margin: 8px 0 0; }
+.conn .note .btn { margin-top: 6px; }
