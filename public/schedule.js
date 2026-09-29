@@ -4,7 +4,7 @@
 // 用到 app.js / registry.js 的全局:$ $$ esc toast showSection。整个文件包在 IIFE 里,
 // 避免和 registry.js 的顶层 const(svg / ICONS …)重名。
 (() => {
-  const DEMO_KEY = 'cgp-schedule-demo-v1';
+  const DEMO_KEY = 'cgp-schedule-demo-v2'; // 数据结构变了就升版本,旧的演示数据自动作废
   const DAY = 86400000;
   const TZ = 'Europe/London';
   let S = null;
@@ -131,16 +131,88 @@
     left: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
     right: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
   };
-  const TAG = { new: 'NEW', sale: 'SALE', event: 'EVENT', none: '' };
   const TAGCN = { new: '新品', sale: '促销', event: '活动', none: '无角标' };
   const thumb = (url, w = 600) => (url ? `${url}${url.includes('?') ? '&' : '?'}width=${w}` : '');
   const kindChip = (k) => `<span class="kchip kchip--${k}">${KIND[k]}</span>`;
   const empty = (msg) => `<div class="empty"><div>${esc(msg)}</div></div>`;
   const pageHead = (title, sub, actions = '') =>
     `<div class="phead"><div><h2>${esc(title)}</h2><p class="muted">${sub}</p></div><div class="phead__act">${actions}</div></div>`;
+  const RANK = { live: 0, pending: 1, waiting: 1, scheduled: 2, draft: 3, rejected: 3, paused: 4, ended: 5 };
+  const byStatusThenOrder = (a, b) => RANK[status(a)] - RANK[status(b)] || a.order - b.order;
+  // 状态页签:上线中放第一、默认选中;「全部」放最后
+  const TABS = [['live', '上线中'], ['scheduled', '已排期'], ['pending', '待审核'], ['draft', '草稿'], ['paused', '已暂停'], ['ended', '已结束'], ['', '全部']];
+  // 「待审核」也包括:等活动批准的、以及已上线但有修改在等审核的(线上照常显示)
+  const inTab = (x, st) => !st || status(x) === st || (st === 'pending' && (status(x) === 'waiting' || !!x.pendingChange)) || (st === 'draft' && status(x) === 'rejected');
+  const tabsHtml = (list, cur) => TABS.map(([k, l]) => {
+    const n = list.filter((x) => inTab(x, k)).length;
+    if (k === 'paused' && !n) return '';
+    return `<button class="ftab ${cur === k ? 'is-active' : ''}" data-st="${k}" type="button">${l}<span>${n}</span></button>`;
+  }).join('');
+
+  // ---- 前台同款样式:把主题里的真实尺寸 / 字号 / 颜色换算成 CSS 变量 ----
+  // Banner 卡片用 container query(cqw)按宽度等比缩放,所以缩略图、预览、审核页里看到的比例和字号关系都和首页一致
+  function applySiteStyle() {
+    const s = S.site.slide, t = S.site.topbar, r = document.documentElement.style;
+    const cq = (px) => `${(px / s.w) * 100}cqw`;
+    Object.entries({
+      '--sl-ar': `${s.w} / ${s.h}`, '--sl-rx': `${(s.radius / s.w) * 100}%`, '--sl-ry': `${(s.radius / s.h) * 100}%`, '--sl-bg': s.bg,
+      '--sl-title': cq(s.titleSize), '--sl-title-mb': cq(10), '--sl-sub': cq(s.subtitleSize), '--sl-sub-mb': cq(15),
+      '--sl-desc': cq(s.descSize), '--sl-desc-mb': cq(20), '--sl-title-c': s.titleColor, '--sl-sub-c': s.subtitleColor, '--sl-desc-c': s.descColor,
+      '--sl-btn': cq(s.btnSize), '--sl-btn-pv': cq(s.btnPadV), '--sl-btn-ph': cq(s.btnPadH), '--sl-btn-gap': cq(s.btnGap), '--sl-btn-r': cq(s.btnRadius), '--sl-btn-bw': cq(1),
+      '--sl-b1-bg': s.btn1.bg, '--sl-b1-c': s.btn1.color, '--sl-b1-bd': s.btn1.border, '--sl-b2-bg': s.btn2.bg, '--sl-b2-c': s.btn2.color, '--sl-b2-bd': s.btn2.border,
+      '--sl-tag': cq(14), '--sl-tag-top': cq(s.tagTop), '--sl-tag-left': cq(s.tagLeft), '--sl-tag-r': cq(s.tagRadius), '--sl-tag-pv': cq(2), '--sl-tag-ph': cq(8),
+      '--tb-bg': t.bg, '--tb-c': t.color, '--tb-fs': `${t.fontSize}px`, '--tb-pv': `${t.padV}px`,
+    }).forEach(([k, v]) => r.setProperty(k, v));
+  }
+  function slideHtml(b, { w = 600, cls = '' } = {}) {
+    const tg = S.site.slide.tags[b.tag];
+    return `<span class="slide ${cls}">
+      <span class="slide__img" ${b.image ? `style="background-image:url('${esc(thumb(b.image, w))}')"` : ''}>${b.image ? '' : '<span class="slide__noimg">选一张图片</span>'}</span>
+      ${tg ? `<span class="slide__tag" style="background:${tg.bg};color:${tg.color}">${esc(tg.text)}</span>` : ''}
+      <span class="slide__c">
+        ${b.title ? `<span class="slide__title">${esc(b.title)}</span>` : ''}
+        ${b.subtitle ? `<span class="slide__sub">${esc(b.subtitle)}</span>` : ''}
+        ${b.description ? `<span class="slide__desc">${esc(b.description)}</span>` : ''}
+        ${b.button1_text || b.button2_text ? `<span class="slide__btns">${b.button1_text ? `<span class="slide__btn slide__btn--1">${esc(b.button1_text)}</span>` : ''}${b.button2_text ? `<span class="slide__btn slide__btn--2">${esc(b.button2_text)}</span>` : ''}</span>` : ''}
+      </span>
+    </span>`;
+  }
+  // 顶栏:主题里正在用的那套 Top Bar 的底色 / 字号(左边社交图标、右边语言货币,中间轮播公告)
+  const topbarHtml = (msg, id = '') => `<div class="tbar">
+      <span class="tbar__side"><i></i><i></i><i></i></span>
+      <span class="tbar__msg" ${id ? `id="${id}"` : ''}>${msg}</span>
+      <span class="tbar__side tbar__side--r">Language/Currency</span>
+    </div>`;
 
   // ================= 总览 =================
-  let ovOnlyActive = true;
+  const ov = { zoom: 'month', offset: 0, kinds: { campaign: true, banner: true, topbar: true }, onlyActive: true };
+  const ymd = (ms) => toInput(ms).slice(0, 10).split('-').map(Number);
+  const at0 = (y, m, d) => fromInput(new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) + 'T00:00'); // 月 / 日溢出自动进位
+  // 时间轴窗口(以今天为锚,今天总在靠左的位置,方便往后看):
+  //   周 = 本周一起 7 天(按天);月 = 上周一起 5 周(按周);季度 = 本月 1 号起 3 个月(按月)。左右箭头按一个周期翻
+  function viewRange() {
+    const [y, m, d] = ymd(now()); const k = ov.offset; const lines = [];
+    const mon = d - ((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7);
+    const md = (ms) => fmt(ms, { month: 'numeric', day: 'numeric' });
+    if (ov.zoom === 'week') {
+      const s0 = mon + 7 * k;
+      for (let i = 0; i <= 7; i++) lines.push({ at: at0(y, m, s0 + i), major: true, label: i < 7 ? fmt(at0(y, m, s0 + i), { weekday: 'short', month: 'numeric', day: 'numeric' }) : '', mid: true });
+      const s = at0(y, m, s0), e = at0(y, m, s0 + 7);
+      return { s, e, lines, title: `${md(s)} – ${md(e - 1)}` };
+    }
+    if (ov.zoom === 'month') {
+      const s0 = mon - 7 + 28 * k;
+      for (let i = 0; i <= 35; i++) lines.push({ at: at0(y, m, s0 + i), major: i % 7 === 0, label: i % 7 === 0 && i < 35 ? md(at0(y, m, s0 + i)) : '' });
+      const s = at0(y, m, s0), e = at0(y, m, s0 + 35);
+      return { s, e, lines, title: `${md(s)} – ${md(e - 1)}` };
+    }
+    const m0 = m + 3 * k; const s = at0(y, m0, 1), e = at0(y, m0 + 3, 1);
+    for (let i = 0; i < 3; i++) lines.push({ at: at0(y, m0 + i, 1), major: true, label: `${ymd(at0(y, m0 + i, 1))[1]} 月`, mid: true, end: at0(y, m0 + i + 1, 1) });
+    for (let t = s, i = 1; t < e; t = at0(ymd(s)[0], ymd(s)[1], 1 + i * 7), i++) if (t > s) lines.push({ at: t, major: false, label: '' });
+    const [ys, ms] = ymd(s), [ye, me] = ymd(e - 1);
+    return { s, e, lines, title: ys === ye ? `${ys} 年 ${ms}–${me} 月` : `${ys} 年 ${ms} 月 – ${ye} 年 ${me} 月` };
+  }
+
   function renderOverview() {
     const items = all(); const t = now(); const in7 = t + 7 * DAY;
     const liveN = items.filter((x) => status(x) === 'live').length;
@@ -149,7 +221,45 @@
     const pendN = pendingList().length;
     const stat = (n, l, tone, go) => `<button class="stat ${tone}" data-go="${go}" type="button"><div class="stat__n">${n}</div><div class="stat__l">${l}</div></button>`;
 
-    // 接下来 14 天的上线 / 下线
+    // ---- 时间轴 ----
+    const R = viewRange(); const span = R.e - R.s;
+    const pct = (ms) => ((Math.min(Math.max(ms, R.s), R.e) - R.s) / span) * 100;
+    const showToday = t >= R.s && t < R.e;
+    // 刻度文字离「今天」太近就不显示,免得叠在一起
+    const head = R.lines.filter((l) => l.label && !(showToday && !l.mid && Math.abs(pct(l.at) - pct(t)) < 4)).map((l) => {
+      const left = l.mid ? (pct(l.at) + pct(l.end ?? l.at + DAY)) / 2 : pct(l.at);
+      return `<span class="gt__tick ${l.mid ? 'gt__tick--mid' : ''}" style="left:${left}%">${l.label}</span>`;
+    }).join('');
+    const grid = R.lines.map((l) => `<i class="${l.major ? 'is-major' : ''}" style="left:${pct(l.at)}%"></i>`).join('')
+      + (showToday ? `<i class="is-today" style="left:${pct(t)}%"></i>` : '');
+    const keep = (x) => {
+      const s = status(x);
+      if (x.state === 'draft' || x.state === 'new') return false;
+      if (ov.onlyActive && !['live', 'scheduled', 'pending', 'waiting', 'paused'].includes(s)) return false;
+      const w = win(x); const a = w.start ?? -Infinity, b = w.end ?? Infinity;
+      return b > R.s && a < R.e;
+    };
+    const group = (kind, name, list) => {
+      if (!ov.kinds[kind]) return '';
+      const rows = list.filter(keep).sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0)).map((x) => {
+        const w = win(x); const s = status(x);
+        const a = w.start ?? R.s, b = w.end ?? R.e;
+        const L = pct(a), W = Math.max(pct(b) - L, 0.6);
+        const txt = `${w.start != null ? fmt(w.start, { month: 'numeric', day: 'numeric' }) : '长期'} → ${w.end != null ? fmt(w.end, { month: 'numeric', day: 'numeric' }) : '长期'}`;
+        const sub = kind === 'campaign' ? `<span class="gt__sub">${campScope(x, true)}</span>` : w.via ? `<span class="gt__sub">跟随 ${esc(w.via.name)}</span>` : '';
+        return `<button class="gt__row" data-open="${x.id}" type="button">
+          <span class="gt__label"><span class="gt__name">${esc(titleOf(x))}</span>${sub}</span>
+          <span class="gt__track"><span class="gt__bar gt__bar--${s} ${kind === 'campaign' ? 'gt__bar--camp' : ''} ${w.start != null && w.start < R.s ? 'is-cut-l' : ''} ${w.end == null || w.end > R.e ? 'is-cut-r' : ''}"
+            style="left:${L}%;width:${W}%" title="${esc(titleOf(x))} · ${ST[s]} · ${txt}"><span class="gt__bartxt">${txt}</span></span></span>
+        </button>`;
+      }).join('');
+      return rows ? `<div class="gt__group gt__group--${kind}">${name}</div>${rows}` : '';
+    };
+    const gantt = group('campaign', '促销活动', S.campaigns) + group('banner', 'Banner', S.banners) + group('topbar', '顶栏公告', S.topbar);
+    const kcnt = (list) => list.filter(keep).length;
+    const kchip = (k, label, list) => `<button class="fchip ${ov.kinds[k] ? 'is-active' : ''}" data-kind="${k}" type="button">${label} ${kcnt(list)}</button>`;
+
+    // ---- 接下来 14 天(按天分组)----
     const ev = [];
     items.forEach((x) => {
       if (x.state === 'draft' || x.state === 'new' || x.state === 'rejected') return;
@@ -157,42 +267,18 @@
       const add = (at, type) => { if (at != null && at > t && at <= t + 14 * DAY) ev.push({ at, type, x, s }); };
       add(w.start, 'up'); add(w.end, 'down');
     });
-    ev.sort((a, b) => a.at - b.at);
-    const evHtml = ev.length ? ev.map((e) => {
-      const warn = e.s === 'pending' || e.s === 'waiting'
-        ? `<span class="tag tag--warn">${e.s === 'pending' ? '还没批准,到点不会上线' : '所属活动还没批准'}</span>` : '';
-      return `<button class="evrow" data-open="${e.x.id}" type="button">
-        <span class="evrow__when"><b>${relDay(e.at)}</b><span>${fDT(e.at)}</span></span>
-        <span class="evrow__act evrow__act--${e.type}">${e.type === 'up' ? I.up + '上线' : I.down + '下线'}</span>
-        ${kindChip(e.x.kind)}<span class="evrow__t">${esc(titleOf(e.x))}</span>${warn}
-      </button>`;
-    }).join('') : empty('接下来 14 天没有上线 / 下线变化');
-
-    // 时间轴(甘特图):今天前 10 天 ~ 后 50 天
-    const D0 = dayStart(-10), D1 = dayStart(50), span = D1 - D0;
-    const pct = (ms) => ((Math.min(Math.max(ms, D0), D1) - D0) / span) * 100;
-    const ticks = [];
-    // 以今天为基准每周一格,今天的位置显示「今天」
-    for (let k = -7; k <= 50; k += 7) { if (!k) continue; const d = dayStart(k); ticks.push(`<span class="gt__tick" style="left:${pct(d)}%">${fmt(d, { month: 'numeric', day: 'numeric' })}</span>`); }
-    const keep = (x) => {
-      const s = status(x);
-      if (x.state === 'draft' || x.state === 'new') return false;
-      if (ovOnlyActive && !['live', 'scheduled', 'pending', 'waiting', 'paused'].includes(s)) return false;
-      const w = win(x); const a = w.start ?? D0, b = w.end ?? D1;
-      return !(b < D0 || a > D1);
-    };
-    const group = (name, list) => {
-      const rows = list.filter(keep).map((x) => {
-        const w = win(x); const a = w.start ?? D0, b = w.end ?? D1; const s = status(x);
-        const L = pct(a), W = Math.max(pct(b) - L, 0.8);
-        return `<button class="gt__row" data-open="${x.id}" type="button">
-          <span class="gt__label">${esc(titleOf(x))}</span>
-          <span class="gt__track"><span class="gt__bar gt__bar--${s} ${w.end == null ? 'gt__bar--open' : ''}" style="left:${L}%;width:${W}%" title="${esc(titleOf(x))} · ${ST[s]}"></span></span>
-        </button>`;
-      }).join('');
-      return rows ? `<div class="gt__group">${name}</div>${rows}` : '';
-    };
-    const gantt = group('活动', S.campaigns) + group('Banner', S.banners) + group('顶栏', S.topbar);
+    ev.sort((a, b) => a.at - b.at || (a.x.kind === 'campaign' ? -1 : 1));
+    const days = new Map();
+    ev.forEach((e) => { const k = toInput(e.at).slice(0, 10); if (!days.has(k)) days.set(k, []); days.get(k).push(e); });
+    const evHtml = days.size ? [...days.values()].map((list) => `<div class="evday">
+        <div class="evday__h"><b>${relDay(list[0].at)}</b><span>${fDate(list[0].at)}</span></div>
+        ${list.map((e) => `<button class="evrow" data-open="${e.x.id}" type="button">
+          <span class="evrow__time">${fmt(e.at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>
+          <span class="evrow__act evrow__act--${e.type}">${e.type === 'up' ? I.up + '上线' : I.down + '下线'}</span>
+          ${kindChip(e.x.kind)}<span class="evrow__t">${esc(titleOf(e.x))}</span>
+          ${e.s === 'pending' || e.s === 'waiting' ? `<span class="tag tag--warn">${e.s === 'pending' ? '还没批准' : '活动未批准'}</span>` : ''}
+        </button>`).join('')}
+      </div>`).join('') : empty('接下来 14 天没有上线 / 下线变化');
 
     $('#ov-root').innerHTML = `
       ${pageHead('总览', '现在网站上显示什么、接下来会发生什么')}
@@ -202,75 +288,83 @@
         ${stat(endN, '7 天内到期', '', 'overview')}
         ${stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews')}
       </div>
-      <div class="ovgrid">
-        <section class="panel">
-          <div class="panel__h"><h3>接下来 14 天</h3><span class="muted">自动上线 / 下线的时间点</span></div>
-          <div class="evlist">${evHtml}</div>
-        </section>
-        <section class="panel">
-          <div class="panel__h"><h3>时间轴</h3>
-            <label class="muted"><input type="checkbox" id="ov-active" ${ovOnlyActive ? 'checked' : ''}/> 只看上线中与已排期</label></div>
-          <div class="gt">
-            <div class="gt__head"><span class="gt__label"></span><span class="gt__track">${ticks.join('')}<span class="gt__today" style="left:${pct(now())}%">今天</span></span></div>
-            <div class="gt__body" style="--today:${pct(now()).toFixed(2)}">${gantt || empty('时间范围内没有内容')}</div>
+      <section class="panel">
+        <div class="gtbar">
+          <div class="gtbar__l">
+            <h3>时间轴</h3>
+            <div class="seg" id="ov-zoom">${[['week', '周'], ['month', '月'], ['quarter', '季度']].map(([k, l]) => `<button type="button" data-zoom="${k}" class="${ov.zoom === k ? 'is-active' : ''}">${l}</button>`).join('')}</div>
+            <div class="gtnav">
+              <button class="btn btn-sm btn-ghost" data-nav="-1" type="button" aria-label="上一段">${I.left}</button>
+              <b class="gtnav__t">${R.title}</b>
+              <button class="btn btn-sm btn-ghost" data-nav="1" type="button" aria-label="下一段">${I.right}</button>
+              ${ov.offset ? '<button class="btn btn-sm" data-nav="0" type="button">回到今天</button>' : ''}
+            </div>
           </div>
-          <div class="gt__legend">
-            <span><i class="lg lg--live"></i>上线中</span><span><i class="lg lg--scheduled"></i>已排期</span>
-            <span><i class="lg lg--pending"></i>待审核</span><span><i class="lg lg--ended"></i>已结束</span>
-            <span class="muted">右端淡出 = 没有结束时间(长期)</span>
+          <div class="gtbar__r">
+            ${kchip('campaign', '促销活动', S.campaigns)}${kchip('banner', 'Banner', S.banners)}${kchip('topbar', '顶栏', S.topbar)}
+            <label class="muted"><input type="checkbox" id="ov-active" ${ov.onlyActive ? 'checked' : ''}/> 只看进行中和将要上线</label>
           </div>
-        </section>
-      </div>`;
-    $('#ov-active').addEventListener('change', (e) => { ovOnlyActive = e.target.checked; renderOverview(); });
+        </div>
+        <div class="gt">
+          <div class="gt__head"><span class="gt__label"></span><span class="gt__track">${head}${showToday ? `<span class="gt__today" style="left:${pct(t)}%">今天</span>` : ''}</span></div>
+          <div class="gt__body">
+            <div class="gt__grid"><span class="gt__label"></span><span class="gt__track">${grid}</span></div>
+            ${gantt || empty('这段时间没有内容')}
+          </div>
+        </div>
+        <div class="gt__legend">
+          <span><i class="lg lg--live"></i>上线中</span><span><i class="lg lg--scheduled"></i>已排期</span>
+          <span><i class="lg lg--pending"></i>待审核 / 未批准</span><span><i class="lg lg--paused"></i>已暂停</span><span><i class="lg lg--ended"></i>已结束</span>
+          <span class="muted">条的端点淡出 = 超出这段时间或没有结束时间</span>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel__h"><h3>接下来 14 天</h3><span class="muted">会自动上线 / 下线的内容,按天排好</span></div>
+        <div class="evdays">${evHtml}</div>
+      </section>`;
+    $('#ov-active').addEventListener('change', (e) => { ov.onlyActive = e.target.checked; renderOverview(); });
+    $$('#ov-zoom button').forEach((b) => b.addEventListener('click', () => { ov.zoom = b.dataset.zoom; ov.offset = 0; renderOverview(); }));
+    $$('#ov-root [data-nav]').forEach((b) => b.addEventListener('click', () => { ov.offset = +b.dataset.nav ? ov.offset + +b.dataset.nav : 0; renderOverview(); }));
+    $$('#ov-root [data-kind]').forEach((b) => b.addEventListener('click', () => { ov.kinds[b.dataset.kind] = !ov.kinds[b.dataset.kind]; renderOverview(); }));
   }
 
   // ================= Banner =================
-  const bnF = { st: '', tag: '' };
+  const bnF = { st: 'live', tag: '' };
   let dragId = null;
   function renderBanners() {
     const live = S.banners.filter((b) => status(b) === 'live').sort((a, b) => a.order - b.order);
-    const cnt = (s) => S.banners.filter((b) => !s || status(b) === s).length;
-    const tabs = [['', '全部'], ['live', '上线中'], ['scheduled', '已排期'], ['pending', '待审核'], ['draft', '草稿'], ['ended', '已结束']]
-      .map(([k, l]) => `<button class="ftab ${bnF.st === k ? 'is-active' : ''}" data-st="${k}" type="button">${l}<span>${cnt(k)}</span></button>`).join('');
     const chips = [['', '全部类型'], ['new', '新品'], ['sale', '促销'], ['event', '活动'], ['none', '无角标']]
       .map(([k, l]) => `<button class="fchip ${bnF.tag === k ? 'is-active' : ''}" data-tag="${k}" type="button">${l}</button>`).join('');
-    const rows = S.banners.filter((b) => (!bnF.st || status(b) === bnF.st) && (!bnF.tag || b.tag === bnF.tag))
-      .sort((a, b) => ({ live: 0, pending: 1, scheduled: 2, waiting: 2, draft: 3, rejected: 3, paused: 4, ended: 5 }[status(a)] - { live: 0, pending: 1, scheduled: 2, waiting: 2, draft: 3, rejected: 3, paused: 4, ended: 5 }[status(b)]) || a.order - b.order);
+    const rows = S.banners.filter((b) => inTab(b, bnF.st) && (!bnF.tag || b.tag === bnF.tag)).sort(byStatusThenOrder);
 
     const card = (b) => `<button class="bcard ${status(b) === 'ended' ? 'is-dim' : ''}" data-open="${b.id}" type="button">
-      <span class="bcard__img" style="background-image:url('${esc(thumb(b.image))}')">
-        ${TAG[b.tag] ? `<span class="tagchip tagchip--${b.tag}">${TAG[b.tag]}</span>` : ''}${badge(b)}
-      </span>
+      <span class="bcard__slide">${slideHtml(b, { w: 500 })}${badge(b)}</span>
       <span class="bcard__body">
-        <b>${esc(b.title || '未命名')}</b>
-        ${b.subtitle ? `<span class="muted">${esc(b.subtitle)}</span>` : ''}
-        <span class="bcard__when">${I.clock}${winText(b)}</span>
+        <span class="bcard__when">${I.clock}<span>${winText(b)}</span></span>
         ${b.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${b.state === 'rejected' ? `<span class="tag tag--danger">已退回:${esc(b.rejectNote || '')}</span>` : ''}
       </span>
     </button>`;
 
     $('#bn-root').innerHTML = `
-      ${pageHead('Banner', '首页轮播图。每张独立排期,也可以跟随活动。', `<button class="btn btn-primary" data-new="banner" type="button">${I.plus}新建 Banner</button>`)}
+      ${pageHead('Banner', `首页轮播图,和前台同比例显示(电脑 ${S.site.slide.w}×${S.site.slide.h} · 手机 ${S.site.slide.mw}×${S.site.slide.mh})。每张独立排期,也可以跟随活动。`, `<button class="btn btn-primary" data-new="banner" type="button">${I.plus}新建 Banner</button>`)}
       <section class="panel">
         <div class="panel__h"><h3>此刻前台的轮播顺序</h3><span class="muted">${isApprover() ? '拖动调整顺序,立即生效' : '顺序由审核人调整'}</span></div>
         <div class="strip" id="bn-strip">${live.map((b, i) => `
-          <div class="strip__item" draggable="${isApprover()}" data-id="${b.id}">
-            <span class="strip__n">${i + 1}</span>
-            <span class="strip__img" style="background-image:url('${esc(thumb(b.image, 300))}')"></span>
-            <span class="strip__t">${esc(b.title || '未命名')}</span>
+          <div class="strip__item" draggable="${isApprover()}" data-id="${b.id}" title="${esc(b.title || '')}">
+            <span class="strip__n">${i + 1}</span>${slideHtml(b, { w: 260 })}
           </div>`).join('') || '<span class="muted">现在没有上线中的 Banner</span>'}</div>
       </section>
-      <div class="fbar"><div class="ftabs">${tabs}</div><div class="fchips">${chips}</div></div>
+      <div class="fbar"><div class="ftabs">${tabsHtml(S.banners, bnF.st)}</div><div class="fchips">${chips}</div></div>
       <div class="bgrid">${rows.map(card).join('') || empty('没有符合条件的 Banner')}</div>`;
 
     $$('#bn-root .ftab').forEach((b) => b.addEventListener('click', () => { bnF.st = b.dataset.st; renderBanners(); }));
     $$('#bn-root .fchip').forEach((b) => b.addEventListener('click', () => { bnF.tag = b.dataset.tag; renderBanners(); }));
-    if (isApprover()) wireDrag('#bn-strip', '.strip__item', live, 'banner');
+    if (isApprover()) wireDrag('#bn-strip', '.strip__item', 'banner', () => S.banners.filter((b) => status(b) === 'live'));
   }
 
-  // 拖动排序(Banner 轮播顺序 / 顶栏轮播顺序共用)
-  function wireDrag(boxSel, itemSel, list, kind) {
+  // 拖动排序(Banner 轮播 / 顶栏共用):在完整列表里把拖动的那条挪到目标位置,其他条目相对顺序不变
+  function wireDrag(boxSel, itemSel, kind, visible) {
     $$(`${boxSel} ${itemSel}`).forEach((el) => {
       el.addEventListener('dragstart', () => { dragId = el.dataset.id; el.classList.add('is-drag'); });
       el.addEventListener('dragend', () => el.classList.remove('is-drag'));
@@ -278,39 +372,36 @@
       el.addEventListener('dragleave', () => el.classList.remove('is-over'));
       el.addEventListener('drop', (e) => {
         e.preventDefault(); el.classList.remove('is-over');
-        const from = list.findIndex((x) => x.id === dragId), to = list.findIndex((x) => x.id === el.dataset.id);
+        const full = [...listOf(kind)].sort((a, b) => a.order - b.order);
+        const from = full.findIndex((x) => x.id === dragId), to = full.findIndex((x) => x.id === el.dataset.id);
         if (from < 0 || to < 0 || from === to) return;
-        const moved = list.splice(from, 1)[0]; list.splice(to, 0, moved);
-        const others = listOf(kind).filter((x) => !list.includes(x));
-        list.forEach((x, i) => { x.order = i; });
-        others.forEach((x, i) => { x.order = list.length + i; });
-        log('reorder', moved, `移到第 ${to + 1} 位`); save(); renderAll();
-        toast(`已调整顺序 · 「${titleOf(moved)}」现在第 ${to + 1} 位`);
+        const moved = full.splice(from, 1)[0]; full.splice(to, 0, moved);
+        full.forEach((x, i) => { x.order = i; });
+        const pos = visible().sort((a, b) => a.order - b.order).indexOf(moved) + 1;
+        log('reorder', moved, `移到第 ${pos} 位`); save(); renderAll();
+        toast(`已调整顺序 · 「${titleOf(moved)}」现在第 ${pos} 位`);
       });
     });
   }
 
   // ================= 顶栏 =================
-  let tbDay = 0; let tbTimer = null; let tbIdx = 0;
+  let tbDay = 0; let tbTimer = null; let tbIdx = 0; const tbF = { st: 'live' };
   function renderTopbar() {
     const at = dayStart(tbDay) + (now() - today0());
     const liveAt = S.topbar.filter((t) => status(t, at) === 'live').sort((a, b) => a.order - b.order);
-    const rows = [...S.topbar].sort((a, b) => a.order - b.order);
+    const rows = S.topbar.filter((t) => inTab(t, tbF.st)).sort(byStatusThenOrder);
     const days = [0, 1, 3, 7, 14, 30, 60, 75].map((d) => `<option value="${d}" ${tbDay === d ? 'selected' : ''}>${d === 0 ? '此刻' : `${d} 天后(${fDate(dayStart(d))})`}</option>`).join('');
     $('#tb-root').innerHTML = `
-      ${pageHead('顶栏公告', '网站最上方滚动的一行字。可以长期显示,也可以设定时间。', `<button class="btn btn-primary" data-new="topbar" type="button">${I.plus}新建公告</button>`)}
+      ${pageHead('顶栏公告', '网站最上方轮播的一行字。可以长期显示,也可以设定时间或跟随活动。', `<button class="btn btn-primary" data-new="topbar" type="button">${I.plus}新建公告</button>`)}
       <section class="panel">
         <div class="panel__h"><h3>预览顶栏</h3>
-          <label class="muted">看哪天:<select class="sel sel--sm" id="tb-day">${days}</select></label></div>
-        <div class="tbpv">
-          <button class="tbpv__nav" id="tb-prev" type="button" aria-label="上一条">${I.left}</button>
-          <div class="tbpv__msg" id="tb-msg"></div>
-          <button class="tbpv__nav" id="tb-next" type="button" aria-label="下一条">${I.right}</button>
-        </div>
+          <span class="muted">看哪天:<select class="sel sel--sm" id="tb-day">${days}</select>
+            <button class="btn btn-sm btn-ghost" id="tb-prev" type="button" aria-label="上一条">${I.left}</button><button class="btn btn-sm btn-ghost" id="tb-next" type="button" aria-label="下一条">${I.right}</button></span></div>
+        ${topbarHtml('', 'tb-msg')}
         <p class="muted tbpv__note">这一天会轮播 <b>${liveAt.length}</b> 条:${liveAt.map((t) => esc(titleOf(t))).join(' · ') || '无'}</p>
       </section>
+      <div class="fbar"><div class="ftabs">${tabsHtml(S.topbar, tbF.st)}</div><span class="muted">${isApprover() ? '拖动左侧把手调整轮播顺序' : ''}</span></div>
       <section class="panel">
-        <div class="panel__h"><h3>全部公告</h3><span class="muted">${isApprover() ? '拖动左侧把手调整轮播顺序' : ''}</span></div>
         <div class="tblist" id="tb-list">${rows.map((t) => `
           <div class="tbrow ${status(t) === 'ended' ? 'is-dim' : ''}" draggable="${isApprover()}" data-id="${t.id}">
             <span class="tbrow__grip">${I.grip}</span>
@@ -319,46 +410,60 @@
               <span class="tbrow__meta"><span class="kchip">${esc(t.category || '')}</span>${I.clock}${winText(t)}${t.link ? ` · <span class="mono">${esc(t.link)}</span>` : ''}</span>
             </button>
             ${t.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${badge(t)}
-          </div>`).join('')}</div>
+          </div>`).join('') || '<p class="muted">没有这个状态的公告</p>'}</div>
       </section>`;
     const show = () => {
       const el = $('#tb-msg'); if (!el) return;
-      if (!liveAt.length) { el.innerHTML = '<span class="tbpv__empty">这一天顶栏没有内容</span>'; return; }
-      const m = liveAt[tbIdx % liveAt.length];
-      el.innerHTML = `<span class="tbpv__in">${esc(titleOf(m))}</span>`;
+      if (!liveAt.length) { el.innerHTML = '<span class="tbar__empty">这一天顶栏没有内容</span>'; return; }
+      const m = liveAt[((tbIdx % liveAt.length) + liveAt.length) % liveAt.length];
+      el.innerHTML = `<span class="tbar__in">${esc(titleOf(m))}</span>`;
     };
     tbIdx = 0; show();
-    clearInterval(tbTimer); tbTimer = setInterval(() => { tbIdx++; show(); }, 3500);
-    $('#tb-prev').addEventListener('click', () => { tbIdx = (tbIdx - 1 + liveAt.length) % Math.max(liveAt.length, 1); show(); });
+    clearInterval(tbTimer); tbTimer = setInterval(() => { tbIdx++; show(); }, 4000);
+    $('#tb-prev').addEventListener('click', () => { tbIdx--; show(); });
     $('#tb-next').addEventListener('click', () => { tbIdx++; show(); });
     $('#tb-day').addEventListener('change', (e) => { tbDay = +e.target.value; renderTopbar(); });
-    if (isApprover()) wireDrag('#tb-list', '.tbrow', rows, 'topbar');
+    $$('#tb-root .ftab').forEach((b) => b.addEventListener('click', () => { tbF.st = b.dataset.st; renderTopbar(); }));
+    if (isApprover()) wireDrag('#tb-list', '.tbrow', 'topbar', () => S.topbar.filter((t) => inTab(t, tbF.st)));
   }
 
   // ================= 活动 =================
+  // 参加活动的产品 = 合集 ∪ 标签 ∪ 手动指定的产品(满足任一即参加)
+  function campScope(c, short, sep = ' + ') {
+    const parts = [];
+    if (c.collections?.length) parts.push(short ? `合集 ${c.collections.length}` : `合集:${c.collections.map((x) => esc(x.title)).join('、')}`);
+    if (c.tags?.length) parts.push(short ? `标签 ${c.tags.length}` : `标签:${c.tags.map(esc).join('、')}`);
+    if (c.products?.length) parts.push(short ? `产品 ${c.products.length}` : `指定 ${c.products.length} 个产品`);
+    return parts.join(short ? ' · ' : sep) || (short ? '无产品' : '<span class="muted">没有选产品(只串联 Banner / 顶栏)</span>');
+  }
+  const cpF = { st: 'live' };
   function renderCampaigns() {
-    const rows = [...S.campaigns].sort((a, b) => ({ live: 0, scheduled: 1, pending: 2, draft: 3, ended: 4 }[status(a)] ?? 3) - ({ live: 0, scheduled: 1, pending: 2, draft: 3, ended: 4 }[status(b)] ?? 3));
+    const rows = S.campaigns.filter((c) => inTab(c, cpF.st)).sort((a, b) => RANK[status(a)] - RANK[status(b)] || (a.start ?? 0) - (b.start ?? 0));
     const card = (c) => {
       const bn = S.banners.filter((b) => b.campaign === c.id), tb = S.topbar.filter((t) => t.campaign === c.id);
       return `<button class="ccard ${status(c) === 'ended' ? 'is-dim' : ''}" data-open="${c.id}" type="button">
         <span class="ccard__top"><b>${esc(c.name)}</b>${badge(c)}</span>
         <span class="ccard__when">${I.clock}${winText(c)}</span>
-        <span class="ccard__row"><span class="muted">产品</span> 合集 <span class="mono">${esc(c.collection || '未选')}</span>${c.extra?.length ? ` + ${c.extra.length} 个单品` : ''}</span>
-        <span class="ccard__row"><span class="muted">产品页</span> <span class="pbadge">${esc(c.badge || '无徽章')}</span>${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span>
-        <span class="ccard__row"><span class="muted">包含</span> ${bn.length} 张 Banner · ${tb.length} 条顶栏</span>
+        <span class="ccard__row"><span class="muted">产品</span><span class="ccard__v ccard__v--col">${campScope(c, false, '<br>')}</span></span>
+        <span class="ccard__row"><span class="muted">产品页</span><span class="ccard__v">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : '<span class="muted">无徽章</span>'}${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span></span>
+        <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏</span></span>
       </button>`;
     };
+    const tabs = [['live', '进行中'], ['scheduled', '已排期'], ['draft', '草稿'], ['ended', '已结束'], ['', '全部']]
+      .map(([k, l]) => `<button class="ftab ${cpF.st === k ? 'is-active' : ''}" data-st="${k}" type="button">${l}<span>${S.campaigns.filter((c) => inTab(c, k)).length}</span></button>`).join('');
     $('#cp-root').innerHTML = `
-      ${pageHead('活动', '只在「一件事要多处同时出现、同时结束」时用。挂在活动下的 Banner / 顶栏共用它的时间;活动合集里的产品会自动显示徽章和倒计时。',
+      ${pageHead('活动(促销)', '有时间段的促销:选好参加的产品(合集 / 标签 / 手动指定),产品页自动显示徽章和倒计时;挂在活动下的 Banner / 顶栏和它同时上线、同时结束。',
         `<button class="btn btn-primary" data-new="campaign" type="button">${I.plus}新建活动</button>`)}
-      <div class="cgrid">${rows.map(card).join('') || empty('还没有活动')}</div>`;
+      <div class="fbar"><div class="ftabs">${tabs}</div></div>
+      <div class="cgrid">${rows.map(card).join('') || empty('没有这个状态的活动')}</div>`;
+    $$('#cp-root .ftab').forEach((b) => b.addEventListener('click', () => { cpF.st = b.dataset.st; renderCampaigns(); }));
   }
 
   // ================= 审核 =================
   const FIELD = {
     title: '标题', subtitle: '副标题', description: '描述', image: '图片', tag: '角标', button1_text: '按钮 1 文字', button1_url: '按钮 1 链接',
     button2_text: '按钮 2 文字', button2_url: '按钮 2 链接', emoji: 'Emoji', text: '文字', link: '链接', category: '分类',
-    name: '名称', collection: '合集', extra: '额外单品', badge: '徽章文字', countdown: '倒计时', priority: '优先级',
+    name: '名称', collections: '合集', tags: '标签', products: '指定产品', badge: '徽章文字', countdown: '倒计时', priority: '优先级',
     start: '开始', end: '结束', campaign: '所属活动',
   };
   const showVal = (k, v) => {
@@ -368,7 +473,7 @@
     if (k === 'countdown') return v ? '开' : '关';
     if (k === 'tag') return esc(TAGCN[v] || v);
     if (k === 'image') return `<img class="rv__img" src="${esc(thumb(v, 300))}" alt="">`;
-    if (Array.isArray(v)) return esc(v.join('、'));
+    if (Array.isArray(v)) return v.length ? esc(v.map((x) => (typeof x === 'string' ? x : x.title)).join('、')) : '<span class="muted">(空)</span>';
     return esc(v);
   };
   function renderReviews() {
@@ -386,10 +491,11 @@
         body = `<table class="rvdiff"><thead><tr><th>改了什么</th><th>线上现在</th><th>改成</th></tr></thead><tbody>${rows}</tbody></table>
           <p class="muted">批准前,线上继续显示原来的版本。</p>`;
       } else {
-        const img = it.kind === 'banner' && it.image ? `<img class="rv__img rv__img--lg" src="${esc(thumb(it.image, 500))}" alt="">` : '';
+        const img = it.kind === 'banner' ? `<span class="rv__slide">${slideHtml(it, { w: 400 })}</span>` : '';
         body = `<div class="rvnew">${img}<div>
           <div><b>${esc(titleOf(it))}</b>${it.subtitle ? ` <span class="muted">${esc(it.subtitle)}</span>` : ''}</div>
           <div class="muted">${I.clock}${winText(it)}</div>
+          ${it.kind === 'campaign' ? `<div class="muted">产品:${campScope(it)}</div>` : ''}
           ${w.start != null && w.start > now() ? `<div class="muted">批准后会在 <b>${fDT(w.start)}</b>(${relDay(w.start)})自动上线</div>` : '<div class="muted">批准后立即上线</div>'}
         </div></div>`;
       }
@@ -490,11 +596,12 @@
 
   // ================= 编辑抽屉 =================
   let pvTimer = null;
+  let ed = null; // 当前编辑中活动的产品范围(合集 / 标签 / 产品),不在普通输入框里,单独存
   function newItem(kind, preset = {}) {
     const baseIt = { kind, state: 'new', by: S.me, campaign: preset.campaign || null, paused: false, pendingChange: null };
-    if (kind === 'banner') return { ...baseIt, id: rid('b-'), image: '', title: '', subtitle: '', description: '', button1_text: 'Shop now', button1_url: '', button2_text: '', button2_url: '', tag: 'new', order: S.banners.length, start: preset.campaign ? null : dayStart(1), end: null };
-    if (kind === 'topbar') return { ...baseIt, id: rid('t-'), emoji: '📣', text: '', link: '', category: '公告', order: S.topbar.length, start: preset.campaign ? null : null, end: null };
-    return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collection: '', extra: [], badge: '', countdown: true, priority: 10 };
+    if (kind === 'banner') return { ...baseIt, id: rid('b-'), image: '', title: '', subtitle: '', description: '', button1_text: 'Shop Now', button1_url: '', button2_text: '', button2_url: '', tag: 'new', order: S.banners.length, start: preset.campaign ? null : dayStart(1), end: null };
+    if (kind === 'topbar') return { ...baseIt, id: rid('t-'), emoji: '📣', text: '', link: '', category: '公告', order: S.topbar.length, start: null, end: null };
+    return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
   }
   const fld = (label, html, hint = '') => `<label class="fld"><span>${label}</span>${html}${hint ? `<em>${hint}</em>` : ''}</label>`;
   const inp = (name, v, ph = '') => `<input class="inp" name="${name}" value="${esc(v ?? '')}" placeholder="${esc(ph)}"/>`;
@@ -517,36 +624,52 @@
     </div>`;
   }
 
+  // 活动的产品范围:三行(合集 / 标签 / 指定产品),每行一排可删除的小标签
+  function scopeHtml() {
+    const chip = (label, key, i) => `<span class="chip">${label}<button type="button" data-rm="${key}:${i}" aria-label="移除">${I.x}</button></span>`;
+    return `
+      <div class="scope__row"><span class="scope__k">合集</span>
+        <span class="chips">${ed.collections.map((c, i) => chip(esc(c.title), 'collections', i)).join('')}
+          <button type="button" class="chipadd" data-pick="collections">${I.plus}选择合集</button></span></div>
+      <div class="scope__row"><span class="scope__k">标签</span>
+        <span class="chips">${ed.tags.map((t, i) => chip(`<span class="mono">${esc(t)}</span>`, 'tags', i)).join('')}
+          <input class="chipinp" id="sc-tag" list="sc-tags" placeholder="输入标签,回车添加"/>
+          <datalist id="sc-tags">${S.tagSuggestions.filter((t) => !ed.tags.includes(t)).map((t) => `<option value="${esc(t)}">`).join('')}</datalist></span></div>
+      <div class="scope__row"><span class="scope__k">指定产品</span>
+        <span class="chips">${ed.products.map((p, i) => chip(esc(p.title), 'products', i)).join('')}
+          <button type="button" class="chipadd" data-pick="products">${I.plus}选择产品</button></span></div>`;
+  }
+
   function formHtml(it) {
     if (it.kind === 'banner') {
-      const imgs = [...new Set(S.banners.map((b) => b.image).filter(Boolean))].slice(0, 24);
+      const imgs = [...new Set(S.banners.map((b) => b.image).filter(Boolean))].slice(0, 30);
       return `
         ${fld('图片', `<div class="imgpick" id="ed-imgs">${imgs.map((u) => `<button type="button" class="imgpick__i ${u === it.image ? 'is-on' : ''}" data-img="${esc(u)}" style="background-image:url('${esc(thumb(u, 200))}')"></button>`).join('')}</div>
-          <input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/>`, '正式版在这里直接上传图片(存到 Shopify Files)。演示时从现有图片里选。')}
+          <input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/>`, `竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。正式版在这里直接上传(存到 Shopify Files),演示时从现有图片里选。`)}
         ${fld('标题', inp('title', it.title, '如:DZOFILM Arles Zoom'))}
         ${fld('副标题', inp('subtitle', it.subtitle, '如:UP TO 30% OFF'))}
         ${fld('描述', inp('description', it.description))}
         <div class="fld2">${fld('按钮 1 文字', inp('button1_text', it.button1_text))}${fld('按钮 1 链接', inp('button1_url', it.button1_url, '/collections/…'))}</div>
         <div class="fld2">${fld('按钮 2 文字', inp('button2_text', it.button2_text))}${fld('按钮 2 链接', inp('button2_url', it.button2_url))}</div>
-        ${fld('角标 / 类型', `<div class="seg" id="ed-tag">${Object.entries(TAGCN).map(([k, l]) => `<button type="button" data-tag="${k}" class="${it.tag === k ? 'is-active' : ''}">${l}</button>`).join('')}</div>`, 'Banner 左上角显示的 NEW / SALE / EVENT')}
+        ${fld('角标 / 类型', `<div class="seg" id="ed-tag">${Object.entries(TAGCN).map(([k, l]) => `<button type="button" data-tag="${k}" class="${it.tag === k ? 'is-active' : ''}">${l}</button>`).join('')}</div>`, '卡片左上角的 New / Sale / Event')}
         ${timeBlock(it, 'banner')}`;
     }
     if (it.kind === 'topbar') {
       return `
         <div class="fld2 fld2--emoji">${fld('Emoji', inp('emoji', it.emoji))}${fld('文字', inp('text', it.text, '如:Free UK Delivery on orders over £100'))}</div>
         ${fld('链接', inp('link', it.link, '点击跳转,可留空'))}
-        ${fld('分类', `<select class="sel" name="category">${['公告', '促销', '新品', '服务', '节日'].map((c) => `<option ${it.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select>`, '只用于后台筛选和时间轴配色,前台不显示')}
+        ${fld('分类', `<select class="sel" name="category">${['公告', '促销', '新品', '服务', '节日'].map((c) => `<option ${it.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select>`, '只用于后台筛选,前台不显示')}
         ${timeBlock(it, 'topbar')}`;
     }
     const bn = S.banners.filter((b) => b.campaign === it.id), tb = S.topbar.filter((t) => t.campaign === it.id);
     return `
       ${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}
       ${timeBlock(it, 'campaign')}
-      ${fld('活动产品:合集', `<input class="inp" name="collection" list="ed-colls" value="${esc(it.collection)}" placeholder="选择或输入合集 handle"/>
-        <datalist id="ed-colls">${S.collections.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>`, '这个合集里的产品自动属于本活动')}
-      ${fld('额外单品', `<textarea class="inp" name="extra" rows="3" placeholder="一行一个,不在合集里也想参加的产品">${esc((it.extra || []).join('\n'))}</textarea>`)}
-      <div class="fld2">${fld('产品页徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'))}${fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品在多个活动里时,数字大的优先')}</div>
-      <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>产品页显示倒计时</b><span class="muted">全站统一样式,到期自动消失</span></span></label>
+      <div class="fld"><span>参加活动的产品 <em>满足任一条件就参加</em></span>
+        <div class="scope" id="ed-scope">${scopeHtml()}</div>
+        <em>在任一合集里、带任一标签、或被单独指定的产品,都会显示本活动的徽章和倒计时。</em></div>
+      <div class="fld2">${fld('产品页徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'))}${fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在多个活动里时,数字大的优先')}</div>
+      <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>产品页显示倒计时</b><span class="muted">全站统一样式,倒数到活动结束,到期自动消失</span></span></label>
       ${it.state !== 'new' ? `<div class="fld"><span>挂在本活动下的内容</span>
         <div class="attach">${[...bn, ...tb].map((x) => `<button type="button" class="attach__i" data-open="${x.id}">${kindChip(x.kind)}${esc(titleOf(x))}${badge(x)}</button>`).join('') || '<span class="muted">还没有</span>'}</div>
         <div class="attach__add"><button type="button" class="btn btn-sm" data-new="banner" data-for="${it.id}">${I.plus}Banner</button><button type="button" class="btn btn-sm" data-new="topbar" data-for="${it.id}">${I.plus}顶栏公告</button></div></div>` : ''}`;
@@ -554,39 +677,91 @@
 
   function previewHtml(v) {
     if (v.kind === 'banner') {
-      return `<div class="pv-label">前台预览</div>
-        <div class="pv-slide" style="background-image:url('${esc(thumb(v.image, 900))}')">
-          ${TAG[v.tag] ? `<span class="tagchip tagchip--${v.tag}">${TAG[v.tag]}</span>` : ''}
-          ${!v.image ? '<span class="pv-slide__noimg">选一张图片</span>' : ''}
-          <div class="pv-slide__text">
-            ${v.title ? `<div class="pv-slide__title">${esc(v.title)}</div>` : ''}
-            ${v.subtitle ? `<div class="pv-slide__sub">${esc(v.subtitle)}</div>` : ''}
-            <div class="pv-slide__btns">${v.button1_text ? `<span class="pv-btn">${esc(v.button1_text)}</span>` : ''}${v.button2_text ? `<span class="pv-btn pv-btn--ghost">${esc(v.button2_text)}</span>` : ''}</div>
-          </div>
-        </div>`;
+      // 首页轮播里的样子:左右是相邻的上线中 Banner(淡一点),中间是正在编辑的这张
+      const live = S.banners.filter((b) => status(b) === 'live' && b.id !== v.id).sort((a, b) => a.order - b.order);
+      const idx = Math.max(0, live.findIndex((b) => b.order > v.order));
+      const prev = live[(idx - 1 + live.length) % live.length], next = live[idx % live.length];
+      return `<div class="pv-label">首页轮播里的样子</div>
+        <div class="pv-stage">
+          ${prev ? slideHtml(prev, { w: 300, cls: 'is-side' }) : ''}${slideHtml(v, { w: 700, cls: 'is-main' })}${next ? slideHtml(next, { w: 300, cls: 'is-side' }) : ''}
+        </div>
+        <p class="muted pv-cap">和前台同比例:电脑卡片 ${S.site.slide.w}×${S.site.slide.h},手机 ${S.site.slide.mw}×${S.site.slide.mh}。字号、按钮、角标颜色都取自主题设置。</p>`;
     }
     if (v.kind === 'topbar') {
-      return `<div class="pv-label">前台预览</div><div class="tbpv tbpv--static"><div class="tbpv__msg"><span class="tbpv__in">${esc(`${v.emoji || ''} ${v.text || '公告文字'}`.trim())}</span></div></div>`;
+      return `<div class="pv-label">前台预览</div>${topbarHtml(`<span class="tbar__in">${esc(`${v.emoji || ''} ${v.text || '公告文字'}`.trim())}</span>`)}`;
     }
+    const hasScope = v.collections?.length || v.tags?.length || v.products?.length;
     return `<div class="pv-label">产品页预览</div>
       <div class="pv-pdp">
         <div class="pv-pdp__img"></div>
         <div class="pv-pdp__info">
-          <div class="pv-pdp__title">DZOFILM VESPID 2 Prime 4 Lens Set</div>
+          <div class="pv-pdp__title">${esc(v.products?.[0]?.title || 'DZOFILM VESPID 2 Prime 4 Lens Set')}</div>
           ${v.badge ? `<span class="pbadge">${esc(v.badge)}</span>` : ''}
           <div class="pv-pdp__price">£4,999.00 <s>£5,899.00</s></div>
           ${v.countdown && v.end ? `<div class="pv-cd">Deals Expires in : <span id="pv-cd"></span></div>` : ''}
           <div class="pv-pdp__btn">Add to cart</div>
         </div>
       </div>
-      <p class="muted pv-scope">活动期间,合集 <b>${esc(v.collection || '(未选)')}</b> 里的产品${v.extra?.length ? ` + ${v.extra.length} 个单品` : ''}在产品页显示这个徽章${v.countdown ? '和倒计时(倒数到活动结束)' : ''};活动结束自动消失。</p>`;
+      <p class="muted pv-scope">${hasScope ? `活动期间,${campScope(v)} 的产品在产品页显示${v.badge ? '这个徽章' : ''}${v.countdown ? (v.badge ? '和' : '') + '倒计时' : ''};活动结束自动消失。` : '还没选产品:产品页不会显示任何东西,这个活动只用来让挂在它下面的 Banner / 顶栏同时上下线。'}</p>`;
+  }
+
+  // 演示用的合集 / 产品选择器。在 Shopify 后台里打开时优先用 Shopify 自带的选择器(真实数据)
+  async function pick(type) {
+    if (window.shopify && typeof window.shopify.resourcePicker === 'function') {
+      try {
+        const sel = await window.shopify.resourcePicker({
+          type: type === 'products' ? 'product' : 'collection', multiple: true, action: 'select',
+          selectionIds: ed[type].filter((x) => String(x.id || '').startsWith('gid://')).map((x) => ({ id: x.id })),
+        });
+        if (!sel) return;
+        const picked = sel.map((x) => ({ id: x.id, handle: x.handle, title: x.title }));
+        ed[type] = [...ed[type].filter((x) => !String(x.id || '').startsWith('gid://')), ...picked];
+        return refreshScope();
+      } catch (e) { /* 不在后台 / 没权限 → 用下面的演示选择器 */ }
+    }
+    const src = type === 'products' ? S.products : S.collections;
+    const key = (x) => x.handle;
+    const chosen = new Set(ed[type].map(key));
+    const box = document.createElement('div');
+    box.className = 'picker';
+    box.innerHTML = `<div class="picker__box">
+      <div class="picker__h"><b>选择${type === 'products' ? '产品' : '合集'}</b><input class="inp" placeholder="搜索" id="pk-q"/></div>
+      <div class="picker__list" id="pk-list"></div>
+      <div class="picker__f"><span class="muted">演示:列表是首页链接里出现过的真实${type === 'products' ? '产品' : '合集'}。在 Shopify 后台打开时,这里会换成 Shopify 自带的选择器,可以搜全店。</span>
+        <span class="picker__acts"><button class="btn btn-sm" data-pk="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-pk="ok" type="button">确定</button></span></div>
+    </div>`;
+    $('#drawer').appendChild(box);
+    const list = () => {
+      const q = $('#pk-q').value.trim().toLowerCase();
+      $('#pk-list').innerHTML = src.filter((x) => !q || x.title.toLowerCase().includes(q) || x.handle.includes(q)).map((x) => `
+        <label class="picker__row"><input type="checkbox" value="${esc(x.handle)}" ${chosen.has(x.handle) ? 'checked' : ''}/><span>${esc(x.title)}</span><span class="mono muted">${esc(x.handle)}</span></label>`).join('') || '<p class="muted">没有匹配的</p>';
+    };
+    list();
+    $('#pk-q').addEventListener('input', list);
+    $('#pk-list').addEventListener('change', (e) => { if (e.target.checked) chosen.add(e.target.value); else chosen.delete(e.target.value); });
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const b = e.target.closest('[data-pk]'); if (!b && e.target !== box) return;
+      if (b && b.dataset.pk === 'ok') {
+        const keepOld = ed[type].filter((x) => chosen.has(key(x)));
+        const added = src.filter((x) => chosen.has(x.handle) && !keepOld.some((o) => key(o) === x.handle));
+        ed[type] = [...keepOld, ...added];
+        refreshScope();
+      }
+      box.remove();
+    });
+    $('#pk-q').focus();
+  }
+  function refreshScope() {
+    const el = $('#ed-scope'); if (!el) return;
+    el.innerHTML = scopeHtml(); $('#ed-form').dispatchEvent(new Event('change'));
   }
 
   function readForm(base) {
     const f = $('#ed-form'); const g = (n) => f.querySelector(`[name="${n}"]`);
     const v = { ...base };
     f.querySelectorAll('input[name],select[name],textarea[name]').forEach((el) => {
-      if (['start', 'end', 'campaign', 'extra', 'countdown', 'priority'].includes(el.name)) return;
+      if (['start', 'end', 'campaign', 'countdown', 'priority'].includes(el.name)) return;
       v[el.name] = el.value.trim();
     });
     const mode = ($('#ed-mode .is-active') || {}).dataset?.mode || 'range';
@@ -595,7 +770,7 @@
     else { v.start = fromInput(g('start').value); v.end = fromInput(g('end').value); } // 自己设时间:仍可挂在活动下(分组),但不跟随活动时间
     if (base.kind === 'banner') v.tag = ($('#ed-tag .is-active') || {}).dataset?.tag || 'none';
     if (base.kind === 'campaign') {
-      v.extra = g('extra').value.split('\n').map((s) => s.trim()).filter(Boolean);
+      v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
       v.countdown = g('countdown').checked; v.priority = +g('priority').value || 0;
     }
     return v;
@@ -610,7 +785,7 @@
     return '';
   }
   const EDIT_KEYS = ['image', 'title', 'subtitle', 'description', 'button1_text', 'button1_url', 'button2_text', 'button2_url', 'tag',
-    'emoji', 'text', 'link', 'category', 'name', 'collection', 'extra', 'badge', 'countdown', 'priority', 'start', 'end', 'campaign'];
+    'emoji', 'text', 'link', 'category', 'name', 'collections', 'tags', 'products', 'badge', 'countdown', 'priority', 'start', 'end', 'campaign'];
   function diff(it, v) {
     const d = {};
     const norm = (x) => JSON.stringify(typeof x === 'string' ? x.trim() || null : x ?? null); // 空串 = 空,首尾空格不算改动
@@ -623,6 +798,7 @@
     if (!it) return;
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
     const base = { ...it, ...(it.pendingChange && !isApprover() ? it.pendingChange : {}) };
+    ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])] };
     const s = status(it);
     const approver = isApprover();
     const live = it.state === 'approved';
@@ -648,7 +824,7 @@
         <div>${kindChip(kind)} <b>${isNew ? `新建${KIND[kind]}` : esc(titleOf(it))}</b> ${isNew ? '' : badge(it)}</div>
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button>
       </div>
-      <div class="drawer__b">
+      <div class="drawer__b drawer__b--${kind}">
         <form class="drawer__form" id="ed-form" onsubmit="return false">${notes.join('')}${formHtml(base)}</form>
         <div class="drawer__pv" id="ed-pv">${previewHtml(base)}</div>
       </div>
@@ -677,6 +853,12 @@
     const f = $('#ed-form');
     f.addEventListener('input', refreshPv);
     f.addEventListener('change', refreshPv);
+    f.addEventListener('keydown', (e) => {
+      if (e.target.id !== 'sc-tag' || e.key !== 'Enter') return;
+      e.preventDefault();
+      const t = e.target.value.trim();
+      if (t && !ed.tags.includes(t)) { ed.tags.push(t); refreshScope(); $('#sc-tag').focus(); } else e.target.value = '';
+    });
     f.addEventListener('click', (e) => {
       const m = e.target.closest('#ed-mode button');
       if (m) {
@@ -687,10 +869,15 @@
       const tg = e.target.closest('#ed-tag button');
       if (tg) { $$('#ed-tag button').forEach((b) => b.classList.toggle('is-active', b === tg)); refreshPv(); return; }
       const im = e.target.closest('.imgpick__i');
-      if (im) { f.querySelector('[name="image"]').value = im.dataset.img; $$('.imgpick__i').forEach((b) => b.classList.toggle('is-on', b === im)); refreshPv(); }
+      if (im) { f.querySelector('[name="image"]').value = im.dataset.img; $$('.imgpick__i').forEach((b) => b.classList.toggle('is-on', b === im)); refreshPv(); return; }
+      const rm = e.target.closest('[data-rm]');
+      if (rm) { const [k, i] = rm.dataset.rm.split(':'); ed[k].splice(+i, 1); refreshScope(); return; }
+      const pk = e.target.closest('[data-pick]');
+      if (pk) pick(pk.dataset.pick);
     });
 
     $('#drawer').onclick = (e) => {
+      if (e.target.closest('.picker')) return;
       const nb = e.target.closest('[data-new]');
       if (nb && nb.dataset.for) { openEditor(nb.dataset.new, null, { campaign: nb.dataset.for }); return; }
       const op = e.target.closest('.attach__i[data-open]');
@@ -729,13 +916,14 @@
     };
   }
   function closeDrawer() {
-    clearInterval(pvTimer);
+    clearInterval(pvTimer); ed = null;
     $('#drawer').hidden = true; $('#drawer-mask').hidden = true; $('#drawer').innerHTML = '';
     document.body.classList.remove('no-scroll');
   }
 
   // ================= 全局 =================
   function renderAll() {
+    applySiteStyle();
     renderOverview(); renderBanners(); renderTopbar(); renderCampaigns(); renderReviews(); renderSettings();
     const n = pendingList().length; const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     $('#me-chip').innerHTML = `<button class="mechip" type="button" title="切换身份(演示)"><span class="avatar">${esc(me().name.slice(0, 1).toUpperCase())}</span>${esc(me().name)}<span class="muted">· ${isApprover() ? '审核人' : '编辑'}</span></button>`;

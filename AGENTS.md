@@ -48,7 +48,8 @@
 - **上下线只靠切 metaobject 的 publishable 状态**(DRAFT ↔ ACTIVE)。Liquid 遍历 `.values` 只返回 ACTIVE,主题里**不要写日期判断来决定显示与否**。开了 publishable 后新建条目默认是 DRAFT。
 - 飞书通知用**群机器人 webhook**(lark-ops 是本地个人 token 工具,Railway 用不了)。webhook 地址不进代码仓库。
 - 店铺**不是 Shopify Plus**(主题仓库 CLAUDE.md 误写 Plus)。
-- **app 不写产品数据**:活动的产品 = 合集 + 活动自身的 `extra_products` 列表,由主题判断归属。别为了活动去给产品写 metafield,也别申请 `write_products`。
+- **app 不写产品数据**:活动的产品 = 活动自身存的 **合集列表 + 标签列表 + 指定产品列表**(满足任一即参加),由主题判断归属。别为了活动去给产品写 metafield / 打标签,也别申请 `write_products`。
+- **Banner 是竖图卡片 430×600**(手机 320×450),后台预览一律按主题真实尺寸 / 字号 / 角标颜色画(`scripts/build-demo-seed.mjs` 从主题设置读出,别写死横图比例)。
 - **主题改造外观不变、只换数据源,且必须保留回退**:没有活动数据时显示原编辑器设置。
 - **主题仓库是共享的**(`~/Vibe Coding Dev/Shopify Dev/cinegearpro-search-Development-test-1.0`,还装着搜索 / Setup Kit / FAQ):
   本地副本停在 2026-06-12,且有 FAQ 的未提交改动 → **拉线上主题必须在独立 worktree/分支做**,不能在主工作区拉。

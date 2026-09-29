@@ -30,11 +30,11 @@
 | 问题 | 决定 |
 |---|---|
 | 系统以什么为中心 | **以内容为主**:Banner、顶栏每条独立排期;活动只是可选的「串联」 |
-| 活动里的产品怎么圈定 | **以合集为主,可额外加单品** |
+| 活动里的产品怎么圈定 | **合集(可多个)+ 标签 + 手动指定产品,满足任一就参加**(2026-09-29 用户补充:要能按 tag、能手动加产品) |
 | 价格要不要也由系统切换 | **只管展示**。实际打折仍用 Shopify 折扣(自带起止时间)或手改 compare-at |
 | 不同市场(B2B/法国)是否区分内容 | **全部市场一样** |
 | 第一期改造哪些模块 | **首页 Banner、顶栏公告、产品页徽章/倒计时** |
-| Banner 手机图 | **不要**,沿用一张图 + 现有尺寸自适应 |
+| Banner 手机图 | **不要**,沿用一张图 + 现有尺寸自适应。卡片是**竖图 430×600**(手机 320×450,比例几乎一样),后台所有预览按这个比例和主题字号画 |
 | 倒计时样式 | **全站统一一套** |
 | 审核 | **要审核,并用飞书提醒** |
 | 店铺套餐 | **不是 Shopify Plus** |
@@ -71,9 +71,9 @@
 > Shopify 没有原生的 metaobject 定时发布,定时器由本 app 自建。
 > 注意:开了 publishable 后新建条目默认是 DRAFT。
 
-### ③ 活动产品 = 合集 + 额外单品,**app 不写产品数据**
-产品是否属于某活动,由主题判断:产品在活动的合集里,或在活动的「额外单品」列表里。
-额外单品存在**活动 metaobject 自己身上**,所以 app **不需要 `write_products`**。
+### ③ 活动产品 = 合集 + 标签 + 指定产品,**app 不写产品数据**
+产品是否属于某活动,由主题判断(满足任一即可):产品在活动的**任一合集**里 / 带活动的**任一标签** / 在活动的**指定产品**列表里。
+三样条件都存在**活动 metaobject 自己身上**,所以 app **不需要 `write_products`**(标签是产品已有的,app 只读不改)。
 
 ### ④ Shopify 里只放「已批准」的版本
 审核要成立,编辑中的内容就不能直接写进 Shopify —— 否则改一张**正在上线**的 Banner,改动会立刻出现在前台,绕过审核。
@@ -133,8 +133,9 @@ lark-ops 是本地工具(用你个人的飞书登录 token,存在本机),没有�
 |---|---|---|
 | name | single_line_text | 活动名 |
 | starts_at / ends_at | date_time | 起止(结束空 = 长期) |
-| collection | collection_reference | 主合集 |
-| extra_products | list.product_reference | 额外单品 |
+| collections | list.collection_reference | 参加的合集(可多个) |
+| tags | list.single_line_text_field | 参加的产品标签(产品带任一标签即参加) |
+| products | list.product_reference | 手动指定的产品 |
 | badge_text | single_line_text | 产品页/卡片徽章文字 |
 | show_countdown | boolean | 是否显示倒计时 |
 | priority | number_integer | 一个产品同时在多个活动时谁优先 |
@@ -188,7 +189,7 @@ JSON 文件扛不住多人同时编辑和审计,所以这期起上 Postgres(sear
 |---|---|---|
 | 顶栏 | `blocks/ai_gen_block_a08faac.liquid` | 有 `cgp_topbar_message` 条目 → 按 priority 渲染;否则用原 5 个公告位。样式仍读 block 设置 |
 | Banner | `sections/gpt-slider-banner-3.liquid` | 有 `cgp_banner_slide` 条目 → 渲染它们;否则用原 slide blocks。布局仍读 section 设置 |
-| 活动判定 | 新 `snippets/cgp-campaign-for-product.liquid` | 遍历 ACTIVE 活动,匹配合集或额外单品,取 priority 最高者 |
+| 活动判定 | 新 `snippets/cgp-campaign-for-product.liquid` | 遍历 ACTIVE 活动,匹配合集 / 标签 / 指定产品任一,取 priority 最高者 |
 | 徽章 | 新 `snippets/cgp-campaign-badge.liquid` | 产品页 + 卡片共用 |
 | 倒计时 | 新 `snippets/cgp-countdown.liquid` | **全站唯一实现和唯一样式**,替换 6 份拷贝。先用活动的 ends_at,没有活动再回退旧的 `offer_end`(兼容) |
 | 产品页 | `templates/product.json` 的「Limited Time Offer」custom_liquid 块 | 抽成正式文件,改用上面的 snippet |
@@ -206,10 +207,10 @@ JSON 文件扛不住多人同时编辑和审计,所以这期起上 Postgres(sear
 
 一级导航:
 
-- **排期总览**:所有内容的时间轴(前后 30 天),按类型配色;「上线中 / 即将开始 / 已结束」一目了然;待审核的单独醒目标出
-- **Banner**:缩略图列表、拖拽排序、类型、起止时间、上传图片、预览
-- **顶栏**:公告列表、分类、起止时间、拖拽排序、预览
-- **活动**:名称、起止、合集、额外单品、徽章文字、倒计时开关;在活动里直接挂 Banner 和顶栏
+- **排期总览**:上下两块 —— 时间轴(可切 **周 / 月 / 季度**,左右翻页;促销活动 / Banner / 顶栏三组可单独开关)+「接下来 14 天」按天列出自动上下线;待审核的醒目标出
+- **Banner**:按状态分页签(上线中在前、全部在最后),**和前台同比例的卡片**(竖图,字号 / 按钮 / 角标颜色取自主题设置)、拖拽排序、类型、起止时间、上传图片、「在轮播里的样子」预览
+- **顶栏**:按状态分页签、分类、起止时间、拖拽排序、主题同款配色的预览条(可选看哪天)
+- **活动(促销)**:名称、起止、参加的产品(合集 / 标签 / 指定产品,在后台用 Shopify 自带的选择器)、徽章文字、倒计时开关;在活动里直接挂 Banner 和顶栏
 - **审核**:待审核列表(审核人可见),逐条看改动前后对比,批准 / 退回
 - **工具**:元数据总账、促销盘点(现有功能)
 - **设置**:审核人、员工显示名、飞书 webhook、操作日志

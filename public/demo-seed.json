@@ -14,21 +14,285 @@
   }
  ],
  "me": "u1",
+ "site": {
+  "slide": {
+   "w": 430,
+   "h": 600,
+   "mw": 320,
+   "mh": 450,
+   "bg": "#f5f5f5",
+   "gap": 20,
+   "titleSize": 20,
+   "subtitleSize": 16,
+   "descSize": 18,
+   "titleColor": "#ffffff",
+   "subtitleColor": "#ffffff",
+   "descColor": "#ffffff",
+   "btnSize": 14,
+   "btnPadV": 1,
+   "btnPadH": 9,
+   "btnRadius": 50,
+   "btnGap": 10,
+   "btn1": {
+    "bg": "#ffffff",
+    "color": "#000000",
+    "border": "rgba(0,0,0,0)"
+   },
+   "btn2": {
+    "bg": "rgba(0,0,0,0)",
+    "color": "#ffffff",
+    "border": "#ffffff"
+   },
+   "tags": {
+    "new": {
+     "text": "New",
+     "bg": "#6d9c6d",
+     "color": "#ffffff"
+    },
+    "sale": {
+     "text": "Sale",
+     "bg": "#df6666",
+     "color": "#ffffff"
+    },
+    "event": {
+     "text": "Event",
+     "bg": "#fdca01",
+     "color": "#ffffff"
+    }
+   },
+   "tagTop": 15,
+   "tagLeft": 15,
+   "tagRadius": 4,
+   "radius": 12
+  },
+  "topbar": {
+   "bg": "#3B4041",
+   "color": "#ffffff",
+   "fontSize": 12,
+   "padV": 14
+  }
+ },
  "collections": [
+  {
+   "handle": "aparo",
+   "title": "Aparo"
+  },
+  {
+   "handle": "batteries",
+   "title": "Batteries"
+  },
+  {
+   "handle": "blackfriday-2025",
+   "title": "Blackfriday 2025"
+  },
+  {
+   "handle": "blazar-great-joy",
+   "title": "Blazar Great Joy"
+  },
+  {
+   "handle": "blazar-viper-1-5x-t2-1-full-frame-anamorphic-lens",
+   "title": "Blazar Viper 1.5x T2.1 Full Frame Anamorphic Lens"
+  },
+  {
+   "handle": "cinediskpro",
+   "title": "Cinediskpro"
+  },
+  {
+   "handle": "cinediskpro-sale",
+   "title": "Cinediskpro Sale"
+  },
+  {
+   "handle": "clearance",
+   "title": "Clearance"
+  },
+  {
+   "handle": "desview",
+   "title": "Desview"
+  },
+  {
+   "handle": "dulens",
+   "title": "Dulens"
+  },
+  {
+   "handle": "dzofilm",
+   "title": "Dzofilm"
+  },
+  {
+   "handle": "dzofilm-arcana-1-5x-anamorphic-lens",
+   "title": "Dzofilm Arcana 1.5x Anamorphic Lens"
+  },
+  {
+   "handle": "dzofilm-arles-zoom-full-frame-cine-lens",
+   "title": "Dzofilm Arles Zoom Full Frame Cine Lens"
+  },
+  {
+   "handle": "dzofilm-sale",
+   "title": "Dzofilm Sale"
+  },
+  {
+   "handle": "dzofilm-vespid-prime-cine-lens",
+   "title": "Dzofilm Vespid Prime Cine Lens"
+  },
+  {
+   "handle": "dzofilm-vespid-prime-ii-cine-lens",
+   "title": "Dzofilm Vespid Prime Ii Cine Lens"
+  },
+  {
+   "handle": "falconeyes",
+   "title": "Falconeyes"
+  },
+  {
+   "handle": "feature-collection",
+   "title": "Feature Collection"
+  },
+  {
+   "handle": "flash-sale",
+   "title": "Flash Sale"
+  },
+  {
+   "handle": "fujifilm",
+   "title": "Fujifilm"
+  },
+  {
+   "handle": "fujifilm-cashback",
+   "title": "Fujifilm Cashback"
+  },
+  {
+   "handle": "gift-ideas",
+   "title": "Gift Ideas"
+  },
+  {
+   "handle": "grips-product",
+   "title": "Grips Product"
+  },
+  {
+   "handle": "holdiay-deals",
+   "title": "Holdiay Deals"
+  },
+  {
+   "handle": "holiday-deals",
+   "title": "Holiday Deals"
+  },
+  {
+   "handle": "lens-testing-chart",
+   "title": "Lens Testing Chart"
+  },
+  {
+   "handle": "lenthem",
+   "title": "Lenthem"
+  },
+  {
+   "handle": "nsh",
+   "title": "Nsh"
+  },
+  {
+   "handle": "pdmovie",
+   "title": "Pdmovie"
+  },
+  {
+   "handle": "sirui",
+   "title": "Sirui"
+  },
+  {
+   "handle": "spring-bank-holiday",
+   "title": "Spring Bank Holiday"
+  },
+  {
+   "handle": "thypoch",
+   "title": "Thypoch"
+  },
+  {
+   "handle": "tilta",
+   "title": "Tilta"
+  },
+  {
+   "handle": "vaxis",
+   "title": "Vaxis"
+  },
+  {
+   "handle": "viltrox",
+   "title": "Viltrox"
+  },
+  {
+   "handle": "vlogger",
+   "title": "Vlogger"
+  },
+  {
+   "handle": "zeapon",
+   "title": "Zeapon"
+  }
+ ],
+ "products": [
+  {
+   "id": "demo-blackmagic-design-pyxis-12k-cinema-camera-1",
+   "handle": "blackmagic-design-pyxis-12k-cinema-camera-1",
+   "title": "Blackmagic Design Pyxis 12k Cinema Camera 1"
+  },
+  {
+   "id": "demo-blazar-beetle-1-33x-full-frame-anamorphic-lens-3-lens-set",
+   "handle": "blazar-beetle-1-33x-full-frame-anamorphic-lens-3-lens-set",
+   "title": "Blazar Beetle 1.33x Full Frame Anamorphic Lens 3 Lens Set"
+  },
+  {
+   "id": "demo-blazar-talon-1-5x-autofocus-full-frame-anamorphic-lens",
+   "handle": "blazar-talon-1-5x-autofocus-full-frame-anamorphic-lens",
+   "title": "Blazar Talon 1.5x Autofocus Full Frame Anamorphic Lens"
+  },
+  {
+   "id": "demo-dulens-apo-cambrian-prime-6-lens-set-pl-mount",
+   "handle": "dulens-apo-cambrian-prime-6-lens-set-pl-mount",
+   "title": "Dulens Apo Cambrian Prime 6 Lens Set Pl Mount"
+  },
+  {
+   "id": "demo-fujifilm-gfx-eterna-cinema-camera",
+   "handle": "fujifilm-gfx-eterna-cinema-camera",
+   "title": "Fujifilm Gfx Eterna Cinema Camera"
+  },
+  {
+   "id": "demo-mofage-poco-ii-drop-in-filter-adapter",
+   "handle": "mofage-poco-ii-drop-in-filter-adapter",
+   "title": "Mofage Poco Ii Drop In Filter Adapter"
+  },
+  {
+   "id": "demo-pdmovie-3d-air-solo-3d-filming-system",
+   "handle": "pdmovie-3d-air-solo-3d-filming-system",
+   "title": "Pdmovie 3d Air Solo 3d Filming System"
+  },
+  {
+   "id": "demo-pdmovie-live-air-4-smart",
+   "handle": "pdmovie-live-air-4-smart",
+   "title": "Pdmovie Live Air 4 Smart"
+  },
+  {
+   "id": "demo-pdmovie-smart-fusion-autofocus-lens-adapter-for-live-air-4-smart-sony-e-mount",
+   "handle": "pdmovie-smart-fusion-autofocus-lens-adapter-for-live-air-4-smart-sony-e-mount",
+   "title": "Pdmovie Smart Fusion Autofocus Lens Adapter For Live Air 4 Smart Sony E Mount"
+  },
+  {
+   "id": "demo-tilta-boulder-36-camera-cart",
+   "handle": "tilta-boulder-36-camera-cart",
+   "title": "Tilta Boulder 36 Camera Cart"
+  },
+  {
+   "id": "demo-tilta-tilta-hydra-arm-mini-cinema-camera-crane",
+   "handle": "tilta-tilta-hydra-arm-mini-cinema-camera-crane",
+   "title": "Tilta Tilta Hydra Arm Mini Cinema Camera Crane"
+  },
+  {
+   "id": "demo-tilta-wlc-t06-nucleus-m-ii-wireless-control-system",
+   "handle": "tilta-wlc-t06-nucleus-m-ii-wireless-control-system",
+   "title": "Tilta Wlc T06 Nucleus M Ii Wireless Control System"
+  }
+ ],
+ "tagSuggestions": [
   "autumn-sale",
-  "fujifilm-promotion",
   "black-friday",
-  "godox",
-  "dzofilm",
-  "dzofilm-vespid-prime-cine-lens",
+  "gift",
   "clearance",
-  "staff-picks",
-  "cine-lenses",
-  "camera-dept",
-  "spring-bank-holiday-deals",
-  "easter-deals",
-  "thypoch",
-  "cinediskpro"
+  "DZOFILM",
+  "Anamorphic",
+  "cat:cine-lens",
+  "fit:sony-e"
  ],
  "banners": [
   {
@@ -196,10 +460,11 @@
    "button2_url": "",
    "tag": "sale",
    "order": 9,
-   "start": -37,
-   "end": 5,
+   "start": null,
+   "end": null,
    "state": "approved",
-   "by": "u1"
+   "by": "u1",
+   "campaign": "c3"
   },
   {
    "id": "b-e_ipwHWQ",
@@ -351,9 +616,10 @@
    "tag": "sale",
    "order": 18,
    "by": "u1",
-   "start": 16,
-   "end": 40,
-   "state": "approved"
+   "start": null,
+   "end": null,
+   "state": "approved",
+   "campaign": "c5"
   },
   {
    "id": "b-e_UYgGVj",
@@ -707,8 +973,9 @@
    "text": "Limited-time Deals on DZOFILM Vespid lenses 🔥",
    "link": "/collections/dzofilm-vespid-prime-cine-lens",
    "category": "促销",
-   "start": -60,
-   "end": -30,
+   "campaign": "c3",
+   "start": null,
+   "end": null,
    "state": "approved",
    "by": "u1",
    "order": 4
@@ -717,13 +984,27 @@
    "id": "t6",
    "emoji": "🏖️",
    "text": "Spring Bank Holiday Deals",
-   "link": "/collections/spring-bank-holiday-deals",
+   "link": "/collections/spring-bank-holiday",
    "category": "促销",
-   "start": -125,
-   "end": -118,
+   "campaign": "c6",
+   "start": null,
+   "end": null,
    "state": "approved",
    "by": "u1",
    "order": 5
+  },
+  {
+   "id": "t7",
+   "emoji": "🎁",
+   "text": "Holiday Deals — gifts for filmmakers",
+   "link": "/collections/holiday-deals",
+   "category": "节日",
+   "campaign": "c5",
+   "start": null,
+   "end": null,
+   "state": "draft",
+   "by": "u2",
+   "order": 6
   }
  ],
  "campaigns": [
@@ -732,9 +1013,25 @@
    "name": "Autumn Sale",
    "start": 4,
    "end": 13,
-   "collection": "autumn-sale",
-   "extra": [
-    "DZOFILM VESPID 2 Prime 4 Lens Set"
+   "collections": [
+    {
+     "handle": "dzofilm-sale",
+     "title": "Dzofilm Sale"
+    },
+    {
+     "handle": "cinediskpro-sale",
+     "title": "Cinediskpro Sale"
+    }
+   ],
+   "tags": [
+    "autumn-sale"
+   ],
+   "products": [
+    {
+     "id": "demo-blazar-talon-1-5x-autofocus-full-frame-anamorphic-lens",
+     "handle": "blazar-talon-1-5x-autofocus-full-frame-anamorphic-lens",
+     "title": "Blazar Talon 1.5x Autofocus Full Frame Anamorphic Lens"
+    }
    ],
    "badge": "Autumn Sale",
    "countdown": true,
@@ -747,8 +1044,14 @@
    "name": "Fujifilm Cashback",
    "start": -28,
    "end": 32,
-   "collection": "fujifilm-promotion",
-   "extra": [],
+   "collections": [
+    {
+     "handle": "fujifilm-cashback",
+     "title": "Fujifilm Cashback"
+    }
+   ],
+   "tags": [],
+   "products": [],
    "badge": "Claim cashback",
    "countdown": false,
    "priority": 5,
@@ -757,11 +1060,42 @@
   },
   {
    "id": "c3",
+   "name": "DZOFILM Vespid Limited Offer",
+   "start": -9,
+   "end": 5,
+   "collections": [
+    {
+     "handle": "dzofilm-vespid-prime-cine-lens",
+     "title": "Dzofilm Vespid Prime Cine Lens"
+    },
+    {
+     "handle": "dzofilm-vespid-prime-ii-cine-lens",
+     "title": "Dzofilm Vespid Prime Ii Cine Lens"
+    }
+   ],
+   "tags": [],
+   "products": [],
+   "badge": "Limited Time Offer",
+   "countdown": true,
+   "priority": 15,
+   "state": "approved",
+   "by": "u1"
+  },
+  {
+   "id": "c4",
    "name": "Black Friday 2026",
    "start": 52,
    "end": 63,
-   "collection": "black-friday",
-   "extra": [],
+   "collections": [
+    {
+     "handle": "flash-sale",
+     "title": "Flash Sale"
+    }
+   ],
+   "tags": [
+    "black-friday"
+   ],
+   "products": [],
    "badge": "Black Friday",
    "countdown": true,
    "priority": 20,
@@ -769,13 +1103,51 @@
    "by": "u1"
   },
   {
-   "id": "c4",
-   "name": "Godox Summer Sale",
-   "start": -90,
-   "end": -29,
-   "collection": "godox",
-   "extra": [],
-   "badge": "Summer Sale",
+   "id": "c5",
+   "name": "Holiday Deals",
+   "start": 70,
+   "end": 95,
+   "collections": [
+    {
+     "handle": "holiday-deals",
+     "title": "Holiday Deals"
+    }
+   ],
+   "tags": [
+    "gift"
+   ],
+   "products": [
+    {
+     "id": "demo-tilta-boulder-36-camera-cart",
+     "handle": "tilta-boulder-36-camera-cart",
+     "title": "Tilta Boulder 36 Camera Cart"
+    },
+    {
+     "id": "demo-pdmovie-3d-air-solo-3d-filming-system",
+     "handle": "pdmovie-3d-air-solo-3d-filming-system",
+     "title": "Pdmovie 3d Air Solo 3d Filming System"
+    }
+   ],
+   "badge": "Holiday Deals",
+   "countdown": true,
+   "priority": 10,
+   "state": "approved",
+   "by": "u1"
+  },
+  {
+   "id": "c6",
+   "name": "Spring Bank Holiday Deals",
+   "start": -125,
+   "end": -118,
+   "collections": [
+    {
+     "handle": "spring-bank-holiday",
+     "title": "Spring Bank Holiday"
+    }
+   ],
+   "tags": [],
+   "products": [],
+   "badge": "Bank Holiday",
    "countdown": true,
    "priority": 5,
    "state": "approved",
