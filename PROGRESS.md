@@ -1,17 +1,17 @@
 # 进度 · Promo Dashboard(全站内容排期系统)
 
 - **状态**: 开发中 / 已部署可用(只读工具部分)
-- **进度**: 20%(按新方向重新计;旧的元数据工具已完成)
-- **一句话**: 方向升级为「全站内容排期与监控」—— Banner / 顶栏每条独立排期,活动可把多处串起来;经审核后到点自动上线、到期全站自动消失,全程飞书提醒。设计 v2 已定稿(见 `PLAN.md`),下一步是阶段 0 同步线上主题。
+- **进度**: 25%(按新方向重新计;旧的元数据工具已完成)
+- **一句话**: 方向升级为「全站内容排期与监控」—— Banner / 顶栏每条独立排期,活动可把多处串起来;经审核后到点自动上线、到期全站自动消失,全程飞书提醒。设计 v2 已定稿(见 `PLAN.md`),阶段 0 已完成并验证,下一步阶段 1a。
 - **分类**: Shopify App
 
 ## 🔨 进行中
-- **阶段 0 收尾:渲染对比待做**。主题分支已就绪(见最近完成),差最后一步「把分支放到一个未发布主题上,和线上逐页对比 HTML」。这一步需要 `shopify theme push --unpublished`,属于要先征得用户同意的操作,等用户点头。
-  - 分支:`feat/campaign-scheduling`,位于独立工作目录 `~/Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign`(主题仓库的 git worktree)
-  - ⚠️ 此分支是「线上镜像 + 排期改动」,**不能整体合回共享仓库**:它不含其他项目尚未上线的 `assets/cgp-bundle-popup.js`、`templates/product.cgp-json.liquid`,整体合并会删掉它们
+- 准备阶段 1a(数据层 + 定时器)。
+- 测试主题:**「Promo Panel Test cinegearpro-2-0-1」#186525057402**(用户在后台复制,指定用于修改和测试)。当前 = 主题分支内容。
+- 主题分支:`feat/campaign-scheduling`,工作目录 `~/Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign`。
+  ⚠️ 此分支是「线上镜像 + 排期改动」,**不能整体合回共享仓库**(不含其他项目未上线的 `assets/cgp-bundle-popup.js`、`templates/product.cgp-json.liquid`)。
 
 ## ⏭ 下一步
-- 阶段 0:同步线上主题(独立 worktree)→ 把产品页 11 个 custom_liquid 块抽成正式文件(外观零变化)。
 - 阶段 1a:加权限 + Railway Postgres + 3 个 metaobject 定义 + 定时器 + 操作日志。**首次写操作上线前需再征得用户同意。**
 - 阶段 1b:后台(排期总览 / Banner / 顶栏 / 活动)+ 审核流程(草稿→待审核→批准/退回)。
 - 阶段 1c:飞书群机器人通知 —— 必须在主题发布前就位。
@@ -19,6 +19,11 @@
 - 待确认:飞书通知发哪个群、审核人是谁(1c 前);主题仓库 CLAUDE.md 误写 Plus 是否更正。
 
 ## 🏁 最近完成
+- **阶段 0 完成并验证**(2026-09-29):
+  - 3 个促销代码块(倒计时 / Promotion Info / 活动事件)搬进 `snippets/cgp-pdp-*.liquid`,**3 个产品模板**都改为调用它们:`product` + 两个编辑器建的备用模板 `product.bundle-product`、`product.pdmovie-fusion-page`(后两个各带一份逐字节相同的粘贴副本,是 PDMOVIE 没吃到改动时发现的——漏掉的话以后统一倒计时会静默漏掉这些产品)
+  - 在测试主题上逐页比对产品主 section 渲染出的 HTML:4 个产品(含备用模板)**0 行差异**;噪声基线 0;临时加隐形标记 4 页都能抓到(证明测试不是瞎的),恢复后回到 0
+  - 发现:主题仓库 `.shopifyignore` 故意忽略 `templates/*.json`,普通 push 会**静默跳过**模板;模板改动只从临时目录推到测试主题,推前确认测试主题上的副本没人改过
+  - 发现:用户在后台复制主题时,Shopify 会清掉已卸载 app 的 block 引用、并少了 7 个产品模板 → **影响发布,不影响测试**,阶段 1d 发布前要核对有没有产品用那 7 个模板
 - **阶段 0 · 主题同步与代码归档**(2026-09-29):
   - 只读拉取线上主题 `cinegearpro-2-0-1`(#183074816378)到独立 worktree,277 个文件与 6 月本地副本不同(线上多了 Setup Kit / FAQ 文件与 17 个编辑器新建模板)
   - 产品页 9 个粘贴代码块里,把 3 个促销相关的(Limited Time Offer / Promotion Info / 活动事件)**逐字节**搬进 `snippets/cgp-pdp-*.liquid`;模板只改 3 行,其余与线上深度一致;其余 6 个属于别的功能,不动
