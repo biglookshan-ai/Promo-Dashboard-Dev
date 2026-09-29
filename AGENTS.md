@@ -42,7 +42,12 @@
 
 ### 排期系统的铁律(动手前必读 PLAN.md)
 
-- **上下线只靠切 metaobject 的 publishable 状态**(DRAFT ↔ ACTIVE)。Liquid 遍历 `.values` 只返回 ACTIVE,主题里**不要写日期判断来决定显示与否**。
+- **以内容为主**:Banner / 顶栏每条独立排期;活动(campaign)只是可选的串联,别把所有内容都做成挂在活动下面。
+- **Shopify 里只放「已批准」的版本**:编辑中 / 待审核的改动存在 app 数据库,**批准时才写入 metaobject**。绝不能把未批准的改动直接写进 Shopify —— 改一条正在上线的内容会立刻出现在前台,绕过审核。
+- **只有已批准的内容能被定时器上线**;审核人自己的改动自动批准。
+- **上下线只靠切 metaobject 的 publishable 状态**(DRAFT ↔ ACTIVE)。Liquid 遍历 `.values` 只返回 ACTIVE,主题里**不要写日期判断来决定显示与否**。开了 publishable 后新建条目默认是 DRAFT。
+- 飞书通知用**群机器人 webhook**(lark-ops 是本地个人 token 工具,Railway 用不了)。webhook 地址不进代码仓库。
+- 店铺**不是 Shopify Plus**(主题仓库 CLAUDE.md 误写 Plus)。
 - **app 不写产品数据**:活动的产品 = 合集 + 活动自身的 `extra_products` 列表,由主题判断归属。别为了活动去给产品写 metafield,也别申请 `write_products`。
 - **主题改造外观不变、只换数据源,且必须保留回退**:没有活动数据时显示原编辑器设置。
 - **主题仓库是共享的**(`~/Vibe Coding Dev/Shopify Dev/cinegearpro-search-Development-test-1.0`,还装着搜索 / Setup Kit / FAQ):
