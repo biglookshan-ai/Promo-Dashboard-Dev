@@ -1,21 +1,23 @@
-# 进度 · Promo Dashboard(元数据管理)
+# 进度 · Promo Dashboard(全站内容排期系统)
 
-- **状态**: 开发中 / 已部署可用(只读)
-- **进度**: 65%
-- **一句话**: 已从「只管促销」扩成「全店元数据总账」——metafield/metaobject 定义总账 + 主题引用扫描 + 人工用途标注 + 钻取到具体资源并可点进后台,全部只读零 mutation;促销盘点降级为其中一个专题模块。
+- **状态**: 开发中 / 已部署可用(只读工具部分)
+- **进度**: 15%(按新方向重新计;旧的元数据工具已完成)
+- **一句话**: 方向升级为「全站内容排期与监控」—— 活动带时间,自动投放到顶栏 / Banner / 产品页,到期全站自动消失。设计与分期已定稿(见 `PLAN.md`),下一步是阶段 0 同步线上主题。
 - **分类**: Shopify App
 
 ## 🔨 进行中
-- 线上实测钻取:150 个 metafield 定义 / 126 个 metaobject 定义 / 主题已扫 690 个文件,待逐项验证明细正确性。
-- 用主题扫描结果回答悬了很久的问题:**主题到底读产品端 metafield 还是遍历 metaobject** —— 这决定促销同步引擎方向。搜 `promotion_tag` / `product_activity_event` 两行的「主题引用」即可。
+- 阶段 0 准备:在主题仓库的**独立 worktree/分支**拉取线上最新主题(本地副本停在 2026-06-12;主工作区有 FAQ 未提交改动,不能在那拉)。
 
 ## ⏭ 下一步
-- 开始给关键字段做人工标注(用途/归属项目/状态),把 23 个「疑似废弃」逐一定性。
-- 覆盖范围可按需扩 owner type(现 PRODUCT/PRODUCTVARIANT/COLLECTION,见 `src/registry.js` 的 `OWNER_TYPES`)。
-- 促销侧仍缺:写权限 + 同步引擎 + 给 `product_activity_event` 补 `Product(list)` 字段(现无此字段导致活动内容全成孤儿)。
-- 清理动作(删废弃定义/批量清过期)仍需 write scope,未开。
+- 阶段 0:同步线上主题 → 把产品页 11 个 custom_liquid 块抽成正式文件(外观零变化)。
+- 阶段 1a:加权限(`write_metaobject_definitions` / `write_metaobjects` / `read_files` / `write_files`)→ 建 3 个 metaobject 定义(活动 / 顶栏 / Banner)→ 定时器 + 操作日志。**首次写操作上线前需再征得用户同意。**
+- 阶段 1b:后台排期总览(时间轴)+ 活动 / Banner / 顶栏编辑器。
+- 阶段 1c:主题改造第一期(Banner、顶栏、产品页徽章与倒计时),在复制主题上做,用户预览后发布。
+- 待确认(不阻塞):Banner 是否要单独手机图、倒计时样式、是否 Shopify Plus、是否需要审核流程。
 
 ## 🏁 最近完成
+- **方向升级 + 设计定稿**(2026-09-29):勘查主题后写成 `PLAN.md`。关键结论 —— ① 活动为一等公民,内容可继承活动时间;② 上下线只靠切 metaobject publishable 状态(已核实 Liquid 只返回 ACTIVE),定时器自建;③ 活动产品 = 合集 + 额外单品,**app 不写产品数据**。用户已定:以合集为主可加单品、只管展示不改价、全市场统一、第一期做 Banner / 顶栏 / 产品页徽章倒计时。
+- **主题勘查结论**:Banner 35 张 slide 里 19 张停用;顶栏 3 套整套开关且残留过期链接;Sale / Feature 已按合集取数;产品页促销是 11 个粘贴在编辑器里的代码块,倒计时复制了 6 份且只在浏览器里隐藏;**确认主题读的是产品端 `promotion_tag`**(metaobject 的 Product 列表从未被读)。
 - **界面重做**(2026-09):Metafield / Metaobject 拆成两个独立顶层模块 + 促销盘点;卡片式列表(类型图标/徽章/层级排版)取代裸表格;分页(默认 25,可 50/100);每模块独立搜索与筛选;统一设计系统。引用类字段的 gid 批量解析成可读名称。
 - **修 bug**:metafield 存在性筛选被 Shopify 静默忽略,导致明细返回全店产品(见 AGENTS.md 的坑)。
 - **钻取**(2026-09):`src/drilldown.js` —— metafield 用 `products(query:"metafields.{ns}.{key}:*")` 官方筛选器只返命中的资源;metaobject 用 `Metaobject.referencedBy` 直接拿反向引用。两条都不用扫全站。明细带后台/前台深链(变体链接指向父产品)。
