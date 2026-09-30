@@ -964,6 +964,7 @@
           <p class="muted">把线上主题首页<b>正在显示的 Banner</b>、顶栏公告和顶栏配色导进来,变成「已批准 · 长期显示」,顺序和现在网站上一样。只读主题、不改主题;可以重复点,导过的会跳过。</p>
           <button class="btn btn-sm ${S.imported && MODE === 'live' ? '' : 'btn-primary'}" data-conn="import" type="button">从主题导入</button><span class="muted" id="imp-prev"></span></div>` : ''}
       </div>
+      ${st.app ? `<p class="muted conn__ver">app 版本 <span class="mono">${esc(st.app.commit)}</span> · 启动于 ${fDT(st.app.startedAt)}</p>` : ''}
       ${st.ready ? `<div class="conn__mode">${MODE === 'live'
         ? '现在看到的是店里的正式数据,所有改动按审核规则写进店铺。<button class="linkbtn" data-conn="demo" type="button">临时看演示数据</button>'
         : '<b>内容类型已建好。</b><button class="btn btn-sm btn-primary" data-conn="live" type="button">切换到正式数据</button><span class="muted">切换后你在这里的操作会真的写进店铺(前台要等主题改造发布后才读这些内容)。</span>'}</div>` : ''}`;

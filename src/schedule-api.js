@@ -11,6 +11,8 @@ import { scopeCounts, productCampaigns } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 
+// 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
+const APP_VERSION = { commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local', startedAt: Date.now() };
 const cache = new Map(); // `${shop}:${name}` → { at, value }
 async function cached(shop, name, ms, fn) {
   const k = `${shop}:${name}`; const c = cache.get(k);
@@ -148,7 +150,7 @@ export function scheduleRouter() {
   r.get('/status', wrap(async (req) => {
     bust(req.ctx.shop, 'setup');
     const st = load(req.ctx.shop);
-    return { shop: req.ctx.shop, ...(await cached(req.ctx.shop, 'setup', 60_000, () => setupStatus(req.ctx))), scheduler: schedulerInfo(req.ctx.shop),
+    return { shop: req.ctx.shop, ...(await cached(req.ctx.shop, 'setup', 60_000, () => setupStatus(req.ctx))), scheduler: schedulerInfo(req.ctx.shop), app: APP_VERSION,
       items: Object.fromEntries(Object.values(LIST).map((k) => [k, st[k].length])) };
   }));
   r.post('/setup', wrap(async (req) => {

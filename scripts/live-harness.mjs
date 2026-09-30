@@ -71,8 +71,8 @@ function gql(query, v) {
   if (q.includes('theme(id: $id) { files')) {
     return { theme: { files: { nodes: v.f.filter((f) => fs.existsSync(path.join(THEME, f))).map((f) => ({ filename: f, body: { content: fs.readFileSync(path.join(THEME, f), 'utf8') } })) } } };
   }
-  if (q.includes('files(first: 10, query')) {
-    const m = v.q.match(/filename:'([^']+)\*'/); const base = m ? m[1] : '';
+  if (q.includes('files(first: 25, query')) {
+    const m = v.q.match(/^filename:'?([^'*]+)\*'?$/); const base = m ? m[1] : '';
     return { files: { nodes: base ? [{ id: `gid://shopify/MediaImage/${crypto.createHash('md5').update(base).digest('hex').slice(0, 8)}`, fileStatus: 'READY', image: { url: `https://cdn.shopify.com/s/files/1/1258/4351/files/${base}.jpg` } }] : [] } };
   }
   if (q.includes('stagedUploadsCreate')) return { stagedUploadsCreate: { stagedTargets: [{ url: `http://localhost:${P.fake}/__upload`, resourceUrl: `http://localhost:${P.fake}/__uploaded/${store.n++}-${v.input[0].filename}`, parameters: [{ name: 'key', value: 'x' }] }], userErrors: [] } };

@@ -133,3 +133,19 @@ test('每日汇总:10 点前不发;明天上线的 + 3 天内下架的', () => {
   assert.match(m[0].card.lines.join('\n'), /NotApproved.*还没批准/);
   assert.match(m[1].card.title, /3 天内下架/);
 });
+
+test('写入:Shopify 不收空字符串时,去掉空字段再写一次', async () => {
+  const { upsertItem } = await import('../src/metaobjects.js');
+  const calls = [];
+  const gql = async (ctx, q, vars) => {
+    calls.push(vars.metaobject.fields.length);
+    const hasEmpty = vars.metaobject.fields.some((f) => f.value === '');
+    return { metaobjectUpsert: hasEmpty
+      ? { metaobject: null, userErrors: [{ field: ['fields', '3'], message: "Value can't be blank" }] }
+      : { metaobject: { id: 'gid://shopify/Metaobject/1', handle: 'h', capabilities: { publishable: { status: 'ACTIVE' } } }, userErrors: [] } };
+  };
+  const r = await upsertItem({}, { id: 'b1', kind: 'banner', title: 'A', subtitle: '', imageId: 'gid://shopify/MediaImage/1', order: 0, tag: 'new' }, { status: 'ACTIVE', win: {} }, gql);
+  assert.equal(r.id, 'gid://shopify/Metaobject/1');
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1] < calls[0]);
+});

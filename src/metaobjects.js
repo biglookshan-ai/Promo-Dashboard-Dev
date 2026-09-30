@@ -183,12 +183,22 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
   return Object.entries(f).map(([key, value]) => ({ key, value }));
 }
 
+const UPSERT = `mutation($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
+    metaobjectUpsert(handle: $handle, metaobject: $metaobject) { metaobject { id handle capabilities { publishable { status } } } userErrors { field message code } } }`;
+const errText = (errs) => errs.map((e) => `${(e.field || []).join('.')} ${e.message}`.trim()).join('; ');
+
 export async function upsertItem(ctx, it, { status, win, campaignGid } = {}, gql = graphql) {
-  const d = await gql(ctx, `mutation($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
-    metaobjectUpsert(handle: $handle, metaobject: $metaobject) { metaobject { id handle capabilities { publishable { status } } } userErrors { field message code } } }`,
-  { handle: { type: TYPE_OF[it.kind], handle: handleFor(it) }, metaobject: { fields: fieldsFor(it, { win, campaignGid }), capabilities: { publishable: { status } } } });
-  const r = d.metaobjectUpsert;
-  if (r.userErrors?.length) throw new Error(r.userErrors.map((e) => `${(e.field || []).join('.')} ${e.message}`.trim()).join('; '));
+  const handle = { type: TYPE_OF[it.kind], handle: handleFor(it) };
+  const fields = fieldsFor(it, { win, campaignGid });
+  const send = (fs) => gql(ctx, UPSERT, { handle, metaobject: { fields: fs, capabilities: { publishable: { status } } } }).then((d) => d.metaobjectUpsert);
+  let r = await send(fields);
+  // 空值(没有副标题、没挂活动、没结束时间…)我们传的是空字符串,用来清空。
+  // 万一 Shopify 对某类字段不收空字符串,就去掉空字段再写一次 —— 新建时效果一样,只是改的时候清不掉旧值。
+  if (r.userErrors?.length && fields.some((f) => f.value === '')) {
+    const retry = await send(fields.filter((f) => f.value !== ''));
+    if (!retry.userErrors?.length) { console.warn(`[upsert] ${handle.handle} 带空值被拒(${errText(r.userErrors)}),去掉空字段后成功`); r = retry; }
+  }
+  if (r.userErrors?.length) throw new Error(errText(r.userErrors));
   return { id: r.metaobject.id, status: r.metaobject.capabilities.publishable.status };
 }
 

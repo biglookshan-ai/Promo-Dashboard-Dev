@@ -10,12 +10,17 @@ const pickImage = (n) => (n ? { id: n.id, url: n.image?.url || '', status: n.fil
 
 export async function findImageByFilename(ctx, filename, gql = graphql) {
   const base = filename.replace(/\.[a-z0-9]+$/i, '');
-  const d = await gql(ctx, `query($q: String!) { files(first: 10, query: $q) { nodes { ${FILE_FIELDS} } } }`,
-    { q: `filename:'${base.replace(/'/g, "\\'")}*' media_type:IMAGE` });
-  const nodes = d.files.nodes.filter((n) => n.image?.url);
-  // 只认文件名完全一致的 —— 搜索条件万一被 Shopify 忽略,也不会拿错图(找不到就由调用方改用网址新建)
-  const exact = nodes.find((n) => decodeURIComponent(n.image.url.split('?')[0].split('/').pop()) === filename);
-  return pickImage(exact || null);
+  // 搜索写法依次试(真实店里哪种生效以结果为准);只认文件名完全一致的 ——
+  // 搜索条件万一被 Shopify 忽略,也不会拿错图(都找不到就由调用方改用网址新建)
+  const queries = [`filename:${base}*`, `filename:'${base.replace(/'/g, "\\'")}*'`, base];
+  for (const q of queries) {
+    try {
+      const d = await gql(ctx, `query($q: String!) { files(first: 25, query: $q) { nodes { ${FILE_FIELDS} } } }`, { q });
+      const exact = d.files.nodes.find((n) => n.image?.url && decodeURIComponent(n.image.url.split('?')[0].split('/').pop()) === filename);
+      if (exact) return pickImage(exact);
+    } catch (e) { /* 这种写法不支持,试下一种 */ }
+  }
+  return null;
 }
 
 async function waitReady(ctx, id, gql, tries = 10) {
