@@ -1,16 +1,16 @@
 # 进度 · Promo Dashboard(全站内容排期系统)
 
 - **状态**: 开发中 / 已部署可用(只读工具部分)
-- **进度**: 70%(按新方向重新计;旧的元数据工具已完成)
+- **进度**: 75%(按新方向重新计;旧的元数据工具已完成)
 - **一句话**: 全站内容排期系统。阶段 0 / 1a / 1b / 1c 代码完成并在本地测试环境整条走通;**阶段 1d 首批主题改造已推到测试主题并验证**(首页 Banner、顶栏含节日样式、产品页活动徽章与倒计时,没数据时零差异);等用户加权限、建内容类型、导入后,在测试主题上验证「有数据时」的效果。
 - **分类**: Shopify App
 
 ## 🔨 进行中
-- **等用户操作**:① Partner 后台给「Promo Dashboard Dev」加 `write_metaobject_definitions, write_metaobjects, write_files`,发布新版本并在店里同意;② app →「设置 → 店铺连接」点「在店里创建内容类型」→「从主题导入」→ 自动切到正式数据;③ 飞书群加自定义机器人,把 webhook(和签名密钥)填进「设置 → 飞书通知」,点「发送测试消息」。
-- **用户做完 ② 之后我要做**:在测试主题上验证「有数据时」的渲染 —— 导入的 17 张 Banner 应该和编辑器里的一模一样(可以直接做零差异比对);顶栏默认样式同色;再建一个测试活动看产品页徽章 / 倒计时、到点上下线后页面缓存多久刷新。
-- 测试主题:**「Promo Panel Test cinegearpro-2-0-1」#186525057402**(已含 1d 首批改动)。主题分支 `feat/campaign-scheduling`(`~/Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign`,本地提交 15d359c)。
+- **用户已完成**(2026-09-30):加权限 → 建 4 个内容类型 → 从主题导入(17 张 Banner、1 条顶栏、默认顶栏样式),app 已切到正式数据。
+- **等用户**:① 挑全站统一的倒计时样式(红色款 / 状态款);② 建一个测试活动(见下)验证产品页徽章 + 倒计时和上下线刷新速度;③ 飞书群加自定义机器人并填进「设置 → 飞书通知」。
+- 测试主题:**「Promo Panel Test cinegearpro-2-0-1」#186525057402**,已在读排期数据。主题分支 `feat/campaign-scheduling`(本地提交 b0933a9)。
   ⚠️ 此分支是「线上镜像 + 排期改动」,**不能整体合回共享仓库**(不含其他项目未上线的 `assets/cgp-bundle-popup.js`、`templates/product.cgp-json.liquid`)。
-- 本地:演示界面 `node scripts/demo-preview.mjs`(4790);正式数据测试环境 `node scripts/live-harness.mjs --fresh`(4793)。
+- 「店铺连接」里 cgp_banner_slide 显示「1 条」(Shopify 的 metaobjectsCount),但测试主题首页实际读出 17 张上线中的 —— 疑似 Shopify 统计延迟,待观察。
 
 ## ⏭ 下一步
 - 阶段 1d 第二批:产品卡片(`GPT-Custom-Product-List` / `gpt-555` / `gpt-collection-product-v5` / `gpt-multi-products` / `ai_gen_block_90eb43e(_V2)`)也读活动的徽章和倒计时;先把现有 6 种倒计时样式截图并排给用户挑一种统一样式。
@@ -19,6 +19,7 @@
 - 阶段 3:73 个产品的 `offer_*` 按日期并入活动、`promotion_tag` 并入活动、清理 `product_activity_event`(写产品数据,单独问用户)。
 
 ## 🏁 最近完成
+- **有数据时的主题验证**(2026-09-30):用户导入后,测试主题首页 17 张轮播**全部从排期数据读出**(临时记号确认 17 张都走了新代码),和改动前的编辑器版本**逐字一致**(图片地址、标题、按钮都一样);顶栏公告从数据读出,默认样式颜色和原来相同;4 个产品页零差异。顺手修了一个空格差异(b0933a9)。
 - **阶段 1d 首批主题改造(测试主题)**(2026-09-30):
   - 首页轮播:有上线中的排期 Banner 就按位置用它们,否则用编辑器里的 slide;卡片的画法抽成 `snippets/cgp-slider-slide.liquid`,两边用同一份,保证长得一样
   - 顶栏:有排期公告就用,否则用 5 个公告位(`snippets/cgp-topbar-message.liquid`);节日样式覆盖底色 / 字色,飘雪 / 闪光 / 彩带特效(纯 CSS,系统设了「减少动画」时关掉),公告前后装饰
