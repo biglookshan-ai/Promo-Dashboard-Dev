@@ -143,3 +143,65 @@ export async function setPublishStatus(ctx, id, status, gql = graphql) {
   if (r.userErrors?.length) throw new Error(r.userErrors.map((e) => e.message).join('; '));
   return r.metaobject.capabilities.publishable.status;
 }
+
+// ---- 把 app 里的一条内容写成 Shopify 条目(只写已批准的版本)----
+export const TYPE_OF = { campaign: 'cgp_campaign', banner: 'cgp_banner_slide', topbar: 'cgp_topbar_message', tbstyle: 'cgp_topbar_style' };
+export const handleFor = (it) => `cgp-${String(it.id).toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
+export const toGid = (type, id) => (id == null ? null : String(id).startsWith('gid://') ? String(id) : `gid://shopify/${type}/${id}`);
+const iso = (ms) => (ms == null ? '' : new Date(ms).toISOString());
+const str = (v) => (v == null ? '' : String(v));
+const list = (arr) => (arr && arr.length ? JSON.stringify(arr) : '');
+const hex = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '');
+
+// win = 有效时间窗(跟随活动的已换算成活动的时间),campaignGid = 所属活动的 Shopify id(没有就空)
+export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaignGid = '' } = {}) {
+  const f = {};
+  if (it.kind === 'campaign') {
+    Object.assign(f, {
+      name: str(it.name), starts_at: iso(it.start), ends_at: iso(it.end),
+      collections: list((it.collections || []).map((c) => toGid('Collection', c.id)).filter(Boolean)),
+      tags: list(it.tags || []),
+      products: list((it.products || []).map((p) => toGid('Product', p.id)).filter(Boolean)),
+      badge_text: str(it.badge), show_countdown: it.countdown ? 'true' : 'false', priority: str(it.priority ?? 0),
+    });
+  } else if (it.kind === 'banner') {
+    Object.assign(f, {
+      title: str(it.title), subtitle: str(it.subtitle), description: str(it.description), image: str(it.imageId),
+      button1_text: str(it.button1_text), button1_url: str(it.button1_url), button2_text: str(it.button2_text), button2_url: str(it.button2_url),
+      tag: ['none', 'new', 'sale', 'event'].includes(it.tag) ? it.tag : 'none', position: str(it.order ?? 0),
+    });
+  } else if (it.kind === 'topbar') {
+    Object.assign(f, { emoji: str(it.emoji), text: str(it.text), link: str(it.link), position: str(it.order ?? 0) });
+  } else if (it.kind === 'tbstyle') {
+    Object.assign(f, {
+      name: str(it.name), background: hex(it.bg), text_color: hex(it.color), accent_color: hex(it.accent),
+      effect: ['none', 'snow', 'sparkle', 'confetti'].includes(it.effect) ? it.effect : 'none',
+      deco_left: str(it.decoLeft), deco_right: str(it.decoRight), priority: str(it.priority ?? 0), is_default: it.isDefault ? 'true' : 'false',
+    });
+  }
+  if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });
+  return Object.entries(f).map(([key, value]) => ({ key, value }));
+}
+
+export async function upsertItem(ctx, it, { status, win, campaignGid } = {}, gql = graphql) {
+  const d = await gql(ctx, `mutation($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
+    metaobjectUpsert(handle: $handle, metaobject: $metaobject) { metaobject { id handle capabilities { publishable { status } } } userErrors { field message code } } }`,
+  { handle: { type: TYPE_OF[it.kind], handle: handleFor(it) }, metaobject: { fields: fieldsFor(it, { win, campaignGid }), capabilities: { publishable: { status } } } });
+  const r = d.metaobjectUpsert;
+  if (r.userErrors?.length) throw new Error(r.userErrors.map((e) => `${(e.field || []).join('.')} ${e.message}`.trim()).join('; '));
+  return { id: r.metaobject.id, status: r.metaobject.capabilities.publishable.status };
+}
+
+export async function setPosition(ctx, id, position, gql = graphql) {
+  const d = await gql(ctx, `mutation($id: ID!, $metaobject: MetaobjectUpdateInput!) {
+    metaobjectUpdate(id: $id, metaobject: $metaobject) { metaobject { id } userErrors { field message code } } }`,
+  { id, metaobject: { fields: [{ key: 'position', value: String(position) }] } });
+  if (d.metaobjectUpdate.userErrors?.length) throw new Error(d.metaobjectUpdate.userErrors.map((e) => e.message).join('; '));
+}
+
+export async function removeEntry(ctx, id, gql = graphql) {
+  const d = await gql(ctx, `mutation($id: ID!) { metaobjectDelete(id: $id) { deletedId userErrors { field message code } } }`, { id });
+  const errs = d.metaobjectDelete.userErrors || [];
+  // 已经被删掉了也算成功
+  if (errs.length && !errs.every((e) => /not exist|not found/i.test(e.message))) throw new Error(errs.map((e) => e.message).join('; '));
+}

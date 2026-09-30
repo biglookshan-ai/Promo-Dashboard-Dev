@@ -1,6 +1,6 @@
 {
  "version": 1,
- "generatedFrom": "theme cinegearpro-2-0-1 @ 2026-09-29",
+ "generatedFrom": "theme cinegearpro-2-0-1 @ 2026-09-30",
  "staff": [
   {
    "id": "u1",
@@ -22,6 +22,7 @@
    "mh": 450,
    "bg": "#f5f5f5",
    "gap": 20,
+   "radius": 12,
    "titleSize": 20,
    "subtitleSize": 16,
    "descSize": 18,
@@ -62,8 +63,7 @@
    },
    "tagTop": 15,
    "tagLeft": 15,
-   "tagRadius": 4,
-   "radius": 12
+   "tagRadius": 4
   },
   "topbar": {
    "bg": "#3B4041",
@@ -1351,13 +1351,13 @@
  },
  "banners": [
   {
-   "id": "b-e_jPNh9c",
+   "id": "b-ejpnh9c",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/PDMOVIE_Smart_Fusion_web_banner2.jpg",
    "title": "SMART FUSION",
    "subtitle": "Autofocus Control Module ",
    "description": "",
    "button1_text": "Shop Now",
-   "button1_url": "shopify://products/pdmovie-smart-fusion-autofocus-lens-adapter-for-live-air-4-smart-sony-e-mount",
+   "button1_url": "/products/pdmovie-smart-fusion-autofocus-lens-adapter-for-live-air-4-smart-sony-e-mount",
    "button2_text": "",
    "button2_url": "",
    "tag": "new",
@@ -1368,13 +1368,13 @@
    "by": "u1"
   },
   {
-   "id": "b-e_7bNW4q",
+   "id": "b-e7bnw4q",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Arles_Zoom_3-4_banner.jpg",
    "title": "Arles Zoom",
    "subtitle": "25-75mm / 65-180mm | T2.6",
    "description": "",
    "button1_text": "Now in Stock",
-   "button1_url": "shopify://collections/dzofilm-arles-zoom-full-frame-cine-lens",
+   "button1_url": "/collections/dzofilm-arles-zoom-full-frame-cine-lens",
    "button2_text": "",
    "button2_url": "",
    "tag": "new",
@@ -1385,13 +1385,13 @@
    "by": "u1"
   },
   {
-   "id": "b-e_nkpBBV",
+   "id": "b-enkpbbv",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/POCO_II_Web.jpg",
    "title": "POCO II",
    "subtitle": "Drop-in Filter Adapter",
    "description": "",
    "button1_text": "Shop Now",
-   "button1_url": "shopify://products/mofage-poco-ii-drop-in-filter-adapter",
+   "button1_url": "/products/mofage-poco-ii-drop-in-filter-adapter",
    "button2_text": "",
    "button2_url": "",
    "tag": "new",
@@ -1402,7 +1402,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_njncJp",
+   "id": "b-enjncjp",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Desview_Core_OL_Series_23a1d666-8832-4ed9-bb57-6149435cc1d4.jpg",
    "title": "Core OL Series",
    "subtitle": "High-Bright AMOLED Monitor",
@@ -1419,7 +1419,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_GNgGeL",
+   "id": "b-egnggel",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/rental_web_bannner.jpg",
    "title": "CAMERA EQUIPMENT HIRE",
    "subtitle": "Cameras, lenses and production gear",
@@ -1436,7 +1436,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_XreW3d",
+   "id": "b-exrew3d",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/2026.3.18.jpg",
    "title": "Viper 1.5x FF Anamorphic",
    "subtitle": "T2.1 Full Frame Anamorphic",
@@ -1453,7 +1453,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_FikHPQ",
+   "id": "b-efikhpq",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Simera-C_16mm_T1.9.jpg",
    "title": "Simera-C 16mm T1.9",
    "subtitle": "FF Prime Cine Lens",
@@ -1470,7 +1470,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_zEFHfd",
+   "id": "b-ezefhfd",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/DZOFILM_Arcana_1.5X.jpg",
    "title": "Arcana 1.5X",
    "subtitle": "Full Frame Anamorphic Lens",
@@ -1487,7 +1487,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_zwM8bQ",
+   "id": "b-ezwm8bq",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Talon_1.5X_50mm_T2.1_f9b4fd48-dad7-4bd4-b2d0-44a0171e0c4d.jpg",
    "title": "Talon 1.5X 50mm T2.1",
    "subtitle": "Full Frame AF Anamorphic Lens",
@@ -1504,13 +1504,13 @@
    "by": "u1"
   },
   {
-   "id": "b-e_48cCFb",
+   "id": "b-e48ccfb",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/dzofilm_sale_2.jpg",
    "title": "Vespid Prime SALE",
    "subtitle": "UP TO 55% OFF",
    "description": "",
    "button1_text": "Shop Now",
-   "button1_url": "shopify://collections/dzofilm-vespid-prime-cine-lens",
+   "button1_url": "/collections/dzofilm-vespid-prime-cine-lens",
    "button2_text": "",
    "button2_url": "",
    "tag": "sale",
@@ -1522,7 +1522,7 @@
    "campaign": "c3"
   },
   {
-   "id": "b-e_ipwHWQ",
+   "id": "b-eipwhwq",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/PDMOVIE_LIVE_AIR_4_Smart.jpg",
    "title": "LIVE AIR 4 Smart LiDAR AF System",
    "subtitle": "50M Seamless Focus, Limitless Possibilities.",
@@ -1539,13 +1539,13 @@
    "by": "u1"
   },
   {
-   "id": "b-e_Ey3RJC",
+   "id": "b-eey3rjc",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/DULENS_APO_Cambrian_446cfc5b-5df5-4a22-9cef-a4f8f1de7d73.jpg",
    "title": "APO Cambrian Cine Lens",
    "subtitle": "Medium Format Coverage APO Primes",
    "description": "",
    "button1_text": "Shop Now",
-   "button1_url": "shopify://products/dulens-apo-cambrian-prime-6-lens-set-pl-mount",
+   "button1_url": "/products/dulens-apo-cambrian-prime-6-lens-set-pl-mount",
    "button2_text": "",
    "button2_url": "",
    "tag": "new",
@@ -1556,13 +1556,13 @@
    "by": "u1"
   },
   {
-   "id": "b-e_8KAj3R",
+   "id": "b-e8kaj3r",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/DZOFILM_VESPID_II_v2.jpg",
    "title": "Vespid II T1.9 Cine Lenses",
    "subtitle": "Cooke/i Tech + Uniform Design, Seamless Post-Workflows.",
    "description": "",
    "button1_text": "Shop Now",
-   "button1_url": "shopify://collections/dzofilm-vespid-prime-ii-cine-lens",
+   "button1_url": "/collections/dzofilm-vespid-prime-ii-cine-lens",
    "button2_text": "",
    "button2_url": "",
    "tag": "new",
@@ -1573,7 +1573,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_kaXjgh",
+   "id": "b-ekaxjgh",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Cinediskpro_deaa6374-00ff-4386-893e-1af99da82777.jpg",
    "title": "Media Storage Deals",
    "subtitle": "UP TO 60% OFF",
@@ -1590,7 +1590,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_DiCnGg",
+   "id": "b-edicngg",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/ZEAPON_MOtorised_Slider_Sale_f35aa0a7-b31e-4939-aab6-d7017cc4d755.jpg",
    "title": "MOtorised Slider Sale",
    "subtitle": "UP TO 48% OFF",
@@ -1607,7 +1607,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_j6B3wq",
+   "id": "b-ej6b3wq",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/lenthem_0d9b5a05-0cdb-4026-8357-ca8530208704.jpg",
    "title": "DRY CABINET",
    "subtitle": "Protect What Matters Most",
@@ -1624,7 +1624,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_rLAe9d",
+   "id": "b-erlae9d",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/pdmovie_2_a8aa1669-684b-43c0-a071-efc29945b5d9.jpg",
    "title": "Wireless Focus Sale",
    "subtitle": "UP TO 70% OFF",
@@ -1641,7 +1641,7 @@
    "by": "u1"
   },
   {
-   "id": "b-e_7Mpccy",
+   "id": "b-e7mpccy",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/fujifilm_X_Promotion_3-4_banner_3.jpg",
    "title": "X Series Cashback",
    "subtitle": "Get Up to £300 Cashback on Selected Products",
@@ -1659,13 +1659,13 @@
    "note": "提前一周做好,9 天后自动上线"
   },
   {
-   "id": "b-e_hawxLT",
+   "id": "b-ehawxlt",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/gift_ideas.jpg",
    "title": "Gift Ideas",
    "subtitle": "Top Picks for Creators",
    "description": "",
    "button1_text": "Shop Now",
-   "button1_url": "shopify://collections/gift-ideas",
+   "button1_url": "/collections/gift-ideas",
    "button2_text": "",
    "button2_url": "",
    "tag": "sale",
@@ -1677,7 +1677,7 @@
    "campaign": "c5"
   },
   {
-   "id": "b-e_UYgGVj",
+   "id": "b-euyggvj",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/DESVIEW_OL_b9011801-c5e0-4a8c-af1f-1ca2af55aa25.jpg",
    "title": "OL14/OL16 4K OLED Monitor",
    "subtitle": "Up To 15% Off",
@@ -1695,7 +1695,7 @@
    "campaign": "c1"
   },
   {
-   "id": "b-e_7JUn4G",
+   "id": "b-e7jun4g",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Blazar_Beetle_1.33X_74947360-8a4a-4a4f-9317-0181eadac3ab.jpg",
    "title": "BEETLE 1.33x FF Anamorphic Lens",
    "subtitle": "Compact. Characterful. Cinematic.",
@@ -1712,7 +1712,7 @@
    "state": "draft"
   },
   {
-   "id": "b-e_wrMVpH",
+   "id": "b-ewrmvph",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/34_fuji.jpg",
    "title": "FUJIFILM ETERNA 55",
    "subtitle": "Beyond Full Frame",
@@ -1729,7 +1729,7 @@
    "state": "draft"
   },
   {
-   "id": "b-e_JgzHXP",
+   "id": "b-ejgzhxp",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/dzofilm_sale_v2.jpg",
    "title": "CINE LENS Holiday Deals",
    "subtitle": "Up to 60% OFF",
@@ -1746,7 +1746,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_RMiC7R",
+   "id": "b-ermic7r",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/CINE_GRIP_SALE.jpg",
    "title": "Pro Grip Equipment Sale",
    "subtitle": "Up to 40% OFF",
@@ -1763,7 +1763,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_UH9ckE",
+   "id": "b-euh9cke",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/thypoch_2.jpg",
    "title": "Lenses Sale",
    "subtitle": "UP TO 35% OFF",
@@ -1780,7 +1780,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_RPyWwn",
+   "id": "b-erpywwn",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/BLAZAR_SALE.jpg",
    "title": "Anamorphic Lenses DEALS",
    "subtitle": "Up to 60% OFF",
@@ -1797,7 +1797,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_TiTxgD",
+   "id": "b-etitxgd",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/BlackmagicDesign_PYXIS_12K_e057a60e-2142-48e8-a6fc-2cb90fea2eda.jpg",
    "title": "BLACKMAGIC PYXIS 12K",
    "subtitle": "Detail Beyond Definition",
@@ -1814,7 +1814,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_ULPgpX",
+   "id": "b-eulpgpx",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Tilta_cart_8df12c73-412d-4827-ae1d-4fc8533633a7.jpg",
    "title": "TILTA BOULDER CAMERA CART",
    "subtitle": "Strength. Storage. Stability.",
@@ -1831,7 +1831,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_kw48HU",
+   "id": "b-ekw48hu",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Nucleus-M_II.jpg",
    "title": "Nucleus-M II DEALS",
    "subtitle": "Save 50% On Ultimate Kit",
@@ -1848,7 +1848,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_iKWMgx",
+   "id": "b-eikwmgx",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Aparo_4aa6d0fa-42a3-4613-8746-69394f6c78cb.jpg",
    "title": "Air Balloon Lighting Sale",
    "subtitle": "UP TO 33% OFF",
@@ -1865,7 +1865,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_kxRJpV",
+   "id": "b-ekxrjpv",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Falconeyes_745e093c-fbd5-4374-902d-7d3e5d48801b.jpg",
    "title": "Flex Lighting Sale",
    "subtitle": "UP TO 50% OFF",
@@ -1882,7 +1882,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_PMaEr3",
+   "id": "b-epmaer3",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/Viltorx_LAB_Series_Prime_Lens.jpg",
    "title": "LAB Series Prime Lens",
    "subtitle": "35mm F1.2/135mm F1.8",
@@ -1899,7 +1899,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_Q6DPEC",
+   "id": "b-eq6dpec",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/PDMOVIE_3D_Air_Smart.jpg",
    "title": "3D Air Smart",
    "subtitle": "Intelligent Spatial/3D Filming System",
@@ -1916,7 +1916,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_eTyFmQ",
+   "id": "b-eetyfmq",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/U-MOCO.jpg",
    "title": "CINEMATIC ROBOTIC ARMS",
    "subtitle": "",
@@ -1933,7 +1933,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_WYqDme",
+   "id": "b-ewyqdme",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/NSH_Grip_EQUIPMENT.jpg",
    "title": "Grip EQUIPMENT",
    "subtitle": "Cranes, Track Dollies, Sliders, and Grip Products",
@@ -1950,7 +1950,7 @@
    "state": "approved"
   },
   {
-   "id": "b-e_ayEgkT",
+   "id": "b-eayegkt",
    "image": "https://cdn.shopify.com/s/files/1/1258/4351/files/TiLTA_Hydra-Arm_Mini_SALE.jpg",
    "title": "Hydra-Arm Mini SALE",
    "subtitle": "SAVE £3,930",

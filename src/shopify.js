@@ -2,6 +2,8 @@
 // from the App Bridge session token (see auth-embedded.js), or from a fixed
 // SHOPIFY_ADMIN_TOKEN for CLI use.
 const VERSION = process.env.SHOPIFY_API_VERSION || '2026-04';
+// 只给本地测试环境用(scripts/live-harness.mjs 的假 Shopify);线上不设这个变量
+const ORIGIN = process.env.SHOPIFY_GRAPHQL_ORIGIN || '';
 
 const headers = (token) => ({
   'X-Shopify-Access-Token': token,
@@ -10,7 +12,7 @@ const headers = (token) => ({
 });
 
 export async function graphql(ctx, query, variables = {}) {
-  const res = await fetch(`https://${ctx.shop}/admin/api/${VERSION}/graphql.json`, {
+  const res = await fetch(`${ORIGIN || `https://${ctx.shop}`}/admin/api/${VERSION}/graphql.json`, {
     method: 'POST',
     headers: headers(ctx.token),
     body: JSON.stringify({ query, variables }),

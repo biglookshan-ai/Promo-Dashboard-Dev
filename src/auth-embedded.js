@@ -62,9 +62,10 @@ export function requireSession() {
       const h = req.headers.authorization || '';
       const sessionToken = h.startsWith('Bearer ') ? h.slice(7) : '';
       if (!sessionToken) return res.status(401).json({ error: 'Missing session token', needsAuth: true });
-      const { shop } = verifySessionToken(sessionToken);
+      const { shop, payload } = verifySessionToken(sessionToken);
       const token = process.env.SHOPIFY_ADMIN_TOKEN || await getAccessToken(shop, sessionToken);
-      req.ctx = { shop, token };
+      // user = 正在操作的 Shopify 员工 id(session token 的 sub),排期系统用它认人、分审核人 / 编辑
+      req.ctx = { shop, token, user: payload.sub ? String(payload.sub) : null };
       next();
     } catch (e) {
       res.status(401).json({ error: String(e.message || e), needsAuth: true });

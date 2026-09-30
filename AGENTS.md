@@ -34,7 +34,7 @@
 
 **定位**:**全站内容排期与监控系统**(2026-09-29 起的新方向,设计真源见 **`PLAN.md`**)。
 顶栏 / 首页 Banner / 产品页徽章与倒计时等要定期更新的内容,在这里统一编排、排期、查看,到点自动上线、到期全站自动消失。
-**已部署在 Railway 并在 Shopify 后台可用**。排期界面目前是演示模式;阶段 1a 起有两类写操作:建 4 个内容类型(用户点按钮)、定时器切 ACTIVE/DRAFT(只动 app 自己建的 `cgp_*` 条目)。
+**已部署在 Railway 并在 Shopify 后台可用**。排期界面两种模式:店里没建好内容类型 / 本地预览 = 演示模式;在后台打开且建好了 = 正式数据(写店铺)。
 
 现有板块(保留为「工具」):
 1. **元数据总账**:所有自定义 metafield / metaobject 定义 —— 数据量、来源归属、主题哪个文件在读、人工用途备注。
@@ -57,9 +57,12 @@
 
 ### 关键
 
-- **阶段 1a 服务端**:`src/schedule-core.js`(上下线规则,纯函数;前端 `public/schedule.js` 的 `status()/win()` 是同一套,**改一处要同步另一处**)、`src/schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`)、`src/metaobjects.js`(4 个内容类型定义 + 切 ACTIVE/DRAFT)、`src/scheduler.js`(每分钟对齐,`SCHEDULER_DISABLED=1` 可关)。改这些先跑 `npm test`。
-- **建内容类型只能由用户在「设置 → 店铺连接」点按钮触发**,别在部署 / 启动时自动建。
-- **排期界面目前是演示模式**(`public/schedule.js`):数据来自 `public/demo-seed.json`,状态只存浏览器 localStorage,**没有任何写接口**。阶段 1b 接真实数据时只换 `load()` / `save()` 和各动作的数据层,界面不动。本地看界面:`node scripts/demo-preview.mjs`(去掉 App Bridge,端口 4790)。
+- **规则只有一份**:`src/schedule-core.js`(上下线判断)+ `src/schedule-actions.js`(存草稿 / 提交 / 发布 / 批准 / 退回 / 暂停 / 删除 / 排序,含权限检查)是纯函数,**服务器和浏览器共用**(服务器以 `/lib/*.js` 只放行这两个文件给页面 import)。演示模式在浏览器里跑它,正式模式由服务器跑。**别在 `public/schedule.js` 里再写一套规则。**
+- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(4 个定义 + 字段映射)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(44 个)。
+- **本地测正式数据**:`node scripts/live-harness.mjs --fresh` → http://localhost:4793(`?user=1002` 是第二个人)。真的 app 服务器 + 假 Shopify(内存,主题文件读本地 worktree,产品数读 `scripts/demo-catalog.json`),`http://localhost:4794/__state` 看写进「店铺」的东西。只靠 `SHOPIFY_GRAPHQL_ORIGIN` 环境变量指过去,线上别设。
+- **建内容类型、从主题导入**都只能由用户在「设置 → 店铺连接」点按钮触发,别在部署 / 启动时自动做。
+- 认人:session token 的 `sub` = Shopify 员工 id;第一个打开的人自动是审核人,之后来的默认是编辑(`staff` 存在数据卷)。员工真名要 read_users(非 Plus 拿不到),所以让人自己在「设置」里起名字。
+- 本地看演示界面:`node scripts/demo-preview.mjs`(端口 4790)。
 - 后台跑在 Shopify 后台的 iframe 里:**别用 `prompt()` / `confirm()` / `alert()`**(跨域 iframe 可能被浏览器拦截),用页面内输入框和「再点一次确认」。
 - **计数不用扫全站**:`metafieldsCount` / `metaobjectsCount` 由 API 直接给,总账秒出。只有促销盘点那套才需要扫 3938 个产品(所以它改成切到标签页才懒加载)。
 - **Metafield 查不到「哪个 app 创建」** —— Shopify 没这个字段。归属只能靠三条线索:命名空间推断 + 主题扫描(`read_themes`,最硬证据)+ 人工标注(`src/annotations.js`,存 DATA_DIR)。

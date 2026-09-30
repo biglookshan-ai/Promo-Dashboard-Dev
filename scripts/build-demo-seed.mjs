@@ -10,51 +10,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { parseThemeJson, findSlider, findTopbar, siteStyle, normalizeLink, shopImageName } from '../src/theme-content.js';
 
 const THEME = process.argv[2]
   || path.join(os.homedir(), 'Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign');
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo-seed.json');
 const FILES = 'https://cdn.shopify.com/s/files/1/1258/4351/files/';
 
-const rd = (f) => JSON.parse(fs.readFileSync(path.join(THEME, f), 'utf8').replace(/^\/\*[\s\S]*?\*\//, ''));
-const img = (ref) => (ref && ref.startsWith('shopify://shop_images/') ? FILES + ref.slice('shopify://shop_images/'.length) : ref || '');
+const rd = (f) => parseThemeJson(fs.readFileSync(path.join(THEME, f), 'utf8'));
+const img = (ref) => (shopImageName(ref) ? FILES + shopImageName(ref) : ref || '');
 const fileName = (ref) => (ref || '').split('/').pop().replace(/\.[a-z]+$/i, '').replace(/[_-]+/g, ' ');
 
-// ---- Banner:主题里的 36 张 slide ----
-const idx = rd('templates/index.json');
-const sec = Object.values(idx.sections).find((s) => s.type === 'gpt-slider-banner-3' && !s.disabled);
-const order = sec.block_order || Object.keys(sec.blocks);
-const slides = order.map((id) => ({ id, ...sec.blocks[id].settings, disabled: !!sec.blocks[id].disabled }));
-
-// 前台真实的卡片尺寸 / 字号 / 角标颜色 —— 预览照这个画,和网站一模一样的比例
-const ss = sec.settings;
-const slideStyle = {
-  w: ss.desktop_slide_width, h: ss.desktop_slide_height, mw: ss.mobile_slide_width, mh: ss.mobile_slide_height,
-  bg: ss.background_color, gap: ss.slide_gap,
-  titleSize: ss.title_font_size, subtitleSize: ss.subtitle_font_size, descSize: ss.description_font_size,
-  titleColor: ss.title_color, subtitleColor: ss.subtitle_color, descColor: ss.description_color,
-  btnSize: ss.desktop_button_font_size, btnPadV: ss.button_padding_vertical, btnPadH: ss.button_padding_horizontal,
-  btnRadius: ss.button_border_radius, btnGap: ss.button_gap,
-  btn1: { bg: ss.button1_bg_color, color: ss.button1_text_color, border: ss.button1_border_color },
-  btn2: { bg: ss.button2_bg_color, color: ss.button2_text_color, border: ss.button2_border_color },
-  tags: Object.fromEntries(['new', 'sale', 'event'].map((k) => [k, { text: ss[`tag_${k}_text`], bg: ss[`tag_${k}_bg_color`], color: ss[`tag_${k}_text_color`] }])),
-  tagTop: ss.tag_margin_top, tagLeft: ss.tag_margin_left, tagRadius: ss.tag_border_radius,
-};
-const settingsData = rd('config/settings_data.json');
-const cur = typeof settingsData.current === 'string' ? settingsData.presets[settingsData.current] : settingsData.current;
-slideStyle.radius = cur.media_radius ?? 12;
-
-// 顶栏:header-group 里正在用的那套 Top Bar 的颜色和字号
-const hg = rd('sections/header-group.json');
-let topbarStyle = { bg: '#3B4041', color: '#ffffff', fontSize: 12, padV: 14 };
-for (const sct of Object.values(hg.sections)) {
-  for (const id of sct.block_order || []) {
-    const b = sct.blocks[id];
-    if (!b.disabled && b.settings && 'announcement_text_1' in b.settings) {
-      topbarStyle = { bg: b.settings.background_color, color: b.settings.text_color, fontSize: b.settings.font_size, padV: b.settings.padding_vertical };
-    }
-  }
-}
+// ---- Banner / 顶栏 / 前台样式:和正式导入用同一套解析(src/theme-content.js)----
+const slider = findSlider(rd('templates/index.json'));
+const tbBlock = findTopbar(rd('sections/header-group.json'));
+const style = siteStyle({ slider, topbar: tbBlock, settingsData: rd('config/settings_data.json') });
+const slideStyle = style.slide, topbarStyle = style.topbar;
+const slides = slider.slides.map((x) => ({ ...x, id: x.blockId }));
 
 // 选择器用的合集 / 产品:从首页和顶栏里真实出现过的链接里取(演示用;正式版用 Shopify 自带的选择器)
 const human = (h) => h.replace(/(\d)-(\d)/g, '$1.$2').split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
@@ -86,10 +58,10 @@ const banners = [];
 live.forEach((s, i) => {
   const isSale = s.tag === 'sale';
   banners.push({
-    id: 'b-' + s.id.slice(-8), image: img(s.image),
+    id: 'b-' + s.id.slice(-8).toLowerCase().replace(/[^a-z0-9]/g, ''), image: img(s.image),
     title: s.title || fileName(s.image), subtitle: s.subtitle || '', description: s.description || '',
-    button1_text: s.button1_text || '', button1_url: s.button1_url || '',
-    button2_text: s.button2_text || '', button2_url: s.button2_url || '',
+    button1_text: s.button1_text || '', button1_url: normalizeLink(s.button1_url),
+    button2_text: s.button2_text || '', button2_url: normalizeLink(s.button2_url),
     tag: s.tag || 'none', order: i,
     // 促销类给结束时间(演示「快到期」),新品类长期显示
     start: -(10 + i * 3), end: isSale ? saleEnd.shift() ?? null : null,
@@ -99,10 +71,10 @@ live.forEach((s, i) => {
 // 停用的 19 张:2 张「已排期」(演示提前做好的新品 Banner)、1 张待审核、2 张草稿,其余已结束
 off.forEach((s, i) => {
   const base = {
-    id: 'b-' + s.id.slice(-8), image: img(s.image),
+    id: 'b-' + s.id.slice(-8).toLowerCase().replace(/[^a-z0-9]/g, ''), image: img(s.image),
     title: s.title || fileName(s.image), subtitle: s.subtitle || '', description: s.description || '',
-    button1_text: s.button1_text || '', button1_url: s.button1_url || '',
-    button2_text: s.button2_text || '', button2_url: s.button2_url || '',
+    button1_text: s.button1_text || '', button1_url: normalizeLink(s.button1_url),
+    button2_text: s.button2_text || '', button2_url: normalizeLink(s.button2_url),
     tag: s.tag || 'none', order: live.length + i, by: 'u1',
   };
   if (i === 0) banners.push({ ...base, tag: 'new', start: 9, end: null, state: 'approved', note: '提前一周做好,9 天后自动上线' });

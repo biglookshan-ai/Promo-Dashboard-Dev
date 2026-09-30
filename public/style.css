@@ -706,3 +706,19 @@ textarea.inp { resize: vertical; }
 .conn .no { color: var(--danger); font-weight: 700; }
 .conn .note { margin: 8px 0 0; }
 .conn .note .btn { margin-top: 6px; }
+
+/* 阶段 1b:正式数据 */
+.demobar--live { background: var(--ok-soft); border-color: #c2e7d9; color: #045c41; }
+.demobar--live .demobar__tag { background: var(--ok); }
+.demobar .linkbtn + .linkbtn { margin-left: 12px; }
+.rowin { display: flex; gap: 8px; align-items: center; }
+.rowin .inp { flex: 1; }
+.upl { flex: none; cursor: pointer; }
+.conn__mode { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f2; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.conn__mode .muted { margin: 0; }
+.lookup { margin-top: 14px; }
+.lk { display: flex; gap: 12px; align-items: flex-start; margin-top: 12px; }
+.lk__img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.lk__b { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.lk__b .muted { margin: 0; }
+.lk__c { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }

@@ -49,8 +49,16 @@
     return diff === 0 ? '今天' : diff === 1 ? '明天' : diff === -1 ? '昨天' : diff > 0 ? `${diff} 天后` : `${-diff} 天前`;
   }
 
-  // ================= 数据(演示) =================
-  const save = () => localStorage.setItem(DEMO_KEY, JSON.stringify(S));
+  // ================= 数据 =================
+  // 两种模式:
+  //   demo —— 本地预览 / 店里还没建好内容类型时。数据来自 demo-seed.json,只存浏览器。
+  //   live —— 在 Shopify 后台里打开且已建好内容类型。数据在服务器,动作走 /api/schedule/act,
+  //           服务器按同一份规则(/lib/schedule-actions.js)检查权限并写进店铺。
+  let MODE = 'demo';
+  let core = null, A = null; // 共用规则模块,启动时加载
+  let liveSetup = null; // 在后台里打开但还没建好时,记下连接状态
+  const FORCE_DEMO = 'cgp-force-demo';
+  const save = () => { if (MODE === 'demo') localStorage.setItem(DEMO_KEY, JSON.stringify(S)); };
   function materialize(seed) {
     // 种子里的日期:数字 = 相对今天的天数;'YYYY-MM-DD' = 固定日期(节日类)
     const md = (v) => (v == null ? null : typeof v === 'string' ? fromInput(v + 'T00:00') : dayStart(v));
@@ -60,7 +68,7 @@
       pendingChange: it.pendingChange ? { ...it.pendingChange, at: now() + (it.pendingChange.at || 0) * DAY } : null,
     });
     return {
-      ...seed,
+      ...seed, mode: 'demo',
       banners: seed.banners.map((b) => conv(b, 'banner')),
       topbar: seed.topbar.map((t) => conv(t, 'topbar')),
       tbstyles: seed.tbstyles.map((t) => conv(t, 'tbstyle')),
@@ -69,50 +77,72 @@
       pendingOrder: null,
     };
   }
+  let seedCache = null;
+  const getSeed = async () => (seedCache ||= await fetch('demo-seed.json', { cache: 'no-store' }).then((r) => r.json()));
+  // 服务器给的数据补齐成页面要的样子(主题样式读不到时用演示里的默认值)
+  async function normalizeLive(v) {
+    const seed = v.site ? null : await getSeed();
+    const tagCounts = {};
+    v.campaigns.forEach((c) => {
+      Object.assign(tagCounts, c.counts?.tags || {});
+      Object.entries(c.counts?.collections || {}).forEach(([gid, x]) => { liveColCounts[gid] = x.count; });
+    });
+    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [] };
+  }
   async function load(force) {
+    if (MODE === 'live') { S = await normalizeLive(await api('GET', '/api/schedule/state')); return; }
     const raw = !force && localStorage.getItem(DEMO_KEY);
     if (raw) { S = JSON.parse(raw); return; }
-    S = materialize(await fetch('demo-seed.json', { cache: 'no-store' }).then((r) => r.json()));
+    S = materialize(await getSeed());
     save();
+  }
+  // 在后台里打开 → 问服务器;建好内容类型了就用正式数据
+  async function detectMode() {
+    if (!(window.shopify && window.shopify.idToken)) return 'demo';
+    try {
+      const v = await api('GET', '/api/schedule/state');
+      liveSetup = v.setup;
+      if (v.setup?.ready && localStorage.getItem(FORCE_DEMO) !== '1') { S = await normalizeLive(v); return 'live'; }
+    } catch (e) { console.warn('[schedule] 连不上正式数据,用演示模式', e); }
+    return 'demo';
+  }
+
+  // 所有改动都走这里:演示模式在本地跑规则,正式模式交给服务器
+  async function act(action) {
+    try {
+      if (MODE === 'demo') {
+        const r = A.applyAction(S, action, me(), now());
+        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k]; });
+        save(); renderAll();
+        return r;
+      }
+      const v = await api('POST', '/api/schedule/act', { action });
+      S = await normalizeLive(v); renderAll();
+      if (v.syncErrors?.length) toast('已保存,但写进店铺时出错:' + v.syncErrors[0], false);
+      else if (v.larkErrors?.length) toast('已保存,但飞书通知没发出去:' + v.larkErrors[0], false);
+      return v;
+    } catch (e) {
+      toast(e.message || String(e), false);
+      return null;
+    }
   }
 
   const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles];
   const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns }[k]);
   const byId = (id) => all().find((x) => x.id === id);
   const camp = (id) => S.campaigns.find((c) => c.id === id);
-  const me = () => S.staff.find((u) => u.id === S.me) || S.staff[0];
+  const me = () => S.staff.find((u) => u.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' };
   const isApprover = () => me().role === 'approver';
-  const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '未知';
+  const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
   const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
   const rid = (p) => p + Math.random().toString(36).slice(2, 9);
   const byOrder = (a, b) => a.order - b.order;
-  function log(action, it, note) {
-    S.log.unshift({ at: now(), action, kind: it.kind, title: titleOf(it), note: note || '', by: me().name });
-    S.log = S.log.slice(0, 300);
-  }
 
-  // ================= 状态 =================
-  // 有效时间窗:自己设了时间用自己的;没设且挂了活动 → 继承活动;都没设 = 长期
-  function win(it) {
-    if (it.kind !== 'campaign' && it.campaign && it.start == null && it.end == null) {
-      const c = camp(it.campaign); if (c) return { start: c.start, end: c.end, via: c };
-    }
-    return { start: it.start, end: it.end, via: null };
-  }
-  function status(it, t = now()) {
-    if (it.state === 'draft' || it.state === 'new') return 'draft';
-    if (it.state === 'pending') return 'pending';
-    if (it.state === 'rejected') return 'rejected';
-    if (it.paused) return 'paused';
-    const w = win(it);
-    if (w.via && w.via.paused) return 'paused';
-    if (w.via && w.via.state !== 'approved') return 'waiting';
-    if (w.start != null && t < w.start) return 'scheduled';
-    if (w.end != null && t >= w.end) return 'ended';
-    return 'live';
-  }
+  // ================= 状态(规则在 /lib/schedule-core.js,和服务器同一份) =================
+  const win = (it) => core.effectiveWindow(it, core.campaignIndex(S.campaigns));
+  const status = (it, t = now()) => core.itemStatus(it, core.campaignIndex(S.campaigns), t);
   const ST = {
     live: '上线中', scheduled: '已排期', pending: '待审核', draft: '草稿', ended: '已结束',
     paused: '已暂停', rejected: '已退回', waiting: '等活动批准',
@@ -127,6 +157,10 @@
   // 上线中、且 3 天内就要自动下架的
   const endingSoon = (x) => status(x) === 'live' && win(x).end != null && win(x).end - now() <= ENDING_DAYS * DAY;
   const endingTag = (x) => (endingSoon(x) ? `<span class="tag tag--warn">⚠️ ${relDay(win(x).end)}下架(${fDT(win(x).end)})</span>` : '');
+  // 正式数据:已批准但写进店铺失败 / 还没写进去的,标出来
+  const syncTag = (x) => (MODE !== 'live' || x.state !== 'approved' ? ''
+    : x.syncError ? `<span class="tag tag--danger" title="${esc(x.syncError)}">⚠️ 写进店铺失败</span>`
+      : !x.shopifyId ? '<span class="tag tag--warn">还没写进店铺</span>' : '');
   const pendingList = () => all().filter((x) => x.state === 'pending' || x.pendingChange);
   const pendingCount = () => pendingList().length + (S.pendingOrder ? 1 : 0);
 
@@ -149,9 +183,15 @@
   };
 
   // ---- 活动覆盖的产品(合集 / 标签 / 指定产品)----
-  const colCount = (c) => (S.collections.find((x) => x.handle === c.handle) || c).count ?? null;
+  // 产品数:演示 = 前台公开数据;正式 = 服务器用 Admin API 算的(存在活动的 counts 里,编辑时实时再算)
+  const gidOf = (type, id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/${type}/${id}`);
+  const liveColCounts = {};
+  const colCount = (c) => (MODE === 'live' ? liveColCounts[gidOf('Collection', c.id)] ?? c.count ?? null
+    : (S.collections.find((x) => x.handle === c.handle) || c).count ?? null);
   const tagCount = (t) => S.tagCounts[t] ?? null;
   function scopeTotal(c) {
+    // 正式数据:服务器算过「去重后的合计」且可信,就直接用
+    if (MODE === 'live' && c.counts?.total != null && c.counts.totalReliable) return { total: c.counts.total, unknown: false, overlap: false, exact: true };
     const nums = [...(c.collections || []).map(colCount), ...(c.tags || []).map(tagCount)];
     const known = nums.filter((n) => n != null).reduce((a, b) => a + b, 0) + (c.products || []).length;
     return { total: known, unknown: nums.some((n) => n == null), overlap: nums.length + (c.products?.length ? 1 : 0) > 1 };
@@ -501,23 +541,10 @@
       });
     });
   }
-  // 把新顺序写回:参与排序的按新顺序占前面,其余(已结束 / 草稿)保持原相对顺序排在后面
-  function applyOrder(kind, ids) {
-    const L = listOf(kind); const rest = L.filter((x) => !ids.includes(x.id)).sort(byOrder);
-    [...ids.map((id) => L.find((x) => x.id === id)).filter(Boolean), ...rest].forEach((x, i) => { x.order = i; });
-  }
-  function saveOrder(kind) {
+  async function saveOrder(kind) {
     const ids = ord[kind]; ord[kind] = null;
-    const before = ordPipeline(kind).map((x) => x.id);
-    if (JSON.stringify(before) === JSON.stringify(ids)) { renderAll(); return toast('顺序没有变化'); }
-    if (isApprover()) {
-      applyOrder(kind, ids); log('reorder', { kind, title: kind === 'banner' ? 'Banner 轮播顺序' : '顶栏轮播顺序' }, '保存新顺序');
-      save(); renderAll(); toast('顺序已保存 · 前台立即按新顺序显示(演示)');
-    } else {
-      S.pendingOrder = { kind, ids, before, by: S.me, at: now() };
-      log('submit', { kind, title: kind === 'banner' ? 'Banner 轮播顺序' : '顶栏轮播顺序' }, '提交新顺序,批准前前台保持原顺序');
-      save(); renderAll(); toast('新顺序已提交审核 · 批准前前台保持原顺序');
-    }
+    const r = await act({ type: 'order', kind, ids });
+    if (r?.message) toast(r.message); else renderAll();
   }
 
   // ================= Banner =================
@@ -576,7 +603,7 @@
       <span class="bcard__body">
         <b class="bcard__t">${esc(b.title || '未命名')}</b>
         <span class="bcard__when">${I.clock}<span>${winText(b)}</span></span>
-        ${endingTag(b)}
+        ${endingTag(b)}${syncTag(b)}
         ${b.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${b.state === 'rejected' ? `<span class="tag tag--danger">已退回:${esc(b.rejectNote || '')}</span>` : ''}
       </span>
@@ -636,7 +663,7 @@
               <span class="tbrow__txt">${esc(titleOf(t))}</span>
               <span class="tbrow__meta"><span class="kchip">${esc(t.category || '')}</span>${I.clock}${winText(t)}${t.link ? ` · <span class="mono">${esc(t.link)}</span>` : ''}</span>
             </button>
-            ${endingTag(t)}${t.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${badge(t)}
+            ${endingTag(t)}${syncTag(t)}${t.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${badge(t)}
           </div>`).join('') || '<p class="muted">没有这个状态的公告</p>'}</div>
       </section>`;
     const show = () => {
@@ -670,8 +697,8 @@
       return `<button class="ccard ${status(c) === 'ended' ? 'is-dim' : ''}" data-open="${c.id}" type="button">
         <span class="ccard__top"><b>${esc(c.name)}</b>${badge(c)}</span>
         <span class="ccard__when">${I.clock}${winText(c)}</span>
-        ${endingTag(c)}
-        <span class="ccard__row"><span class="muted">产品</span><span class="ccard__v ccard__v--col">${campScope(c, false, '<br>')}<br><span class="muted">合计约 <b>${st.total}${st.unknown ? '+' : ''}</b> 个${st.overlap ? '(可能有重叠)' : ''}</span></span></span>
+        ${endingTag(c)}${syncTag(c)}
+        <span class="ccard__row"><span class="muted">产品</span><span class="ccard__v ccard__v--col">${campScope(c, false, '<br>')}<br><span class="muted">合计${st.exact ? '' : '约'} <b>${st.total}${st.unknown ? '+' : ''}</b> 个${st.exact ? '(已去重)' : st.overlap ? '(可能有重叠)' : ''}</span></span></span>
         ${zero.length ? `<span class="tag tag--danger">⚠️ ${esc(zero.join('、'))} 里没有产品</span>` : ''}
         <span class="ccard__row"><span class="muted">产品页</span><span class="ccard__v">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : '<span class="muted">无徽章</span>'}${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span></span>
         <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}</span></span>
@@ -685,8 +712,31 @@
         `<button class="btn btn-primary" data-new="campaign" type="button">${I.plus}新建活动</button>`)}
       ${alertsHtml(['campaign'])}
       <div class="fbar"><div class="ftabs">${tabs}</div>${S.catalogFetchedAt ? `<span class="muted">产品数取自前台,更新于 ${fDT(new Date(S.catalogFetchedAt).getTime())}</span>` : ''}</div>
-      <div class="cgrid">${rows.map(card).join('') || empty('没有这个状态的活动')}</div>`;
+      <div class="cgrid">${rows.map(card).join('') || empty('没有这个状态的活动')}</div>
+      <section class="panel lookup">
+        <div class="panel__h"><h3>查一个产品在哪些活动里</h3><span class="muted">Shopify 的产品页上看不到这个,在这里查</span></div>
+        <div class="rowin"><input class="inp" id="lk-q" placeholder="粘贴产品链接、handle 或 id,比如 https://www.cinegearpro.co.uk/products/…"/><button class="btn btn-sm btn-primary" id="lk-go" type="button">查</button></div>
+        <div id="lk-out"></div>
+      </section>`;
     $$('#cp-root .ftab').forEach((b) => b.addEventListener('click', () => { cpF.st = b.dataset.st; renderCampaigns(); }));
+    const go = async () => {
+      const q = $('#lk-q').value.trim(); const out = $('#lk-out'); if (!q) return;
+      if (MODE !== 'live') { out.innerHTML = '<p class="muted">演示模式查不了(要读产品的合集和标签)。切到正式数据后,这里会列出这个产品参加的活动,以及是因为哪个合集 / 标签 / 单独指定参加的。</p>'; return; }
+      out.innerHTML = '<p class="muted">查询中…</p>';
+      try {
+        const r = await api('GET', `/api/schedule/product?q=${encodeURIComponent(q)}`);
+        const p = r.product;
+        out.innerHTML = `<div class="lk">
+          ${p.image ? `<img class="lk__img" src="${esc(p.image)}" alt="">` : ''}
+          <div class="lk__b"><b>${esc(p.title)}</b> ${linkPair('products', p)}
+            <div class="muted">在 ${p.collections.length} 个合集里 · ${p.tags.length} 个标签</div>
+            ${r.campaigns.length ? r.campaigns.map((c) => { const x = byId(c.id); return `<div class="lk__c">${x ? badge(x) : ''}<button class="linkbtn" data-open="${c.id}" type="button">${esc(c.name)}</button><span class="muted">${esc(c.why.join(' · '))}</span></div>`; }).join('')
+              : '<p class="muted">不在任何已批准的活动里。</p>'}
+          </div></div>`;
+      } catch (e) { out.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+    };
+    $('#lk-go').addEventListener('click', go);
+    $('#lk-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
   }
 
   // ================= 审核 =================
@@ -766,20 +816,12 @@
         ${recent.length ? `<div class="loglist">${recent.map(logRow).join('')}</div>` : '<p class="muted">还没有记录</p>'}
       </section>`;
   }
-  function approve(id) {
-    if (id === '__order') {
-      const o = S.pendingOrder; applyOrder(o.kind, o.ids); S.pendingOrder = null;
-      log('approve', { kind: o.kind, title: o.kind === 'banner' ? 'Banner 轮播顺序' : '顶栏轮播顺序' }, '批准新顺序');
-      save(); renderAll(); return toast('已批准 · 前台按新顺序显示(演示)');
-    }
-    const it = byId(id);
-    if (it.pendingChange) {
-      const { by, at, ...ch } = it.pendingChange; Object.assign(it, ch); it.pendingChange = null;
-      log('approve', it, '批准修改,已替换线上版本');
-    } else { it.state = 'approved'; it.rejectNote = null; log('approve', it, '批准'); }
-    save(); renderAll();
-    const s = status(it);
-    toast(s === 'scheduled' ? `已批准 · 将在 ${fDT(win(it).start)} 自动上线` : s === 'live' ? '已批准 · 已上线' : `已批准 · ${ST[s]}`);
+  async function approve(id) {
+    const r = await act({ type: 'approve', id });
+    if (!r) return;
+    if (id === '__order') return toast(r.message);
+    const it = byId(id); const s = it ? status(it) : '';
+    toast(s === 'scheduled' ? `已批准 · 将在 ${fDT(win(it).start)} 自动上线` : s === 'live' ? '已批准 · 已上线' : `已批准${s ? ' · ' + ST[s] : ''}`);
   }
   // 嵌入 Shopify 后台的 iframe 里 prompt/confirm 可能被浏览器拦截,一律用页面内的输入框和二次确认
   function askReject(btn) {
@@ -790,16 +832,9 @@
       <button class="btn btn-sm btn-danger" data-rjok="${btn.dataset.reject}" type="button">确认退回</button></div></div>`);
     card.querySelector('.rjbox textarea').focus();
   }
-  function reject(id, note) {
-    if (id === '__order') {
-      const o = S.pendingOrder; S.pendingOrder = null;
-      log('reject', { kind: o.kind, title: o.kind === 'banner' ? 'Banner 轮播顺序' : '顶栏轮播顺序' }, '退回新顺序:' + note);
-      save(); renderAll(); return toast('已退回 · 已在飞书通知提交人(演示)');
-    }
-    const it = byId(id);
-    if (it.pendingChange) { it.lastReject = { note, at: now() }; it.pendingChange = null; log('reject', it, '退回修改:' + note); }
-    else { it.state = 'rejected'; it.rejectNote = note; log('reject', it, '退回:' + note); }
-    save(); renderAll(); toast('已退回 · 已在飞书通知提交人(演示)');
+  async function reject(id, note) {
+    const r = await act({ type: 'reject', id, note });
+    if (r) toast(MODE === 'live' ? '已退回 · 已通知提交人' : '已退回 · 已在飞书通知提交人(演示)');
   }
 
   // ================= 设置 =================
@@ -807,54 +842,84 @@
   const logRow = (l) => `<div class="logrow"><span class="logrow__t">${fDT(l.at)}</span><span class="lact lact--${l.action}">${ACT[l.action] || l.action}</span>${kindChip(l.kind)}<span class="logrow__x">${esc(l.title)}</span><span class="muted">${esc(l.note || '')}${l.by ? ' · ' + esc(l.by) : ''}</span></div>`;
   function renderSettings() {
     const N = S.settings.notify;
-    const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
+    const live = MODE === 'live';
+    const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''} ${live && !isApprover() ? 'disabled' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
+    const hookVal = live ? '' : esc(S.settings.larkWebhook || '');
+    const hookPh = live && S.settings.larkWebhookSet ? `已设置(结尾 ${esc(S.settings.larkWebhookTail)}),要换就粘贴新地址` : 'https://open.larksuite.com/open-apis/bot/v2/hook/…';
     $('#st-root').innerHTML = `
       ${pageHead('设置', '店铺连接、成员与审核、飞书通知、定时器和操作日志')}
-      <section class="panel conn" id="st-conn"><div class="panel__h"><h3>店铺连接(正式数据)</h3><span class="tag tag--accent">阶段 1a</span></div><p class="muted">检查中…</p></section>
+      <section class="panel conn" id="st-conn"><div class="panel__h"><h3>店铺连接(正式数据)</h3></div><p class="muted">检查中…</p></section>
       <div class="stgrid">
         <section class="panel">
-          <div class="panel__h"><h3>当前身份</h3><span class="tag tag--warn">演示用</span></div>
-          <p class="muted">正式版会自动识别登录 Shopify 后台的员工。演示时切换身份,就能分别体验「编辑提交」和「审核人批准」两边。</p>
-          <select class="sel" id="st-me">${S.staff.map((u) => `<option value="${u.id}" ${u.id === S.me ? 'selected' : ''}>${esc(u.name)} · ${u.role === 'approver' ? '审核人' : '编辑'}</option>`).join('')}</select>
+          ${live ? `<div class="panel__h"><h3>我</h3><span class="tag ${isApprover() ? 'tag--ok' : ''}">${isApprover() ? '审核人' : '编辑'}</span></div>
+            <p class="muted">系统按登录 Shopify 后台的员工账号认人。第一个打开的人自动成为审核人。起个名字,飞书通知和日志里会显示。</p>
+            <div class="rowin"><input class="inp" id="st-myname" value="${esc(me().name)}" maxlength="30"/><button class="btn btn-sm" id="st-myname-save" type="button">保存</button></div>`
+          : `<div class="panel__h"><h3>当前身份</h3><span class="tag tag--warn">演示用</span></div>
+            <p class="muted">正式版会自动识别登录 Shopify 后台的员工。演示时切换身份,就能分别体验「编辑提交」和「审核人批准」两边。</p>
+            <select class="sel" id="st-me">${S.staff.map((u) => `<option value="${u.id}" ${u.id === S.me ? 'selected' : ''}>${esc(u.name)} · ${u.role === 'approver' ? '审核人' : '编辑'}</option>`).join('')}</select>`}
         </section>
         <section class="panel">
           <div class="panel__h"><h3>成员与角色</h3></div>
-          <p class="muted"><b>审核人</b>:自己的改动直接生效,能批准 / 退回别人的。<b>编辑</b>:改动要提交审核才会上线。</p>
-          ${S.staff.map((u) => `<div class="mrow"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span><b>${esc(u.name)}</b>
-            <select class="sel sel--sm" data-role="${u.id}"><option value="approver" ${u.role === 'approver' ? 'selected' : ''}>审核人</option><option value="editor" ${u.role === 'editor' ? 'selected' : ''}>编辑</option></select></div>`).join('')}
+          <p class="muted"><b>审核人</b>:自己的改动直接生效,能批准 / 退回别人的。<b>编辑</b>:改动要提交审核才会上线。${live ? '同事第一次打开这个 app 后会出现在这里,默认是编辑。' : ''}</p>
+          ${S.staff.map((u) => `<div class="mrow"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span><b>${esc(u.name)}${u.id === S.me ? ' <span class="muted">(我)</span>' : ''}</b>
+            ${live && u.lastSeen ? `<span class="muted">${fAgo(u.lastSeen)}来过</span>` : ''}
+            <select class="sel sel--sm" data-role="${u.id}" ${live && !isApprover() ? 'disabled' : ''}><option value="approver" ${u.role === 'approver' ? 'selected' : ''}>审核人</option><option value="editor" ${u.role === 'editor' ? 'selected' : ''}>编辑</option></select></div>`).join('')}
         </section>
         <section class="panel">
-          <div class="panel__h"><h3>飞书通知</h3></div>
+          <div class="panel__h"><h3>飞书通知</h3>${live ? (S.settings.larkWebhookSet ? '<span class="tag tag--ok">已连接</span>' : '<span class="tag tag--warn">未设置</span>') : ''}</div>
+          <p class="muted">在飞书群里:设置 → 群机器人 → 添加机器人 → 自定义机器人,复制它的 webhook 地址粘贴到这里。建议同时开「签名校验」,把密钥也填上。</p>
           <label class="fld"><span>群机器人 Webhook 地址</span>
-            <input class="inp" id="st-hook" placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/…" value="${esc(S.settings.larkWebhook)}"/></label>
+            <input class="inp" id="st-hook" placeholder="${hookPh}" value="${hookVal}" ${live && !isApprover() ? 'disabled' : ''}/></label>
+          <label class="fld"><span>签名校验密钥(可选)</span>
+            <input class="inp" id="st-secret" type="password" placeholder="${live && S.settings.larkSecretSet ? '已设置,要换就粘贴新的' : '没开签名校验就留空'}" ${live && !isApprover() ? 'disabled' : ''}/></label>
+          ${live && isApprover() ? '<button class="btn btn-sm" id="st-hook-save" type="button">保存飞书设置</button>' : ''}
           <div class="tgls">
-            ${tg('submit', '有人提交审核', '@审核人')}
-            ${tg('decision', '批准 / 退回', '@提交人,附退回意见')}
-            ${tg('dayBefore', '上线前一天提醒', '附明天要上线的清单和预览')}
-            ${tg('endingSoon', `下架前 ${ENDING_DAYS} 天提醒`, '列出快到期的 Banner / 公告 / 活动,方便决定延长还是准备替换')}
-            ${tg('upDown', '上线 / 下线', '每次自动切换都通知')}
-            ${tg('unapproved', '到点还没批准', '@审核人:内容没上线')}
-            ${tg('failure', '定时切换失败', '@审核人 + 错误原因')}
+            ${tg('submit', '有人提交审核', '通知审核人')}
+            ${tg('decision', '批准 / 退回', '通知提交人,附退回意见')}
+            ${tg('dayBefore', '上线前一天提醒', '每天 10:00 汇总明天要上线的,没批准的会标出来')}
+            ${tg('endingSoon', `下架前 ${ENDING_DAYS} 天提醒`, '每天 10:00 汇总快到期的 Banner / 公告 / 活动,方便决定延长还是准备替换')}
+            ${tg('upDown', '上线 / 下线', '定时器每次自动切换都通知')}
+            ${tg('unapproved', '到点还没批准', '内容没按时上线时提醒审核人')}
+            ${tg('failure', '定时切换失败', '附错误原因;同一小时只报一次')}
           </div>
-          <button class="btn btn-sm" id="st-test" type="button">发送测试消息</button>
+          <button class="btn btn-sm" id="st-test" type="button" ${live && !isApprover() ? 'disabled' : ''}>发送测试消息</button>
         </section>
         <section class="panel">
           <div class="panel__h"><h3>定时器</h3><span class="stb stb--live"><span class="dot"></span>运行中</span></div>
           <div class="kv"><span>检查频率</span><b>每分钟</b></div>
           <div class="kv"><span>时区</span><b>英国时间(Europe/London,自动处理夏令时)</b></div>
-          <div class="kv"><span>上次运行</span><b>${fDT(now() - 40000)}</b></div>
+          <div class="kv"><span>上次运行</span><b>${live ? (S.scheduler?.lastRun ? fDT(S.scheduler.lastRun) : '还没运行') : fDT(now() - 40000)}</b></div>
+          ${live && S.scheduler?.lastError ? `<div class="note note--danger">上次出错:${esc(S.scheduler.lastError)}</div>` : ''}
           <p class="muted">每分钟检查一次:到了开始时间且已批准的内容自动上线,到了结束时间的自动下线。服务器短暂宕机的话,恢复后会自动补上。</p>
         </section>
       </div>
       <section class="panel">
         <div class="panel__h"><h3>操作日志</h3><span class="muted">谁、什么时候、做了什么</span></div>
-        <div class="loglist">${S.log.slice(0, 40).map(logRow).join('') || '<p class="muted">暂无</p>'}</div>
+        <div class="loglist">${S.log.slice(0, 60).map(logRow).join('') || '<p class="muted">暂无</p>'}</div>
       </section>`;
-    $('#st-me').addEventListener('change', (e) => { S.me = e.target.value; ord.banner = null; ord.topbar = null; save(); renderAll(); toast(`现在的身份:${me().name} · ${isApprover() ? '审核人' : '编辑'}`); });
-    $$('[data-role]').forEach((s) => s.addEventListener('change', () => { S.staff.find((u) => u.id === s.dataset.role).role = s.value; save(); renderAll(); }));
-    $$('[data-notify]').forEach((c) => c.addEventListener('change', () => { N[c.dataset.notify] = c.checked; save(); }));
-    $('#st-hook').addEventListener('change', (e) => { S.settings.larkWebhook = e.target.value.trim(); save(); toast('已保存 Webhook 地址(演示)'); });
-    $('#st-test').addEventListener('click', () => toast('演示模式:不会真的发送。正式版会往飞书群发一条测试消息。'));
+
+    const post = async (path, body, okMsg) => {
+      try { const v = await api('POST', path, body); if (v.banners) { S = await normalizeLive(v); renderAll(); } if (okMsg) toast(okMsg); return v; }
+      catch (e) { toast(e.message, false); return null; }
+    };
+    if (live) {
+      $('#st-myname-save').addEventListener('click', () => post('/api/schedule/staff', { id: S.me, name: $('#st-myname').value }, '名字已保存'));
+      $$('[data-role]').forEach((el) => el.addEventListener('change', () => post('/api/schedule/staff', { id: el.dataset.role, role: el.value }, '角色已更新')));
+      $$('[data-notify]').forEach((c) => c.addEventListener('change', () => post('/api/schedule/settings', { notify: { [c.dataset.notify]: c.checked } })));
+      $('#st-hook-save')?.addEventListener('click', () => {
+        const body = {}; const h = $('#st-hook').value.trim(), k = $('#st-secret').value.trim();
+        if (h) body.larkWebhook = h; if (k) body.larkSecret = k;
+        if (!Object.keys(body).length) return toast('没有要保存的改动', false);
+        post('/api/schedule/settings', body, '飞书设置已保存,可以点「发送测试消息」试一下');
+      });
+      $('#st-test').addEventListener('click', () => post('/api/schedule/lark-test', {}, '测试消息已发到飞书群'));
+    } else {
+      $('#st-me').addEventListener('change', (e) => { S.me = e.target.value; ord.banner = null; ord.topbar = null; save(); renderAll(); toast(`现在的身份:${me().name} · ${isApprover() ? '审核人' : '编辑'}`); });
+      $$('[data-role]').forEach((el) => el.addEventListener('change', () => { S.staff.find((u) => u.id === el.dataset.role).role = el.value; save(); renderAll(); }));
+      $$('[data-notify]').forEach((c) => c.addEventListener('change', () => { N[c.dataset.notify] = c.checked; save(); }));
+      $('#st-hook').addEventListener('change', (e) => { S.settings.larkWebhook = e.target.value.trim(); save(); toast('已保存 Webhook 地址(演示)'); });
+      $('#st-test').addEventListener('click', () => toast('演示模式:不会真的发送。正式版会往飞书群发一条测试消息。'));
+    }
     renderConn();
   }
 
@@ -864,7 +929,7 @@
   let connCache = null;
   async function renderConn(force) {
     const box = $('#st-conn'); if (!box) return;
-    const head = '<div class="panel__h"><h3>店铺连接(正式数据)</h3><span class="tag tag--accent">阶段 1a</span></div>';
+    const head = `<div class="panel__h"><h3>店铺连接(正式数据)</h3>${MODE === 'live' ? '<span class="tag tag--ok">正在用正式数据</span>' : '<span class="tag tag--warn">现在是演示模式</span>'}</div>`;
     let st = !force && connCache;
     if (!st) {
       try { st = connCache = await api('GET', '/api/schedule/status'); }
@@ -892,8 +957,31 @@
           <div class="conn__r">${ok(st.scheduler.running)}<span>${st.scheduler.running ? `运行中 · 每 ${st.scheduler.intervalSec} 秒检查一次` : '没有运行'}</span></div>
           <div class="conn__r"><span class="muted">上次检查</span><span>${st.scheduler.lastRun ? fDT(st.scheduler.lastRun) : '还没有需要检查的内容'}</span></div>
           ${st.scheduler.lastError ? `<div class="note note--danger">上次出错:${esc(st.scheduler.lastError)}</div>` : ''}
-          <p class="muted">现在店里还没有排期内容,定时器空转;阶段 1b 把界面接上真实数据后开始工作。</p></div>
-      </div>`;
+          <p class="muted">${Object.values(st.items || {}).some((n) => n) ? '已写进店铺的内容由定时器按时间上下线。' : '店里还没有排期内容,定时器空转。'}</p></div>
+        ${st.ready ? `<div><div class="conn__k">4. 导入现有内容</div>
+          ${S.imported && MODE === 'live' ? `<div class="conn__r"><span class="ok">✓</span><span>${fDT(S.imported.at)} 从「${esc(S.imported.theme)}」导入了 ${S.imported.banners} 张 Banner、${S.imported.topbar} 条顶栏</span></div>
+            ${S.imported.skipped?.length ? `<div class="note note--warn">跳过 ${S.imported.skipped.length} 个:${S.imported.skipped.map((x) => `${esc(x.title || '')}(${esc(x.reason)})`).join('、')}</div>` : ''}` : ''}
+          <p class="muted">把线上主题首页<b>正在显示的 Banner</b>、顶栏公告和顶栏配色导进来,变成「已批准 · 长期显示」,顺序和现在网站上一样。只读主题、不改主题;可以重复点,导过的会跳过。</p>
+          <button class="btn btn-sm ${S.imported && MODE === 'live' ? '' : 'btn-primary'}" data-conn="import" type="button">从主题导入</button><span class="muted" id="imp-prev"></span></div>` : ''}
+      </div>
+      ${st.ready ? `<div class="conn__mode">${MODE === 'live'
+        ? '现在看到的是店里的正式数据,所有改动按审核规则写进店铺。<button class="linkbtn" data-conn="demo" type="button">临时看演示数据</button>'
+        : '<b>内容类型已建好。</b><button class="btn btn-sm btn-primary" data-conn="live" type="button">切换到正式数据</button><span class="muted">切换后你在这里的操作会真的写进店铺(前台要等主题改造发布后才读这些内容)。</span>'}</div>` : ''}`;
+    box.querySelector('[data-conn=live]')?.addEventListener('click', () => { localStorage.removeItem(FORCE_DEMO); location.reload(); });
+    box.querySelector('[data-conn=demo]')?.addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
+    if (box.querySelector('[data-conn=import]')) {
+      api('GET', '/api/schedule/import-preview').then((p) => { const el = $('#imp-prev'); if (el) el.textContent = ` 主题「${p.theme}」里现在显示 ${p.slides} 张 Banner、${p.topbarMessages} 条顶栏(另有 ${p.disabledSlides} 张停用的不导入)`; }).catch(() => {});
+      box.querySelector('[data-conn=import]').addEventListener('click', async (e) => {
+        const b = e.currentTarget;
+        if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认导入'; return; }
+        b.disabled = true; b.textContent = '导入中…(要逐张在文件库里找图,约 1 分钟)';
+        try {
+          const r = await api('POST', '/api/schedule/import', {});
+          toast(r.message + (r.syncErrors?.length ? `;${r.syncErrors.length} 条写进店铺时出错` : ''), !r.syncErrors?.length);
+          localStorage.removeItem(FORCE_DEMO); setTimeout(() => location.reload(), 1200);
+        } catch (err) { toast('导入失败:' + err.message, false); b.disabled = false; b.textContent = '从主题导入'; }
+      });
+    }
     box.querySelector('[data-conn=reconnect]')?.addEventListener('click', async () => {
       try { await api('POST', '/api/reconnect'); } catch (e) { /* 忽略,下面重新检查 */ }
       renderConn(true);
@@ -946,7 +1034,7 @@
   function scopeHtml() {
     const rm = (key, i) => `<button type="button" class="chip__x" data-rm="${key}:${i}" aria-label="移除">${I.x}</button>`;
     const cnt = (n) => `<span class="chip__n ${n === 0 ? 'is-zero' : ''}">${n == null ? '? 个' : `${n} 个产品`}${n === 0 ? ' ⚠️' : ''}</span>`;
-    const st = scopeTotal(ed);
+    const st = scopeTotal({ ...ed, counts: ed.counts });
     return `
       <div class="scope__row"><span class="scope__k">合集</span>
         <span class="chips">${ed.collections.map((c, i) => `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${cnt(colCount(c))}${linkPair('collections', c)}${rm('collections', i)}</span>`).join('')}
@@ -958,17 +1046,23 @@
       <div class="scope__row"><span class="scope__k">指定产品</span>
         <span class="chips">${ed.products.map((p, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span>${linkPair('products', p)}${rm('products', i)}</span>`).join('')}
           <button type="button" class="chipadd" data-pick="products">${I.plus}选择产品</button></span></div>
-      <div class="scope__sum">合计约 <b>${st.total}${st.unknown ? '+' : ''}</b> 个产品${st.overlap ? ',合集和标签之间可能有重叠(正式版会算出准确的去重数量)' : ''}</div>`;
+      <div class="scope__sum">${st.exact ? `合计 <b>${st.total}</b> 个产品(已去重,Shopify 实时计数)` : `合计约 <b>${st.total}${st.unknown ? '+' : ''}</b> 个产品${st.overlap ? (MODE === 'live' ? ',正在算去重后的准确数量…' : ',合集和标签之间可能有重叠(正式数据里会算出准确的去重数量)') : ''}`}</div>`;
   }
 
   function formHtml(it) {
     if (it.kind === 'banner') {
-      const imgs = [...new Set(S.banners.map((b) => b.image).filter(Boolean))].slice(0, 30);
+      const seenImg = new Set();
+      const imgs = S.banners.filter((b) => b.image && !seenImg.has(b.image) && seenImg.add(b.image)).slice(0, 40);
       const p = it.state !== 'new' ? bannerPos(it) : null;
       return `
         ${p ? `<div class="note">${p.future ? `上线后在首页轮播排 <b>第 ${p.n} 张</b>` : `现在在首页轮播排 <b>第 ${p.n} 张</b>`}。要换位置,去 Banner 页点「调整顺序」。</div>` : ''}
-        ${fld('图片', `<div class="imgpick" id="ed-imgs">${imgs.map((u) => `<button type="button" class="imgpick__i ${u === it.image ? 'is-on' : ''}" data-img="${esc(u)}" style="background-image:url('${esc(thumb(u, 200))}')"></button>`).join('')}</div>
-          <input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/>`, `竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。正式版在这里直接上传(存到 Shopify Files),演示时从现有图片里选。`)}
+        <div class="fld"><span>图片</span>
+          <div class="imgpick" id="ed-imgs">${imgs.map((b) => `<button type="button" class="imgpick__i ${b.image === it.image ? 'is-on' : ''}" data-img="${esc(b.image)}" data-imgid="${esc(b.imageId || '')}" style="background-image:url('${esc(thumb(b.image, 200))}')"></button>`).join('')}</div>
+          <div class="rowin"><input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/>
+            ${MODE === 'live' ? '<label class="btn btn-sm upl">上传新图<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>' : ''}</div>
+          <input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
+          <em>竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。${MODE === 'live' ? '上传的图存进 Shopify 文件库;也可以从上面已有的图里选。' : '演示时从现有图片里选;正式数据里可以直接上传。'}</em>
+        </div>
         ${fld('标题', inp('title', it.title, '如:DZOFILM Arles Zoom'))}
         ${fld('副标题', inp('subtitle', it.subtitle, '如:UP TO 30% OFF'))}
         ${fld('描述', inp('description', it.description))}
@@ -1103,9 +1197,28 @@
     });
     $('#pk-q').focus();
   }
-  function refreshScope() {
+  function refreshScope(fromCounts) {
     const el = $('#ed-scope'); if (!el) return;
+    if (!fromCounts) delete ed.counts;
     el.innerHTML = scopeHtml(); $('#ed-form').dispatchEvent(new Event('change'));
+    if (!fromCounts) fetchCounts();
+  }
+  // 正式数据:选好的合集 / 标签 / 产品变了就让服务器重新算(稍等半秒,连续改只算一次)
+  let countsTimer = null;
+  function fetchCounts() {
+    if (MODE !== 'live' || !ed) return;
+    clearTimeout(countsTimer);
+    const mine = ed;
+    countsTimer = setTimeout(async () => {
+      if (!mine.collections.length && !mine.tags.length && !mine.products.length) return;
+      try {
+        const r = await api('POST', '/api/schedule/counts', { collections: mine.collections, tags: mine.tags, products: mine.products });
+        Object.entries(r.collections).forEach(([gid, c]) => { liveColCounts[gid] = c.count; });
+        Object.assign(S.tagCounts, r.tags);
+        if (ed !== mine) return; // 抽屉已经换了
+        mine.counts = r; refreshScope(true);
+      } catch (e) { console.warn('[counts]', e); }
+    }, 500);
   }
 
   function readForm(base) {
@@ -1138,23 +1251,13 @@
     if (v.kind !== 'campaign' && v.campaign === null && ($('#ed-mode .is-active') || {}).dataset?.mode === 'campaign') return '请选择要跟随的活动';
     return '';
   }
-  const EDIT_KEYS = ['image', 'title', 'subtitle', 'description', 'button1_text', 'button1_url', 'button2_text', 'button2_url', 'tag',
-    'emoji', 'text', 'link', 'category', 'name', 'collections', 'tags', 'products', 'badge', 'countdown', 'priority',
-    'bg', 'color', 'accent', 'effect', 'decoLeft', 'decoRight', 'start', 'end', 'campaign'];
-  function diff(it, v) {
-    const d = {};
-    const norm = (x) => JSON.stringify(typeof x === 'string' ? x.trim() || null : x ?? null); // 空串 = 空,首尾空格不算改动
-    EDIT_KEYS.forEach((k) => { if (k in v && norm(v[k]) !== norm(it[k])) d[k] = v[k]; });
-    return d;
-  }
-
   function openEditor(kind, id, preset) {
     hidePop();
     const isNew = !id; const it = id ? byId(id) : newItem(kind, preset);
     if (!it) return;
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
     const base = { ...it, ...(it.pendingChange && !isApprover() ? it.pendingChange : {}) };
-    ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])] };
+    ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts };
     const s = status(it);
     const approver = isApprover();
     const live = it.state === 'approved';
@@ -1175,6 +1278,7 @@
     if (it.state === 'rejected') notes.push(`<div class="note note--danger">被退回:${esc(it.rejectNote || '')}。修改后可以重新提交。</div>`);
     if (it.lastReject) notes.push(`<div class="note note--danger">上次的修改被退回:${esc(it.lastReject.note)}</div>`);
     if (it.note) notes.push(`<div class="note">${esc(it.note)}</div>`);
+    if (MODE === 'live' && it.state === 'approved' && it.syncError) notes.push(`<div class="note note--danger">写进店铺时出错:${esc(it.syncError)}。${approver ? '点「保存修改」会重试。' : '请审核人处理。'}</div>`);
 
     $('#drawer').innerHTML = `
       <div class="drawer__h">
@@ -1208,8 +1312,27 @@
       }
     };
     refreshPv();
+    if (kind === 'campaign' && MODE === 'live' && !ed.counts) fetchCounts();
     const f = $('#ed-form');
-    f.addEventListener('input', refreshPv);
+    f.addEventListener('input', (e) => {
+      if (e.target.name === 'image' && f.querySelector('[name="imageId"]')) f.querySelector('[name="imageId"]').value = '';
+      refreshPv();
+    });
+    // 上传新图(正式数据):传到服务器 → Shopify 文件库 → 拿回文件 id 和图片地址
+    f.querySelector('#ed-upload')?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      if (file.size > 20 * 1024 * 1024) return toast('图片太大了(最多 20MB)', false);
+      const lab = e.target.closest('label'); const old = lab.firstChild.textContent; lab.firstChild.textContent = '上传中…';
+      try {
+        const t = await sessionToken();
+        const res = await fetch(`/api/schedule/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': file.type }, body: file });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(j.error || res.statusText);
+        f.querySelector('[name="image"]').value = j.url; f.querySelector('[name="imageId"]').value = j.id;
+        refreshPv(); toast('图片已上传到 Shopify 文件库');
+      } catch (err) { toast('上传失败:' + err.message, false); }
+      lab.firstChild.textContent = old; e.target.value = '';
+    });
     f.addEventListener('change', refreshPv);
     f.addEventListener('keydown', (e) => {
       if (e.target.id !== 'sc-tag' || e.key !== 'Enter') return;
@@ -1228,7 +1351,10 @@
       const seg = e.target.closest('#ed-tag button, #ed-effect button');
       if (seg) { $$(`#${seg.parentElement.id} button`).forEach((b) => b.classList.toggle('is-active', b === seg)); refreshPv(); return; }
       const im = e.target.closest('.imgpick__i');
-      if (im) { f.querySelector('[name="image"]').value = im.dataset.img; $$('.imgpick__i').forEach((b) => b.classList.toggle('is-on', b === im)); refreshPv(); return; }
+      if (im) {
+        f.querySelector('[name="image"]').value = im.dataset.img; f.querySelector('[name="imageId"]').value = im.dataset.imgid || '';
+        $$('.imgpick__i').forEach((b) => b.classList.toggle('is-on', b === im)); refreshPv(); return;
+      }
       const rmb = e.target.closest('[data-rm]');
       if (rmb) { const [k, i] = rmb.dataset.rm.split(':'); ed[k].splice(+i, 1); refreshScope(); return; }
       const pk = e.target.closest('[data-pick]');
@@ -1241,38 +1367,36 @@
       if (nb && nb.dataset.for) { openEditor(nb.dataset.new, null, { campaign: nb.dataset.for }); return; }
       const op = e.target.closest('.attach__i[data-open]');
       if (op) { openEditor(byId(op.dataset.open).kind, op.dataset.open); return; }
-      const a = e.target.closest('[data-act]'); if (!a) return;
-      const act = a.dataset.act;
-      if (act === 'close') return closeDrawer();
-      if (act === 'pause') {
-        it.paused = !it.paused; log(it.paused ? 'pause' : 'resume', it); save(); closeDrawer(); renderAll();
-        return toast(it.paused ? '已暂停 · 前台立即不再显示' : '已恢复 · 按时间正常显示');
-      }
-      if (act === 'delete') {
-        if (!a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '再点一次确认删除'; a.classList.add('btn-danger'); return; }
-        const L = listOf(it.kind); L.splice(L.indexOf(it), 1); log('delete', it); save(); closeDrawer(); renderAll(); return toast('已删除');
-      }
-      const v = readForm(base); const err = validate(v);
-      if (err && act !== 'draft') return toast(err, false);
-      const L = listOf(it.kind);
-      if (act === 'draft') {
-        Object.assign(it, v, { state: 'draft' }); if (isNew) L.push(it); log('draft', it); toast('已存草稿');
-      } else if (act === 'submit') {
-        if (live) {
-          const d = diff(it, v); if (!Object.keys(d).length) return toast('没有改动', false);
-          it.pendingChange = { ...d, by: S.me, at: now() }; log('submit', it, '提交修改,线上保持原版本直到批准');
-        } else { Object.assign(it, v, { state: 'pending', by: S.me, submittedAt: now(), rejectNote: null }); if (isNew) L.push(it); log('submit', it); }
-        toast('已提交审核 · 已在飞书 @审核人(演示)');
-      } else if (act === 'publish') {
-        const wasNew = isNew || it.state !== 'approved';
-        Object.assign(it, v, { state: 'approved', pendingChange: null, rejectNote: null, lastReject: null });
-        if (isNew) L.push(it);
-        log(wasNew ? 'approve' : 'edit', it, wasNew ? '审核人自己排期(自动批准)' : '审核人直接修改');
-        const st2 = status(it);
-        toast(st2 === 'scheduled' ? `已排期 · ${fDT(win(it).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存 · ${ST[st2]}`);
-      }
-      save(); closeDrawer(); renderAll();
+      const a = e.target.closest('[data-act]'); if (!a || a.disabled) return;
+      const kindOfAct = a.dataset.act;
+      if (kindOfAct === 'close') return closeDrawer();
+      if (kindOfAct === 'delete' && !a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '再点一次确认删除'; a.classList.add('btn-danger'); return; }
+      runDrawerAction(kindOfAct, a);
     };
+
+    // 按钮 → 动作(规则和权限检查都在共用模块 / 服务器里)
+    async function runDrawerAction(kindOfAct, btn) {
+      const busy = (on) => $$('#drawer .drawer__f .btn').forEach((b) => { b.disabled = on; });
+      let r;
+      if (kindOfAct === 'pause' || kindOfAct === 'delete') {
+        busy(true); r = await act({ type: kindOfAct, id: it.id }); busy(false);
+        if (r) { closeDrawer(); toast(r.message); }
+        return;
+      }
+      const v = readForm(base);
+      if (kindOfAct !== 'draft') { const err = validate(v); if (err) return toast(err, false); }
+      const mode = kindOfAct; // draft / submit / publish
+      const values = { ...v }; if (isNew) values.id = it.id;
+      busy(true); btn.textContent = MODE === 'live' && mode === 'publish' ? '写进店铺中…' : btn.textContent;
+      r = await act({ type: 'save', mode, kind: it.kind, id: it.id, isNew, values });
+      busy(false);
+      if (!r) return;
+      closeDrawer();
+      if (mode === 'publish') {
+        const saved = byId(it.id); const st2 = saved ? status(saved) : '';
+        toast(st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`);
+      } else toast(mode === 'submit' ? `已提交审核${MODE === 'live' ? ' · 已通知审核人' : ' · 已在飞书 @审核人(演示)'}` : '已存草稿');
+    }
   }
   function closeDrawer() {
     clearInterval(pvTimer); ed = null; hidePop();
@@ -1313,7 +1437,24 @@
   document.addEventListener('dragstart', hidePop);
   $('#drawer-mask').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#drawer').hidden) closeDrawer(); });
-  $('#demo-reset').addEventListener('click', async (e) => {
+
+
+  // 顶部横条:告诉用户现在看的是演示还是正式数据
+  function renderModeBar() {
+    const bar = $('#demobar'); if (!bar) return;
+    if (MODE === 'live') {
+      bar.className = 'demobar demobar--live';
+      bar.innerHTML = `<span class="demobar__tag">正式数据</span><span>改动按审核规则写进店铺 ${esc(S.store?.name || '')};前台要等主题改造发布后才会读这些内容。</span>
+        <button class="linkbtn" id="mode-demo" type="button">临时看演示数据</button>`;
+      $('#mode-demo').addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
+    } else if (liveSetup?.ready) {
+      bar.innerHTML = `<span class="demobar__tag">演示模式</span><span>店里的内容类型已经建好,可以用正式数据了。</span>
+        <button class="linkbtn" id="mode-live" type="button">切换到正式数据</button><button class="linkbtn" id="demo-reset" type="button">重置演示数据</button>`;
+      $('#mode-live').addEventListener('click', () => { localStorage.removeItem(FORCE_DEMO); location.reload(); });
+    }
+    $('#demo-reset')?.addEventListener('click', onDemoReset);
+  }
+  async function onDemoReset(e) {
     const b = e.currentTarget;
     if (!b.dataset.sure) {
       b.dataset.sure = '1'; b.dataset.label = b.textContent; b.textContent = '再点一次确认重置';
@@ -1322,7 +1463,17 @@
     delete b.dataset.sure; b.textContent = b.dataset.label;
     ord.banner = null; ord.topbar = null;
     await load(true); closeDrawer(); renderAll(); toast('演示数据已重置');
-  });
+  }
 
-  load().then(renderAll).catch((e) => { $('#ov-root').innerHTML = `<p class="muted">演示数据加载失败:${esc(e.message)}</p>`; console.error(e); });
+  // 启动:加载共用规则 → 判断模式 → 加载数据 → 画页面
+  (async () => {
+    try {
+      [core, A] = await Promise.all([import('./lib/schedule-core.js'), import('./lib/schedule-actions.js')]);
+      MODE = await detectMode();
+      if (MODE === 'demo') await load();
+      renderModeBar(); renderAll();
+    } catch (e) {
+      $('#ov-root').innerHTML = `<p class="muted">加载失败:${esc(e.message)}</p>`; console.error(e);
+    }
+  })();
 })();
