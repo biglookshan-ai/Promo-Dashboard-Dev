@@ -1,23 +1,29 @@
 # 进度 · Promo Dashboard(全站内容排期系统)
 
 - **状态**: 开发中 / 已部署可用(只读工具部分)
-- **进度**: 60%(按新方向重新计;旧的元数据工具已完成)
-- **一句话**: 全站内容排期系统。阶段 0 / 1a / 1b / 1c 代码完成:界面接上了真实数据(建内容类型 → 从主题导入 → 排期 / 审核 / 排序 / 暂停 → 写进店铺 → 定时器到点上下线 → 飞书通知),本地测试环境整条走通,44 个自动化测试;下一步阶段 1d 主题改造(只推测试主题)。
+- **进度**: 70%(按新方向重新计;旧的元数据工具已完成)
+- **一句话**: 全站内容排期系统。阶段 0 / 1a / 1b / 1c 代码完成并在本地测试环境整条走通;**阶段 1d 首批主题改造已推到测试主题并验证**(首页 Banner、顶栏含节日样式、产品页活动徽章与倒计时,没数据时零差异);等用户加权限、建内容类型、导入后,在测试主题上验证「有数据时」的效果。
 - **分类**: Shopify App
 
 ## 🔨 进行中
-- **阶段 1d 主题改造**(只推测试主题 #186525057402):Banner / 顶栏(含节日样式)/ 产品页活动徽章与倒计时读新内容类型,没有数据时回退原编辑器设置。
 - **等用户操作**:① Partner 后台给「Promo Dashboard Dev」加 `write_metaobject_definitions, write_metaobjects, write_files`,发布新版本并在店里同意;② app →「设置 → 店铺连接」点「在店里创建内容类型」→「从主题导入」→ 自动切到正式数据;③ 飞书群加自定义机器人,把 webhook(和签名密钥)填进「设置 → 飞书通知」,点「发送测试消息」。
-- 本地:演示界面 `node scripts/demo-preview.mjs`(4790);正式数据测试环境 `node scripts/live-harness.mjs --fresh`(4793)。
-- 测试主题:**「Promo Panel Test cinegearpro-2-0-1」#186525057402**。主题分支 `feat/campaign-scheduling`(`~/Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign`)。
+- **用户做完 ② 之后我要做**:在测试主题上验证「有数据时」的渲染 —— 导入的 17 张 Banner 应该和编辑器里的一模一样(可以直接做零差异比对);顶栏默认样式同色;再建一个测试活动看产品页徽章 / 倒计时、到点上下线后页面缓存多久刷新。
+- 测试主题:**「Promo Panel Test cinegearpro-2-0-1」#186525057402**(已含 1d 首批改动)。主题分支 `feat/campaign-scheduling`(`~/Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign`,本地提交 15d359c)。
   ⚠️ 此分支是「线上镜像 + 排期改动」,**不能整体合回共享仓库**(不含其他项目未上线的 `assets/cgp-bundle-popup.js`、`templates/product.cgp-json.liquid`)。
+- 本地:演示界面 `node scripts/demo-preview.mjs`(4790);正式数据测试环境 `node scripts/live-harness.mjs --fresh`(4793)。
 
 ## ⏭ 下一步
-- 阶段 1d:主题改造(测试主题)→ 用户挑统一倒计时样式 → 用户预览 → 用户自己发布;发布前核对复制主题少了的 7 个产品模板。
+- 阶段 1d 第二批:产品卡片(`GPT-Custom-Product-List` / `gpt-555` / `gpt-collection-product-v5` / `gpt-multi-products` / `ai_gen_block_90eb43e(_V2)`)也读活动的徽章和倒计时;先把现有 6 种倒计时样式截图并排给用户挑一种统一样式。
+- 发布前:核对复制主题少了的 7 个产品模板有没有产品在用;用户在测试主题上预览满意后**自己**发布。
 - 阶段 2:Sale / Feature 的 tab、Top Categories 加上下线时间。
 - 阶段 3:73 个产品的 `offer_*` 按日期并入活动、`promotion_tag` 并入活动、清理 `product_activity_event`(写产品数据,单独问用户)。
 
 ## 🏁 最近完成
+- **阶段 1d 首批主题改造(测试主题)**(2026-09-30):
+  - 首页轮播:有上线中的排期 Banner 就按位置用它们,否则用编辑器里的 slide;卡片的画法抽成 `snippets/cgp-slider-slide.liquid`,两边用同一份,保证长得一样
+  - 顶栏:有排期公告就用,否则用 5 个公告位(`snippets/cgp-topbar-message.liquid`);节日样式覆盖底色 / 字色,飘雪 / 闪光 / 彩带特效(纯 CSS,系统设了「减少动画」时关掉),公告前后装饰
+  - 产品页:产品在上线中的活动里(合集 / 标签 / 指定产品任一)→ 活动徽章 + 倒计时(`snippets/cgp-campaign-offer.liquid`,样式先沿用产品页原来的红色);否则原 `offer_end` 倒计时一字未改
+  - 验证:推前核对测试主题没人改过;推后拉回逐字节一致;**首页轮播、顶栏、4 个产品页(含 PDMOVIE 备用模板)改前改后零差异**;临时记号证明 17 张卡片 / 顶栏 / 4 个产品页都走了新代码(不是缓存假通过),记号已撤
 - **阶段 1b 接真实数据 + 阶段 1c 飞书通知(代码完成)**(2026-09-30):
   - 规则抽成共用模块 `src/schedule-actions.js`,**服务器和页面用同一份**,服务器检查谁能批准 / 发布
   - 页面自动判断:在后台打开且建好内容类型 → 正式数据;否则演示模式(可来回切)
