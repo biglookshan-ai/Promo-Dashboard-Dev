@@ -32,6 +32,12 @@ const catPath = path.join(ROOT, 'scripts/demo-catalog.json');
 const cat = fs.existsSync(catPath) ? JSON.parse(fs.readFileSync(catPath, 'utf8')) : { products: [], tagCounts: {}, collections: [] };
 const store = { defs: {}, objects: {}, files: {}, n: 1000 };
 const nid = (type) => `gid://shopify/${type}/${store.n++}`;
+// 前台目录里没有价格,按 id 编一个稳定的价格 / 折扣,只给预览用
+const fakeProduct = (p) => {
+  const price = 100 + (p.id % 900), off = p.id % 3 === 0 ? 0 : 10 + (p.id % 30);
+  return { id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, publishedAt: null, featuredMedia: { preview: { image: { url: p.image } } },
+    variants: { nodes: [{ price: String(price), compareAtPrice: off ? String(Math.round(price / (1 - off / 100))) : null }] } };
+};
 const SCOPES = args.has('--no-scopes') ? ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions']
   : ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions', 'write_metaobject_definitions', 'write_metaobjects', 'write_files'];
 
@@ -83,7 +89,23 @@ function gql(query, v) {
   }
   if (q.includes('node(id: $id)')) { const f = store.files[v.id]; return { node: f ? { id: f.id, fileStatus: 'READY', image: { url: f.url } } : null }; }
   if (q.includes('nodes(ids: $ids)')) {
-    return { nodes: v.ids.map((id) => { const c = cat.collections.find((x) => `gid://shopify/Collection/${x.id}` === id); return c ? { id, handle: c.handle, title: c.title, productsCount: { count: c.count ?? 0 } } : null; }) };
+    return { nodes: v.ids.map((id) => {
+      const c = cat.collections.find((x) => `gid://shopify/Collection/${x.id}` === id);
+      if (c) return { id, handle: c.handle, title: c.title, productsCount: { count: c.count ?? 0 } };
+      const p = cat.products.find((x) => `gid://shopify/Product/${x.id}` === id);
+      return p ? fakeProduct(p) : null;
+    }) };
+  }
+  if (q.includes('collectionByIdentifier')) {
+    const c = cat.collections.find((x) => x.handle === v.h);
+    return { collectionByIdentifier: c ? { id: `gid://shopify/Collection/${c.id}`, handle: c.handle, title: c.title, productsCount: { count: c.count ?? 0 } } : null };
+  }
+  if (q.includes('collection(id: $id)')) {
+    // 页签预览:用前台目录里带这个合集名关键词的产品凑一组(假 Shopify 不知道合集成员)
+    const c = cat.collections.find((x) => `gid://shopify/Collection/${x.id}` === v.id);
+    const key = (c?.handle || '').split('-')[0];
+    const list = cat.products.filter((p) => p.handle.includes(key)).slice(0, 60).map(fakeProduct);
+    return { collection: c ? { title: c.title, productsCount: { count: c.count ?? 0 }, products: { nodes: list } } : null };
   }
   if (q.includes('productsCount')) {
     const out = {};
@@ -102,8 +124,9 @@ function gql(query, v) {
     return { productsCount: { count: count(v.q) } };
   }
   if (q.includes('productByIdentifier') || q.includes('product(id: $id)')) {
-    const p = cat.products.find((x) => x.handle === v.handle || `gid://shopify/Product/${x.id}` === v.id);
-    return { product: p ? { id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, tags: p.tags, featuredMedia: { preview: { image: { url: p.image } } }, collections: { nodes: [] } } : null };
+    const p = cat.products.find((x) => x.handle === (v.handle || v.h) || `gid://shopify/Product/${x.id}` === v.id);
+    const node = p ? { id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, tags: p.tags, featuredMedia: { preview: { image: { url: p.image } } }, collections: { nodes: [] } } : null;
+    return { product: node, productByIdentifier: node };
   }
   throw new Error('假 Shopify 不认识这个查询:' + q.slice(0, 120));
 }

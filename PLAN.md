@@ -270,8 +270,20 @@ lark-ops 是本地工具(用你个人的飞书登录 token,存在本机),没有�
 - 在复制主题上完成 → 统一倒计时样式(用户挑选)→ 用户预览 → 用户发布
 - 实测:到点上线/下线、页面缓存刷新、倒计时归零隐藏、集合页性能
 
-### 阶段 2 · 其余模块
+### 阶段 2 · 首页商品模块 ✅ 代码完成 + 已推测试主题(2026-10-09)
+- 用户需求:首页促销模块(GPT-Custom-Product-List,现「Autumn Sale」)和推荐 / 新品模块(gpt-555,现「Feature Products」)也要按计划、结合促销、按时间段自动换。
+- 用户定的:**整套替换**(标题 + 页签);每个页签数量上限可选 **20 个 / 不限(Shopify 一次最多 250)**;新品模块**排期换版本 + 「最新上架在前」页签两种都要**。
+- 数据:`cgp_product_module`(版本,publishable,按时间上下线)+ `cgp_product_tab`(页签,**不开 publishable**,跟着版本走,版本用 list 引用)。每个模块一个平时版本(从主题导入,页签不限数量 = 和现在一样);非平时版本里优先级最高的生效。
+- 主题:两个 section 各加设置「网站更新中心排期」(默认自动 = 只在首页生效;闪购合集页 / 旧首页布局页照旧);有版本就用版本的标题、颜色、页签,产品卡用 `snippets/cgp-pm-card`(从合集页签原样搬);原代码只包进回退分支。
+- 发现:线上首页 2.8MB 里促销模块占 1.9MB(两个页签画了 218 张卡,一次只露 5 张)→ 新版本默认每页签 20 个。
+
+### 阶段 2b · 其余模块
 - Sale / Feature 的 tab、Top Categories 加上下线时间
+
+### ⚠️ 发布清单(用户自己上线前)
+- **不要直接发布整个测试主题**:它的 `templates/index.json` 等编辑器配置停在 2026-09-29 复制时(比如促销模块还是「Sale + 6 个页签」,线上早已改成「Autumn Sale」),整套发布会把首页配置退回去。
+- 正确做法:只把排期改过的**代码文件**放到线上主题 —— `sections/gpt-slider-banner-3.liquid`、`blocks/ai_gen_block_a08faac.liquid`、`sections/GPT-Custom-Product-List.liquid`、`sections/gpt-555.liquid`、`snippets/cgp-*.liquid`(slider-slide / topbar-message / campaign-offer / pm-card / pdp-*)。产品模板 JSON 的 3 处改动(阶段 0)需要单独、外科手术式地改到线上模板里。
+- 放上去前先拉线上这些文件和分支对比,确认线上没人改过这些代码。
 
 ### 阶段 3 · 迁移与收尾
 - 35 张 slide、顶栏公告导入成条目
