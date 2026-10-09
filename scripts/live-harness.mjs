@@ -8,7 +8,7 @@
 //      产品数用 scripts/demo-catalog.json(前台公开数据)。GET /__state 可以看写进「店铺」的东西。
 //   2. 真的 app 服务器(4795):node src/server.js,用 SHOPIFY_GRAPHQL_ORIGIN 指到假 Shopify,数据放临时目录。
 //   3. 入口代理(4793):把页面里的 App Bridge 换成一个假的 window.shopify(签好的 session token + 简易选择器)。
-// 启动参数:--no-scopes 模拟「还没加权限」;--fresh 每次清空数据。
+// 启动参数:--no-scopes 模拟「还没加权限」;--fresh 每次清空数据;--core-only 模拟只建过第一期 4 个类型的老店铺。
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -31,6 +31,10 @@ fs.mkdirSync(DATA, { recursive: true });
 const catPath = path.join(ROOT, 'scripts/demo-catalog.json');
 const cat = fs.existsSync(catPath) ? JSON.parse(fs.readFileSync(catPath, 'utf8')) : { products: [], tagCounts: {}, collections: [] };
 const store = { defs: {}, objects: {}, files: {}, n: 1000 };
+// --core-only:模拟「老店铺已经建过第一期的 4 个类型,还没建首页商品模块的 2 个」(升级场景)
+if (args.has('--core-only')) {
+  for (const type of ['cgp_campaign', 'cgp_banner_slide', 'cgp_topbar_message', 'cgp_topbar_style']) store.defs[type] = { id: `gid://shopify/MetaobjectDefinition/${store.n++}`, type, name: type };
+}
 const nid = (type) => `gid://shopify/${type}/${store.n++}`;
 // 前台目录里没有价格,按 id 编一个稳定的价格 / 折扣,只给预览用
 const fakeProduct = (p) => {

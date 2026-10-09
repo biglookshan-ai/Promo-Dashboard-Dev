@@ -1019,7 +1019,11 @@
     const head = `<div class="panel__h"><h3>店铺连接(正式数据)</h3>${MODE === 'live' ? '<span class="tag tag--ok">正在用正式数据</span>' : '<span class="tag tag--warn">现在是演示模式</span>'}</div>`;
     let st = !force && connCache;
     if (!st) {
-      try { st = connCache = await api('GET', '/api/schedule/status'); }
+      try {
+        st = connCache = await api('GET', '/api/schedule/status');
+        // 页面上只留一份连接状态:查到新的就同步给其他页(比如商品模块页的「缺类型」提示)
+        if (S.setup && (S.setup.pmReady !== st.pmReady || S.setup.ready !== st.ready)) { Object.assign(S.setup, { pmReady: st.pmReady, ready: st.ready, upgrade: st.upgrade }); renderPmodules(); }
+      }
       catch (e) {
         box.innerHTML = `${head}<p class="muted">${/后台里打开/.test(e.message) ? '本地预览连不到店铺。在 Shopify 后台里打开这个 app,这里会显示权限、内容类型和定时器的真实状态。' : `读取失败:${esc(e.message)}`}</p>
           ${/后台里打开/.test(e.message) ? '' : '<button class="btn btn-sm" data-conn="retry" type="button">重试</button>'}`;
@@ -1047,7 +1051,7 @@
           ${st.scheduler.lastError ? `<div class="note note--danger">上次出错:${esc(st.scheduler.lastError)}</div>` : ''}
           <p class="muted">${Object.values(st.items || {}).some((n) => n) ? '已写进店铺的内容由定时器按时间上下线。' : '店里还没有排期内容,定时器空转。'}</p></div>
         ${st.ready ? `<div><div class="conn__k">4. 导入现有内容</div>
-          ${S.imported && MODE === 'live' ? `<div class="conn__r"><span class="ok">✓</span><span>${fDT(S.imported.at)} 从「${esc(S.imported.theme)}」导入了 ${S.imported.banners} 张 Banner、${S.imported.topbar} 条顶栏</span></div>
+          ${S.imported && MODE === 'live' ? `<div class="conn__r"><span class="ok">✓</span><span>${fDT(S.imported.at)} 从「${esc(S.imported.theme)}」导入了 ${S.imported.banners} 张 Banner、${S.imported.topbar} 条顶栏${S.imported.pmodules ? `、${S.imported.pmodules} 个商品模块平时版本` : ''}</span></div>
             ${S.imported.skipped?.length ? `<div class="note note--warn">跳过 ${S.imported.skipped.length} 个:${S.imported.skipped.map((x) => `${esc(x.title || '')}(${esc(x.reason)})`).join('、')}</div>` : ''}` : ''}
           <p class="muted">把线上主题首页<b>正在显示的 Banner</b>、顶栏公告和顶栏配色,以及首页两个商品模块现在的标题和页签(当「平时版本」)导进来,变成「已批准 · 长期显示」,和现在网站上一样。只读主题、不改主题;可以重复点,导过的会跳过。</p>
           <button class="btn btn-sm ${S.imported && MODE === 'live' ? '' : 'btn-primary'}" data-conn="import" type="button">从主题导入</button><span class="muted" id="imp-prev"></span></div>` : ''}
@@ -1059,7 +1063,17 @@
     box.querySelector('[data-conn=live]')?.addEventListener('click', () => { localStorage.removeItem(FORCE_DEMO); location.reload(); });
     box.querySelector('[data-conn=demo]')?.addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
     if (box.querySelector('[data-conn=import]')) {
-      api('GET', '/api/schedule/import-preview').then((p) => { const el = $('#imp-prev'); if (el) el.textContent = ` 主题「${p.theme}」里现在显示 ${p.slides} 张 Banner、${p.topbarMessages} 条顶栏(另有 ${p.disabledSlides} 张停用的不导入)${(p.modules || []).length ? `;首页商品模块:${p.modules.map((m) => `${m.module === 'sale' ? '促销' : '推荐'}模块「${m.title}」${m.tabs} 个页签`).join('、')}` : ''}`; }).catch(() => {});
+      api('GET', '/api/schedule/import-preview').then((p) => {
+        const el = $('#imp-prev'); if (!el) return;
+        el.textContent = ` 主题「${p.theme}」里现在显示 ${p.slides} 张 Banner、${p.topbarMessages} 条顶栏(另有 ${p.disabledSlides} 张停用的不导入)${(p.modules || []).length ? `;首页商品模块:${p.modules.map((m) => `${m.module === 'sale' ? '促销' : '推荐'}模块「${m.title}」${m.tabs} 个页签`).join('、')}` : ''}`;
+        // 商品模块的类型建好了、但还没导平时版本 → 提醒去点导入
+        const missing = st.pmReady === false || !(st.definitions || []).filter((d) => !d.core).every((d) => d.exists) ? []
+          : (p.modules || []).filter((m) => !(S.pmodules || []).some((x) => x.isDefault && x.module === m.module));
+        if (missing.length) {
+          const b = box.querySelector('[data-conn=import]'); if (b) { b.classList.add('btn-primary'); }
+          el.insertAdjacentHTML('beforebegin', `<div class="note note--warn">首页商品模块(${missing.map((m) => (m.module === 'sale' ? '促销模块' : '推荐模块')).join('、')})的平时版本还没导入,点「从主题导入」就会导进来。已经导过的 Banner、顶栏会自动跳过。</div>`);
+        }
+      }).catch(() => {});
       box.querySelector('[data-conn=import]').addEventListener('click', async (e) => {
         const b = e.currentTarget;
         if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认导入'; return; }
@@ -1083,6 +1097,7 @@
         const r = await api('POST', '/api/schedule/setup', { by: me().name });
         toast(r.errors.length ? `建好 ${r.created.length} 个,失败 ${r.errors.length} 个:${r.errors[0].message}` : `已建好 ${r.created.length} 个内容类型`, !r.errors.length);
       } catch (err) { toast('创建失败:' + err.message, false); }
+      if (MODE === 'live') { try { await load(); renderAll(); } catch (e) { /* 下面照样刷新连接面板 */ } }
       renderConn(true);
     });
   }
