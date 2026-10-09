@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { parseThemeJson, findSlider, findTopbar, siteStyle, normalizeLink, shopImageName } from '../src/theme-content.js';
+import { parseThemeJson, findSlider, findTopbar, siteStyle, normalizeLink, shopImageName, findProductModules } from '../src/theme-content.js';
 
 const THEME = process.argv[2]
   || path.join(os.homedir(), 'Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign');
@@ -132,6 +132,31 @@ if (vespid) Object.assign(vespid, { campaign: 'c3', start: null, end: null });
 const gifts = banners.find((b) => /gift ideas/i.test(b.title));
 if (gifts) Object.assign(gifts, { campaign: 'c5', start: null, end: null });
 
+// ---- 首页商品模块:平时版本 = 主题里现在的配置;另外几个版本跟着活动换 ----
+const tabOf = (id, title, handle, o = {}) => ({ id, title, source: 'collection', collection: C(handle), products: [], onlyDiscounted: false, sortByDiscount: false,
+  newestFirst: false, countdown: false, limit: 20, shopAllUrl: '', shopAllText: '', ...o });
+const pmodules = findProductModules(rd('templates/index.json')).map((m) => ({
+  id: `pm-${m.module}-default`, module: m.module, isDefault: true, name: m.module === 'sale' ? '平时版本(促销模块)' : '平时版本(推荐模块)',
+  title: m.title, title2: m.title2, titleColor: m.titleColor, title2Color: m.title2Color, tabActiveBg: m.tabActiveBg, tabActiveText: m.tabActiveText,
+  tabs: m.tabs.filter((t) => t.source === 'collection').map((t, i) => tabOf(`tab-${m.module}-${i}`, t.title || C(t.collectionHandle).title, t.collectionHandle,
+    { onlyDiscounted: t.onlyDiscounted, sortByDiscount: t.sortByDiscount, countdown: t.countdown, limit: 0, shopAllUrl: t.shopAllUrl, shopAllText: t.shopAllText })),
+  priority: 0, start: null, end: null, state: 'approved', by: 'u1', order: 0, note: '从主题导入',
+}));
+pmodules.push(
+  { id: 'pm-autumn', module: 'sale', name: 'Autumn Sale', title: '', title2: 'Autumn Sale', titleColor: '#525258', title2Color: '#ee8849', tabActiveBg: '#ee8849', tabActiveText: '#f9f9f9',
+    tabs: [tabOf('tab-a1', 'Top Picks', 'flash-sale', { onlyDiscounted: true, sortByDiscount: true }), tabOf('tab-a2', 'Clearance', 'clearance', { onlyDiscounted: true, sortByDiscount: true, countdown: true })],
+    priority: 10, campaign: 'c1', start: null, end: null, state: 'approved', by: 'u1', order: 1 },
+  { id: 'pm-bf', module: 'sale', name: 'Black Friday', title: 'Black Friday', title2: 'Deals', titleColor: '#111111', title2Color: '#d10000', tabActiveBg: '#111111', tabActiveText: '#ffd400',
+    tabs: [tabOf('tab-b1', 'Doorbusters', 'flash-sale', { onlyDiscounted: true, sortByDiscount: true, countdown: true }), tabOf('tab-b2', 'DZOFILM', 'dzofilm', { onlyDiscounted: true })],
+    priority: 20, campaign: 'c4', start: null, end: null, state: 'pending', by: 'u2', order: 2 },
+  { id: 'pm-holiday', module: 'sale', name: 'Holiday Deals', title: 'Holiday', title2: 'Deals', titleColor: '#525258', title2Color: '#9b1c1c', tabActiveBg: '#9b1c1c', tabActiveText: '#ffffff',
+    tabs: [tabOf('tab-h1', 'Gift Picks', 'gift-ideas'), tabOf('tab-h2', 'Holiday Deals', 'holiday-deals', { onlyDiscounted: true, sortByDiscount: true })],
+    priority: 10, campaign: 'c5', start: null, end: null, state: 'approved', by: 'u1', order: 3 },
+  { id: 'pm-newin', module: 'feature', name: 'New In 十月', title: 'New', title2: 'Arrivals', titleColor: '#525258', title2Color: '#fcc900', tabActiveBg: '#fcc900', tabActiveText: '#1b1c1d',
+    tabs: [tabOf('tab-n1', 'Just Landed', 'dzofilm', { newestFirst: true, limit: 20 }), tabOf('tab-n2', 'Staff Picks', 'gift-ideas')],
+    priority: 10, start: 2, end: 30, state: 'approved', by: 'u1', order: 1 },
+);
+
 const seed = {
   version: 1,
   generatedFrom: 'theme cinegearpro-2-0-1 @ ' + new Date().toISOString().slice(0, 10),
@@ -144,7 +169,7 @@ const seed = {
   store: { handle: 'cinegearpro', domain: 'https://www.cinegearpro.co.uk' },
   catalogFetchedAt: cat?.fetchedAt || null,
   collections, products, tagCounts,
-  banners, topbar, tbstyles, campaigns,
+  banners, topbar, tbstyles, campaigns, pmodules,
   log: [
     { at: -0.5, action: 'down', kind: 'banner', title: 'Spring Bank Holiday Deals', note: '到期自动下线' },
     { at: -1.2, action: 'up', kind: 'topbar', title: 'Free UK Delivery', note: '长期显示' },

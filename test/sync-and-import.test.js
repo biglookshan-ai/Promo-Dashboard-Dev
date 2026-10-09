@@ -149,3 +149,50 @@ test('写入:Shopify 不收空字符串时,去掉空字段再写一次', async (
   assert.equal(calls.length, 2);
   assert.ok(calls[1] < calls[0]);
 });
+
+// ---- 首页商品模块 ----
+test('同步商品模块:先写页签,版本按顺序引用页签;去掉的页签从店里删掉', async () => {
+  const upserts = [], removed = []; let n = 1;
+  const gql = async (ctx, q, vars) => {
+    if (q.includes('metaobjectUpsert')) { upserts.push(vars); return { metaobjectUpsert: { metaobject: { id: `gid://shopify/Metaobject/${n++}`, handle: vars.handle.handle, capabilities: { publishable: { status: vars.metaobject.capabilities?.publishable?.status || 'ACTIVE' } } }, userErrors: [] } }; }
+    if (q.includes('metaobjectDelete')) { removed.push(vars.id); return { metaobjectDelete: { deletedId: vars.id, userErrors: [] } }; }
+    throw new Error('unexpected');
+  };
+  const m = { id: 'pm1', kind: 'pmodule', module: 'sale', name: 'BF', title: 'Black', title2: 'Friday', titleColor: '#111111', state: 'approved', start: null, end: null, campaign: null,
+    tabs: [{ id: 'ta', title: 'Deals', source: 'collection', collection: { id: 9 }, limit: 20, onlyDiscounted: true },
+           { id: 'tb', title: 'Picks', source: 'products', products: [{ id: 5 }, { id: 'gid://shopify/Product/6' }], limit: 0, newestFirst: true }],
+    syncedTabIds: ['gid://old-tab'] };
+  const s = state({ pmodules: [m] });
+  const r = await runEffects({}, s, [{ type: 'sync', id: 'pm1' }], { gql, now: T });
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(upserts.map((u) => u.handle.type), ['cgp_product_tab', 'cgp_product_tab', 'cgp_product_module']);
+  assert.equal(upserts[0].metaobject.capabilities, undefined, '页签不开上下线');
+  const tf = Object.fromEntries(upserts[1].metaobject.fields.map((x) => [x.key, x.value]));
+  assert.equal(tf.products, JSON.stringify(['gid://shopify/Product/5', 'gid://shopify/Product/6']));
+  assert.equal(tf.limit, '0'); assert.equal(tf.newest_first, 'true'); assert.equal(tf.collection, '');
+  const mf = Object.fromEntries(upserts[2].metaobject.fields.map((x) => [x.key, x.value]));
+  assert.equal(mf.tabs, JSON.stringify([s.pmodules[0].tabs[0].shopifyId, s.pmodules[0].tabs[1].shopifyId]));
+  assert.equal(mf.module, 'sale'); assert.equal(mf.title_color, '#111111');
+  assert.deepEqual(removed, ['gid://old-tab']);
+});
+
+test('导入:首页两个商品模块 → 各一个平时版本(页签不限数量,和现在一样);找不到的合集跳过', async () => {
+  const { findProductModules } = await import('../src/theme-content.js');
+  const idx = { order: ['a', 'b'], sections: {
+    a: { type: 'GPT-Custom-Product-List', settings: { title2: 'Autumn Sale', title2_color: '#ee8849', tab_active_bg_color: '#ee8849' }, block_order: ['x', 'y', 'z'], blocks: {
+      x: { type: 'collection_group', settings: { collection: 'flashdeal', custom_title: 'Top Picks', show_only_discounted: true, sort_by_discount: true } },
+      y: { type: 'collection_group', disabled: true, settings: { collection: 'dzofilm' } },
+      z: { type: 'collection_group', settings: { collection: 'gone', custom_title: 'Gone' } } } },
+    b: { type: 'gpt-555', settings: { title: 'Feature Products' }, block_order: ['k'], blocks: { k: { type: 'collection', settings: { collection: 'staff-picks' } } } } } };
+  const mods = findProductModules(idx);
+  assert.deepEqual(mods.map((m) => [m.module, m.tabs.length]), [['sale', 2], ['feature', 1]]);
+  const resolveCollection = async (h) => (h === 'gone' ? null : { id: `gid://shopify/Collection/${h}`, handle: h, title: h });
+  const imp = await buildImport({}, { modules: mods }, new Set(), { resolveCollection, actor: { id: 'u1' } }, async () => { throw new Error('x'); });
+  assert.equal(imp.pmodules.length, 2);
+  const sale = imp.pmodules.find((m) => m.module === 'sale');
+  assert.equal(sale.isDefault, true); assert.equal(sale.title2, 'Autumn Sale');
+  assert.deepEqual(sale.tabs.map((t) => [t.title, t.limit, t.onlyDiscounted]), [['Top Picks', 0, true]]);
+  assert.equal(imp.skipped.length, 1);
+  const again = await buildImport({}, { modules: mods }, new Set(imp.pmodules.map((m) => m.source)), { resolveCollection }, async () => { throw new Error('x'); });
+  assert.equal(again.pmodules.length, 0);
+});

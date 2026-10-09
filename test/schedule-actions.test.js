@@ -102,3 +102,42 @@ test('不改动传入的数据(纯函数)', () => {
   applyAction(d, { type: 'pause', id: 'b1' }, approver, T);
   assert.equal(JSON.stringify(d), snap);
 });
+
+// ---- 首页商品模块 ----
+const tab = (o = {}) => ({ id: 'tab1', title: 'Top Picks', source: 'collection', collection: { id: 1, title: 'Flash' }, products: [], limit: 20, ...o });
+const pmod = (o = {}) => ({ id: 'pm1', kind: 'pmodule', module: 'sale', name: 'Autumn', title: '', title2: 'Autumn Sale', tabs: [tab()], state: 'approved', start: null, end: null, campaign: null, order: 0, ...o });
+
+test('商品模块:至少一个页签,每个页签要选了合集或产品', () => {
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [] } }, approver, T), /至少要有一个页签/);
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [tab({ collection: null })] } }, approver, T), /第 1 个页签还没选合集/);
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [tab({ source: 'products', products: [] })] } }, approver, T), /还没选产品/);
+  const r = applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [tab()] } }, approver, T);
+  assert.equal(r.doc.pmodules[0].state, 'approved');
+  assert.ok(r.effects.some((e) => e.type === 'sync' && e.id === 'pmx'));
+});
+
+test('商品模块:每个模块只能有一个平时版本', () => {
+  const d = doc({ pmodules: [pmod({ id: 'def', isDefault: true })] });
+  assert.throws(() => applyAction(d, { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'x', module: 'sale', name: 'X', isDefault: true, tabs: [tab()] } }, approver, T), /已经有平时版本/);
+  // 另一个模块可以有自己的平时版本
+  const r = applyAction(d, { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'y', module: 'feature', name: 'Y', isDefault: true, tabs: [tab()] } }, approver, T);
+  assert.equal(r.doc.pmodules.length, 2);
+});
+
+test('商品模块:编辑改页签 → 修改待审核,能看出页签变了;批准后写店铺', () => {
+  const d = doc({ pmodules: [pmod()] });
+  const r = applyAction(d, { type: 'save', mode: 'submit', kind: 'pmodule', id: 'pm1', values: { tabs: [tab(), tab({ id: 'tab2', title: 'Clearance', collection: { id: 2, title: 'Clearance' } })] } }, editor, T);
+  assert.deepEqual(Object.keys(r.doc.pmodules[0].pendingChange).sort(), ['at', 'by', 'tabs']);
+  assert.equal(r.doc.pmodules[0].tabs.length, 1, '批准前店里还是一个页签');
+  const r2 = applyAction(r.doc, { type: 'approve', id: 'pm1' }, approver, T);
+  assert.equal(r2.doc.pmodules[0].tabs.length, 2);
+});
+
+test('商品模块:删除时把页签条目也删掉;活动批准时挂在下面的模块版本一起写', () => {
+  const ended = pmod({ end: T - 1, shopifyId: 'gid://m', tabs: [tab({ shopifyId: 'gid://t1' }), tab({ id: 't2', shopifyId: 'gid://t2' })] });
+  const r = applyAction(doc({ pmodules: [ended] }), { type: 'delete', id: 'pm1' }, approver, T);
+  assert.deepEqual(r.effects.map((e) => e.shopifyId).sort(), ['gid://m', 'gid://t1', 'gid://t2']);
+  const d = doc({ campaigns: [{ id: 'c1', kind: 'campaign', state: 'pending', name: 'Sale', start: T, end: T + D }], pmodules: [pmod({ campaign: 'c1' })] });
+  const r2 = applyAction(d, { type: 'approve', id: 'c1' }, approver, T);
+  assert.ok(r2.effects.some((e) => e.type === 'sync' && e.id === 'pm1'));
+});

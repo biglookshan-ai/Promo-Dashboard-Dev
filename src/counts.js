@@ -54,3 +54,30 @@ export async function productCampaigns(ctx, handleOrId, campaigns, gql = graphql
   }).filter(Boolean);
   return { product: { id: p.id, title: p.title, handle: p.handle, image: p.featuredMedia?.preview?.image?.url || '', tags: p.tags, collections: p.collections.nodes }, campaigns: hits };
 }
+
+// 首页商品模块的页签预览:按页签的设置取前几个产品(只给后台编辑器看,前台由主题自己取)
+export async function tabProducts(ctx, tab, gql = graphql) {
+  const N = 10;
+  const FIELDS = 'id title handle publishedAt featuredMedia { preview { image { url } } } variants(first: 20) { nodes { price compareAtPrice } }';
+  let nodes = [];
+  if (tab.source === 'products') {
+    const ids = (tab.products || []).map((p) => toGid('Product', p.id)).filter(Boolean).slice(0, 50);
+    if (ids.length) nodes = (await gql(ctx, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { ${FIELDS} } } }`, { ids })).nodes.filter(Boolean);
+  } else if (tab.collection?.id) {
+    const d = await gql(ctx, `query($id: ID!, $sort: ProductCollectionSortKeys, $rev: Boolean) { collection(id: $id) { title productsCount { count }
+        products(first: 60, sortKey: $sort, reverse: $rev) { nodes { ${FIELDS} } } } }`,
+    { id: toGid('Collection', tab.collection.id), sort: tab.newestFirst ? 'CREATED' : 'COLLECTION_DEFAULT', rev: !!tab.newestFirst });
+    nodes = d.collection?.products.nodes || [];
+  }
+  const items = nodes.map((p) => {
+    const best = p.variants.nodes.reduce((acc, v) => {
+      const pr = Number(v.price), cmp = Number(v.compareAtPrice || 0);
+      const off = cmp > pr ? Math.round(((cmp - pr) / cmp) * 100) : 0;
+      return off > acc.off ? { off, price: pr, cmp } : acc;
+    }, { off: 0, price: Number(p.variants.nodes[0]?.price || 0), cmp: Number(p.variants.nodes[0]?.compareAtPrice || 0) });
+    return { id: p.id, title: p.title, handle: p.handle, image: p.featuredMedia?.preview?.image?.url || '', price: best.price, compareAt: best.cmp > best.price ? best.cmp : null, off: best.off };
+  }).filter((p) => !tab.onlyDiscounted || p.off > 0);
+  if (tab.sortByDiscount) items.sort((a, b) => b.off - a.off);
+  const limit = Number(tab.limit) || 0;
+  return { items: items.slice(0, Math.min(N, limit || N)), shown: limit ? Math.min(limit, items.length) : items.length, approx: nodes.length >= 60 };
+}

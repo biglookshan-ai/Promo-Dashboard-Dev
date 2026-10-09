@@ -61,3 +61,33 @@ export function siteStyle({ slider, topbar, settingsData }) {
     topbar: { bg: tb.background_color || '#3B4041', color: tb.text_color || '#ffffff', fontSize: tb.font_size || 12, padV: tb.padding_vertical || 14 },
   };
 }
+
+// 首页的两个商品模块:促销模块(GPT-Custom-Product-List)、推荐 / 新品模块(gpt-555)。
+// 各取首页上第一个没停用的;页签 = 没停用的 block(合集组 / 手选产品组)。
+export function findProductModules(indexJson) {
+  const out = [];
+  const order = indexJson.order || Object.keys(indexJson.sections || {});
+  for (const [type, module] of [['GPT-Custom-Product-List', 'sale'], ['gpt-555', 'feature']]) {
+    const sectionId = order.find((id) => indexJson.sections[id]?.type === type && !indexJson.sections[id].disabled);
+    if (!sectionId) continue;
+    const sec = indexJson.sections[sectionId]; const st = sec.settings || {};
+    const tabs = (sec.block_order || Object.keys(sec.blocks || {})).map((bid) => ({ bid, b: sec.blocks[bid] }))
+      .filter(({ b }) => b && !b.disabled && ['collection_group', 'collection', 'product_group'].includes(b.type))
+      .map(({ bid, b }) => {
+        const s = b.settings || {};
+        return {
+          blockId: bid, source: b.type === 'product_group' ? 'products' : 'collection',
+          collectionHandle: b.type === 'product_group' ? '' : s.collection || '', productHandles: b.type === 'product_group' ? (s.product_list || []) : [],
+          title: s.custom_title || '', shopAllUrl: normalizeLink(s.custom_shop_all_url || ''), shopAllText: s.shop_all_text || '',
+          onlyDiscounted: !!s.show_only_discounted, sortByDiscount: !!s.sort_by_discount, countdown: !!s.enable_offer_countdown,
+        };
+      })
+      .filter((t) => (t.source === 'collection' ? t.collectionHandle : t.productHandles.length));
+    out.push({
+      module, sectionId, type, tabs,
+      title: st.title || '', title2: st.title2 || '', titleColor: st.title_color || '', title2Color: st.title2_color || '',
+      tabActiveBg: st.tab_active_bg_color || '', tabActiveText: st.tab_active_text_color || '',
+    });
+  }
+  return out;
+}

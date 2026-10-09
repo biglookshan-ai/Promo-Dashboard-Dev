@@ -7,21 +7,23 @@
 // 返回 { doc, effects, message }。effects 交给服务器执行(写 Shopify / 发飞书),浏览器演示模式忽略。
 import { itemStatus, campaignIndex } from './schedule-core.js';
 
-export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns' };
-export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动' };
+export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules' };
+export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块' };
+export const MODULE_CN = { sale: '促销模块', feature: '推荐 / 新品模块' };
 export const ORDERABLE = ['banner', 'topbar'];
 
 // 可编辑字段(审核对比、修改待审核都以它为准)
 export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description', 'button1_text', 'button1_url', 'button2_text', 'button2_url', 'tag',
   'emoji', 'text', 'link', 'category', 'name', 'collections', 'tags', 'products', 'badge', 'countdown', 'priority',
-  'bg', 'color', 'accent', 'effect', 'decoLeft', 'decoRight', 'start', 'end', 'campaign'];
+  'bg', 'color', 'accent', 'effect', 'decoLeft', 'decoRight', 'start', 'end', 'campaign',
+  'module', 'title2', 'titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText', 'tabs', 'isDefault'];
 
 export class ActionError extends Error {}
 const fail = (msg) => { throw new ActionError(msg); };
 
 export const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
   : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
-export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles];
+export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || [])];
 export const findItem = (doc, id) => allOf(doc).find((x) => x.id === id);
 const isApprover = (actor) => actor?.role === 'approver';
 
@@ -44,6 +46,13 @@ export function validate(it) {
   if (it.kind === 'topbar' && !String(it.text || '').trim()) return '请填写公告文字';
   if ((it.kind === 'campaign' || it.kind === 'tbstyle') && !String(it.name || '').trim()) return '请填写名称';
   if (it.kind === 'campaign' && it.start == null) return '活动需要开始时间';
+  if (it.kind === 'pmodule') {
+    if (!['sale', 'feature'].includes(it.module)) return '请选择是哪个模块';
+    if (!(it.tabs || []).length) return '至少要有一个页签';
+    for (const [i, t] of it.tabs.entries()) {
+      if (t.source === 'products' ? !(t.products || []).length : !t.collection) return `第 ${i + 1} 个页签还没选${t.source === 'products' ? '产品' : '合集'}`;
+    }
+  }
   if (it.start != null && it.end != null && it.end <= it.start) return '结束时间要晚于开始时间';
   return '';
 }
@@ -67,7 +76,8 @@ export function applyAction(input, action, actor, now = Date.now()) {
   const doc = clone(input);
   const effects = [];
   let message = '';
-  const L = (kind) => doc[LIST[kind]] || fail('未知类型');
+  // 老数据里可能还没有某类列表(比如后加的商品模块),用到时补成空列表
+  const L = (kind) => (LIST[kind] ? (doc[LIST[kind]] ||= []) : fail('未知类型'));
 
   switch (action.type) {
     case 'save': {
@@ -85,6 +95,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
       const v = pick(values);
       const merged = { ...it, ...v };
       if (mode !== 'draft') { const err = validate(merged); if (err) fail(err); }
+      if (kind === 'pmodule' && merged.isDefault && list.some((x) => x !== it && x.isDefault && x.module === merged.module)) fail('这个模块已经有平时版本了');
       const approved = it.state === 'approved';
 
       if (mode === 'draft') {
@@ -189,6 +200,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
       const list = L(it.kind); list.splice(list.indexOf(it), 1);
       addLog(doc, now, 'delete', it, '', actor);
       if (it.shopifyId) effects.push({ type: 'remove', shopifyId: it.shopifyId });
+      for (const tab of it.tabs || []) if (tab.shopifyId) effects.push({ type: 'remove', shopifyId: tab.shopifyId });
       return { doc, effects, message: '已删除' };
     }
 
@@ -219,4 +231,4 @@ export function applyAction(input, action, actor, now = Date.now()) {
 
 // 挂在活动下、跟随活动时间的内容
 export const followersOf = (doc, campaignId) =>
-  [...doc.banners, ...doc.topbar, ...doc.tbstyles].filter((x) => x.campaign === campaignId && x.start == null && x.end == null);
+  [...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || [])].filter((x) => x.campaign === campaignId && x.start == null && x.end == null);

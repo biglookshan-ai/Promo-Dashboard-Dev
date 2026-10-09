@@ -3,7 +3,7 @@
 import { load, replace } from './schedule-store.js';
 import { desiredPublishStatus, effectiveWindow, campaignIndex } from './schedule-core.js';
 import { findItem, LIST, titleOf } from './schedule-actions.js';
-import { upsertItem, setPosition, removeEntry } from './metaobjects.js';
+import { upsertItem, upsertTab, setPosition, removeEntry } from './metaobjects.js';
 import { createImageFromUrl } from './files.js';
 import { graphql } from './shopify.js';
 import { eventMessages, deliver } from './notifier.js';
@@ -30,12 +30,21 @@ export async function syncItem(ctx, state, it, { gql = graphql, now = Date.now()
     const f = await createImageFromUrl(ctx, it.image, gql);
     it.imageId = f.id; if (f.url) it.image = f.url;
   }
+  // 首页商品模块:先把每个页签写成条目,版本再按顺序引用它们;去掉的页签把店里的条目也删掉
+  let tabGids = [];
+  if (it.kind === 'pmodule') {
+    for (const tab of it.tabs || []) { tab.shopifyId = await upsertTab(ctx, tab, gql); tabGids.push(tab.shopifyId); }
+  }
   const status = desiredPublishStatus(it, camps, now);
-  const r = await upsertItem(ctx, it, { status, win: effectiveWindow(it, camps), campaignGid }, gql);
+  const r = await upsertItem(ctx, it, { status, win: effectiveWindow(it, camps), campaignGid, tabGids }, gql);
   Object.assign(it, { shopifyId: r.id, syncedStatus: r.status, syncedAt: now, syncError: null });
+  if (it.kind === 'pmodule') {
+    for (const old of (it.syncedTabIds || []).filter((x) => !tabGids.includes(x))) await removeEntry(ctx, old, gql).catch(() => {});
+    it.syncedTabIds = tabGids;
+  }
 }
 
-const KIND_ORDER = { campaign: 0, tbstyle: 1, banner: 2, topbar: 3 };
+const KIND_ORDER = { campaign: 0, tbstyle: 1, banner: 2, topbar: 3, pmodule: 4 };
 
 // 在锁内调用。state 会被修改,调用方负责保存。
 export async function runEffects(ctx, state, effects, { gql = graphql, now = Date.now(), appUrl = '', send } = {}) {

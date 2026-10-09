@@ -13,7 +13,7 @@ export const DEFAULT_NOTIFY = { submit: true, decision: true, dayBefore: true, e
 export function emptyState() {
   return {
     version: 2,
-    banners: [], topbar: [], tbstyles: [], campaigns: [],
+    banners: [], topbar: [], tbstyles: [], campaigns: [], pmodules: [],
     pendingOrder: null,
     log: [],
     staff: [], // [{ id: Shopify 员工 id, name, role: 'approver' | 'editor', lastSeen }]
@@ -29,7 +29,7 @@ export function load(shop) {
   try {
     const s = JSON.parse(fs.readFileSync(fileOf(shop), 'utf8'));
     return {
-      ...base, ...s,
+      ...base, ...s, pmodules: s.pmodules || [],
       settings: { ...base.settings, ...s.settings, notify: { ...DEFAULT_NOTIFY, ...s.settings?.notify } },
       scheduler: { ...base.scheduler, ...s.scheduler },
     };
@@ -67,4 +67,4 @@ export function listShops() {
   }
 }
 
-export const allItems = (state) => [...state.campaigns, ...state.banners, ...state.topbar, ...state.tbstyles];
+export const allItems = (state) => [...state.campaigns, ...state.banners, ...state.topbar, ...state.tbstyles, ...(state.pmodules || [])];

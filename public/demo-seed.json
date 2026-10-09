@@ -1,6 +1,6 @@
 {
  "version": 1,
- "generatedFrom": "theme cinegearpro-2-0-1 @ 2026-09-30",
+ "generatedFrom": "theme cinegearpro-2-0-1 @ 2026-10-09",
  "staff": [
   {
    "id": "u1",
@@ -2292,6 +2292,412 @@
    "priority": 5,
    "state": "approved",
    "by": "u1"
+  }
+ ],
+ "pmodules": [
+  {
+   "id": "pm-sale-default",
+   "module": "sale",
+   "isDefault": true,
+   "name": "平时版本(促销模块)",
+   "title": "",
+   "title2": "Sale",
+   "titleColor": "#525258",
+   "title2Color": "#388ba2",
+   "tabActiveBg": "#388ba2",
+   "tabActiveText": "#e7e7e7",
+   "tabs": [
+    {
+     "id": "tab-sale-0",
+     "title": "DZOFILM",
+     "source": "collection",
+     "collection": {
+      "id": 671286886778,
+      "handle": "dzofilm",
+      "title": "DZOFILM",
+      "count": 187
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 0,
+     "shopAllUrl": "/collections/dzofilm-sale",
+     "shopAllText": "Shop All"
+    },
+    {
+     "id": "tab-sale-1",
+     "title": "Thypoch",
+     "source": "collection",
+     "collection": {
+      "id": 671222366586,
+      "handle": "thypoch",
+      "title": "Thypoch",
+      "count": 38
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 0,
+     "shopAllUrl": "/collections/thypoch",
+     "shopAllText": "Shop All"
+    },
+    {
+     "id": "tab-sale-2",
+     "title": "CINEGRIPPRO",
+     "source": "collection",
+     "collection": {
+      "id": 671286395258,
+      "handle": "grips-product",
+      "title": "CINEGRIPPRO",
+      "count": 163
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 0,
+     "shopAllUrl": "/collections/grips-product",
+     "shopAllText": "Shop All"
+    },
+    {
+     "id": "tab-sale-3",
+     "title": "CINEDISKPRO",
+     "source": "collection",
+     "collection": {
+      "id": 670944592250,
+      "handle": "cinediskpro",
+      "title": "CINEDISKPRO",
+      "count": 16
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 0,
+     "shopAllUrl": "/collections/cinediskpro-sale",
+     "shopAllText": "Shop All"
+    },
+    {
+     "id": "tab-sale-4",
+     "title": "Blazar",
+     "source": "collection",
+     "collection": {
+      "id": 265829580879,
+      "handle": "blazar-great-joy",
+      "title": "BLAZAR",
+      "count": 55
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 0,
+     "shopAllUrl": "",
+     "shopAllText": "Shop All"
+    },
+    {
+     "id": "tab-sale-5",
+     "title": "Clearance",
+     "source": "collection",
+     "collection": {
+      "id": 166659063887,
+      "handle": "clearance",
+      "title": "Clearance",
+      "count": 228
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": true,
+     "limit": 0,
+     "shopAllUrl": "",
+     "shopAllText": "Shop All"
+    }
+   ],
+   "priority": 0,
+   "start": null,
+   "end": null,
+   "state": "approved",
+   "by": "u1",
+   "order": 0,
+   "note": "从主题导入"
+  },
+  {
+   "id": "pm-feature-default",
+   "module": "feature",
+   "isDefault": true,
+   "name": "平时版本(推荐模块)",
+   "title": "Feature Products",
+   "title2": "",
+   "titleColor": "#525258",
+   "title2Color": "#da5959",
+   "tabActiveBg": "#fcc900",
+   "tabActiveText": "#1b1c1d",
+   "tabs": [
+    {
+     "id": "tab-feature-0",
+     "title": "Staff Picks",
+     "source": "collection",
+     "collection": {
+      "handle": "staff-picks",
+      "title": "Staff Picks"
+     },
+     "products": [],
+     "onlyDiscounted": false,
+     "sortByDiscount": false,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 0,
+     "shopAllUrl": "",
+     "shopAllText": "Shop All"
+    }
+   ],
+   "priority": 0,
+   "start": null,
+   "end": null,
+   "state": "approved",
+   "by": "u1",
+   "order": 0,
+   "note": "从主题导入"
+  },
+  {
+   "id": "pm-autumn",
+   "module": "sale",
+   "name": "Autumn Sale",
+   "title": "",
+   "title2": "Autumn Sale",
+   "titleColor": "#525258",
+   "title2Color": "#ee8849",
+   "tabActiveBg": "#ee8849",
+   "tabActiveText": "#f9f9f9",
+   "tabs": [
+    {
+     "id": "tab-a1",
+     "title": "Top Picks",
+     "source": "collection",
+     "collection": {
+      "id": 676983112058,
+      "handle": "flash-sale",
+      "title": "Flash Sale",
+      "count": 11
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 20,
+     "shopAllUrl": "",
+     "shopAllText": ""
+    },
+    {
+     "id": "tab-a2",
+     "title": "Clearance",
+     "source": "collection",
+     "collection": {
+      "id": 166659063887,
+      "handle": "clearance",
+      "title": "Clearance",
+      "count": 228
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": true,
+     "limit": 20,
+     "shopAllUrl": "",
+     "shopAllText": ""
+    }
+   ],
+   "priority": 10,
+   "campaign": "c1",
+   "start": null,
+   "end": null,
+   "state": "approved",
+   "by": "u1",
+   "order": 1
+  },
+  {
+   "id": "pm-bf",
+   "module": "sale",
+   "name": "Black Friday",
+   "title": "Black Friday",
+   "title2": "Deals",
+   "titleColor": "#111111",
+   "title2Color": "#d10000",
+   "tabActiveBg": "#111111",
+   "tabActiveText": "#ffd400",
+   "tabs": [
+    {
+     "id": "tab-b1",
+     "title": "Doorbusters",
+     "source": "collection",
+     "collection": {
+      "id": 676983112058,
+      "handle": "flash-sale",
+      "title": "Flash Sale",
+      "count": 11
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": true,
+     "limit": 20,
+     "shopAllUrl": "",
+     "shopAllText": ""
+    },
+    {
+     "id": "tab-b2",
+     "title": "DZOFILM",
+     "source": "collection",
+     "collection": {
+      "id": 671286886778,
+      "handle": "dzofilm",
+      "title": "DZOFILM",
+      "count": 187
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": false,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 20,
+     "shopAllUrl": "",
+     "shopAllText": ""
+    }
+   ],
+   "priority": 20,
+   "campaign": "c4",
+   "start": null,
+   "end": null,
+   "state": "pending",
+   "by": "u2",
+   "order": 2
+  },
+  {
+   "id": "pm-holiday",
+   "module": "sale",
+   "name": "Holiday Deals",
+   "title": "Holiday",
+   "title2": "Deals",
+   "titleColor": "#525258",
+   "title2Color": "#9b1c1c",
+   "tabActiveBg": "#9b1c1c",
+   "tabActiveText": "#ffffff",
+   "tabs": [
+    {
+     "id": "tab-h1",
+     "title": "Gift Picks",
+     "source": "collection",
+     "collection": {
+      "id": 677126340986,
+      "handle": "gift-ideas",
+      "title": "Gift Ideas",
+      "count": 56
+     },
+     "products": [],
+     "onlyDiscounted": false,
+     "sortByDiscount": false,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 20,
+     "shopAllUrl": "",
+     "shopAllText": ""
+    },
+    {
+     "id": "tab-h2",
+     "title": "Holiday Deals",
+     "source": "collection",
+     "collection": {
+      "id": 675736551802,
+      "handle": "holiday-deals",
+      "title": "Holiday Deals",
+      "count": 902
+     },
+     "products": [],
+     "onlyDiscounted": true,
+     "sortByDiscount": true,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 20,
+     "shopAllUrl": "",
+     "shopAllText": ""
+    }
+   ],
+   "priority": 10,
+   "campaign": "c5",
+   "start": null,
+   "end": null,
+   "state": "approved",
+   "by": "u1",
+   "order": 3
+  },
+  {
+   "id": "pm-newin",
+   "module": "feature",
+   "name": "New In 十月",
+   "title": "New",
+   "title2": "Arrivals",
+   "titleColor": "#525258",
+   "title2Color": "#fcc900",
+   "tabActiveBg": "#fcc900",
+   "tabActiveText": "#1b1c1d",
+   "tabs": [
+    {
+     "id": "tab-n1",
+     "title": "Just Landed",
+     "source": "collection",
+     "collection": {
+      "id": 671286886778,
+      "handle": "dzofilm",
+      "title": "DZOFILM",
+      "count": 187
+     },
+     "products": [],
+     "onlyDiscounted": false,
+     "sortByDiscount": false,
+     "newestFirst": true,
+     "countdown": false,
+     "limit": 20,
+     "shopAllUrl": "",
+     "shopAllText": ""
+    },
+    {
+     "id": "tab-n2",
+     "title": "Staff Picks",
+     "source": "collection",
+     "collection": {
+      "id": 677126340986,
+      "handle": "gift-ideas",
+      "title": "Gift Ideas",
+      "count": 56
+     },
+     "products": [],
+     "onlyDiscounted": false,
+     "sortByDiscount": false,
+     "newestFirst": false,
+     "countdown": false,
+     "limit": 20,
+     "shopAllUrl": "",
+     "shopAllText": ""
+    }
+   ],
+   "priority": 10,
+   "start": 2,
+   "end": 30,
+   "state": "approved",
+   "by": "u1",
+   "order": 1
   }
  ],
  "log": [

@@ -7,7 +7,7 @@ import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQU
 import { schedulerInfo } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { uploadImage } from './files.js';
-import { scopeCounts, productCampaigns } from './counts.js';
+import { scopeCounts, productCampaigns, tabProducts } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 
@@ -25,7 +25,12 @@ async function setupStatus(ctx) {
   const missing = missingScopes(await grantedScopes(ctx));
   const definitions = missing.includes('write_metaobject_definitions') && missing.includes('write_metaobjects')
     ? await definitionStatus(ctx).catch(() => []) : await definitionStatus(ctx);
-  return { requiredScopes: REQUIRED_SCOPES, missingScopes: missing, definitions, ready: !missing.length && definitions.length > 0 && definitions.every((d) => d.exists) };
+  // ready = 第一期的 4 个都建好了(app 就能用正式数据);后加的类型缺了只提示「补建」,不影响已有功能
+  const core = definitions.filter((d) => d.core);
+  return { requiredScopes: REQUIRED_SCOPES, missingScopes: missing, definitions,
+    ready: !missing.length && core.length > 0 && core.every((d) => d.exists),
+    pmReady: definitions.filter((d) => !d.core).every((d) => d.exists),
+    upgrade: definitions.filter((d) => !d.core && !d.exists).map((d) => d.type) };
 }
 
 async function shopInfo(ctx) {
@@ -52,7 +57,7 @@ function clientView(state, { me, setup, store, site }) {
   const hook = state.settings.larkWebhook || '';
   return {
     mode: 'live', me, staff: state.staff, setup, store, site,
-    banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns,
+    banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
     pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
     settings: { notify: state.settings.notify, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
     collections: [], products: [], tagCounts: {},
@@ -167,7 +172,7 @@ export function scheduleRouter() {
   r.get('/import-preview', wrap(async (req) => {
     const t = await readMainTheme(req.ctx);
     return { theme: t.theme.name, slides: (t.slider?.slides || []).filter((s) => !s.disabled).length, disabledSlides: (t.slider?.slides || []).filter((s) => s.disabled).length,
-      topbarMessages: t.topbar?.messages.length || 0 };
+      topbarMessages: t.topbar?.messages.length || 0, modules: t.modules.map((m) => ({ module: m.module, title: `${m.title} ${m.title2}`.trim(), tabs: m.tabs.length })) };
   }));
   r.post('/import', wrap(async (req) => {
     const shop = req.ctx.shop;
@@ -177,19 +182,22 @@ export function scheduleRouter() {
     const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
     return withLock(shop, async () => {
       const s = load(shop); const a = needApprover(s, req);
-      const sources = new Set([...s.banners, ...s.topbar, ...s.tbstyles].map((x) => x.source).filter(Boolean));
+      const sources = new Set([...s.banners, ...s.topbar, ...s.tbstyles, ...(s.pmodules || [])].map((x) => x.source).filter(Boolean));
       const imp = await buildImport(req.ctx, theme, sources, { actor: a });
       const base = { banners: s.banners.length, topbar: s.topbar.length };
       imp.banners.forEach((b) => { b.order += base.banners; s.banners.push(b); });
       imp.topbar.forEach((t) => { t.order += base.topbar; s.topbar.push(t); });
       imp.tbstyles.forEach((t) => s.tbstyles.push(t));
-      s.imported = { at: Date.now(), theme: theme.theme.name, banners: imp.banners.length, topbar: imp.topbar.length, skipped: imp.skipped, disabledSlides: imp.disabledSlides };
-      appendLog(s, { action: 'import', kind: 'system', title: '从主题导入', note: `${imp.banners.length} 张 Banner、${imp.topbar.length} 条顶栏${imp.skipped.length ? `,跳过 ${imp.skipped.length} 个` : ''}`, by: a.name });
+      if (setup.pmReady) imp.pmodules.forEach((m) => s.pmodules.push(m));
+      const pmCount = setup.pmReady ? imp.pmodules.length : 0;
+      s.imported = { at: Date.now(), theme: theme.theme.name, banners: (s.imported?.banners || 0) + imp.banners.length, topbar: (s.imported?.topbar || 0) + imp.topbar.length, pmodules: (s.imported?.pmodules || 0) + pmCount, skipped: imp.skipped, disabledSlides: imp.disabledSlides };
+      appendLog(s, { action: 'import', kind: 'system', title: '从主题导入', note: `${imp.banners.length} 张 Banner、${imp.topbar.length} 条顶栏、${pmCount} 个商品模块平时版本${imp.skipped.length ? `,跳过 ${imp.skipped.length} 个` : ''}`, by: a.name });
       replace(shop, s);
-      const effects = [...imp.banners, ...imp.topbar, ...imp.tbstyles].map((x) => ({ type: 'sync', id: x.id }));
+      const effects = [...imp.banners, ...imp.topbar, ...imp.tbstyles, ...(setup.pmReady ? imp.pmodules : [])].map((x) => ({ type: 'sync', id: x.id }));
       const r2 = await runEffects(req.ctx, s, effects, { appUrl: info.appUrl });
       replace(shop, s);
-      return { ...(await view(req, s)), message: `已导入 ${imp.banners.length} 张 Banner、${imp.topbar.length} 条顶栏`, skipped: imp.skipped, syncErrors: r2.errors };
+      const parts = [imp.banners.length && `${imp.banners.length} 张 Banner`, imp.topbar.length && `${imp.topbar.length} 条顶栏`, pmCount && `${pmCount} 个商品模块平时版本`].filter(Boolean);
+      return { ...(await view(req, s)), message: parts.length ? `已导入 ${parts.join('、')}` : '没有新的可导入(导过的已跳过)', skipped: imp.skipped, syncErrors: r2.errors };
     });
   }));
 
@@ -199,6 +207,9 @@ export function scheduleRouter() {
     const name = String(req.query.filename || 'banner.jpg').replace(/[^\w.\-]+/g, '_').slice(0, 80);
     return uploadImage(req.ctx, req.body, name, req.headers['content-type']);
   }));
+
+  // ---- 首页商品模块:页签预览(取前几个产品给编辑器看)----
+  r.post('/tab-products', wrap(async (req) => tabProducts(req.ctx, req.body || {})));
 
   // ---- 产品数 / 查产品 ----
   r.post('/counts', wrap(async (req) => scopeCounts(req.ctx, req.body || {})));

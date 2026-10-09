@@ -4,7 +4,7 @@
 // 用到 app.js / registry.js 的全局:$ $$ esc toast showSection。整个文件包在 IIFE 里,
 // 避免和 registry.js 的顶层 const(svg / ICONS …)重名。
 (() => {
-  const DEMO_KEY = 'cgp-schedule-demo-v3'; // 数据结构变了就升版本,旧的演示数据自动作废
+  const DEMO_KEY = 'cgp-schedule-demo-v4'; // 数据结构变了就升版本,旧的演示数据自动作废
   const DAY = 86400000;
   const TZ = 'Europe/London';
   const ENDING_DAYS = 3; // 下架前几天开始提醒
@@ -72,6 +72,7 @@
       banners: seed.banners.map((b) => conv(b, 'banner')),
       topbar: seed.topbar.map((t) => conv(t, 'topbar')),
       tbstyles: seed.tbstyles.map((t) => conv(t, 'tbstyle')),
+      pmodules: (seed.pmodules || []).map((m) => conv(m, 'pmodule')),
       campaigns: seed.campaigns.map((c) => conv(c, 'campaign')),
       log: seed.log.map((l) => ({ ...l, at: now() + l.at * DAY })),
       pendingOrder: null,
@@ -112,7 +113,7 @@
     try {
       if (MODE === 'demo') {
         const r = A.applyAction(S, action, me(), now());
-        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k]; });
+        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k]; });
         save(); renderAll();
         return r;
       }
@@ -127,14 +128,14 @@
     }
   }
 
-  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles];
-  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns }[k]);
+  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || [])];
+  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []) }[k]);
   const byId = (id) => all().find((x) => x.id === id);
   const camp = (id) => S.campaigns.find((c) => c.id === id);
   const me = () => S.staff.find((u) => u.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' };
   const isApprover = () => me().role === 'approver';
   const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
-  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动' };
+  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
   const rid = (p) => p + Math.random().toString(36).slice(2, 9);
@@ -309,6 +310,7 @@
     if (x.kind === 'banner') return `<span class="mthumb mthumb--banner" style="background-image:url('${esc(thumb(x.image, 80))}')"></span>`;
     if (x.kind === 'tbstyle') return `<span class="mthumb mthumb--sw" style="background:${esc(x.bg)};color:${esc(x.color)}">${esc(x.decoLeft || 'Aa')}</span>`;
     if (x.kind === 'topbar') return `<span class="mthumb mthumb--tb">${esc(x.emoji || '📣')}</span>`;
+    if (x.kind === 'pmodule') { const c = pmColors(x); return `<span class="mthumb mthumb--sw" style="background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}" title="${(x.tabs || []).length} 个页签">${(x.tabs || []).length}</span>`; }
     const b = S.banners.find((y) => y.campaign === x.id && y.image);
     return b ? `<span class="mthumb mthumb--banner" style="background-image:url('${esc(thumb(b.image, 80))}')"></span>` : `<span class="mthumb mthumb--camp">${I.flag}</span>`;
   }
@@ -327,6 +329,9 @@
         ${endingTag(x)}</div></div>`;
     } else if (x.kind === 'topbar') {
       body = topbarHtml(tbMsg(x, activeStyle(Math.max(now(), w.start ?? now()))), { style: activeStyle(Math.max(now(), w.start ?? now())) }) + endingTag(x);
+    } else if (x.kind === 'pmodule') {
+      body = moduleHtml(x, { small: true }) + `<div class="pop__tabs">${(x.tabs || []).map((t) => `<div>· <b>${esc(tabLabel(t))}</b> <span class="muted">${tabSummary(t)}</span></div>`).join('')}</div>`
+        + `<div class="muted">${MODULE_CN[x.module]}${x.isDefault ? ' · 平时版本' : ` · 优先级 ${x.priority ?? 0}`}</div>`;
     } else if (x.kind === 'tbstyle') {
       body = topbarHtml(tbMsg(S.topbar.find((t) => status(t) === 'live') || { kind: 'topbar', emoji: '🚚', text: 'Free UK Delivery' }, x), { style: x })
         + `<div class="muted">特效:${EFFECT[x.effect] || '无'}</div>`;
@@ -374,7 +379,7 @@
   }
 
   // ================= 总览 =================
-  const ov = { zoom: 'month', offset: 0, kinds: { campaign: true, banner: true, topbar: true, tbstyle: true }, onlyActive: true };
+  const ov = { zoom: 'month', offset: 0, kinds: { campaign: true, banner: true, topbar: true, tbstyle: true, pmodule: true }, onlyActive: true };
   const ymd = (ms) => toInput(ms).slice(0, 10).split('-').map(Number);
   const at0 = (y, m, d) => fromInput(new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) + 'T00:00'); // 月 / 日溢出自动进位
   // 时间轴窗口(以今天为锚,今天总在靠左的位置,方便往后看):
@@ -446,7 +451,7 @@
       }).join('');
       return rows ? `<div class="gt__group gt__group--${kind}">${name}</div>${rows}` : '';
     };
-    const gantt = group('campaign', '促销活动', S.campaigns) + group('banner', 'Banner', S.banners) + group('topbar', '顶栏公告', S.topbar) + group('tbstyle', '顶栏样式(节日主题)', S.tbstyles);
+    const gantt = group('campaign', '促销活动', S.campaigns) + group('banner', 'Banner', S.banners) + group('topbar', '顶栏公告', S.topbar) + group('tbstyle', '顶栏样式(节日主题)', S.tbstyles) + group('pmodule', '首页商品模块', S.pmodules || []);
     const kchip = (k, label, list) => `<button class="fchip ${ov.kinds[k] ? 'is-active' : ''}" data-kind="${k}" type="button">${label} ${list.filter(keep).length}</button>`;
 
     // ---- 接下来 14 天(按天分组)----
@@ -478,7 +483,7 @@
         ${stat(endN, '7 天内到期', endN ? 'stat--warn' : '', 'overview')}
         ${stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews')}
       </div>
-      ${alertsHtml(['banner', 'topbar', 'campaign', 'tbstyle'])}
+      ${alertsHtml(['banner', 'topbar', 'campaign', 'tbstyle', 'pmodule'])}
       <section class="panel">
         <div class="gtbar">
           <div class="gtbar__l">
@@ -492,7 +497,7 @@
             </div>
           </div>
           <div class="gtbar__r">
-            ${kchip('campaign', '促销活动', S.campaigns)}${kchip('banner', 'Banner', S.banners)}${kchip('topbar', '顶栏', S.topbar)}${kchip('tbstyle', '顶栏样式', S.tbstyles)}
+            ${kchip('campaign', '促销活动', S.campaigns)}${kchip('banner', 'Banner', S.banners)}${kchip('topbar', '顶栏', S.topbar)}${kchip('tbstyle', '顶栏样式', S.tbstyles)}${kchip('pmodule', '商品模块', S.pmodules || [])}
             <label class="muted"><input type="checkbox" id="ov-active" ${ov.onlyActive ? 'checked' : ''}/> 只看进行中和将要上线</label>
           </div>
         </div>
@@ -739,12 +744,91 @@
     $('#lk-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
   }
 
+  // ================= 首页商品模块 =================
+  // 每个模块(促销 / 推荐)有一个「平时版本」+ 若干排期版本;同一时间生效的里面优先级高的赢,整套替换(标题 + 页签)。
+  const MODULE_CN = { sale: '促销模块', feature: '推荐 / 新品模块' };
+  const PM_FALLBACK = {
+    sale: { titleColor: '#525258', title2Color: '#ee8849', tabActiveBg: '#ee8849', tabActiveText: '#f9f9f9' },
+    feature: { titleColor: '#525258', title2Color: '#da5959', tabActiveBg: '#fcc900', tabActiveText: '#1b1c1d' },
+  };
+  const pmList = (mod) => (S.pmodules || []).filter((m) => m.module === mod);
+  function activeVersion(mod, t = now()) {
+    const list = pmList(mod);
+    const on = list.filter((m) => !m.isDefault && status(m, t) === 'live')
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0) || (win(b).start ?? 0) - (win(a).start ?? 0));
+    return on[0] || list.find((m) => m.isDefault && status(m, t) === 'live') || null;
+  }
+  const pmColors = (v) => ({ ...PM_FALLBACK[v.module || 'sale'], ...Object.fromEntries(['titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText'].filter((k) => v[k]).map((k) => [k, v[k]])) });
+  const tabLabel = (t) => t.title || t.collection?.title || (t.source === 'products' ? '手选产品' : '未命名页签');
+  const tabSummary = (t) => `${t.source === 'products' ? `手选 ${(t.products || []).length} 个产品` : `合集 ${t.collection ? esc(t.collection.title) : '(未选)'}`}${t.onlyDiscounted ? ' · 只看打折' : ''}${t.newestFirst ? ' · 最新在前' : ''} · ${Number(t.limit) ? `最多 ${t.limit} 个` : '不限数量'}`;
+  // 首页上的样子:标题两段 + 页签 + 产品卡(正式数据里取真实产品,演示时是占位)
+  const pmPreviewCache = {};
+  const tabKey = (t) => JSON.stringify([t.source, t.collection?.id, (t.products || []).map((p) => p.id), t.onlyDiscounted, t.sortByDiscount, t.newestFirst, t.limit]);
+  function moduleHtml(v, { activeTab = 0, small = false } = {}) {
+    const c = pmColors(v); const tabs = v.tabs || []; const t = tabs[activeTab] || tabs[0];
+    const cached = t && pmPreviewCache[tabKey(t)];
+    const cards = cached?.items?.length ? cached.items.slice(0, 5).map((p) => `<span class="pmv__card">
+        <span class="pmv__img" style="background-image:url('${esc(thumb(p.image, 300))}')">${p.off ? `<span class="pmv__off">${p.off}% OFF</span>` : ''}</span>
+        <span class="pmv__t">${esc(p.title)}</span>
+        <span class="pmv__p">${p.compareAt ? `<s>£${Number(p.compareAt).toFixed(2)}</s>` : ''}<b>£${Number(p.price).toFixed(2)}</b></span></span>`).join('')
+      : Array.from({ length: 5 }, () => '<span class="pmv__card pmv__card--ph"><span class="pmv__img"></span><span class="pmv__t"></span></span>').join('');
+    return `<div class="pmv ${small ? 'pmv--sm' : ''}">
+      <div class="pmv__h">${v.title ? `<span style="color:${esc(c.titleColor)}">${esc(v.title)}</span>` : ''}${v.title2 ? `<span style="color:${esc(c.title2Color)}">${esc(v.title2)}</span>` : ''}${!v.title && !v.title2 ? '<span class="muted">(没有标题)</span>' : ''}</div>
+      <div class="pmv__tabs">${tabs.map((x, i) => `<span class="pmv__tab" data-pmtab="${i}" style="${i === activeTab ? `background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}` : ''}">${esc(tabLabel(x))}</span>`).join('')}</div>
+      ${small ? '' : `<div class="pmv__grid">${cards}</div>
+      <div class="pmv__foot">${t ? `${tabSummary(t)}${cached ? ` · 现在符合条件的有 ${cached.shown}${cached.approx ? '+' : ''} 个` : MODE === 'live' ? ' · 正在取产品…' : ' · 演示数据只画占位,正式数据里显示真实产品'}` : ''}</div>`}
+    </div>`;
+  }
+  // 正式数据:取某个页签的前几个产品(只给后台预览用)
+  async function loadTabPreview(t, after) {
+    if (MODE !== 'live' || !t || pmPreviewCache[tabKey(t)]) return;
+    if (t.source === 'products' ? !(t.products || []).length : !t.collection) return;
+    try { pmPreviewCache[tabKey(t)] = await api('POST', '/api/schedule/tab-products', t); after && after(); }
+    catch (e) { pmPreviewCache[tabKey(t)] = { items: [], shown: 0, error: e.message }; }
+  }
+
+  const pmActiveTab = {};
+  function renderPmodules() {
+    const root = $('#pm-root'); if (!root) return;
+    const needSetup = MODE === 'live' && S.setup && S.setup.pmReady === false;
+    const panel = (mod) => {
+      const list = pmList(mod).sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0) || RANK[status(a)] - RANK[status(b)] || (win(a).start ?? 0) - (win(b).start ?? 0));
+      const cur = activeVersion(mod);
+      const at = pmActiveTab[mod] || 0;
+      return `<section class="panel pm">
+        <div class="panel__h"><h3>${MODULE_CN[mod]}</h3>
+          <span class="muted">${cur ? `现在显示:<b>${esc(cur.name)}</b>${cur.isDefault ? '(平时版本)' : ''}` : '现在显示:主题编辑器里的设置(还没导入平时版本)'}
+          <button class="btn btn-sm btn-primary" data-new="pmodule" data-module="${mod}" type="button" ${needSetup ? 'disabled' : ''}>${I.plus}新建版本</button></span></div>
+        ${cur ? `<div class="pm__now" data-pmnow="${mod}">${moduleHtml(cur, { activeTab: at })}</div>` : ''}
+        <div class="pm__list">${list.map((m) => `<button class="pmrow ${status(m) === 'ended' ? 'is-dim' : ''}" data-open="${m.id}" data-pop="${m.id}" type="button">
+          ${miniThumb(m)}
+          <span class="pmrow__b"><b>${esc(m.name || '未命名版本')}</b>${m.isDefault ? '<span class="tag">平时版本</span>' : ''}${cur === m ? '<span class="tag tag--ok">正在显示</span>' : ''}
+            <span class="pmrow__w">${m.isDefault ? '没有别的版本生效时显示' : `${I.clock}${winText(m)}`}</span>
+            <span class="pmrow__tabs">${(m.tabs || []).map((t) => `<span class="chip chip--sm">${esc(tabLabel(t))}</span>`).join('')}</span></span>
+          ${endingTag(m)}${syncTag(m)}${m.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${badge(m)}
+        </button>`).join('') || empty('还没有版本。先在「设置 → 店铺连接」点「从主题导入」把现在的配置导进来当平时版本。')}</div>
+      </section>`;
+    };
+    root.innerHTML = `
+      ${pageHead('首页商品模块', '首页的促销模块和推荐 / 新品模块。每个模块有一个「平时版本」,到时间整套换成别的版本(标题 + 页签),结束自动回到平时版本;同一时间有多个版本时,优先级高的生效。')}
+      ${needSetup ? '<div class="note note--warn">店里还缺这个功能用的 2 个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补上,再点「从主题导入」把两个模块现在的配置导进来当平时版本。</div>' : ''}
+      ${alertsHtml(['pmodule'])}
+      ${panel('sale')}${panel('feature')}`;
+    // 页签切换(只换预览)+ 取真实产品
+    $$('#pm-root [data-pmnow]').forEach((box) => {
+      const mod = box.dataset.pmnow; const cur = activeVersion(mod);
+      box.addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (!t) return; pmActiveTab[mod] = +t.dataset.pmtab; renderPmodules(); });
+      loadTabPreview((cur.tabs || [])[pmActiveTab[mod] || 0], renderPmodules);
+    });
+  }
+
   // ================= 审核 =================
   const FIELD = {
     title: '标题', subtitle: '副标题', description: '描述', image: '图片', tag: '角标', button1_text: '按钮 1 文字', button1_url: '按钮 1 链接',
     button2_text: '按钮 2 文字', button2_url: '按钮 2 链接', emoji: 'Emoji', text: '文字', link: '链接', category: '分类',
     name: '名称', collections: '合集', tags: '标签', products: '指定产品', badge: '徽章文字', countdown: '倒计时', priority: '优先级',
     bg: '底色', color: '文字颜色', accent: '点缀色', effect: '特效', decoLeft: '左侧装饰', decoRight: '右侧装饰',
+    module: '模块', title2: '标题第二段', titleColor: '第一段颜色', title2Color: '第二段颜色', tabActiveBg: '页签高亮底色', tabActiveText: '页签高亮文字', tabs: '页签', isDefault: '平时版本',
     start: '开始', end: '结束', campaign: '所属活动',
   };
   const showVal = (k, v) => {
@@ -754,7 +838,9 @@
     if (k === 'countdown') return v ? '开' : '关';
     if (k === 'tag') return esc(TAGCN[v] || v);
     if (k === 'effect') return esc(EFFECT[v] || v);
-    if (['bg', 'color', 'accent'].includes(k)) return `<span class="swatch" style="background:${esc(v)}"></span> <span class="mono">${esc(v)}</span>`;
+    if (k === 'module') return esc(MODULE_CN[v] || v);
+    if (k === 'tabs') return (v || []).map((t, i) => `<div>${i + 1}. <b>${esc(tabLabel(t))}</b> <span class="muted">${tabSummary(t)}</span></div>`).join('') || '<span class="muted">(空)</span>';
+    if (['bg', 'color', 'accent', 'titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText'].includes(k)) return `<span class="swatch" style="background:${esc(v)}"></span> <span class="mono">${esc(v)}</span>`;
     if (k === 'image') return `<img class="rv__img" src="${esc(thumb(v, 300))}" alt="">`;
     if (Array.isArray(v)) return v.length ? esc(v.map((x) => (typeof x === 'string' ? x : x.title)).join('、')) : '<span class="muted">(空)</span>';
     return esc(v);
@@ -775,6 +861,7 @@
           <p class="muted">批准前,线上继续显示原来的版本。</p>`;
       } else {
         const img = it.kind === 'banner' ? `<span class="rv__slide">${slideHtml(it, { w: 400 })}</span>`
+          : it.kind === 'pmodule' ? `<span class="rv__bar">${moduleHtml(it, { small: true })}</span>`
           : it.kind === 'tbstyle' ? `<span class="rv__bar">${topbarHtml(tbMsg({ kind: 'topbar', emoji: '🚚', text: 'Free UK Delivery' }, it), { style: it })}</span>` : '';
         const p = it.kind === 'banner' ? bannerPos(it) : null;
         body = `<div class="rvnew">${img}<div>
@@ -925,7 +1012,7 @@
 
   // ---- 店铺连接(真实接口):权限 / 4 个内容类型 / 定时器 ----
   // 只有在 Shopify 后台里打开才有 session token;本地预览会提示。
-  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式' };
+  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本' };
   let connCache = null;
   async function renderConn(force) {
     const box = $('#st-conn'); if (!box) return;
@@ -951,6 +1038,7 @@
             <button class="btn btn-sm" data-conn="reconnect" type="button">已同意,重新检查</button></div>` : ''}</div>
         <div><div class="conn__k">2. 店里的内容类型</div>
           ${st.definitions.map((d) => `<div class="conn__r">${ok(d.exists)}<span>${DEF_CN[d.type] || d.type}</span><span class="mono muted">${d.type}</span>${d.exists ? `<span class="muted">${d.entries} 条</span>` : ''}</div>`).join('')}
+          ${missingDefs.length && st.ready ? `<div class="note note--warn">新功能「首页商品模块」要再补建 ${missingDefs.length} 个内容类型。点下面的按钮补上,再点「从主题导入」把两个模块现在的配置导进来当平时版本。已有的内容不受影响。</div>` : ''}
           ${missingDefs.length ? `<p class="muted">点下面的按钮在店里建好 ${missingDefs.length} 个空的内容类型。<b>前台不会读取它们,顾客看不到任何变化</b>;要等主题改造(阶段 1d)发布后才会用上。可以重复点,已建的会跳过。</p>
             <button class="btn btn-sm btn-primary" data-conn="setup" type="button" ${canSetup ? '' : 'disabled'}>在店里创建内容类型</button>${st.missingScopes.length ? '<span class="muted"> 先补齐权限</span>' : ''}` : '<p class="muted">都建好了。</p>'}</div>
         <div><div class="conn__k">3. 定时器</div>
@@ -1002,11 +1090,98 @@
   // ================= 编辑抽屉 =================
   let pvTimer = null;
   let ed = null; // 当前编辑中活动的产品范围(合集 / 标签 / 产品),不在普通输入框里,单独存
+  // ---- 首页商品模块的版本编辑器:页签列表 ----
+  let edTabs = null; let pvTab = 0;
+  const newTab = (o = {}) => ({ id: rid('tab-'), title: '', source: 'collection', collection: null, products: [], onlyDiscounted: false, sortByDiscount: false,
+    newestFirst: false, countdown: false, limit: 20, shopAllUrl: '', shopAllText: '', ...o });
+  function tabsEditorHtml() {
+    const chk = (i, k, label) => `<label class="tabed__ck"><input type="checkbox" data-tck="${k}" data-i="${i}" ${edTabs[i][k] ? 'checked' : ''}/> ${label}</label>`;
+    return edTabs.map((t, i) => `<div class="tabed" data-i="${i}">
+      <div class="tabed__h"><b>页签 ${i + 1}</b>
+        <span class="tabed__acts"><button type="button" class="btn btn-sm btn-ghost" data-tact="up" data-i="${i}" ${i ? '' : 'disabled'} aria-label="上移">${I.up}</button><button type="button" class="btn btn-sm btn-ghost" data-tact="down" data-i="${i}" ${i < edTabs.length - 1 ? '' : 'disabled'} aria-label="下移">${I.down}</button><button type="button" class="btn btn-sm btn-ghost btn-danger-t" data-tact="del" data-i="${i}">删除</button></span></div>
+      <div class="fld2">
+        <label class="fld"><span>页签名</span><input class="inp" data-tf="title" data-i="${i}" value="${esc(t.title)}" placeholder="${esc(t.collection?.title || '如:Top Picks')}"/><em>留空 = 用合集名</em></label>
+        <div class="fld"><span>产品从哪来</span><div class="seg">${[['collection', '一个合集'], ['products', '手选产品']].map(([k, l]) => `<button type="button" data-tsrc="${k}" data-i="${i}" class="${t.source === k ? 'is-active' : ''}">${l}</button>`).join('')}</div></div>
+      </div>
+      <div class="tabed__pick">${t.source === 'collection'
+        ? `${t.collection ? `<span class="chip"><span class="chip__t">${esc(t.collection.title)}</span>${colCount(t.collection) != null ? `<span class="chip__n">${colCount(t.collection)} 个产品</span>` : ''}${linkPair('collections', t.collection)}</span>` : '<span class="muted">还没选合集</span>'}
+           <button type="button" class="chipadd" data-tpick="collection" data-i="${i}">${I.plus}${t.collection ? '换合集' : '选择合集'}</button>`
+        : `${(t.products || []).map((p) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span></span>`).join('')}
+           <button type="button" class="chipadd" data-tpick="products" data-i="${i}">${I.plus}选择产品</button>`}</div>
+      <div class="tabed__cks">${chk(i, 'onlyDiscounted', '只显示打折的')}${chk(i, 'sortByDiscount', '按折扣从大到小')}${chk(i, 'newestFirst', '最新上架在前')}${chk(i, 'countdown', '显示倒计时')}</div>
+      <div class="tabed__row"><span class="muted">最多显示</span><div class="seg">${[[20, '20 个'], [0, '不限']].map(([n, l]) => `<button type="button" data-tlim="${n}" data-i="${i}" class="${Number(t.limit) === n ? 'is-active' : ''}">${l}</button>`).join('')}</div>
+        <span class="muted">${Number(t.limit) ? '首页更轻,其余的点 Shop All 去合集页看' : '合集里符合条件的全部画在首页'}</span></div>
+      <div class="fld2">
+        <label class="fld"><span>Shop All 链接</span><input class="inp" data-tf="shopAllUrl" data-i="${i}" value="${esc(t.shopAllUrl)}" placeholder="留空 = 这个合集的页面"/></label>
+        <label class="fld"><span>Shop All 文字</span><input class="inp" data-tf="shopAllText" data-i="${i}" value="${esc(t.shopAllText)}" placeholder="Shop All"/></label>
+      </div>
+    </div>`).join('') + `<button type="button" class="btn btn-sm" data-tact="add">${I.plus}加一个页签</button>`;
+  }
+  // 给某个页签选合集(单选)/ 产品(多选):后台里用 Shopify 自带的选择器,本地预览用演示列表
+  async function pickForTab(i, type) {
+    const t = edTabs[i];
+    if (window.shopify && typeof window.shopify.resourcePicker === 'function') {
+      try {
+        const sel = await window.shopify.resourcePicker({ type: type === 'products' ? 'product' : 'collection', multiple: type === 'products', action: 'select',
+          selectionIds: type === 'products' ? (t.products || []).filter((x) => String(x.id).startsWith('gid://')).map((x) => ({ id: x.id })) : [] });
+        if (!sel) return;
+        if (type === 'products') t.products = sel.map((x) => ({ id: x.id, handle: x.handle, title: x.title, image: x.images?.[0]?.originalSrc || '' }));
+        else t.collection = { id: sel[0].id, handle: sel[0].handle, title: sel[0].title, count: sel[0].productsCount ?? null };
+        return refreshTabs();
+      } catch (e) { /* 不在后台 → 演示列表 */ }
+    }
+    const src = type === 'products' ? S.products : S.collections;
+    const chosen = new Set(type === 'products' ? (t.products || []).map((x) => x.handle) : t.collection ? [t.collection.handle] : []);
+    const box = document.createElement('div'); box.className = 'picker';
+    box.innerHTML = `<div class="picker__box"><div class="picker__h"><b>${type === 'products' ? '选择产品' : '选一个合集'}</b><input class="inp" placeholder="搜索" id="pk-q"/></div>
+      <div class="picker__list" id="pk-list"></div>
+      <div class="picker__f"><span class="muted">演示列表。在 Shopify 后台打开时会换成 Shopify 自带的选择器,可以搜全店。</span>
+        <span class="picker__acts"><button class="btn btn-sm" data-pk="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-pk="ok" type="button">确定</button></span></div></div>`;
+    $('#drawer').appendChild(box);
+    const kind = type === 'products' ? 'checkbox' : 'radio';
+    const list = () => {
+      const q = $('#pk-q').value.trim().toLowerCase();
+      $('#pk-list').innerHTML = src.filter((x) => !q || x.title.toLowerCase().includes(q) || x.handle.includes(q)).map((x) => `
+        <label class="picker__row"><input type="${kind}" name="pk" value="${esc(x.handle)}" ${chosen.has(x.handle) ? 'checked' : ''}/>
+          ${type === 'products' ? `<span class="picker__img" ${x.image ? `style="background-image:url('${esc(x.image)}')"` : ''}></span>` : ''}
+          <span class="picker__t">${esc(x.title)}</span><span class="muted picker__m">${type === 'products' ? esc(x.handle) : `${nTxt(x.count)} 个产品`}</span></label>`).join('') || '<p class="muted">没有匹配的</p>';
+    };
+    list();
+    $('#pk-q').addEventListener('input', list);
+    $('#pk-list').addEventListener('change', (e) => { if (kind === 'radio') chosen.clear(); if (e.target.checked) chosen.add(e.target.value); else chosen.delete(e.target.value); });
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const b = e.target.closest('[data-pk]'); if (!b && e.target !== box) return;
+      if (b && b.dataset.pk === 'ok') {
+        if (type === 'products') t.products = src.filter((x) => chosen.has(x.handle));
+        else { const c = src.find((x) => chosen.has(x.handle)); if (c) t.collection = c; }
+        refreshTabs();
+      }
+      box.remove();
+    });
+    $('#pk-q').focus();
+  }
+  function refreshTabs() {
+    const el = $('#ed-tabs'); if (!el) return;
+    el.innerHTML = tabsEditorHtml(); pvTab = Math.min(pvTab, edTabs.length - 1);
+    $('#ed-form').dispatchEvent(new Event('change'));
+  }
+
   function newItem(kind, preset = {}) {
     const baseIt = { kind, state: 'new', by: S.me, campaign: preset.campaign || null, paused: false, pendingChange: null };
     if (kind === 'banner') return { ...baseIt, id: rid('b-'), image: '', title: '', subtitle: '', description: '', button1_text: 'Shop Now', button1_url: '', button2_text: '', button2_url: '', tag: 'new', order: S.banners.length, start: preset.campaign ? null : dayStart(1), end: null };
     if (kind === 'topbar') return { ...baseIt, id: rid('t-'), emoji: '📣', text: '', link: '', category: '公告', order: S.topbar.length, start: null, end: null };
     if (kind === 'tbstyle') return { ...baseIt, id: rid('s-'), name: '', bg: '#9b1c1c', color: '#ffffff', accent: '#f5d06f', effect: 'snow', decoLeft: '🎄', decoRight: '', priority: 10, start: preset.campaign ? null : dayStart(7), end: preset.campaign ? null : dayStart(14) };
+    if (kind === 'pmodule') {
+      // 从活动里点「+ 促销模块版本」:名字 / 标题用活动名,第一个页签用活动的第一个合集(只显示打折的、按折扣排)
+      const c = preset.campaign ? camp(preset.campaign) : null;
+      const mod = preset.module || 'sale';
+      const dflt = pmList(mod).find((m) => m.isDefault) || PM_FALLBACK[mod];
+      return { ...baseIt, id: rid('pm-'), module: mod, isDefault: false, name: c ? c.name : '', title: '', title2: c ? c.name : '',
+        titleColor: dflt.titleColor || '', title2Color: dflt.title2Color || '', tabActiveBg: dflt.tabActiveBg || '', tabActiveText: dflt.tabActiveText || '',
+        tabs: c && c.collections?.length ? [newTab({ title: 'Top Picks', collection: c.collections[0], onlyDiscounted: true, sortByDiscount: true, countdown: !!c.countdown })] : [newTab()],
+        priority: 10, order: (S.pmodules || []).length, start: c ? null : dayStart(7), end: c ? null : dayStart(14) };
+    }
     return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
   }
   const fld = (label, html, hint = '') => `<label class="fld"><span>${label}</span>${html}${hint ? `<em>${hint}</em>` : ''}</label>`;
@@ -1090,7 +1265,19 @@
         ${it.isDefault ? '' : fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '两个样式时间重叠时,数字大的生效')}
         ${timeBlock(it, 'tbstyle')}`;
     }
-    const bn = S.banners.filter((b) => b.campaign === it.id), tb = S.topbar.filter((t) => t.campaign === it.id), sty = S.tbstyles.filter((t) => t.campaign === it.id);
+    if (it.kind === 'pmodule') {
+      const color = (n, v, l) => `<label class="clr"><input type="color" name="${n}" value="${esc(v || '#000000')}"/><span>${l}</span><span class="mono">${esc(v || '')}</span></label>`;
+      return `
+        <div class="fld"><span>哪个模块</span><div class="seg" id="ed-module">${Object.entries(MODULE_CN).map(([k, l]) => `<button type="button" data-module="${k}" class="${it.module === k ? 'is-active' : ''}" ${it.isDefault ? 'disabled' : ''}>${l}</button>`).join('')}</div></div>
+        ${fld('版本名(后台看的)', inp('name', it.name, '如:Black Friday 2026'))}
+        <div class="fld"><span>首页标题 <em>两段,第二段一般用彩色</em></span>
+          <div class="fld2">${inp('title', it.title, '第一段,如:Black Friday')}${inp('title2', it.title2, '第二段,如:Deals')}</div>
+          <div class="clrs">${color('titleColor', it.titleColor, '第一段颜色')}${color('title2Color', it.title2Color, '第二段颜色')}${color('tabActiveBg', it.tabActiveBg, '页签高亮底色')}${color('tabActiveText', it.tabActiveText, '页签高亮文字')}</div></div>
+        <div class="fld"><span>页签 <em>按这个顺序显示;到时间整套替换现在的页签</em></span><div id="ed-tabs">${tabsEditorHtml()}</div></div>
+        ${it.isDefault ? '' : fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '同一时间有几个版本都生效时,数字大的显示')}
+        ${it.isDefault ? '<div class="fld"><span>什么时候显示</span><em>平时版本一直有效:没有别的版本生效时就显示它。</em></div>' : timeBlock(it, 'pmodule')}`;
+    }
+    const bn = S.banners.filter((b) => b.campaign === it.id), tb = S.topbar.filter((t) => t.campaign === it.id), sty = S.tbstyles.filter((t) => t.campaign === it.id), pm = (S.pmodules || []).filter((m) => m.campaign === it.id);
     return `
       ${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}
       ${timeBlock(it, 'campaign')}
@@ -1100,13 +1287,17 @@
       <div class="fld2">${fld('产品页徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'))}${fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在多个活动里时,数字大的优先')}</div>
       <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>产品页显示倒计时</b><span class="muted">全站统一样式,倒数到活动结束,到期自动消失</span></span></label>
       ${it.state !== 'new' ? `<div class="fld"><span>挂在本活动下的内容</span>
-        <div class="attach">${[...bn, ...tb, ...sty].map((x) => `<button type="button" class="attach__i" data-open="${x.id}" data-pop="${x.id}">
+        <div class="attach">${[...bn, ...tb, ...sty, ...pm].map((x) => `<button type="button" class="attach__i" data-open="${x.id}" data-pop="${x.id}">
           ${x.kind === 'banner' ? `<span class="attach__slide">${slideHtml(x, { w: 200 })}</span>` : miniThumb(x)}
           <span class="attach__t">${kindChip(x.kind)} ${esc(titleOf(x))}</span>${badge(x)}</button>`).join('') || '<span class="muted">还没有</span>'}</div>
-        <div class="attach__add"><button type="button" class="btn btn-sm" data-new="banner" data-for="${it.id}">${I.plus}Banner</button><button type="button" class="btn btn-sm" data-new="topbar" data-for="${it.id}">${I.plus}顶栏公告</button><button type="button" class="btn btn-sm" data-new="tbstyle" data-for="${it.id}">${I.plus}顶栏样式</button></div></div>` : ''}`;
+        <div class="attach__add"><button type="button" class="btn btn-sm" data-new="banner" data-for="${it.id}">${I.plus}Banner</button><button type="button" class="btn btn-sm" data-new="topbar" data-for="${it.id}">${I.plus}顶栏公告</button><button type="button" class="btn btn-sm" data-new="tbstyle" data-for="${it.id}">${I.plus}顶栏样式</button><button type="button" class="btn btn-sm" data-new="pmodule" data-for="${it.id}">${I.plus}首页促销模块版本</button></div></div>` : ''}`;
   }
 
   function previewHtml(v) {
+    if (v.kind === 'pmodule') {
+      return `<div class="pv-label">首页上的样子</div>${moduleHtml(v, { activeTab: pvTab })}
+        <p class="muted pv-cap">点页签切换预览。${MODE === 'live' ? '产品是按这个页签的设置从店里取的前几个。' : '演示数据只画占位;正式数据里会显示这个页签真实会出现的产品。'}到时间后首页这个模块整套换成它,结束回到平时版本。</p>`;
+    }
     if (v.kind === 'banner') {
       // 首页轮播里的样子:左右是相邻的上线中 Banner(淡一点),中间是正在编辑的这张
       const live = S.banners.filter((b) => status(b) === 'live' && b.id !== v.id).sort(byOrder);
@@ -1236,6 +1427,11 @@
       else { v.start = fromInput(g('start').value); v.end = fromInput(g('end').value); } // 自己设时间:仍可挂在活动下(分组),但不跟随活动时间
     }
     if (base.kind === 'banner') v.tag = ($('#ed-tag .is-active') || {}).dataset?.tag || 'none';
+    if (base.kind === 'pmodule') {
+      v.tabs = edTabs.map((t) => ({ ...t, title: t.title.trim(), shopAllUrl: (t.shopAllUrl || '').trim(), shopAllText: (t.shopAllText || '').trim() }));
+      v.module = ($('#ed-module .is-active') || {}).dataset?.module || base.module;
+      if (g('priority')) v.priority = +g('priority').value || 0;
+    }
     if (base.kind === 'tbstyle') { v.effect = ($('#ed-effect .is-active') || {}).dataset?.effect || 'none'; if (g('priority')) v.priority = +g('priority').value || 0; }
     if (base.kind === 'campaign') {
       v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
@@ -1246,7 +1442,7 @@
   function validate(v) {
     if (v.kind === 'banner' && !v.image) return '请选一张图片';
     if (v.kind === 'topbar' && !v.text) return '请填写公告文字';
-    if ((v.kind === 'campaign' || v.kind === 'tbstyle') && !v.name) return '请填写名称';
+    if ((v.kind === 'campaign' || v.kind === 'tbstyle' || v.kind === 'pmodule') && !v.name) return '请填写名称';
     if (v.kind === 'campaign' && v.start == null) return '活动需要开始时间';
     if (v.start != null && v.end != null && v.end <= v.start) return '结束时间要晚于开始时间';
     if (v.kind !== 'campaign' && v.campaign === null && ($('#ed-mode .is-active') || {}).dataset?.mode === 'campaign') return '请选择要跟随的活动';
@@ -1259,6 +1455,7 @@
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
     const base = { ...it, ...(it.pendingChange && !isApprover() ? it.pendingChange : {}) };
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts };
+    edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
     const s = status(it);
     const approver = isApprover();
     const live = it.state === 'approved';
@@ -1300,6 +1497,7 @@
     const refreshPv = () => {
       const v = readForm(base);
       $('#ed-pv').innerHTML = previewHtml(v);
+      if (v.kind === 'pmodule') loadTabPreview(v.tabs[pvTab], () => { if ($('#ed-pv') && edTabs) $('#ed-pv').innerHTML = previewHtml(readForm(base)); });
       $$('#ed-form .clr').forEach((l) => { const i = l.querySelector('input'); l.querySelector('.mono').textContent = i.value; });
       clearInterval(pvTimer);
       if (v.kind === 'campaign' && v.countdown && v.end) {
@@ -1316,6 +1514,7 @@
     if (kind === 'campaign' && MODE === 'live' && !ed.counts) fetchCounts();
     const f = $('#ed-form');
     f.addEventListener('input', (e) => {
+      if (e.target.dataset.tf) { edTabs[+e.target.dataset.i][e.target.dataset.tf] = e.target.value; }
       if (e.target.name === 'image' && f.querySelector('[name="imageId"]')) f.querySelector('[name="imageId"]').value = '';
       refreshPv();
     });
@@ -1334,7 +1533,12 @@
       } catch (err) { toast('上传失败:' + err.message, false); }
       lab.firstChild.textContent = old; e.target.value = '';
     });
-    f.addEventListener('change', refreshPv);
+    f.addEventListener('change', (e) => {
+      if (e.target.dataset?.tck) edTabs[+e.target.dataset.i][e.target.dataset.tck] = e.target.checked;
+      refreshPv();
+    });
+    // 预览里点页签:切换预览的页签
+    $('#ed-pv').addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (t && edTabs) { pvTab = +t.dataset.pmtab; refreshPv(); } });
     f.addEventListener('keydown', (e) => {
       if (e.target.id !== 'sc-tag' || e.key !== 'Enter') return;
       e.preventDefault();
@@ -1349,7 +1553,22 @@
         $$('#ed-form .tm').forEach((x) => { x.hidden = !x.classList.contains('tm--' + m.dataset.mode); });
         refreshPv(); return;
       }
-      const seg = e.target.closest('#ed-tag button, #ed-effect button');
+      // 商品模块:页签的增删排、来源、上限、选合集 / 产品
+      const ta = e.target.closest('[data-tact]');
+      if (ta) {
+        const i = +ta.dataset.i; const a = ta.dataset.tact;
+        if (a === 'add') { edTabs.push(newTab()); pvTab = edTabs.length - 1; }
+        else if (a === 'del') { if (edTabs.length === 1) return toast('至少要留一个页签', false); edTabs.splice(i, 1); }
+        else { const j = a === 'up' ? i - 1 : i + 1; [edTabs[i], edTabs[j]] = [edTabs[j], edTabs[i]]; }
+        return refreshTabs();
+      }
+      const ts = e.target.closest('[data-tsrc]');
+      if (ts) { edTabs[+ts.dataset.i].source = ts.dataset.tsrc; return refreshTabs(); }
+      const tl = e.target.closest('[data-tlim]');
+      if (tl) { edTabs[+tl.dataset.i].limit = +tl.dataset.tlim; return refreshTabs(); }
+      const tp = e.target.closest('[data-tpick]');
+      if (tp) return pickForTab(+tp.dataset.i, tp.dataset.tpick);
+      const seg = e.target.closest('#ed-tag button, #ed-effect button, #ed-module button');
       if (seg) { $$(`#${seg.parentElement.id} button`).forEach((b) => b.classList.toggle('is-active', b === seg)); refreshPv(); return; }
       const im = e.target.closest('.imgpick__i');
       if (im) {
@@ -1400,7 +1619,7 @@
     }
   }
   function closeDrawer() {
-    clearInterval(pvTimer); ed = null; hidePop();
+    clearInterval(pvTimer); ed = null; edTabs = null; hidePop();
     $('#drawer').hidden = true; $('#drawer-mask').hidden = true; $('#drawer').innerHTML = '';
     document.body.classList.remove('no-scroll');
   }
@@ -1408,7 +1627,7 @@
   // ================= 全局 =================
   function renderAll() {
     applySiteStyle(); hidePop();
-    renderOverview(); renderBanners(); renderTopbar(); renderCampaigns(); renderReviews(); renderSettings();
+    renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderCampaigns(); renderReviews(); renderSettings();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     $('#me-chip').innerHTML = `<button class="mechip" type="button" title="切换身份(演示)"><span class="avatar">${esc(me().name.slice(0, 1).toUpperCase())}</span>${esc(me().name)}<span class="muted">· ${isApprover() ? '审核人' : '编辑'}</span></button>`;
   }
