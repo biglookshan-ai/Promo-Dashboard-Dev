@@ -74,6 +74,17 @@
     const active = document.querySelector('#modnav .modnav__item.is-active');
     if (first && (!active || active.hidden)) setTimeout(() => window.showSection && window.showSection(first.dataset.section), 0);
   }
+  // 管理员:有新同事登录、等分配角色 → 顶部提示 +「设置」上的红点
+  function showPendingNotice(n) {
+    const nav = document.getElementById('modnav'); if (!nav) return;
+    const set = nav.querySelector('[data-section="settings"]');
+    if (set && !set.querySelector('.modnav__n')) set.insertAdjacentHTML('beforeend', `<span class="modnav__n modnav__n--alert">${n}</span>`);
+    const bar = document.createElement('div');
+    bar.className = 'pendbar';
+    bar.innerHTML = `<span>有 <b>${n}</b> 个同事用飞书登录了,等你分配角色(没分配前他们什么都看不到)。</span><button class="btn btn-sm" type="button">去分配</button>`;
+    bar.querySelector('button').addEventListener('click', () => { window.showSection && window.showSection('settings'); setTimeout(() => document.getElementById('st-members')?.scrollIntoView({ block: 'center' }), 300); });
+    nav.parentNode.insertBefore(bar, nav);
+  }
   window.cgpCanSee = (page) => !window.CGP_ME || !window.CGP_ME.larkEnabled || (window.CGP_ME.pages || []).includes(page);
 
   const never = new Promise(() => {});
@@ -91,6 +102,7 @@
     if (me.member.status !== 'active') { showPending(me); return never; }
     window.CGP_ME = me;
     applyPages(me.pages);
+    if (me.pendingCount) showPendingNotice(me.pendingCount);
     return me;
   })();
 })();

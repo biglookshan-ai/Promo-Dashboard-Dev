@@ -90,7 +90,9 @@ export function apiAuthRouter() {
     const s = load(req.ctx.shop);
     const m = req.ctx.member;
     return { larkEnabled: larkEnabled(), fromAdmin: !!req.ctx.fromAdmin, member: m ? { id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status } : null,
-      admin: isAdmin(m), pages: pagesOf(s, m), roles: rolesOf(s).map((x) => ({ key: x.key, name: x.name })) };
+      admin: isAdmin(m), pages: pagesOf(s, m), roles: rolesOf(s).map((x) => ({ key: x.key, name: x.name })),
+      // 管理员才看:有几个新登录的人等着分配角色
+      pendingCount: isAdmin(m) ? (s.members || []).filter((x) => x.status === 'pending').length : 0 };
   }));
 
   // ---- 成员与角色(管理员)----

@@ -955,10 +955,20 @@
   function drawMembers() {
     const el = $('#st-members'); if (!el || !MEM) return;
     const list = [...MEM.members].sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0) || (b.lastSeen || 0) - (a.lastSeen || 0));
-    el.innerHTML = `<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>角色</th><th>最近登录</th></tr></thead><tbody>
+    // 每个人实际能看哪些页面(按他的角色算出来,和服务器的规则一致)
+    const canSeeOf = (m) => {
+      if (m.status === 'pending') return '<span class="tag tag--warn">待分配:什么都看不到</span>';
+      if (m.status === 'disabled') return '<span class="tag">已停用:什么都看不到</span>';
+      if ((m.roles || []).includes('admin')) return '<b>全部页面</b>,能管成员和设置';
+      const set = new Set(MEM.roles.filter((r) => (m.roles || []).includes(r.key)).flatMap((r) => r.pages));
+      const names = Object.entries(MEM.pages).filter(([k]) => set.has(k) && !['settings', 'tools'].includes(k)).map(([, v]) => v);
+      return names.length ? names.join('、') : '<span class="tag tag--warn">没勾页面:什么都看不到</span>';
+    };
+    el.innerHTML = `<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>角色</th><th>能看的页面</th><th>最近登录</th></tr></thead><tbody>
       ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : ''}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}</td>
         <td><select class="sel sel--sm" data-mstatus>${Object.entries(ST_CN).map(([k, v]) => `<option value="${k}" ${m.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td>${MEM.roles.map((r) => `<label class="chk"><input type="checkbox" data-mrole="${esc(r.key)}" ${(m.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
+        <td style="font-size:12.5px">${canSeeOf(m)}</td>
         <td class="muted">${m.lastSeen ? fAgo(m.lastSeen) : '—'}</td></tr>`).join('')}</tbody></table>
       ${list.some((m) => m.status === 'pending') ? '<p class="muted">「待分配」的人勾上角色后会自动启用。</p>' : ''}`;
     $$('#st-members tr[data-mid]').forEach((tr) => {
