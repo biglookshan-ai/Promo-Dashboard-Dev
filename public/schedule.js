@@ -1623,8 +1623,8 @@
       if (file.size > 20 * 1024 * 1024) return toast('图片太大了(最多 20MB)', false);
       const lab = e.target.closest('label'); const old = lab.firstChild.textContent; lab.firstChild.textContent = '上传中…';
       try {
-        const t = await sessionToken();
-        const res = await fetch(`/api/schedule/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': file.type }, body: file });
+        // 请求头和其他接口一样由 auth.js 给(后台里的 Shopify 凭证 + 飞书登录会话)
+        const res = await fetch(`/api/schedule/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { ...(await window.cgpHeaders()), 'Content-Type': file.type }, body: file });
         const j = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(j.error || res.statusText);
         f.querySelector('[name="image"]').value = j.url; f.querySelector('[name="imageId"]').value = j.id;
