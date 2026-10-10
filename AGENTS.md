@@ -42,13 +42,13 @@
 
 ### 排期系统的铁律(动手前必读 PLAN.md)
 
-- **以内容为主**:Banner / 顶栏每条独立排期;活动(campaign)只是可选的串联,别把所有内容都做成挂在活动下面。
+- **v3(2026-10-10)起活动是总控台**:活动下挂工作项(改价、Banner、顶栏、设计需求、宣传物料…),每项有负责人 / 审批人 / 抄送;但常驻内容仍可不挂活动、独立排期。设计真源 PLAN.md「v3」一节。
 - **Shopify 里只放「已批准」的版本**:编辑中 / 待审核的改动存在 app 数据库,**批准时才写入 metaobject**。绝不能把未批准的改动直接写进 Shopify —— 改一条正在上线的内容会立刻出现在前台,绕过审核。
 - **只有已批准的内容能被定时器上线**;审核人自己的改动自动批准。
 - **上下线只靠切 metaobject 的 publishable 状态**(DRAFT ↔ ACTIVE)。Liquid 遍历 `.values` 只返回 ACTIVE,主题里**不要写日期判断来决定显示与否**。开了 publishable 后新建条目默认是 DRAFT。
 - 飞书通知用**群机器人 webhook**(lark-ops 是本地个人 token 工具,Railway 用不了)。webhook 地址不进代码仓库。
 - 店铺**不是 Shopify Plus**(主题仓库 CLAUDE.md 误写 Plus)。
-- **app 不写产品数据**:活动的产品 = 活动自身存的 **合集列表 + 标签列表 + 指定产品列表**(满足任一即参加),由主题判断归属。别为了活动去给产品写 metafield / 打标签,也别申请 `write_products`。
+- **只有改价模块能写产品数据,且只写两样**:变体的 `price` / `compareAtPrice`,以及改价时段指定的**手动合集**成员(v3 起,用户 10/10 决定并入改价)。活动圈定产品仍 = 活动自身存的合集 + 标签 + 指定产品;别给产品写 metafield / 打标签。改价的安全规则(原价保险库、写前意图、读回核对、手动改价暂停接管)照搬 `../price-scheduler-app/AGENTS.md` 铁律。
 - **Banner 是竖图卡片 430×600**(手机 320×450),后台预览一律按主题真实尺寸 / 字号 / 角标颜色画(`scripts/build-demo-seed.mjs` 从主题设置读出,别写死横图比例)。
 - **主题改造外观不变、只换数据源,且必须保留回退**:没有活动数据时显示原编辑器设置。
 - **主题仓库是共享的**(`~/Vibe Coding Dev/Shopify Dev/cinegearpro-search-Development-test-1.0`,还装着搜索 / Setup Kit / FAQ):
@@ -63,7 +63,7 @@
 - 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(6 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(52 个)。
 - **本地测正式数据**:`node scripts/live-harness.mjs --fresh` → http://localhost:4793(`?user=1002` 是第二个人;`--core-only` 模拟只建了核心 4 个类型的老店)。真的 app 服务器 + 假 Shopify(内存,主题文件读本地 worktree,产品数读 `scripts/demo-catalog.json`),`http://localhost:4794/__state` 看写进「店铺」的东西。只靠 `SHOPIFY_GRAPHQL_ORIGIN` 环境变量指过去,线上别设。
 - **建内容类型、从主题导入**都只能由用户在「设置 → 店铺连接」点按钮触发,别在部署 / 启动时自动做。
-- 认人:session token 的 `sub` = Shopify 员工 id;第一个打开的人自动是审核人,之后来的默认是编辑(`staff` 存在数据卷)。员工真名要 read_users(非 Plus 拿不到),所以让人自己在「设置」里起名字。
+- 认人:**v3 起改为飞书登录**(店里多人共用 Shopify 账号);Shopify session token 只证明「从本店后台打开」。第一次登录的人默认「待分配」,管理员分配角色后才能用;第一个管理员 = 第一个从 Shopify 后台里用飞书登录的人。(v2 旧做法:session token 的 `sub` = 员工 id、第一个打开的人是审核人。)
 - 本地看演示界面:`node scripts/demo-preview.mjs`(端口 4790)。
 - 后台跑在 Shopify 后台的 iframe 里:**别用 `prompt()` / `confirm()` / `alert()`**(跨域 iframe 可能被浏览器拦截),用页面内输入框和「再点一次确认」。
 - **计数不用扫全站**:`metafieldsCount` / `metaobjectsCount` 由 API 直接给,总账秒出。只有促销盘点那套才需要扫 3938 个产品(所以它改成切到标签页才懒加载)。
