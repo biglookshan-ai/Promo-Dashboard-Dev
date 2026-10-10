@@ -43,6 +43,9 @@ export function priceGql(q, v = {}) {
   }
   if (q.includes('collectionAddProducts')) { const c = collections.get(v.id); if (c.smart) return { collectionAddProducts: { userErrors: [{ message: '智能合集不能手动加产品' }] } }; (v.p || []).forEach((p) => c.members.add(p)); return { collectionAddProducts: { userErrors: [] } }; }
   if (q.includes('collectionRemoveProducts')) { const c = collections.get(v.id); (v.p || []).forEach((p) => c.members.delete(p)); return { collectionRemoveProducts: { userErrors: [] } }; }
+  if (q.includes('tagsAdd')) { const p = products.get(v.id); if (p) p.tags = [...new Set([...(p.tags || []), ...v.tags])]; return { tagsAdd: { userErrors: [] } }; }
+  if (q.includes('tagsRemove')) { const p = products.get(v.id); if (p) p.tags = (p.tags || []).filter((t) => !v.tags.includes(t)); return { tagsRemove: { userErrors: [] } }; }
+  if (q.includes('on Product { id tags }')) return { nodes: v.ids.map((id) => (products.has(id) ? { id, tags: products.get(id).tags || [] } : null)) };
   if (q.includes('inCollection')) return { nodes: v.ids.map((id) => (products.has(id) ? { id, inCollection: collections.get(v.c)?.members.has(id) || false } : null)) };
   if (q.includes('on ProductVariant')) return { nodes: v.ids.map((id) => (variants.has(id) ? vShape(variants.get(id)) : null)) };
   if (!q.includes('variants(first: 100)') && !q.includes('collections(first: 30') && !q.includes('productVendors')) return undefined;
@@ -63,11 +66,13 @@ export function priceGql(q, v = {}) {
 
 // GET /__price 看改过价的变体和合集成员;GET /__price/set?variant=<id>&price=79 模拟同事手动改价
 export function priceState() {
+  const tagged = [...products.values()].filter((p) => JSON.stringify(p.tags || []) !== JSON.stringify(cat.products.find((x) => x.id === Number(num(p.gid)))?.tags || []))
+    .map((p) => ({ product: p.title, tags: p.tags }));
   const changed = [...variants.values()].filter((x) => x.price !== x.orig.price || (x.compareAt || null) !== (x.orig.compareAt || null))
     .map((x) => ({ variant: num(x.gid), product: products.get(x.productGid).title, sku: x.sku, orig: x.orig, now: { price: x.price, compareAt: x.compareAt } }));
   const cols = [...collections.values()].filter((c) => c.members.size !== c.products.length || c.products.some((id) => !c.members.has(G('Product', id))))
     .map((c) => ({ collection: c.title, before: c.products.length, now: c.members.size }));
-  return { products: products.size, changed, collections: cols };
+  return { products: products.size, changed, collections: cols, tagged };
 }
 export function priceSet(params) {
   const id = params.get('variant'); const vv = variants.get(id?.startsWith('gid') ? id : G('ProductVariant', id));

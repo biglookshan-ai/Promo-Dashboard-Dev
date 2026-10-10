@@ -366,3 +366,38 @@ export function planCollections(state, now) {
   }
   return out;
 }
+
+// ---------- 改价时顺便加减产品标签 ----------
+// 计划上的 tagsAdd / tagsRemove:生效期间给参加的产品加上 / 去掉标签,结束自动还原。
+// 用来驱动「按标签自动归类」的合集(FlashDeal、TOP DEALS 这类)。
+// tagState[产品] = { added: [app 加的标签], removed: [app 去掉的、原来有的标签] }
+// 返回每个要处理的产品:want = 现在应该有的(app 负责加),unwant = 现在应该没有的(app 负责去掉)
+export function planTags(state, now) {
+  const want = new Map(); // 产品 → Set(标签)
+  const unwant = new Map();
+  const put = (m, pid, tags) => { if (!m.has(pid)) m.set(pid, new Set()); tags.forEach((t) => m.get(pid).add(t)); };
+  for (const plan of state.plans) {
+    const add = (plan.tagsAdd || []).filter(Boolean), rm = (plan.tagsRemove || []).filter(Boolean);
+    if (!isLive(plan) || (!add.length && !rm.length)) continue;
+    const ex = new Set(plan.excluded || []);
+    for (const slot of plan.slots || []) {
+      // 永久调价:执行过就一直算数(它不恢复);限时:只在时段内
+      if (plan.kind === 'window' ? !slotActive(slot, now) : slot.start == null || slot.start > now) continue;
+      const pids = [...new Set(slot.items.filter((i) => !ex.has(i.variantId)).map((i) => i.productId))];
+      for (const pid of pids) { put(want, pid, add); put(unwant, pid, rm); }
+    }
+  }
+  const ts = state.tagState || {};
+  const out = [];
+  for (const pid of new Set([...want.keys(), ...unwant.keys(), ...Object.keys(ts)])) {
+    const w = [...(want.get(pid) || [])], u = [...(unwant.get(pid) || [])];
+    const st = ts[pid] || { added: [], removed: [] };
+    // 不再需要的:app 加过但现在不该有 → 去掉;app 去掉过但现在不该去 → 加回来
+    const undoAdd = st.added.filter((t) => !w.includes(t));
+    const undoRemove = st.removed.filter((t) => !u.includes(t));
+    const todoAdd = w.filter((t) => !st.added.includes(t));
+    const todoRemove = u.filter((t) => !st.removed.includes(t));
+    if (undoAdd.length || undoRemove.length || todoAdd.length || todoRemove.length) out.push({ productId: pid, want: w, unwant: u, undoAdd, undoRemove, todoAdd, todoRemove });
+  }
+  return out;
+}

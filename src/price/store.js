@@ -15,6 +15,7 @@ export function emptyState() {
     plans: [],
     vault: {},        // 变体 → { productId, title, sku, base, written, intent, hold, since }
     collState: {},    // 合集 → { title, managed, preexisting }
+    tagState: {},     // 产品 → { added: [app 加的标签], removed: [app 去掉的标签] }
     ledger: [],       // 价格账本(最新在前)
     log: [],          // 操作日志
     // 成员和飞书设置用网站更新中心的(schedule-store 的 members);这里只放改价自己的设置

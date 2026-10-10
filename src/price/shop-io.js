@@ -70,4 +70,24 @@ export async function removeFromCollection(ctx, collectionId, productIds) {
   }
 }
 
-export const realIO = { readVariants, writeProductVariants, productsInCollection, addToCollection, removeFromCollection };
+
+
+// ---- 产品标签(改价时顺便加减;只动计划里填的那几个标签)----
+export async function readProductTags(ctx, productIds) {
+  const out = new Map();
+  for (const part of chunk([...new Set(productIds)], 250)) {
+    const d = await graphql(ctx, 'query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id tags } } }', { ids: part });
+    for (const n of d.nodes || []) if (n?.id) out.set(n.id, n.tags || []);
+  }
+  return out;
+}
+export async function addTags(ctx, id, tags) {
+  const d = await graphql(ctx, 'mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { message } } }', { id, tags });
+  const e = d.tagsAdd?.userErrors?.[0]; if (e) throw new Error(`加标签失败:${e.message}`);
+}
+export async function removeTags(ctx, id, tags) {
+  const d = await graphql(ctx, 'mutation($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { userErrors { message } } }', { id, tags });
+  const e = d.tagsRemove?.userErrors?.[0]; if (e) throw new Error(`去标签失败:${e.message}`);
+}
+
+export const realIO = { readVariants, writeProductVariants, productsInCollection, addToCollection, removeFromCollection, readProductTags, addTags, removeTags };

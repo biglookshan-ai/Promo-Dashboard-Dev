@@ -957,3 +957,39 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 .snapslide { flex: none; width: 128px; cursor: pointer; }
 .snapnone { padding: 14px; text-align: center; color: var(--text-3); font-size: 12.5px; background: var(--surface-2); }
 .snapmod__h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-3); margin-bottom: 6px; }
+
+/* ---------- 改价编辑器(照原来那个 app 的做法:从上往下填 + 右边大白话摘要)---------- */
+#section-price .pr-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+#section-price .pr-side { position: sticky; top: 14px; }
+#section-price .pr-sec { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 12px; overflow: hidden; }
+#section-price .pr-sec__h { background: #eef3ff; border-bottom: 1px solid #dde6ff; padding: 10px 16px; font-size: 13.5px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+#section-price .pr-sec__h .muted { font-weight: 400; margin: 0; }
+#section-price .pr-sec__b { padding: 14px 16px; }
+#section-price .pr-radios { display: flex; flex-direction: column; gap: 6px; }
+#section-price .pr-radio { display: flex; gap: 8px; align-items: center; font-size: 13.5px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+#section-price .pr-radio.is-on { border-color: var(--accent); background: var(--accent-soft); }
+#section-price .pr-say { margin: 10px 0 0; font-size: 13px; color: var(--text-2); background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+#section-price .pr-unit { color: var(--text-3); margin-left: -4px; }
+#section-price .pr-seg { display: inline-flex; background: #ececef; padding: 3px; border-radius: 9px; gap: 2px; }
+#section-price .pr-seg--wrap { flex-wrap: wrap; }
+#section-price .pr-seg button { border: none; background: none; padding: 6px 12px; border-radius: 7px; font: inherit; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+#section-price .pr-seg button.is-on { background: var(--surface); color: var(--text); font-weight: 500; box-shadow: var(--shadow); }
+#section-price .pr-seg button:disabled { opacity: .6; cursor: default; }
+#section-price .pr-colors { display: inline-flex; gap: 4px; }
+#section-price .pr-color { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+#section-price .pr-color.is-on { border-color: var(--text); }
+#section-price .pr-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+#section-price .pr-sum { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 12px; }
+#section-price .pr-sum__h { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 14px; }
+#section-price .pr-sum ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text-2); line-height: 1.75; }
+#section-price .pr-picked { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+#section-price .pr-picked__i { width: 34px; height: 34px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+#section-price .pr-picked__i img { width: 100%; height: 100%; object-fit: cover; }
+#section-price .plan { grid-template-columns: 6px minmax(0, 1fr) auto; align-items: stretch; }
+#section-price .plan__say { font-size: 13px; color: var(--text-2); margin-top: 4px; }
+#section-price .plan__prods { display: flex; flex-direction: column; font-size: 12.5px; color: var(--accent); margin-top: 4px; }
+#section-price .plan__tz { font-size: 11.5px; margin-top: 4px; }
+#section-price .plan__acts { display: flex; flex-direction: column; gap: 4px; align-self: center; padding-right: 2px; }
+#section-price .plan__acts .btn { justify-content: center; white-space: nowrap; }
+#section-price .tx-ok { color: var(--ok); }
+@media (max-width: 1100px) { #section-price .pr-grid { grid-template-columns: 1fr; } #section-price .pr-side { position: static; } }

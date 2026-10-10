@@ -7,7 +7,7 @@
 //   5. 永久计划全部执行完 → 标记完成
 // 规则都在 price-core.js;这里只管调用、读写 Shopify、存盘、记日志。
 import { load, save, withLock, appendLedger, appendLog, listShops } from './store.js';
-import { planWork, decide, commit, holdVariant, sweep, setIntent, clearIntent, recoverIntents, planCollections, finishPlans, samePair, pair } from './price-core.js';
+import { planWork, decide, commit, holdVariant, sweep, setIntent, clearIntent, recoverIntents, planCollections, planTags, finishPlans, samePair, pair } from './price-core.js';
 import { realIO } from './shop-io.js';
 import { getToken } from '../token-store.js';
 import { reportMessages, deliver as realDeliver } from './notifier.js';
@@ -26,7 +26,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
   return withLock(shop, async () => {
     const state = load(shop);
     const ctx = { shop, token };
-    const rep = { at: now, written: [], failures: [], holds: [], recovered: [], collections: [], finished: [] };
+    const rep = { at: now, written: [], failures: [], holds: [], recovered: [], collections: [], tags: [], finished: [] };
     const planOf = (rec) => rec.asg?.plan || rec.perm?.plan || null;
     const planName = (id) => state.plans.find((p) => p.id === id)?.name || '';
     const brief = (rec, extra = {}) => {
@@ -151,6 +151,28 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
         }
       }
 
+      // 4b. 产品标签(改价时顺便加减,结束还原;只动计划里填的那几个标签)
+      const tagOps = planTags(state, now);
+      if (tagOps.length) {
+        state.tagState ||= {};
+        const cur = await io.readProductTags(ctx, tagOps.map((o) => o.productId));
+        for (const o of tagOps) {
+          const has = cur.get(o.productId); if (!has) continue; // 产品没了
+          const st = state.tagState[o.productId] ||= { added: [], removed: [] };
+          try {
+            // 要加的:app 还没加过的,而且产品本来就没有(本来就有的不记账,结束时也不去掉)
+            const add = [...o.todoAdd.filter((t) => !has.includes(t)), ...o.undoRemove.filter((t) => !has.includes(t))];
+            const del = [...o.todoRemove.filter((t) => has.includes(t)), ...o.undoAdd.filter((t) => has.includes(t))];
+            if (add.length) await io.addTags(ctx, o.productId, add);
+            if (del.length) await io.removeTags(ctx, o.productId, del);
+            st.added = [...new Set([...st.added, ...o.todoAdd.filter((t) => !has.includes(t))])].filter((t) => o.want.includes(t));
+            st.removed = [...new Set([...st.removed, ...o.todoRemove.filter((t) => has.includes(t))])].filter((t) => o.unwant.includes(t));
+            if (add.length || del.length) rep.tags.push({ productId: o.productId, added: add, removed: del });
+            if (!st.added.length && !st.removed.length) delete state.tagState[o.productId];
+          } catch (e) { rep.failures.push({ productId: o.productId, message: String(e.message || e) }); }
+        }
+      }
+
       // 5. 永久计划
       rep.finished = finishPlans(state, now).map((p) => ({ planId: p.id, plan: p.name }));
     } catch (e) {
@@ -181,6 +203,10 @@ function writeLogs(state, rep, now) {
   if (rep.recovered.length) appendLog(state, { at: now, action: 'recover', plan: '', note: `上轮中断后核对:${rep.recovered.length} 个变体已生效,已补记`, by: '执行器' });
   for (const h of rep.holds) appendLog(state, { at: now, action: 'hold', planId: h.planId, plan: h.plan, note: `${h.title || h.variantId}:${HOLD_CN[h.reason] || h.reason}${h.seen ? `(店里现价 £${h.seen.price})` : ''}`, by: '执行器' });
   for (const c of rep.collections) appendLog(state, { at: now, action: 'collection', plan: '', note: `合集「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`, by: '执行器' });
+  if (rep.tags.length) {
+    const a = rep.tags.reduce((n, t) => n + t.added.length, 0), d = rep.tags.reduce((n, t) => n + t.removed.length, 0);
+    appendLog(state, { at: now, action: 'tag', plan: '', note: `产品标签:${rep.tags.length} 个产品${a ? `,加了 ${a} 个标签` : ''}${d ? `,去掉 ${d} 个标签` : ''}`, by: '执行器' });
+  }
   for (const f of rep.failures.slice(0, 20)) appendLog(state, { at: now, action: 'failure', planId: f.planId || null, plan: f.plan || '', note: `${f.title || f.collection || ''}${f.title || f.collection ? ':' : ''}${f.message}`, by: '执行器' });
   if (rep.failures.length > 20) appendLog(state, { at: now, action: 'failure', plan: '', note: `另有 ${rep.failures.length - 20} 条失败,下一轮自动重试`, by: '执行器' });
   for (const f of rep.finished) appendLog(state, { at: now, action: 'done', planId: f.planId, plan: f.plan, note: '永久调价全部执行完成', by: '执行器' });

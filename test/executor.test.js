@@ -37,6 +37,10 @@ function fakeIO(variants, collections = {}) {
       if (io.netErrorAfter) throw new Error('模拟:网络超时');
       return errs;
     },
+    tags: {}, // 产品 → 标签数组
+    async readProductTags(ctx, pids) { const m = new Map(); pids.forEach((p) => m.set(p, [...(io.tags[p] || [])])); return m; },
+    async addTags(ctx, pid, t) { io.tags[pid] = [...new Set([...(io.tags[pid] || []), ...t])]; },
+    async removeTags(ctx, pid, t) { io.tags[pid] = (io.tags[pid] || []).filter((x) => !t.includes(x)); },
     async productsInCollection(ctx, cid, pids) { const s = coll.get(cid) || new Set(); return new Set(pids.filter((p) => s.has(p))); },
     async addToCollection(ctx, cid, pids) { if (!coll.has(cid)) coll.set(cid, new Set()); pids.forEach((p) => coll.get(cid).add(p)); },
     async removeFromCollection(ctx, cid, pids) { pids.forEach((p) => coll.get(cid)?.delete(p)); },
@@ -188,4 +192,38 @@ test('300 个产品一轮写完,全部核对通过', async () => {
   await run(shop, io, 10 * H);
   assert.ok([...io.v.values()].every((x) => x.price === '100.00' && x.compareAt === null));
   assert.deepEqual(load(shop).vault, {});
+});
+
+test('改价时加减产品标签:结束还原;本来就有的标签不动;原来有、被去掉的会加回来', async () => {
+  const io = fakeIO({ a: '100.00', b: '100.00' });
+  io.tags['P-a'] = ['Clearance'];           // 原来就有 Clearance,计划要去掉
+  io.tags['P-b'] = ['FlashDeal', 'Keep'];   // 原来就有 FlashDeal(不是 app 加的)
+  const p = plan('flash', 'flash', [{ id: 's', start: 0, end: 10 * H, items: [item('a', '70.00'), item('b', '70.00')] }]);
+  p.tagsAdd = ['FlashDeal']; p.tagsRemove = ['Clearance'];
+  const shop = setup([p]);
+  await run(shop, io, 1 * H);
+  assert.deepEqual(io.tags['P-a'].sort(), ['FlashDeal']);        // 加了 FlashDeal、去掉 Clearance
+  assert.deepEqual(io.tags['P-b'].sort(), ['FlashDeal', 'Keep']); // 本来就有,没重复加
+  const st = load(shop);
+  assert.deepEqual(st.tagState['P-a'], { added: ['FlashDeal'], removed: ['Clearance'] });
+  assert.equal(st.tagState['P-b'], undefined); // 什么都没动,不记账
+  await run(shop, io, 10 * H); // 结束
+  assert.deepEqual(io.tags['P-a'].sort(), ['Clearance']);         // 还原
+  assert.deepEqual(io.tags['P-b'].sort(), ['FlashDeal', 'Keep']); // 本来就有的不去掉
+  assert.deepEqual(load(shop).tagState, {});
+});
+
+test('标签:计划暂停 → 标签还原;继续 → 再加回来', async () => {
+  const io = fakeIO({ a: '100.00' });
+  const p = plan('flash', 'flash', [{ id: 's', start: 0, end: 10 * H, items: [item('a', '70.00')] }]);
+  p.tagsAdd = ['TOP DEALS'];
+  const shop = setup([p]);
+  await run(shop, io, 1 * H);
+  assert.deepEqual(io.tags['P-a'], ['TOP DEALS']);
+  let st = load(shop); st.plans[0].paused = true; save(shop, st);
+  await run(shop, io, 2 * H);
+  assert.deepEqual(io.tags['P-a'], []);
+  st = load(shop); st.plans[0].paused = false; save(shop, st);
+  await run(shop, io, 3 * H);
+  assert.deepEqual(io.tags['P-a'], ['TOP DEALS']);
 });

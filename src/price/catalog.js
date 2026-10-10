@@ -2,7 +2,7 @@
 // ⚠️ Shopify 对不认识的搜索条件会「静默忽略」、把全店都返回来(promo-manager 踩过)——按条件搜回来的产品逐个核对,不符合的丢掉。
 import { graphql } from '../shopify.js';
 
-const MAX_PRODUCTS = 2000;
+const MAX_PRODUCTS = 5000;
 
 const VARIANT_FIELDS = (withCost) => `variants(first: 100) { nodes { id title sku price compareAtPrice ${withCost ? 'inventoryItem { unitCost { amount } }' : ''} } }`;
 const PRODUCT_FIELDS = (withCost) => `id title handle vendor productType tags status
@@ -56,18 +56,18 @@ export async function searchProducts(ctx, by) {
   if (by.vendor) parts.push(`vendor:"${esc(by.vendor)}"`);
   if (by.tag) parts.push(`tag:"${esc(by.tag)}"`);
   if (by.type) parts.push(`product_type:"${esc(by.type)}"`);
-  if (!parts.length) throw new Error('至少选一个条件');
+  if (!parts.length && !by.all) throw new Error('至少选一个条件');
   const match = (p) => (!by.vendor || p.vendor.toLowerCase() === by.vendor.toLowerCase())
     && (!by.tag || p.tags.some((t) => t.toLowerCase() === by.tag.toLowerCase()))
     && (!by.type || p.type.toLowerCase() === by.type.toLowerCase());
   const out = []; let after = null; let dropped = 0;
   do {
     const d = await q(ctx, (c) => `query($q: String!, $after: String) { products(first: 50, after: $after, query: $q) {
-      pageInfo { hasNextPage endCursor } nodes { ${PRODUCT_FIELDS(c)} } } }`, { q: parts.join(' AND '), after });
+      pageInfo { hasNextPage endCursor } nodes { ${PRODUCT_FIELDS(c)} } } }`, { q: parts.join(' AND ') || null, after });
     for (const p of d.products.nodes.map(shapeProduct)) (match(p) ? out.push(p) : dropped++);
     after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
     // 静默忽略的典型症状:前两页全是不符合的 → 停,别把全店翻一遍
-    if (!out.length && dropped >= 100) throw new Error('Shopify 没按这个条件筛选(返回的都不符合),请换个写法或改用合集');
+    if (!out.length && dropped >= 100 && !by.all) throw new Error('Shopify 没按这个条件筛选(返回的都不符合),请换个写法或改用合集');
   } while (after && out.length < MAX_PRODUCTS);
   return { products: out, dropped, truncated: !!after };
 }

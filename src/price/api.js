@@ -105,7 +105,7 @@ export function priceRouter() {
   // ---- 选产品 ----
   r.get('/catalog/products', wrap((req) => catalog.productsByIds(req.ctx, String(req.query.ids || '').split(',').filter(Boolean)).then((products) => ({ products }))));
   r.get('/catalog/collection', wrap((req) => catalog.collectionProducts(req.ctx, String(req.query.id || ''))));
-  r.get('/catalog/search', wrap((req) => catalog.searchProducts(req.ctx, { vendor: req.query.vendor, tag: req.query.tag, type: req.query.type })));
+  r.get('/catalog/search', wrap((req) => catalog.searchProducts(req.ctx, { vendor: req.query.vendor, tag: req.query.tag, type: req.query.type, all: req.query.all === '1' })));
   r.get('/catalog/collections', wrap((req) => catalog.findCollections(req.ctx, String(req.query.q || '')).then((collections) => ({ collections }))));
   r.get('/catalog/vendors', wrap((req) => catalog.vendors(req.ctx).then((vendors) => ({ vendors }))));
   // 本 app 的活动(排期里的活动,含还没批准的)

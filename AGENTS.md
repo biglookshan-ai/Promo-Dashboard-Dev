@@ -73,6 +73,10 @@
   没设 → 只有「第一个从 Shopify 后台里登录的人」一次,之后 `bootstrapDone` 永久关门。停用成员立即生效(每个请求都查成员状态)。本地测:`node scripts/live-harness.mjs --fresh --lark`(假飞书,可选测试管理员 / 员工 / 设计)。
 - **改价模块(v3 3.2,从 `../price-scheduler-app` 搬入)**:`src/price/`(`price-core.js` 规则 + `price-actions.js` 动作和权限 —— 纯函数,页面经 `/lib/price-*.js` 共用;`executor.js` 每分钟对齐价格;`shop-io.js` 唯一写价格 / 合集的地方;`catalog.js` 选产品;`notifier.js` **只私信相关的人、不发群**;`api.js` 挂 `/api/price`,server.js 用 `needMember('price')` 限定定价角色 + 管理员)。数据在 `DATA_DIR/price/`,和排期分开。
   每个计划可指定审批人(`approver`)/ 负责人(`owner`)/ 抄送(`cc`),只能选能看改价页的成员;没指定审批人 = 管理员审批;审批人自己提交直接生效。
+  **界面按原来那个 Simple Product Price Scheduler 的做法**(2026-10-10 用户给了截图):一个计划 = 一条规则 + 一个时间段(没有多时段 / 每日日程,Flash 每天用「复制成下一天」);
+  表单从上往下填(名称 → 改什么价 → 改哪些产品 → 什么时候 → 产品标签 → 负责人审批 → 划线价 → 试算预览),右边常驻一段大白话摘要;逐个变体的价格收在「试算预览」里。
+  `plan.scope`(all / collections / products / search)+ `plan.rule` 存下来,点「试算预览」或保存时重新算出 `slots[0].items`;手改过价的变体带 `manual`,重算时保留。
+  `plan.tagsAdd` / `tagsRemove`:生效期间加减产品标签(驱动按标签自动归类的合集),结束还原;只动计划里填的标签,产品本来就有的不碰(`price-core.planTags` + `state.tagState` 记账)。
   页面 `public/price.js`(点开「改价」才加载),样式在 style.css 末尾、**全部限定在 `#section-price` 里**,和排期页同名的样式加了 `pr-` 前缀 —— 别去掉,否则两边互相干扰。
   飞书私信:`src/lark-bot.js`(同一个飞书应用的机器人,需要 `im:message:send_as_bot`)。本地测:harness 的 `/__price`(改过价的变体)、`/__price/set`(模拟手动改价)、`/__dms`(发出的私信),产品数据 `node scripts/fetch-price-catalog.mjs`。
 - 本地看演示界面:`node scripts/demo-preview.mjs`(端口 4790)。
