@@ -6,6 +6,8 @@
 // 三个部分:
 //   1. 假 Shopify(4794):内存里的 metaobject 定义 / 条目 / 文件库;主题文件读本地主题 worktree(真实内容);
 //      产品数用 scripts/demo-catalog.json(前台公开数据)。GET /__state 可以看写进「店铺」的东西。
+//      改价:产品 / 变体价格用 scripts/price-catalog.json(先跑 fetch-price-catalog.mjs);GET /__price 看改过价的,/__price/set?variant=&price= 模拟手动改价;
+//      飞书机器人私信记在 GET /__dms。
 //   2. 真的 app 服务器(4795):node src/server.js,用 SHOPIFY_GRAPHQL_ORIGIN 指到假 Shopify,数据放临时目录。
 //   3. 入口代理(4793):把页面里的 App Bridge 换成一个假的 window.shopify(签好的 session token + 简易选择器)。
 // 启动参数:--no-scopes 模拟「还没加权限」;--fresh 每次清空数据;--core-only 模拟只建过第一期 4 个类型的老店铺;
@@ -17,6 +19,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { priceGql, priceState, priceSet } from './fake-price-shop.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const THEME = path.join(os.homedir(), 'Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign');
@@ -40,6 +43,7 @@ const nid = (type) => `gid://shopify/${type}/${store.n++}`;
 
 // 假飞书(--lark):授权页列出几个测试身份,点哪个就以谁登录;换 token / 读用户信息都在本地
 const FAKE_USERS = { ou_admin: '测试管理员', ou_staff: '测试员工', ou_design: '测试设计' };
+const DMS = []; // 机器人发出的私信(GET /__dms 查看)
 function fakeLark(req, res, body) {
   const u = new URL(req.url, 'http://x');
   const json = (o) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
@@ -54,6 +58,12 @@ function fakeLark(req, res, body) {
     const b = JSON.parse(body || '{}');
     return FAKE_USERS[b.code] ? json({ code: 0, access_token: `tok:${b.code}`, expires_in: 7200 }) : json({ code: 20003, msg: 'invalid code' });
   }
+  if (u.pathname === '/lark-open/open-apis/auth/v3/tenant_access_token/internal') return json({ code: 0, tenant_access_token: 'tenant-fake', expire: 7200 });
+  if (u.pathname === '/lark-open/open-apis/im/v1/messages') {
+    const b = JSON.parse(body || '{}'); const card = JSON.parse(b.content || '{}');
+    DMS.push({ to: FAKE_USERS[b.receive_id] || b.receive_id, title: card.header?.title?.content, text: card.elements?.[0]?.text?.content });
+    return json({ code: 0, data: { message_id: `om_${DMS.length}` } });
+  }
   if (u.pathname === '/lark-open/open-apis/authen/v1/user_info') {
     const id = String(req.headers.authorization || '').replace('Bearer tok:', '');
     return json({ code: 0, data: { open_id: id, union_id: `on_${id}`, name: FAKE_USERS[id], avatar_url: '', tenant_key: 'tenant-test' } });
@@ -67,10 +77,11 @@ const fakeProduct = (p) => {
     variants: { nodes: [{ price: String(price), compareAtPrice: off ? String(Math.round(price / (1 - off / 100))) : null }] } };
 };
 const SCOPES = args.has('--no-scopes') ? ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions']
-  : ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions', 'write_metaobject_definitions', 'write_metaobjects', 'write_files'];
+  : ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions', 'write_metaobject_definitions', 'write_metaobjects', 'write_files', 'write_products', 'read_inventory'];
 
 function gql(query, v) {
   const q = query.replace(/\s+/g, ' ');
+  const pr = priceGql(q, v); if (pr !== undefined) return pr; // 改价模块的查询(scripts/fake-price-shop.mjs)
   if (q.includes('accessScopes')) return { currentAppInstallation: { accessScopes: SCOPES.map((handle) => ({ handle })) } };
   if (q.includes('primaryDomain')) return { shop: { name: 'CineGearPro(测试)', myshopifyDomain: SHOP, primaryDomain: { url: 'https://www.cinegearpro.co.uk' } }, currentAppInstallation: { app: { handle: 'promo-dashboard-dev' } } };
   if (q.includes('metaobjectDefinitionByType')) {
@@ -166,6 +177,9 @@ http.createServer((req, res) => {
     if (req.url.startsWith('/lark-')) return fakeLark(req, res, Buffer.concat(body).toString());
     if (req.url === '/__state') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ defs: Object.keys(store.defs), objects: Object.values(store.objects) }, null, 1)); }
     if (req.url === '/__upload') { res.writeHead(201); return res.end(); }
+    if (req.url === '/__price') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(priceState(), null, 1)); }
+    if (req.url.startsWith('/__price/set')) { const r = priceSet(new URL(req.url, 'http://x').searchParams); res.writeHead(r ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(r)); }
+    if (req.url === '/__dms') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(DMS, null, 1)); }
     if (req.method !== 'POST' || !req.url.includes('/graphql.json')) { res.writeHead(404); return res.end(); } // 比如浏览器顺带要的 favicon
     try {
       const { query, variables } = JSON.parse(Buffer.concat(body).toString() || '{}');

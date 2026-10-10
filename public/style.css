@@ -792,3 +792,106 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 
 .authgate__code { display: flex; gap: 6px; align-items: center; justify-content: center; margin-top: 10px; flex-wrap: wrap; color: var(--text-2); }
 .authgate__code .inp { width: 110px; text-align: center; letter-spacing: 3px; font-size: 15px; }
+
+/* ========== 改价页(样式只作用在 #section-price 里)========== */
+/* ---------- 通用 ---------- */
+#section-price .btn-danger { color: var(--danger); border-color: #f3ccc8; }
+#section-price .btn-danger.is-arm { background: var(--danger); color: #fff; border-color: var(--danger); }
+#section-price .btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+#section-price .pr-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 18px; margin-bottom: 14px; }
+#section-price .pr-card__t { font-size: 14px; font-weight: 600; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+#section-price .pr-card__t .muted { font-weight: 400; margin: 0; }
+#section-price .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 18px; }
+#section-price .pr-fld { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--text-2); }
+#section-price .pr-fld em { font-style: normal; color: var(--text-3); font-size: 11.5px; }
+#section-price .pr-seg { display: inline-flex; background: #ececef; padding: 3px; border-radius: 9px; gap: 2px; flex-wrap: wrap; }
+#section-price .pr-seg button { border: none; background: none; padding: 6px 12px; border-radius: 7px; font: inherit; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+#section-price .pr-seg button.is-on { background: var(--surface); color: var(--text); font-weight: 500; box-shadow: var(--shadow); }
+#section-price .pr-seg button:disabled { cursor: default; opacity: .6; }
+#section-price .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#section-price .spacer { flex: 1; }
+#section-price .pr-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 4px 11px; color: var(--text-2); }
+#section-price .pr-chip--warn { color: var(--danger); border-color: #f3ccc8; background: var(--danger-soft); }
+#section-price .banner { border-radius: var(--radius); padding: 11px 14px; font-size: 13px; margin-bottom: 14px; border: 1px solid; }
+#section-price .banner--warn { background: var(--warn-soft); border-color: #f0dcb4; color: #6d4700; }
+#section-price .banner--danger { background: var(--danger-soft); border-color: #f3ccc8; color: #8c241d; }
+#section-price .banner--info { background: var(--accent-soft); border-color: #d5dcff; color: #2340b8; }
+#section-price .pr-empty { text-align: center; color: var(--text-3); padding: 34px 10px; font-size: 13px; }
+/* ---------- 计划列表 ---------- */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+#section-price .pr-tabs button { border: 1px solid var(--border); background: var(--surface); border-radius: 20px; padding: 5px 12px; font: inherit; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+#section-price .pr-tabs button.is-on { background: var(--text); color: #fff; border-color: var(--text); }
+#section-price .plan { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 14px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px 12px 0; margin-bottom: 6px; cursor: pointer; }
+#section-price .plan:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
+#section-price .plan__bar { align-self: stretch; border-radius: 0 4px 4px 0; }
+#section-price .plan__name { font-weight: 500; font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#section-price .plan__meta { font-size: 12.5px; color: var(--text-3); margin-top: 3px; display: flex; gap: 12px; flex-wrap: wrap; }
+#section-price .plan__right { text-align: right; font-size: 12.5px; color: var(--text-2); }
+#section-price .L-flash { background: #e0533d; }
+#section-price .L-brand { background: #c98a12; }
+#section-price .L-sitewide { background: #2f5cff; }
+#section-price .L-perm { background: #6b6b74; }
+#section-price .tag--L-flash { color: #b13a27; background: #fdeeea; border-color: #f5cfc6; }
+#section-price .tag--L-brand { color: #8a5d00; background: #fdf3e0; border-color: #f0dcb4; }
+#section-price .tag--L-sitewide { color: var(--accent); background: var(--accent-soft); border-color: #d5dcff; }
+/* ---------- 时间轴 ---------- */
+.gantt { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; margin-bottom: 14px; overflow-x: auto; }
+#section-price .gantt__grid { display: grid; grid-template-columns: 170px 1fr; min-width: 760px; }
+#section-price .gantt__days { display: grid; grid-template-columns: repeat(14, 1fr); font-size: 11px; color: var(--text-3); border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+#section-price .gantt__days span { text-align: center; }
+#section-price .gantt__days span.is-today { color: var(--accent); font-weight: 600; }
+#section-price .gantt__label { font-size: 12.5px; padding: 6px 8px 6px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+#section-price .gantt__lane { position: relative; height: 30px; border-bottom: 1px dashed var(--border); }
+#section-price .gantt__slot { position: absolute; top: 6px; height: 18px; border-radius: 5px; font-size: 10.5px; color: #fff; padding: 1px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+#section-price .gantt__slot.is-pending { opacity: .45; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.25) 0 5px, transparent 5px 10px); }
+#section-price .gantt__now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); }
+/* ---------- 编辑器 ---------- */
+.edhead { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+#section-price .edhead .inp { max-width: 420px; font-size: 15px; font-weight: 500; }
+#section-price .slots { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+#section-price .slottab { border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 7px 12px; font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; color: var(--text-2); }
+#section-price .slottab b { display: block; color: var(--text); font-weight: 500; font-size: 13px; }
+#section-price .slottab.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+#section-price .slottab.is-locked b::after { content: ' 🔒'; }
+#section-price .addbar { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; }
+#section-price .pr-panel { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+#section-price .rulebar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #f3f5ff; border: 1px solid #dfe5ff; border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; font-size: 13px; }
+#section-price .rulebar .inp, #section-price .rulebar .sel { width: auto; padding: 6px 9px; }
+#section-price .pr-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+#section-price .pr-tbl th { text-align: left; font-weight: 500; color: var(--text-3); font-size: 11.5px; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+#section-price .pr-tbl td { padding: 6px 8px; border-bottom: 1px solid #f0f0f2; vertical-align: middle; }
+#section-price .pr-tbl tr.is-first td { border-top: 1px solid var(--border); }
+#section-price .pr-tbl .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#section-price .pr-tbl .inp { padding: 5px 7px; width: 96px; text-align: right; }
+#section-price .pr-tbl s { color: var(--text-3); }
+#section-price .pimg { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; background: var(--surface-2); border: 1px solid var(--border); flex: none; }
+#section-price .pcell { display: flex; gap: 8px; align-items: center; min-width: 220px; }
+#section-price .pcell__t { font-weight: 500; line-height: 1.3; }
+#section-price .pcell__s { font-size: 11.5px; color: var(--text-3); }
+#section-price .tblwrap { max-height: 560px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+#section-price .w { display: inline-block; font-size: 11px; border-radius: 10px; padding: 0 7px; margin: 1px 2px 1px 0; white-space: nowrap; }
+#section-price .w--error { background: var(--danger-soft); color: var(--danger); }
+#section-price .w--warn { background: var(--warn-soft); color: var(--warn); }
+#section-price .off { color: var(--ok); font-weight: 600; }
+#section-price .up { color: var(--danger); font-weight: 600; }
+#section-price .results { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+#section-price .result { display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+#section-price .footbar { position: sticky; bottom: 0; background: rgba(246,246,248,.94); backdrop-filter: blur(6px); border-top: 1px solid var(--border); padding: 10px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+#section-price .check { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 10px; }
+#section-price .check div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--text-3); }
+#section-price .check b { display: block; font-size: 18px; color: var(--text); font-weight: 600; }
+#section-price .check .is-bad b { color: var(--danger); }
+#section-price .check .is-warn b { color: var(--warn); }
+/* ---------- 受管产品 / 账本 ---------- */
+.hold { background: var(--surface); border: 1px solid #f3ccc8; border-left: 4px solid var(--danger); border-radius: 0 var(--radius) var(--radius) 0; padding: 12px 14px; margin-bottom: 8px; }
+#section-price .hold__t { font-weight: 500; }
+#section-price .hold__p { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); margin: 6px 0 10px; }
+#section-price .hold__p b { color: var(--text); }
+#section-price .pr-kv { display: flex; gap: 10px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #f0f0f2; }
+#section-price .pr-kv span { color: var(--text-3); min-width: 110px; }
+/* ---------- 改价页(并入网站更新中心)---------- */
+#section-price .pr-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+#section-price .pr-head h2 { margin: 0; }
+#section-price .pr-subnav { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+#section-price .pr-subnav button { border: 1px solid var(--border); background: var(--surface); border-radius: 9px; padding: 7px 14px; font: inherit; font-size: 13px; color: var(--text-2); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+#section-price .pr-subnav button.is-on { background: var(--text); color: #fff; border-color: var(--text); }

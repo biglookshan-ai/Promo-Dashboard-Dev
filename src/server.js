@@ -13,6 +13,8 @@ import { getAll as getAnnotations, setOne as setAnnotation } from './annotations
 import { resourcesWithMetafield, metaobjectEntriesWithRefs } from './drilldown.js';
 import { startScheduler } from './scheduler.js';
 import { scheduleRouter } from './schedule-api.js';
+import { priceRouter } from './price/api.js';
+import { startExecutor } from './price/executor.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -48,6 +50,9 @@ app.use(express.static(path.join(ROOT, 'public')));
 // 浏览器和服务器共用的排期规则(只放行这两个纯函数文件)
 for (const f of ['schedule-core.js', 'schedule-actions.js']) {
   app.get(`/lib/${f}`, (req, res) => res.type('text/javascript').sendFile(path.join(ROOT, 'src', f)));
+}
+for (const f of ['price-core.js', 'price-actions.js']) {
+  app.get(`/lib/${f}`, (req, res) => res.type('text/javascript').sendFile(path.join(ROOT, 'src', 'price', f)));
 }
 
 app.get('/api/config', (req, res) =>
@@ -134,6 +139,8 @@ api.post('/reconnect', wrap(async (req) => { clearToken(req.ctx.shop); return { 
 
 // ---- 排期系统(src/schedule-api.js)----
 api.use('/schedule', needMember(), scheduleRouter());
+// 改价:只有能看「改价」页面的人(定价角色 + 管理员)
+api.use('/price', needMember('price'), priceRouter());
 
 app.use('/api', api);
 
@@ -143,3 +150,4 @@ app.get(/^\/(?!api(?:\/|$)).*/, sendIndex);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`promo-manager (embedded) on :${PORT}`));
 startScheduler();
+startExecutor(); // 改价执行器:每分钟把店里价格对齐到「此刻应有的价」
