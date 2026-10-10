@@ -946,3 +946,9 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 .pv-mail img, .pv-post img { width: 100%; display: block; }
 .pv-mail__b, .pv-post__b { padding: 10px 12px; font-size: 13px; }
 .pv-post__ph { aspect-ratio: 1; background: var(--surface-2); }
+
+.hchecks { display: flex; flex-direction: column; gap: 6px; }
+.hcheck { display: flex; gap: 8px; align-items: baseline; font-size: 13px; border-radius: 8px; padding: 7px 10px; border: 1px solid; }
+.hcheck span { flex: 1; }
+.hcheck--warn { background: var(--warn-soft); border-color: #f0dcb4; color: #6d4700; }
+.hcheck--info { background: var(--accent-soft); border-color: #d5dcff; color: #2340b8; }

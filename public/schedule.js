@@ -716,6 +716,76 @@
     const chipInPic = pic.includes('hrow__ico');
     return `<button class="hrow" type="button" data-open="${x.id}">${pic}<span class="hrow__b"><span class="hrow__t">${chipInPic ? '' : kindChip(x.kind) + ' '}${esc(titleOf(x))}</span><span class="hrow__s">${sub}</span></span>${ws ? workBadge(x) : badge(x)}</button>`;
   }
+  // ---- 一致性检查(活动总控台)----
+  // 文案里说的折扣 vs 实际改价、各项时间 vs 活动时间、设计截止 vs Banner 上线、物料发布时间、快开始了还没批准
+  const pctClaims = (text) => {
+    const t = String(text || '');
+    const out = [];
+    for (const m of t.matchAll(/up\s*to\s*(\d{1,2})\s*%/gi)) out.push({ pct: +m[1], upTo: true });
+    for (const m of t.matchAll(/(\d{1,2})\s*%\s*off/gi)) if (!out.some((x) => x.pct === +m[1])) out.push({ pct: +m[1], upTo: false });
+    for (const m of t.matchAll(/(\d)(?:\.\d)?\s*折/g)) out.push({ pct: 100 - +m[1] * 10, upTo: false, zh: true });
+    return out;
+  };
+  const textsOf = (x) => (x.kind === 'banner' ? [x.title, x.subtitle, x.description] : x.kind === 'topbar' ? [x.text]
+    : x.kind === 'pmodule' ? [x.title, x.title2] : x.kind === 'material' ? [x.subject, x.copy] : []).join(' ');
+  const HOUR = 3600000;
+  function consistencyChecks(c, plans) {
+    const out = [];
+    const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
+    const content = [...mine('banner'), ...mine('topbar'), ...mine('pmodule'), ...mine('pin')];
+    const mats = mine('material'), designs = mine('design');
+    // 1. 文案里的折扣
+    const livePlans = (plans || []).filter((p) => ['approved', 'pending'].includes(p.state) && !p.stopped);
+    const maxOff = livePlans.reduce((m, p) => Math.max(m, ...p.slots.flatMap((s) => s.items.filter((i) => i.price != null).map((i) => Math.round((1 - Number(i.price) / Number(i.refPrice)) * 100)))), 0);
+    for (const x of plans === undefined ? [] : [...content, ...mats]) { // undefined = 改价数据还在加载
+      for (const cl of pctClaims(textsOf(x))) {
+        const name = `${KIND[x.kind]}「${titleOf(x)}」`;
+        if (plans == null) { out.push({ level: 'info', id: x.id, text: `${name}写了 ${cl.pct}%${cl.upTo ? '(up to)' : ' off'},你没有改价页权限,没法核对实际折扣` }); continue; }
+        if (!livePlans.length) { out.push({ level: 'warn', id: x.id, text: `${name}写了 ${cl.pct}%${cl.upTo ? '(up to)' : ' off'},但这个活动还没有改价计划` }); continue; }
+        if (maxOff < cl.pct - 1) out.push({ level: 'warn', id: x.id, text: `${name}写${cl.upTo ? ' up to' : ''} ${cl.pct}%,但本活动改价最多只降 ${maxOff}%` });
+        else if (cl.upTo && maxOff > cl.pct + 5) out.push({ level: 'info', id: x.id, text: `${name}写 up to ${cl.pct}%,实际最多降 ${maxOff}%,文案可以写得更吸引人` });
+      }
+    }
+    // 2. 时间对不上
+    const cs = c.start, ce = c.end;
+    for (const x of content) {
+      if (x.start == null && x.end == null) continue; // 跟随活动时间
+      const name = `${KIND[x.kind]}「${titleOf(x)}」`;
+      if (cs != null && x.start != null && x.start < cs - HOUR) out.push({ level: 'warn', id: x.id, text: `${name}比活动早 ${relSpan(cs - x.start)}上线(${fDT(x.start)})` });
+      if (ce != null && (x.end == null || x.end > ce + HOUR)) out.push({ level: 'warn', id: x.id, text: `${name}${x.end == null ? '没设结束时间,活动结束后还会一直显示' : `比活动晚 ${relSpan(x.end - ce)}下线(${fDT(x.end)})`}` });
+    }
+    for (const p of livePlans) {
+      if (p.kind !== 'window') continue;
+      const ps = Math.min(...p.slots.map((s) => s.start)), pe = Math.max(...p.slots.map((s) => s.end));
+      if (cs != null && Math.abs(ps - cs) > HOUR) out.push({ level: 'warn', price: p.id, text: `改价「${p.name}」${ps < cs ? '比活动早' : '比活动晚'} ${relSpan(Math.abs(ps - cs))}开始:${ps < cs ? '价格先降了,网站内容还没上' : '网站内容上了,价格还没降'}` });
+      if (ce != null && Math.abs(pe - ce) > HOUR) out.push({ level: 'warn', price: p.id, text: `改价「${p.name}」${pe > ce ? '比活动晚' : '比活动早'} ${relSpan(Math.abs(pe - ce))}结束` });
+    }
+    // 3. 设计截止 vs Banner 上线
+    for (const d of designs) {
+      const b = d.target && byId(d.target); if (!b || !d.due || d.state === 'approved') continue;
+      const bs = win(b).start;
+      if (bs != null && d.due > bs) out.push({ level: 'warn', id: d.id, text: `设计「${titleOf(d)}」截止(${fDate(d.due)})比要用它的 Banner 上线(${fDT(bs)})还晚` });
+    }
+    // 4. 物料发布时间
+    for (const m of mats) {
+      if (!m.publishAt || m.publishedAt) continue;
+      if (ce != null && m.publishAt > ce) out.push({ level: 'warn', id: m.id, text: `${CHANNEL[m.channel]}「${titleOf(m)}」计划在活动结束后才发(${fDT(m.publishAt)})` });
+      if (cs != null && m.publishAt < cs - 7 * DAY) out.push({ level: 'info', id: m.id, text: `${CHANNEL[m.channel]}「${titleOf(m)}」比活动早一周以上发(${fDT(m.publishAt)}),确认是预热吗` });
+    }
+    // 5. 快开始了还没批准
+    if (cs != null && cs > now() && cs - now() < 2 * DAY) {
+      const notYet = [...content, ...mats].filter((x) => x.state !== 'approved').length + designs.filter((d) => d.state !== 'approved').length + livePlans.filter((p) => p.state !== 'approved').length;
+      if (notYet) out.push({ level: 'warn', text: `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项没批准 / 没完成` });
+    }
+    return out;
+  }
+  const relSpan = (ms) => (ms >= DAY ? `${Math.round(ms / DAY)} 天` : `${Math.max(1, Math.round(ms / HOUR))} 小时`);
+  function checksHtml(c, plans) {
+    const list = consistencyChecks(c, plans);
+    return `<section class="panel hubsec"><div class="panel__h"><h3>一致性检查</h3><span class="muted">文案折扣 vs 实际改价、各项时间 vs 活动时间、设计和物料的时间</span></div>
+      ${list.length ? `<div class="hchecks">${list.map((x) => `<div class="hcheck hcheck--${x.level}">${x.level === 'warn' ? '⚠️' : 'ℹ️'} <span>${esc(x.text)}</span>${x.id ? `<button type="button" class="linkbtn" data-open="${x.id}">去改</button>` : x.price ? `<button type="button" class="linkbtn" data-price="${x.price}">去改</button>` : ''}</div>`).join('')}</div>`
+        : '<p class="muted">✓ 没发现对不上的地方</p>'}</section>`;
+  }
   function hubHtml(c) {
     const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
     const content = [...mine('banner'), ...mine('topbar'), ...mine('tbstyle'), ...mine('pmodule'), ...mine('pin')];
@@ -744,6 +814,7 @@
         <div class="hubprog__bar"><span style="width:${pct}%"></span></div>
         <div class="hubprog__n"><b>${done}</b> / ${total} 项已就绪(${pct}%)${waiting ? ` · <span class="tx-warn">${waiting} 项等审批</span>` : ''}${late ? ` · <span class="tx-danger">${late} 项逾期 / 该发了</span>` : ''}</div>
       </div>
+      ${checksHtml(c, canPrice ? (hubPrice.plans || undefined) : null)}
       ${sec('网站内容', '到点自动上线、结束自动下线', content.map(hubRow).join(''),
         add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页促销模块版本')
           + (MODE === 'live' && S.setup && S.setup.pinReady === false ? '<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">合集置顶清单(要先补建内容类型)</button>' : add('pin', '合集置顶清单')), '还没有内容')}
