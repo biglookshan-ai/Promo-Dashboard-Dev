@@ -5,10 +5,12 @@ import express from 'express';
 import { load, replace } from './schedule-store.js';
 import { withLock } from './sync.js';
 import { knownShops } from './token-store.js';
-import { larkEnabled, authorizeUrl, loginWithCode, issueSession, newLoginState, takeLoginState, finishLoginState, pollLoginState } from './lark-login.js';
+import { larkEnabled, authorizeUrl, loginWithCode, issueSession, newLoginState, takeLoginState, finishLoginState, loginStatus, redeemLoginState } from './lark-login.js';
 import { PAGES, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, MemberError } from './members.js';
 
 const SESSION_KEY = 'cgp-app-session'; // 和 public/auth.js 一致
+const COOKIE = 'cgp_lark_login';
+const cookieOf = (req, name) => (String(req.headers.cookie || '').split(';').map((x) => x.trim().split('=')).find(([k]) => k === name) || [])[1] || '';
 
 function baseUrl(req) {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
@@ -32,7 +34,10 @@ export function publicAuthRouter() {
     if (!larkEnabled()) return res.status(400).send(page('未开启', '<h2>飞书登录还没开启</h2><p>管理员需要先在 Railway 填好飞书应用的 App ID 和 App Secret。</p>'));
     const shop = defaultShop();
     if (!shop) return res.status(400).send(page('请先从后台打开', '<h2>还不能直接打开</h2><p>请先从 Shopify 后台 → 应用里打开一次「网站更新中心」,之后就能直接开网页登录。</p>'));
-    res.redirect(authorizeUrl(redirectUri(req), newLoginState({ shop, fromAdmin: false, mode: 'web' })));
+    const state = newLoginState({ shop, fromAdmin: false, mode: 'web' });
+    const secure = baseUrl(req).startsWith('https') ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `${COOKIE}=${state}; Path=/auth/lark; HttpOnly; SameSite=Lax; Max-Age=600${secure}`);
+    res.redirect(authorizeUrl(redirectUri(req), state));
   });
 
   r.get('/lark/callback', async (req, res) => {
@@ -40,13 +45,16 @@ export function publicAuthRouter() {
     const st = takeLoginState(id);
     if (!st) return res.send(page('登录已过期', '<h2>登录已过期</h2><p>请回到网站更新中心,重新点「用飞书登录」。</p>'));
     if (req.query.error || !req.query.code) return res.send(page('没有登录', '<h2>没有完成授权</h2><p>可以关掉这个窗口,回到网站更新中心重新登录。</p>'));
+    // 网页模式:必须是同一个浏览器发起的登录
+    if (st.mode === 'web' && cookieOf(req, COOKIE) !== id) return res.send(page('登录无效', '<h2>这个登录链接不是从你的浏览器发起的</h2><p>请直接打开网站更新中心,点「用飞书登录」。</p>'));
     try {
       const user = await loginWithCode(String(req.query.code), redirectUri(req));
       const member = await withLock(st.shop, async () => {
         const s = load(st.shop);
         // 只认第一位管理员所在的飞书企业(自建应用本来就只有本企业的人能授权,这里再加一道)
         if (s.larkTenant && user.tenantKey && s.larkTenant !== user.tenantKey) throw new Error('只有本公司飞书里的人能登录');
-        const m = upsertOnLogin(s, user, { fromAdmin: st.fromAdmin });
+        const adminIds = String(process.env.LARK_ADMIN_IDS || '').split(',').map((x) => x.trim()).filter(Boolean);
+        const m = upsertOnLogin(s, user, { fromAdmin: st.fromAdmin, adminIds });
         if (!s.larkTenant && user.tenantKey && isAdmin(m)) s.larkTenant = user.tenantKey;
         replace(st.shop, s);
         return { ...m };
@@ -54,10 +62,15 @@ export function publicAuthRouter() {
       const session = issueSession({ uid: member.id, shop: st.shop });
       const hello = member.status === 'active' ? '' : '<p>你是第一次登录,管理员给你分配角色后就能用了。</p>';
       if (st.mode === 'popup') {
-        finishLoginState(id, { session });
-        return res.send(page('登录成功', `<h2>✅ 已登录:${esc(member.name)}</h2>${hello}<p>这个窗口会自动关闭;没关的话手动关掉即可。</p>`,
-          `try{window.opener&&window.opener.postMessage({type:'cgp-login'},location.origin)}catch(e){}setTimeout(function(){window.close()},1200);`));
+        const code = finishLoginState(id, { session });
+        // 正常情况:弹窗把验证码直接传回发起它的网站更新中心窗口(同一个网址才收得到),用户无感;传不回去就让用户手动输入
+        return res.send(page('飞书验证通过', `<h2>✅ 飞书验证通过:${esc(member.name)}</h2>${hello}
+          <p>回到「网站更新中心」窗口,输入这个验证码完成登录(多数情况下会自动填好):</p>
+          <p style="font-size:28px;letter-spacing:6px;font-weight:600;color:#18181b;margin:10px 0">${code}</p>
+          <p style="color:#c0342b">如果不是你自己刚在网站更新中心点的登录,不要把验证码告诉任何人,直接关掉这个页面。</p>`,
+          `try{if(window.opener){window.opener.postMessage({type:'cgp-login',state:${JSON.stringify(id)},code:${JSON.stringify(code)}},location.origin);setTimeout(function(){window.close()},1500)}}catch(e){}`));
       }
+      res.setHeader('Set-Cookie', `${COOKIE}=; Path=/auth/lark; Max-Age=0`);
       return res.send(page('登录成功', `<h2>✅ 已登录:${esc(member.name)}</h2><p>正在打开网站更新中心…</p>`,
         `localStorage.setItem(${JSON.stringify(SESSION_KEY)},${JSON.stringify(session)});location.replace('/');`));
     } catch (e) {
@@ -84,13 +97,18 @@ export function apiAuthRouter() {
     const state = newLoginState({ shop: req.ctx.shop, fromAdmin: true, mode: 'popup' });
     return { url: authorizeUrl(redirectUri(req), state), state };
   }));
-  r.get('/auth/lark/poll', wrap(async (req) => pollLoginState(String(req.query.state || ''), req.ctx.shop)));
+  r.get('/auth/lark/status', wrap(async (req) => loginStatus(String(req.query.state || ''), req.ctx.shop)));
+  r.post('/auth/lark/redeem', wrap(async (req) => {
+    const out = redeemLoginState(String(req.body?.state || ''), req.ctx.shop, req.body?.code);
+    if (out.error) throw new MemberError(out.error);
+    return out;
+  }));
 
   r.get('/me', wrap(async (req) => {
     const s = load(req.ctx.shop);
     const m = req.ctx.member;
     return { larkEnabled: larkEnabled(), fromAdmin: !!req.ctx.fromAdmin, member: m ? { id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status } : null,
-      admin: isAdmin(m), pages: pagesOf(s, m), roles: rolesOf(s).map((x) => ({ key: x.key, name: x.name })),
+      admin: isAdmin(m), pages: pagesOf(s, m), adminPinned: !!process.env.LARK_ADMIN_IDS, roles: rolesOf(s).map((x) => ({ key: x.key, name: x.name })),
       // 管理员才看:有几个新登录的人等着分配角色
       pendingCount: isAdmin(m) ? (s.members || []).filter((x) => x.status === 'pending').length : 0 };
   }));

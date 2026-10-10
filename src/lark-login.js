@@ -61,20 +61,42 @@ export function verifySession(token, now = Date.now()) {
 }
 
 // ---------- 登录中的 state(一次性,10 分钟内有效)----------
-// mode:'popup'(从 Shopify 后台里打开的弹窗,页面轮询拿结果)/ 'web'(直接开网页,回调后跳回首页)
+// mode:'popup'(从 Shopify 后台里点登录,弹窗完成飞书授权)/ 'web'(直接开网页,整页跳转)
+//
+// 弹窗模式的防冒充:登录结果不会交给「谁发起的就给谁」。飞书授权完成后,弹窗页显示一个 6 位验证码,
+// 必须在发起登录的那个窗口里输入(正常情况由弹窗自动传回去,用户无感)。
+// 这样即使有人把自己发起的登录链接发给别人点,也拿不到对方的身份 —— 他看不到对方屏幕上的验证码。
 const pending = new Map();
+const MAX_TRIES = 5;
 export function newLoginState({ shop, fromAdmin, mode }) {
   const id = crypto.randomBytes(18).toString('base64url');
-  pending.set(id, { shop, fromAdmin: !!fromAdmin, mode, at: Date.now(), result: null });
+  pending.set(id, { shop, fromAdmin: !!fromAdmin, mode, at: Date.now(), result: null, code: null, tries: 0 });
   for (const [k, v] of pending) if (Date.now() - v.at > 10 * 60_000) pending.delete(k);
   return id;
 }
 export const takeLoginState = (id) => pending.get(id) || null;
-export const finishLoginState = (id, result) => { const s = pending.get(id); if (s) s.result = result; };
-export function pollLoginState(id, shop) {
+// 飞书授权完成:记下结果,返回给弹窗页显示的验证码
+export function finishLoginState(id, result) {
+  const s = pending.get(id); if (!s) return null;
+  s.result = result; s.code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  return s.code;
+}
+// 发起窗口查进度(只告诉「完成没有」,不给会话)
+export function loginStatus(id, shop) {
   const s = pending.get(id);
-  if (!s || s.shop !== shop) return { done: false, gone: !s };
-  if (!s.result) return { done: false };
+  if (!s || s.shop !== shop) return { done: false, gone: true };
+  return { done: !!s.result };
+}
+// 发起窗口用验证码换会话;输错 5 次作废
+export function redeemLoginState(id, shop, code) {
+  const s = pending.get(id);
+  if (!s || s.shop !== shop) return { error: '登录已过期,请重新点「用飞书登录」' };
+  if (!s.result) return { error: '还没在飞书完成登录' };
+  if (String(code || '').trim() !== s.code) {
+    s.tries++;
+    if (s.tries >= MAX_TRIES) { pending.delete(id); return { error: '验证码错太多次,请重新登录' }; }
+    return { error: '验证码不对' };
+  }
   pending.delete(id);
-  return { done: true, ...s.result };
+  return { session: s.result.session };
 }

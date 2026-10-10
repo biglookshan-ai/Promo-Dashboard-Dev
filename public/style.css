@@ -789,3 +789,6 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 
 .pendbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--danger-soft); border: 1px solid #f3ccc8; color: #8c241d; border-radius: var(--radius); padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
 .pendbar .btn { margin-left: auto; }
+
+.authgate__code { display: flex; gap: 6px; align-items: center; justify-content: center; margin-top: 10px; flex-wrap: wrap; color: var(--text-2); }
+.authgate__code .inp { width: 110px; text-align: center; letter-spacing: 3px; font-size: 15px; }

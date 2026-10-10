@@ -936,7 +936,10 @@
       <div class="mrow">${me.member?.avatar ? `<img class="avatar-img" src="${esc(me.member.avatar)}" alt=""/>` : ''}<b>${esc(me.member?.name || '')}</b>
         <span class="muted">${(me.member?.roles || []).map(roleName).join('、') || '—'}</span>
         <button class="btn btn-sm btn-ghost" id="st-logout" type="button" style="margin-left:auto">退出登录</button></div>
-      <p class="muted">名字和头像来自飞书。能看哪些页面由管理员分配的角色决定。</p></section>`;
+      <p class="muted">名字和头像来自飞书。能看哪些页面由管理员分配的角色决定。</p>
+      ${me.admin ? `<p class="muted">你的飞书 ID:<code>${esc(me.member?.id || '')}</code>。${me.adminPinned
+        ? '<span class="tag tag--ok">已锁定</span> Railway 里设了管理员名单(LARK_ADMIN_IDS),只有名单里的人能自动成为管理员。'
+        : '建议把它填进 Railway 变量 <code>LARK_ADMIN_IDS</code>(多个用逗号隔开):以后只有名单里的人能成为管理员,就算数据丢失也不会被别人抢先;你被误停用时重新登录也能找回管理员。'}</p>` : ''}</section>`;
     if (!me.admin) return `<div class="stgrid">${mine}</div>`;
     return `<div class="stgrid">${mine}
       <section class="panel"><div class="panel__h"><h3>怎么加同事</h3></div>

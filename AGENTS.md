@@ -60,13 +60,17 @@
 ### 关键
 
 - **规则只有一份**:`src/schedule-core.js`(上下线判断)+ `src/schedule-actions.js`(存草稿 / 提交 / 发布 / 批准 / 退回 / 暂停 / 删除 / 排序,含权限检查)是纯函数,**服务器和浏览器共用**(服务器以 `/lib/*.js` 只放行这两个文件给页面 import)。演示模式在浏览器里跑它,正式模式由服务器跑。**别在 `public/schedule.js` 里再写一套规则。**
-- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(6 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(58 个)。
+- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(6 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(61 个)。
 - **本地测正式数据**:`node scripts/live-harness.mjs --fresh` → http://localhost:4793(`?user=1002` 是第二个人;`--core-only` 模拟只建了核心 4 个类型的老店)。真的 app 服务器 + 假 Shopify(内存,主题文件读本地 worktree,产品数读 `scripts/demo-catalog.json`),`http://localhost:4794/__state` 看写进「店铺」的东西。只靠 `SHOPIFY_GRAPHQL_ORIGIN` 环境变量指过去,线上别设。
 - **建内容类型、从主题导入**都只能由用户在「设置 → 店铺连接」点按钮触发,别在部署 / 启动时自动做。
 - 认人:**v3 起改为飞书登录**(店里多人共用 Shopify 账号);Shopify session token 只证明「从本店后台打开」。第一次登录的人默认「待分配」,管理员分配角色后才能用;第一个管理员 = 第一个从 Shopify 后台里用飞书登录的人。(v2 旧做法:session token 的 `sub` = 员工 id、第一个打开的人是审核人。)
 - **飞书登录(v3 3.1)**:`src/lark-login.js`(授权 / 换 token / 读用户信息 + app 会话签名,签名密钥由 `SHOPIFY_API_SECRET` 派生)、`src/members.js`(成员 / 角色 / 页面权限,纯函数)、`src/auth-routes.js`(登录回调、/api/me、/api/members、/api/roles)、`src/auth-embedded.js` 的 `requireAccess` / `needMember`、页面 `public/auth.js`(登录门)。
   **只在 Railway 填了 `LARK_APP_ID` + `LARK_APP_SECRET` 时开启**;没填就和以前一样只认 Shopify(别把这个回退去掉)。飞书凭证只放环境变量,不进代码、不写日志。
-  后台 iframe 里登录用弹窗 + 轮询(弹窗被拦就给「新窗口打开」链接);直接开网页用整页跳转。本地测:`node scripts/live-harness.mjs --fresh --lark`(假飞书,可选测试管理员 / 员工 / 设计)。
+  后台 iframe 里登录用弹窗(弹窗被拦就给「新窗口打开」链接);直接开网页用整页跳转。
+  **防冒充(别去掉)**:弹窗模式的会话只能用飞书回调页显示的 6 位验证码换(弹窗自动传回,传不回就手输;错 5 次作废、只能用一次)——
+  否则有人把自己发起的登录链接发给管理员点,就能拿到管理员身份。网页模式靠 `/auth/lark/start` 种的 cookie 核对是同一个浏览器。
+  **谁能成为管理员**:设了 `LARK_ADMIN_IDS`(飞书 open_id,逗号分隔)→ 只有名单里的人,且每次登录都保证是启用的管理员;
+  没设 → 只有「第一个从 Shopify 后台里登录的人」一次,之后 `bootstrapDone` 永久关门。停用成员立即生效(每个请求都查成员状态)。本地测:`node scripts/live-harness.mjs --fresh --lark`(假飞书,可选测试管理员 / 员工 / 设计)。
 - 本地看演示界面:`node scripts/demo-preview.mjs`(端口 4790)。
 - 后台跑在 Shopify 后台的 iframe 里:**别用 `prompt()` / `confirm()` / `alert()`**(跨域 iframe 可能被浏览器拦截),用页面内输入框和「再点一次确认」。
 - **计数不用扫全站**:`metafieldsCount` / `metaobjectsCount` 由 API 直接给,总账秒出。只有促销盘点那套才需要扫 3938 个产品(所以它改成切到标签页才懒加载)。

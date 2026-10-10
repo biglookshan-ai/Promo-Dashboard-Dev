@@ -30,17 +30,25 @@ export function pagesOf(state, m) {
 }
 export const canSee = (state, m, page) => pagesOf(state, m).includes(page);
 
-// 登录时登记成员。第一个从 Shopify 后台里登录的人(证明有店铺后台权限)在还没有管理员时成为管理员。
-export function upsertOnLogin(state, user, { fromAdmin, now = Date.now() }) {
+// 登录时登记成员。谁能自动成为管理员:
+//   - Railway 里设了 LARK_ADMIN_IDS(管理员的飞书 ID,逗号分隔)→ 只有这些人,而且他们每次登录都保证是启用的管理员(被锁在外面时也能这样找回);
+//     其他人一律「待分配」,不存在「第一个登录」的空子
+//   - 没设 → 一次性的「第一个从 Shopify 后台里登录的人」成为管理员;一旦有过管理员(bootstrapDone),这扇门永久关上,
+//     之后就算管理员都没了也不会自动再给任何人
+export function upsertOnLogin(state, user, { fromAdmin, adminIds = [], now = Date.now() }) {
   state.members ||= [];
   let m = state.members.find((x) => x.id === user.openId);
-  const hasAdmin = state.members.some(isAdmin);
+  if (state.members.some(isAdmin)) state.bootstrapDone = true;
+  const pinned = adminIds.length > 0;
+  const forceAdmin = pinned && adminIds.includes(user.openId);
+  const bootstrap = !pinned && fromAdmin && !state.bootstrapDone;
   if (!m) {
     m = { id: user.openId, name: user.name || '新成员', avatar: user.avatar || '', roles: [], status: 'pending', joinedAt: now };
-    if (!hasAdmin && fromAdmin) { m.roles = ['admin']; m.status = 'active'; m.bootstrap = true; }
     state.members.push(m);
-  } else if (!hasAdmin && fromAdmin && m.status !== 'disabled') {
+  }
+  if (forceAdmin || (bootstrap && m.status !== 'disabled')) {
     m.roles = [...new Set([...(m.roles || []), 'admin'])]; m.status = 'active';
+    if (bootstrap) { m.bootstrap = true; state.bootstrapDone = true; }
   }
   m.name = user.name || m.name; m.avatar = user.avatar || m.avatar; m.lastSeen = now;
   return m;

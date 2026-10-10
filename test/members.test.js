@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { upsertOnLogin, updateMember, saveRoles, pagesOf, isAdmin, canSee, actorOf } from '../src/members.js';
-import { issueSession, verifySession } from '../src/lark-login.js';
+import { issueSession, verifySession, newLoginState, finishLoginState, redeemLoginState, loginStatus } from '../src/lark-login.js';
 
 const u = (openId, name) => ({ openId, name, avatar: '', tenantKey: 't1' });
 
@@ -70,4 +70,41 @@ test('登录会话:签名对才认,过期 / 篡改都不认', () => {
   assert.equal(verifySession(`${forged}.${sig}`, 2000), null);
   assert.equal(verifySession(`${p}.xx`, 2000), null);
   assert.equal(verifySession('', 2000), null);
+});
+
+test('「第一个登录是管理员」只发生一次:有过管理员后,就算管理员没了也不会再自动给别人', () => {
+  const s = { members: [] };
+  upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: true });
+  assert.equal(s.bootstrapDone, true);
+  s.members = []; // 比如数据被误删、只剩下标记
+  const x = upsertOnLogin(s, u('ou_x', '别人'), { fromAdmin: true });
+  assert.equal(x.status, 'pending');
+});
+
+test('设了管理员名单(LARK_ADMIN_IDS):只有名单里的人是管理员,第一个登录的别人也只是待分配;名单里的人被停用后登录能找回', () => {
+  const s = { members: [] };
+  const first = upsertOnLogin(s, u('ou_x', '抢先的人'), { fromAdmin: true, adminIds: ['ou_boss'] });
+  assert.equal(first.status, 'pending');
+  const boss = upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: false, adminIds: ['ou_boss'] });
+  assert.ok(isAdmin(boss));
+  boss.status = 'disabled';
+  assert.ok(isAdmin(upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: false, adminIds: ['ou_boss'] })));
+});
+
+test('弹窗登录:必须用飞书那边显示的验证码换会话;错 5 次作废;换完一次就失效;别的店拿不到', () => {
+  const id = newLoginState({ shop: 'a.myshopify.com', fromAdmin: true, mode: 'popup' });
+  assert.equal(loginStatus(id, 'a.myshopify.com').done, false);
+  assert.match(redeemLoginState(id, 'a.myshopify.com', '000000').error, /还没/);
+  const code = finishLoginState(id, { session: 'SESSION' });
+  assert.match(code, /^\d{6}$/);
+  assert.equal(loginStatus(id, 'a.myshopify.com').done, true);
+  assert.match(redeemLoginState(id, 'b.myshopify.com', code).error, /过期/);
+  const wrong = code === '123456' ? '654321' : '123456';
+  for (let i = 0; i < 4; i++) assert.match(redeemLoginState(id, 'a.myshopify.com', wrong).error, /不对/);
+  assert.match(redeemLoginState(id, 'a.myshopify.com', wrong).error, /错太多次/);
+  assert.match(redeemLoginState(id, 'a.myshopify.com', code).error, /过期/); // 已作废
+  const id2 = newLoginState({ shop: 'a.myshopify.com', fromAdmin: true, mode: 'popup' });
+  const c2 = finishLoginState(id2, { session: 'S2' });
+  assert.equal(redeemLoginState(id2, 'a.myshopify.com', c2).session, 'S2');
+  assert.match(redeemLoginState(id2, 'a.myshopify.com', c2).error, /过期/); // 只能用一次
 });

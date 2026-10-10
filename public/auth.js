@@ -35,26 +35,50 @@
   }
 
   // 后台(iframe)里:先同步开一个空弹窗(避免被拦截),拿到授权地址再跳过去;然后轮询服务器拿登录结果
-  // 弹窗被浏览器拦了 → 换成一个「在新窗口打开」的链接(用户自己点的链接一般不会被拦),照样轮询
+  // 后台(iframe)里:先同步开一个空弹窗(避免被拦截),拿到授权地址再跳过去。
+  // 飞书授权完,弹窗页显示 6 位验证码并自动传回这里;传不回来(浏览器隔离 / 弹窗被拦改用新窗口)就让用户手动输入。
+  // 弹窗被拦 → 换成「在新窗口打开」的链接(用户自己点的链接一般不会被拦)。
   async function popupLogin(g) {
     const hint = g.querySelector('#lark-hint');
     const w = window.open('', 'cgp-lark-login', 'width=520,height=680');
     hint.textContent = '正在打开飞书登录…';
+    let state;
     try {
       const r = await fetch('/api/auth/lark/start', { method: 'POST', headers: await window.cgpHeaders() });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || '打不开飞书登录');
-      if (w) { w.location.href = j.url; hint.textContent = '请在弹出的窗口里完成飞书登录…'; }
-      else hint.innerHTML = `浏览器拦截了弹窗。<a href="${esc(j.url)}" target="_blank" rel="opener" id="lark-link">点这里在新窗口打开飞书登录</a>,登录完回到这里会自动进入。`;
-      const t0 = Date.now();
-      while (Date.now() - t0 < 5 * 60_000) {
-        await new Promise((res) => setTimeout(res, 1500));
-        const p = await fetch(`/api/auth/lark/poll?state=${encodeURIComponent(j.state)}`, { headers: await window.cgpHeaders() }).then((x) => x.json()).catch(() => ({}));
-        if (p.done && p.session) { localStorage.setItem(KEY, p.session); location.reload(); return; }
-        if (p.gone) break;
-      }
-      hint.textContent = '登录超时了,请再点一次';
-    } catch (e) { try { w && w.close(); } catch (_) { /* 忽略 */ } hint.textContent = e.message; }
+      state = j.state;
+      if (w) w.location.href = j.url;
+      hint.innerHTML = `${w ? '请在弹出的窗口里完成飞书登录。' : `浏览器拦截了弹窗,<a href="${esc(j.url)}" target="_blank" rel="opener">点这里在新窗口打开飞书登录</a>。`}
+        <span class="authgate__code">登录后输入它显示的验证码:<input class="inp" id="lark-code" inputmode="numeric" maxlength="6" placeholder="6 位数字"/><button class="btn btn-sm" id="lark-code-ok" type="button">确认</button></span>`;
+    } catch (e) { try { w && w.close(); } catch (_) { /* 忽略 */ } hint.textContent = e.message; return; }
+
+    let busy = false;
+    const redeem = async (code) => {
+      if (busy) return; busy = true;
+      try {
+        const r = await fetch('/api/auth/lark/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(await window.cgpHeaders()) }, body: JSON.stringify({ state, code }) });
+        const j = await r.json();
+        if (!r.ok || !j.session) throw new Error(j.error || '登录失败');
+        localStorage.setItem(KEY, j.session); location.reload();
+      } catch (e) { const err = g.querySelector('.authgate__err') || hint.insertAdjacentElement('afterend', Object.assign(document.createElement('p'), { className: 'authgate__err' })); err.textContent = e.message; }
+      finally { busy = false; }
+    };
+    g.querySelector('#lark-code-ok').addEventListener('click', () => redeem(g.querySelector('#lark-code').value));
+    g.querySelector('#lark-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') redeem(e.target.value); });
+    // 弹窗自动传回验证码(只认同一个网址发来的、这次登录的)
+    window.addEventListener('message', (e) => {
+      if (e.origin !== location.origin || e.data?.type !== 'cgp-login' || e.data.state !== state) return;
+      g.querySelector('#lark-code').value = e.data.code; redeem(e.data.code);
+    });
+    // 飞书那边完成了就提示输验证码
+    const t0 = Date.now();
+    while (Date.now() - t0 < 10 * 60_000) {
+      await new Promise((res) => setTimeout(res, 2000));
+      const st = await fetch(`/api/auth/lark/status?state=${encodeURIComponent(state)}`, { headers: await window.cgpHeaders() }).then((x) => x.json()).catch(() => ({}));
+      if (st.gone) { hint.textContent = '登录已过期,请重新点「用飞书登录」'; return; }
+      if (st.done) { g.querySelector('#lark-code')?.focus(); return; }
+    }
   }
 
   function showPending(me) {

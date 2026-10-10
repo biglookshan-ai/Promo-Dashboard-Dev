@@ -183,7 +183,7 @@ http.createServer((req, res) => {
 // ---------------- 2. 真的 app 服务器 ----------------
 const app = spawn(process.execPath, ['src/server.js'], {
   cwd: ROOT, stdio: 'inherit',
-  env: { ...process.env, PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}`,
+  env: { ...process.env, PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_SHOP: SHOP, SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}`,
     // 假飞书只在 --lark 时打开(本地测试用的假凭证,和真飞书无关)
     ...(args.has('--lark') ? { LARK_APP_ID: 'harness-lark-app', LARK_APP_SECRET: 'harness-lark-only', LARK_OPEN_ORIGIN: `http://localhost:${P.fake}/lark-open`, LARK_ACCOUNTS_ORIGIN: `http://localhost:${P.fake}/lark-accounts`, APP_URL: `http://localhost:${P.entry}` } : {}) },
 });
