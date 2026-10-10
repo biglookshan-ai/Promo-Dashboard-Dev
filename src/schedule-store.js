@@ -21,6 +21,7 @@ export function emptyState() {
     members: [], // v3 飞书登录的成员(见 src/members.js)
     roles: null, // v3 角色(null = 默认角色)
     larkTenant: null, // 第一位管理员所在的飞书企业
+    testMode: null, // v3:临时关掉飞书登录(只在从 Shopify 后台打开时生效,到点自动失效)
     settings: { larkWebhook: '', larkSecret: '', notify: { ...DEFAULT_NOTIFY } },
     notified: {}, // 已发过的提醒(去重用):{ 'endingSoon:<id>:<日期>': 时间 }
     imported: null, // 从主题导入的时间和数量

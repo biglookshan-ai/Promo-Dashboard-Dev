@@ -993,3 +993,7 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 #section-price .plan__acts .btn { justify-content: center; white-space: nowrap; }
 #section-price .tx-ok { color: var(--ok); }
 @media (max-width: 1100px) { #section-price .pr-grid { grid-template-columns: 1fr; } #section-price .pr-side { position: static; } }
+
+.tmbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--danger); color: #fff; border-radius: var(--radius); padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
+.tmbar .btn { margin-left: auto; }
+.btn-danger-t { color: var(--danger); border-color: #f3ccc8; }

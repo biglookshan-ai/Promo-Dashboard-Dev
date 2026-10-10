@@ -98,6 +98,25 @@
     const active = document.querySelector('#modnav .modnav__item.is-active');
     if (first && (!active || active.hidden)) setTimeout(() => window.showSection && window.showSection(first.dataset.section), 0);
   }
+  // 测试模式开着:顶部一直显示红条,免得忘了关
+  function showTestModeBar(tm) {
+    const nav = document.getElementById('modnav'); if (!nav) return;
+    const bar = document.createElement('div');
+    bar.className = 'tmbar';
+    const left = () => { const m = Math.max(0, Math.round(tm.left / 60000)); return m >= 60 ? `${Math.floor(m / 60)} 小时 ${m % 60} 分` : `${m} 分钟`; };
+    bar.innerHTML = `<b>测试模式开着</b><span>从 Shopify 后台打开的人不用登录飞书、直接是管理员(${esc(tm.byName || '')} 开的)。还有 <b id="tm-left">${left()}</b> 自动关闭。</span><button class="btn btn-sm" type="button">立即关闭</button>`;
+    bar.querySelector('button').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const r = await fetch('/api/test-mode', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(await window.cgpHeaders()) }, body: JSON.stringify({ on: false }) });
+        if (!r.ok) throw new Error((await r.json()).error || '关不掉');
+        location.reload();
+      } catch (err) { e.target.disabled = false; bar.querySelector('span').textContent = err.message; }
+    });
+    nav.parentNode.insertBefore(bar, nav);
+    setInterval(() => { tm.left -= 30000; const el = document.getElementById('tm-left'); if (el) el.textContent = left(); if (tm.left <= 0) location.reload(); }, 30000);
+  }
+
   // 管理员:有新同事登录、等分配角色 → 顶部提示 +「设置」上的红点
   function showPendingNotice(n) {
     const nav = document.getElementById('modnav'); if (!nav) return;
@@ -126,6 +145,7 @@
     if (me.member.status !== 'active') { showPending(me); return never; }
     window.CGP_ME = me;
     applyPages(me.pages);
+    if (me.testMode?.on) showTestModeBar(me.testMode);
     if (me.pendingCount) showPendingNotice(me.pendingCount);
     return me;
   })();

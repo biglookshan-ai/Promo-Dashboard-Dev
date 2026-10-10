@@ -80,7 +80,7 @@ export function requireSession() {
 // 没配飞书(LARK_APP_ID / LARK_APP_SECRET 没填)时完全按旧方式:只认 Shopify session token。
 import { larkEnabled, verifySession } from './lark-login.js';
 import { load as loadSchedule } from './schedule-store.js';
-import { canSee } from './members.js';
+import { canSee, testModeOn, TEST_MEMBER } from './members.js';
 
 export function requireAccess() {
   return async (req, res, next) => {
@@ -106,10 +106,13 @@ export function requireAccess() {
       }
       if (!shop) return res.status(401).json({ error: '请先用飞书登录', needLogin: true });
       req.ctx = { shop, token, user: null, member: null, fromAdmin: !!st };
+      const sdata = loadSchedule(shop);
       if (sess && sess.shop === shop) {
-        const m = (loadSchedule(shop).members || []).find((x) => x.id === sess.uid);
+        const m = (sdata.members || []).find((x) => x.id === sess.uid);
         if (m) { req.ctx.user = m.id; req.ctx.member = m; }
       }
+      // 测试模式:只有**从 Shopify 后台里**打开(有店铺后台凭证)才算,直接开网址的照样要登录
+      if (!req.ctx.member && st && testModeOn(sdata)) { req.ctx.member = { ...TEST_MEMBER }; req.ctx.user = TEST_MEMBER.id; req.ctx.testMode = true; }
       next();
     } catch (e) {
       res.status(401).json({ error: String(e.message || e), needsAuth: true });

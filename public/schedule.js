@@ -1117,6 +1117,11 @@
         <span class="muted">${(me.member?.roles || []).map(roleName).join('、') || '—'}</span>
         <button class="btn btn-sm btn-ghost" id="st-logout" type="button" style="margin-left:auto">退出登录</button></div>
       <p class="muted">名字和头像来自飞书。能看哪些页面由管理员分配的角色决定。</p>
+      ${me.testMode?.on ? `<div class="note note--danger">测试模式开着(${esc(me.testMode.byName || '')} 开的),还有 ${Math.max(1, Math.round(me.testMode.left / 60000))} 分钟自动关。
+        <button class="btn btn-sm" data-tm="off" type="button">立即关闭</button></div>`
+        : me.canStartTestMode ? `<div class="note">想不登录飞书直接试?打开<b>测试模式</b>:从 Shopify 后台打开 app 的人不用登录、直接是管理员(直接开网址的人不受影响,仍要登录)。
+        <div class="rowin" style="margin-top:6px"><select class="sel sel--sm" id="tm-hours">${[0.5, 1, 2, 4, 8].filter((h) => h <= (me.testModeMaxHours || 8)).map((h) => `<option value="${h}" ${h === 2 ? 'selected' : ''}>${h < 1 ? '30 分钟' : h + ' 小时'}</option>`).join('')}</select>
+        <button class="btn btn-sm btn-danger-t" data-tm="on" type="button">打开测试模式</button></div></div>` : ''}
       ${me.admin ? `<p class="muted">你的飞书 ID:<code>${esc(me.member?.id || '')}</code>。${me.adminPinned
         ? '<span class="tag tag--ok">已锁定</span> Railway 里设了管理员名单(LARK_ADMIN_IDS),只有名单里的人能自动成为管理员。'
         : '建议把它填进 Railway 变量 <code>LARK_ADMIN_IDS</code>(多个用逗号隔开):以后只有名单里的人能成为管理员,就算数据丢失也不会被别人抢先;你被误停用时重新登录也能找回管理员。'}</p>` : ''}</section>`;
@@ -1130,6 +1135,15 @@
   }
   async function bindLarkPanels() {
     $('#st-logout')?.addEventListener('click', () => window.cgpLogout());
+    $$('#st-root [data-tm]').forEach((b) => b.addEventListener('click', async () => {
+      const on = b.dataset.tm === 'on';
+      if (on && !b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认打开'; setTimeout(() => { if (b.dataset.sure) { delete b.dataset.sure; b.textContent = '打开测试模式'; } }, 4000); return; }
+      b.disabled = true;
+      try {
+        await api('POST', '/api/test-mode', { on, hours: on ? Number($('#tm-hours').value) : undefined });
+        toast(on ? '测试模式已打开' : '测试模式已关闭'); location.reload();
+      } catch (e) { toast(e.message, false); b.disabled = false; }
+    }));
     if (!window.CGP_ME?.admin) return;
     try { MEM = await api('GET', '/api/members'); } catch (e) { $('#st-members').innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
     drawMembers(); drawRoles();

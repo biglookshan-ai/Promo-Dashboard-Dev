@@ -108,3 +108,34 @@ test('弹窗登录:必须用飞书那边显示的验证码换会话;错 5 次作
   assert.equal(redeemLoginState(id2, 'a.myshopify.com', c2).session, 'S2');
   assert.match(redeemLoginState(id2, 'a.myshopify.com', c2).error, /过期/); // 只能用一次
 });
+
+test('测试模式:只有名单里的人能开;真飞书登录才能开;到点失效;测试身份能关不能开', async () => {
+  const { setTestMode, testModeOn, canStartTestMode, TEST_MEMBER, TEST_MODE_MAX_HOURS } = await import('../src/members.js');
+  const s = { members: [] };
+  const boss = upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: true });
+  const ops = upsertOnLogin(s, u('ou_ops', '运营'), { fromAdmin: false });
+  updateMember(s, boss, 'ou_ops', { roles: ['admin'] }); // 也是管理员,但不在名单里
+  const ids = ['ou_boss'];
+  assert.ok(canStartTestMode(boss, ids));
+  assert.ok(!canStartTestMode(ops, ids), '不在 LARK_ADMIN_IDS 名单里的管理员不能开');
+  assert.ok(!canStartTestMode(TEST_MEMBER, ids), '测试模式里的临时身份不能再开/续');
+  assert.throws(() => setTestMode(s, ops, { on: true, adminIds: ids }), /名单/);
+  setTestMode(s, boss, { on: true, hours: 2, adminIds: ids, now: 1000 });
+  assert.ok(testModeOn(s, 1000));
+  assert.ok(testModeOn(s, 1000 + 1.9 * 3600_000));
+  assert.ok(!testModeOn(s, 1000 + 2.1 * 3600_000), '到点自动失效');
+  // 最长 8 小时
+  setTestMode(s, boss, { on: true, hours: 99, adminIds: ids, now: 0 });
+  assert.equal(s.testMode.hours, TEST_MODE_MAX_HOURS);
+  // 测试身份能关掉(关是安全方向)
+  setTestMode(s, TEST_MEMBER, { on: false });
+  assert.ok(!testModeOn(s));
+  // 没设名单时:任意管理员能开
+  assert.ok(canStartTestMode(ops, []));
+});
+
+test('测试模式:临时身份想延长时的提示要说清原因', async () => {
+  const { setTestMode, TEST_MEMBER } = await import('../src/members.js');
+  const s = { members: [] };
+  assert.throws(() => setTestMode(s, TEST_MEMBER, { on: true, adminIds: [] }), /测试模式下不能再打开或延长/);
+});

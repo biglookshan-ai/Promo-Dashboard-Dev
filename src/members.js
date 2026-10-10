@@ -103,3 +103,33 @@ export function saveRoles(state, actor, roles) {
 
 // 给现有审核流用的身份:管理员 = 审核人,其他 = 编辑(3.2 改成「每项指定审批人」)
 export const actorOf = (m) => ({ id: m.id, name: m.name, role: isAdmin(m) ? 'approver' : 'editor' });
+
+// ---------- 测试模式(临时关掉飞书登录)----------
+// 打开后:**从 Shopify 后台里**打开 app 的人不用登录飞书,直接是管理员。
+// 安全闸(别去掉):
+//   ① 只在带着 Shopify 后台凭证时生效 —— 直接开 app 网址的人照样要登录
+//   ② 只有「指定管理员名单(LARK_ADMIN_IDS)」里的人、而且是真的用飞书登录之后,才能打开
+//   ③ 到点自动失效;测试模式里的人只能关掉,不能延长
+export const TEST_MODE_MAX_HOURS = 8;
+export const testModeOn = (state, now = Date.now()) => !!(state.testMode?.until > now);
+export const testModeLeft = (state, now = Date.now()) => Math.max(0, (state.testMode?.until || 0) - now);
+// 测试模式下的临时身份(不写进成员名单)
+export const TEST_MEMBER = { id: 'test-mode', name: '测试模式(未登录)', avatar: '', roles: ['admin'], status: 'active', testMode: true };
+
+// 谁能「打开」测试模式:设了 LARK_ADMIN_IDS 就只有名单里的人,否则任意管理员;都必须是真的飞书登录
+export function canStartTestMode(member, adminIds = []) {
+  if (!member || member.testMode || member.status !== 'active') return false;
+  return adminIds.length ? adminIds.includes(member.id) : isAdmin(member);
+}
+export function setTestMode(state, actor, { on, hours = 2, adminIds = [], now = Date.now() }) {
+  if (on) {
+    if (actor?.testMode) fail('测试模式下不能再打开或延长测试模式,请先用飞书登录');
+    if (!canStartTestMode(actor, adminIds)) fail(adminIds.length ? '只有管理员名单(LARK_ADMIN_IDS)里的人、用飞书登录后才能打开测试模式' : '只有管理员能打开测试模式');
+    const h = Math.min(Math.max(Number(hours) || 2, 0.5), TEST_MODE_MAX_HOURS);
+    state.testMode = { until: now + h * 3600_000, by: actor.id, byName: actor.name, at: now, hours: h };
+  } else {
+    if (!isAdmin(actor)) fail('只有管理员能关闭测试模式'); // 测试模式里的人也能关(关是安全方向)
+    state.testMode = null;
+  }
+  return state.testMode;
+}
