@@ -117,6 +117,19 @@ export const DEFINITIONS = [
       t('ends_at', '结束(仅记录)', 'date_time'),
     ],
   },
+  {
+    type: 'cgp_collection_pin', name: 'CGP 合集置顶清单', displayNameKey: 'name',
+    description: '网站更新中心:某个合集在一段时间里排在最前面的产品(按顺序);可选只显示清单里的产品。上线中的才生效。由 app 管理,请勿在这里手改。',
+    fields: [
+      t('name', '名称', 'single_line_text_field', { required: true }),
+      t('collection', '合集', 'collection_reference'),
+      t('products', '置顶的产品(按顺序)', 'list.product_reference'),
+      t('only_listed', '只显示清单里的产品', 'boolean'),
+      t('campaign', '所属活动', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
+      t('starts_at', '开始(仅记录)', 'date_time'),
+      t('ends_at', '结束(仅记录)', 'date_time'),
+    ],
+  },
 ];
 
 // ---- 权限 ----
@@ -187,7 +200,7 @@ export async function setPublishStatus(ctx, id, status, gql = graphql) {
 }
 
 // ---- 把 app 里的一条内容写成 Shopify 条目(只写已批准的版本)----
-export const TYPE_OF = { campaign: 'cgp_campaign', banner: 'cgp_banner_slide', topbar: 'cgp_topbar_message', tbstyle: 'cgp_topbar_style', pmodule: 'cgp_product_module' };
+export const TYPE_OF = { campaign: 'cgp_campaign', banner: 'cgp_banner_slide', topbar: 'cgp_topbar_message', tbstyle: 'cgp_topbar_style', pmodule: 'cgp_product_module', pin: 'cgp_collection_pin' };
 export const handleFor = (it) => `cgp-${String(it.id).toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
 export const toGid = (type, id) => (id == null ? null : String(id).startsWith('gid://') ? String(id) : `gid://shopify/${type}/${id}`);
 const iso = (ms) => (ms == null ? '' : new Date(ms).toISOString());
@@ -225,6 +238,11 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       module: it.module === 'feature' ? 'feature' : 'sale', name: str(it.name), title: str(it.title), title2: str(it.title2),
       title_color: hex(it.titleColor), title2_color: hex(it.title2Color), tab_active_bg: hex(it.tabActiveBg), tab_active_text: hex(it.tabActiveText),
       tabs: list(tabGids), priority: str(it.priority ?? 0), is_default: it.isDefault ? 'true' : 'false',
+    });
+  } else if (it.kind === 'pin') {
+    Object.assign(f, {
+      name: str(it.name || it.collection?.title), collection: toGid('Collection', it.collection?.id) || '',
+      products: list((it.products || []).map((p) => toGid('Product', p.id)).filter(Boolean)), only_listed: it.onlyListed ? 'true' : 'false',
     });
   }
   if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });

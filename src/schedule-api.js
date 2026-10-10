@@ -31,7 +31,9 @@ async function setupStatus(ctx) {
   const core = definitions.filter((d) => d.core);
   return { requiredScopes: REQUIRED_SCOPES, missingScopes: missing, definitions,
     ready: !missing.length && core.length > 0 && core.every((d) => d.exists),
-    pmReady: definitions.filter((d) => !d.core).every((d) => d.exists),
+    // 后加的类型各自判断:缺哪个只影响用到它的页面
+    pmReady: definitions.filter((d) => ['cgp_product_tab', 'cgp_product_module'].includes(d.type)).every((d) => d.exists),
+    pinReady: definitions.filter((d) => d.type === 'cgp_collection_pin').every((d) => d.exists),
     upgrade: definitions.filter((d) => !d.core && !d.exists).map((d) => d.type) };
 }
 

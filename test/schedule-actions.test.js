@@ -141,3 +141,42 @@ test('商品模块:删除时把页签条目也删掉;活动批准时挂在下面
   const r2 = applyAction(d, { type: 'approve', id: 'c1' }, approver, T);
   assert.ok(r2.effects.some((e) => e.type === 'sync' && e.id === 'pm1'));
 });
+
+// ---- v3 活动总控台的工作项 ----
+test('合集置顶清单:要选合集和产品;批准后要写 Shopify;跟随活动时间', () => {
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'submit', kind: 'pin', isNew: true, values: { id: 'p1', name: 'x' } }, editor, T), /合集/);
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'submit', kind: 'pin', isNew: true, values: { id: 'p1', collection: { id: 'c1', title: 'Flash' } } }, editor, T), /产品/);
+  const r = applyAction(doc({ campaigns: [{ id: 'c9', kind: 'campaign', state: 'approved', name: 'EBF', start: T, end: T + D }] }),
+    { type: 'save', mode: 'publish', kind: 'pin', isNew: true, values: { id: 'p1', name: 'Flash 第 1 天', collection: { id: 'c1', title: 'Flash' }, products: [{ id: '1' }, { id: '2' }], onlyListed: true, campaign: 'c9' } }, approver, T);
+  assert.equal(r.doc.pins[0].state, 'approved');
+  assert.ok(r.effects.some((e) => e.type === 'sync' && e.id === 'p1'));
+  const r2 = applyAction(r.doc, { type: 'save', mode: 'publish', kind: 'campaign', id: 'c9', values: { name: 'EBF', start: T, end: T + 2 * D } }, approver, T);
+  assert.ok(r2.effects.some((e) => e.type === 'sync' && e.id === 'p1'), '活动改时间,跟随的清单一起更新');
+});
+
+test('设计需求:提交 = 交稿待审批;批准后不写 Shopify;待审批时不能删', () => {
+  let d = doc({ designs: [] });
+  d = applyAction(d, { type: 'save', mode: 'draft', kind: 'design', isNew: true, values: { id: 'd1', name: 'EBF 主 Banner', brief: '黑底金字', target: 'b1', due: T + D } }, editor, T).doc;
+  assert.equal(d.designs[0].state, 'draft');
+  d = applyAction(d, { type: 'save', mode: 'submit', kind: 'design', id: 'd1', values: { deliverables: [{ url: 'https://cdn/x.jpg', name: 'v1' }] } }, editor, T).doc;
+  assert.equal(d.designs[0].state, 'pending');
+  assert.throws(() => applyAction(d, { type: 'delete', id: 'd1' }, editor, T), /等审批/);
+  const r = applyAction(d, { type: 'approve', id: 'd1' }, approver, T);
+  assert.equal(r.doc.designs[0].state, 'approved');
+  assert.ok(r.effects.some((e) => e.type === 'sync'), '会发 sync,但 runEffects 会跳过不写 Shopify 的类型');
+  assert.equal(applyAction(r.doc, { type: 'delete', id: 'd1' }, approver, T).doc.designs.length, 0);
+});
+
+test('宣传物料:要选渠道;批准后负责人标记已发布(带链接),可撤销', () => {
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'submit', kind: 'material', isNew: true, values: { id: 'm1', name: 'EBF 邮件' } }, editor, T), /邮件还是社媒/);
+  let d = applyAction(doc(), { type: 'save', mode: 'submit', kind: 'material', isNew: true, values: { id: 'm1', name: 'EBF 邮件', channel: 'email', subject: 'Early BF is here', publishAt: T + D, owner: 'u2' } }, editor, T).doc;
+  assert.throws(() => applyAction(d, { type: 'markPublished', id: 'm1', url: 'x' }, editor, T), /批准后/);
+  d = applyAction(d, { type: 'approve', id: 'm1' }, approver, T).doc;
+  d = applyAction(d, { type: 'markPublished', id: 'm1', url: 'https://klaviyo/c/1' }, editor, T + D).doc;
+  assert.equal(d.materials[0].publishedUrl, 'https://klaviyo/c/1');
+  assert.equal(d.materials[0].publishedAt, T + D);
+  const other = { id: 'u3', name: '别人', role: 'editor' };
+  assert.throws(() => applyAction(d, { type: 'markPublished', id: 'm1', undo: true }, other, T), /负责人/);
+  d = applyAction(d, { type: 'markPublished', id: 'm1', undo: true }, approver, T).doc;
+  assert.equal(d.materials[0].publishedAt, null);
+});

@@ -3,7 +3,7 @@
 import { load, replace } from './schedule-store.js';
 import { desiredPublishStatus, effectiveWindow, campaignIndex } from './schedule-core.js';
 import { findItem, LIST, titleOf } from './schedule-actions.js';
-import { upsertItem, upsertTab, setPosition, removeEntry } from './metaobjects.js';
+import { upsertItem, upsertTab, setPosition, removeEntry, TYPE_OF } from './metaobjects.js';
 import { createImageFromUrl } from './files.js';
 import { graphql } from './shopify.js';
 import { eventMessages, deliver } from './notifier.js';
@@ -44,13 +44,13 @@ export async function syncItem(ctx, state, it, { gql = graphql, now = Date.now()
   }
 }
 
-const KIND_ORDER = { campaign: 0, tbstyle: 1, banner: 2, topbar: 3, pmodule: 4 };
+const KIND_ORDER = { campaign: 0, tbstyle: 1, banner: 2, topbar: 3, pmodule: 4, pin: 5 };
 
 // 在锁内调用。state 会被修改,调用方负责保存。
 export async function runEffects(ctx, state, effects, { gql = graphql, now = Date.now(), appUrl = '', send } = {}) {
   const errors = [];
   const ids = [...new Set(effects.filter((e) => e.type === 'sync').map((e) => e.id))]
-    .map((id) => findItem(state, id)).filter((it) => it && it.state === 'approved')
+    .map((id) => findItem(state, id)).filter((it) => it && it.state === 'approved' && TYPE_OF[it.kind]) // 设计需求 / 物料只在 app 里
     .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
   const seen = new Set();
   for (const it of ids) {
