@@ -407,6 +407,64 @@
     return { s, e, lines, title: ys === ye ? `${ys} 年 ${ms}–${me2} 月` : `${ys} 年 ${ms} 月 – ${ye} 年 ${me2} 月` };
   }
 
+  // ================= 首页快照 =================
+  // 选一个时间点,按那一刻会生效的内容画出首页:顶栏(含当时的节日样式)、Banner 轮播(按当时的顺序)、两个商品模块。
+  // 时间点来自所有内容的上下线时刻(「变化节点」),可以一个个往后翻,看未来首页长什么样。
+  let snapAt = null; // null = 现在
+  const snapT = () => snapAt ?? now();
+  // 未来 120 天内所有会发生变化的时刻(已批准的内容才算)
+  function changePoints() {
+    const t = now(); const set = new Set();
+    for (const x of all()) {
+      if (x.kind === 'campaign' || x.isDefault || x.state !== 'approved' || x.paused) continue;
+      const w = win(x);
+      for (const at of [w.start, w.end]) if (at != null && at > t && at < t + 120 * DAY) set.add(at);
+    }
+    return [...set].sort((a, b) => a - b);
+  }
+  // 这一刻相对上一刻的变化(哪些上线、哪些下线)
+  function changesAt(at) {
+    const out = [];
+    for (const x of all()) {
+      if (x.kind === 'campaign' || x.isDefault || x.state !== 'approved') continue;
+      const w = win(x);
+      if (w.start === at) out.push({ x, up: true });
+      if (w.end === at) out.push({ x, up: false });
+    }
+    return out;
+  }
+  function snapshotHtml() {
+    const T = snapT();
+    const pts = changePoints();
+    const idx = snapAt == null ? -1 : pts.indexOf(snapAt);
+    const style = activeStyle(T);
+    const msgs = S.topbar.filter((x) => status(x, T) === 'live').sort(byOrder);
+    const bns = S.banners.filter((b) => status(b, T) === 'live').sort(byOrder);
+    const mods = ['sale', 'feature'].map((m) => ({ m, v: activeVersion(m, T) })).filter((x) => x.v);
+    const chg = snapAt == null ? [] : changesAt(snapAt);
+    const future = snapAt != null;
+    const jump = (label, at, on) => `<button class="snapchip ${on ? 'is-on' : ''}" type="button" data-snap="${at == null ? 'now' : at}">${label}</button>`;
+    return `<section class="panel snap">
+      <div class="panel__h"><h3>首页快照</h3><span class="muted">按时间点看首页会长什么样 —— 顶栏、Banner 轮播、两个商品模块,都是那一刻实际会显示的</span></div>
+      <div class="snapbar">
+        <button class="btn btn-sm btn-ghost" data-snapnav="-1" type="button" ${idx <= -1 ? 'disabled' : ''}>${I.left} 上一个变化</button>
+        <b class="snapbar__t">${future ? `${fDT(T)} · ${relDay(T)}` : '现在'}</b>
+        <button class="btn btn-sm btn-ghost" data-snapnav="1" type="button" ${pts.length && idx < pts.length - 1 ? '' : 'disabled'}>下一个变化 ${I.right}</button>
+        <span class="snapbar__pts">${jump('现在', null, snapAt == null)}${pts.slice(0, 8).map((at) => jump(fMD(at) + ' ' + fmt(at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), at, snapAt === at)).join('')}${pts.length > 8 ? `<span class="muted">…另有 ${pts.length - 8} 个变化</span>` : ''}</span>
+      </div>
+      ${chg.length ? `<div class="snapchg">这一刻:${chg.map((c) => `<button class="snapchg__i" type="button" data-open="${c.x.id}" data-pop="${c.x.id}"><span class="snapchg__a snapchg__a--${c.up ? 'up' : 'down'}">${c.up ? '上线' : '下线'}</span>${kindChip(c.x.kind)} ${esc(titleOf(c.x))}</button>`).join('')}</div>` : ''}
+      <div class="snapview">
+        ${msgs.length ? topbarHtml(msgs.map((m) => tbMsg(m, style)).join(''), { style }) : '<div class="snapnone">这一刻顶栏没有公告</div>'}
+        <div class="snapbody">
+          ${bns.length ? `<div class="snaprow">${bns.map((b, i) => `<span class="snapslide" data-open="${b.id}" data-pop="${b.id}" title="第 ${i + 1} 张 · ${esc(titleOf(b))}">${slideHtml(b, { w: 200 })}</span>`).join('')}</div>`
+          : '<div class="snapnone">这一刻首页轮播没有排期 Banner(前台会显示主题里原来的 slide)</div>'}
+          ${mods.map(({ m, v }) => `<div class="snapmod"><div class="snapmod__h">${MODULE_CN[m]}${v.isDefault ? '<span class="tag">平时版本</span>' : `<span class="tag tag--accent">排期版本:${esc(v.name)}</span>`}</div>${moduleHtml(v, { small: true })}</div>`).join('')}
+        </div>
+      </div>
+      <p class="muted">这里画的是 app 排期的部分。顾客实际看到的还有主题里固定的区块(导航、Top Categories 等),那些不归这里管。</p>
+    </section>`;
+  }
+
   function renderOverview() {
     const items = all(); const t = now(); const in7 = t + 7 * DAY;
     const liveN = items.filter((x) => status(x) === 'live' && !x.isDefault).length;
@@ -485,6 +543,7 @@
         ${stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews')}
       </div>
       ${alertsHtml(['banner', 'topbar', 'campaign', 'tbstyle', 'pmodule'])}
+      ${snapshotHtml()}
       <section class="panel">
         <div class="gtbar">
           <div class="gtbar__l">
@@ -524,6 +583,14 @@
     $$('#ov-zoom button').forEach((b) => b.addEventListener('click', () => { ov.zoom = b.dataset.zoom; ov.offset = 0; renderOverview(); }));
     $$('#ov-root [data-nav]').forEach((b) => b.addEventListener('click', () => { ov.offset = +b.dataset.nav ? ov.offset + +b.dataset.nav : 0; renderOverview(); }));
     $$('#ov-root [data-kind]').forEach((b) => b.addEventListener('click', () => { ov.kinds[b.dataset.kind] = !ov.kinds[b.dataset.kind]; renderOverview(); }));
+    // 首页快照:跳到某个时间点 / 前后翻
+    $$('#ov-root [data-snap]').forEach((b) => b.addEventListener('click', () => { snapAt = b.dataset.snap === 'now' ? null : +b.dataset.snap; renderOverview(); }));
+    $$('#ov-root [data-snapnav]').forEach((b) => b.addEventListener('click', () => {
+      const pts = changePoints(); const i = snapAt == null ? -1 : pts.indexOf(snapAt);
+      const j = i + (+b.dataset.snapnav);
+      snapAt = j < 0 ? null : pts[Math.min(j, pts.length - 1)] ?? null;
+      renderOverview();
+    }));
   }
 
   // ================= 排序(Banner 轮播 / 顶栏轮播共用)=================
