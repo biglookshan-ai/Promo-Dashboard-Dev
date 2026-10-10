@@ -1230,7 +1230,7 @@
 
   // ---- 店铺连接(真实接口):权限 / 4 个内容类型 / 定时器 ----
   // 只有在 Shopify 后台里打开才有 session token;本地预览会提示。
-  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本' };
+  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: '合集置顶清单' };
   let connCache = null;
   async function renderConn(force) {
     const box = $('#st-conn'); if (!box) return;
@@ -1240,7 +1240,7 @@
       try {
         st = connCache = await api('GET', '/api/schedule/status');
         // 页面上只留一份连接状态:查到新的就同步给其他页(比如商品模块页的「缺类型」提示)
-        if (S.setup && (S.setup.pmReady !== st.pmReady || S.setup.ready !== st.ready)) { Object.assign(S.setup, { pmReady: st.pmReady, ready: st.ready, upgrade: st.upgrade }); renderPmodules(); }
+        if (S.setup && (S.setup.pmReady !== st.pmReady || S.setup.ready !== st.ready || S.setup.pinReady !== st.pinReady)) { Object.assign(S.setup, { pmReady: st.pmReady, pinReady: st.pinReady, ready: st.ready, upgrade: st.upgrade }); renderPmodules(); if (cpHub) renderCampaigns(); }
       }
       catch (e) {
         box.innerHTML = `${head}<p class="muted">${/后台里打开/.test(e.message) ? '本地预览连不到店铺。在 Shopify 后台里打开这个 app,这里会显示权限、内容类型和定时器的真实状态。' : `读取失败:${esc(e.message)}`}</p>
@@ -1251,7 +1251,8 @@
     }
     const ok = (b) => (b ? '<span class="ok">✓</span>' : '<span class="no">✗</span>');
     const missingDefs = st.definitions.filter((d) => !d.exists);
-    const canSetup = !st.missingScopes.length && missingDefs.length;
+    const missingFields = st.fieldsMissing || [];
+    const canSetup = !st.missingScopes.length && (missingDefs.length || missingFields.length);
     box.innerHTML = `${head}
       <div class="conn__grid">
         <div><div class="conn__k">1. 权限</div>
@@ -1259,9 +1260,9 @@
           ${st.missingScopes.length ? `<div class="note note--warn">还缺 ${st.missingScopes.length} 个权限。在 Partner 后台 → 应用「Promo Dashboard Dev」→ 配置 → 访问权限里加上,发布新版本,再回店铺后台打开这个 app 点同意。
             <button class="btn btn-sm" data-conn="reconnect" type="button">已同意,重新检查</button></div>` : ''}</div>
         <div><div class="conn__k">2. 店里的内容类型</div>
-          ${st.definitions.map((d) => `<div class="conn__r">${ok(d.exists)}<span>${DEF_CN[d.type] || d.type}</span><span class="mono muted">${d.type}</span>${d.exists ? `<span class="muted">${d.entries} 条</span>` : ''}</div>`).join('')}
-          ${missingDefs.length && st.ready ? `<div class="note note--warn">新功能「首页商品模块」要再补建 ${missingDefs.length} 个内容类型。点下面的按钮补上,再点「从主题导入」把两个模块现在的配置导进来当平时版本。已有的内容不受影响。</div>` : ''}
-          ${missingDefs.length ? `<p class="muted">点下面的按钮在店里建好 ${missingDefs.length} 个空的内容类型。<b>前台不会读取它们,顾客看不到任何变化</b>;要等主题改造(阶段 1d)发布后才会用上。可以重复点,已建的会跳过。</p>
+          ${st.definitions.map((d) => `<div class="conn__r">${ok(d.exists && !(d.missingFields || []).length)}<span>${DEF_CN[d.type] || d.type}</span><span class="mono muted">${d.type}</span>${d.exists ? `<span class="muted">${d.entries} 条${(d.missingFields || []).length ? ` · 缺 ${d.missingFields.length} 个新字段` : ''}</span>` : ''}</div>`).join('')}
+          ${(missingDefs.length || missingFields.length) && st.ready ? `<div class="note note--warn">新功能要${missingDefs.length ? `补建 ${missingDefs.length} 个内容类型` : ''}${missingDefs.length && missingFields.length ? '、' : ''}${missingFields.length ? `给已有类型补 ${missingFields.length} 个新字段` : ''}。点下面的按钮补上;已有的内容不受影响。${missingDefs.some((d) => d.type.startsWith('cgp_product')) ? '首页商品模块补好后,再点「从主题导入」把两个模块现在的配置导进来当平时版本。' : ''}</div>` : ''}
+          ${missingDefs.length || missingFields.length ? `<p class="muted">点下面的按钮在店里补齐。<b>前台不会读取它们,顾客看不到任何变化</b>;要等主题改造发布后才会用上。可以重复点,已建的会跳过。</p>
             <button class="btn btn-sm btn-primary" data-conn="setup" type="button" ${canSetup ? '' : 'disabled'}>在店里创建内容类型</button>${st.missingScopes.length ? '<span class="muted"> 先补齐权限</span>' : ''}` : '<p class="muted">都建好了。</p>'}</div>
         <div><div class="conn__k">3. 定时器</div>
           <div class="conn__r">${ok(st.scheduler.running)}<span>${st.scheduler.running ? `运行中 · 每 ${st.scheduler.intervalSec} 秒检查一次` : '没有运行'}</span></div>
@@ -1415,7 +1416,7 @@
         tabs: c && c.collections?.length ? [newTab({ title: 'Top Picks', collection: c.collections[0], onlyDiscounted: true, sortByDiscount: true, countdown: !!c.countdown })] : [newTab()],
         priority: 10, order: (S.pmodules || []).length, start: c ? null : dayStart(7), end: c ? null : dayStart(14) };
     }
-    if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, start: preset.campaign ? null : dayStart(1), end: preset.campaign ? null : dayStart(2) };
+    if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, countdown: false, badge: '', start: preset.campaign ? null : dayStart(1), end: preset.campaign ? null : dayStart(2) };
     if (kind === 'design') return { ...baseIt, id: rid('d-'), name: '', brief: '', spec: '', refs: '', due: dayStart(3), assignee: '', target: preset.target || '', deliverables: [], chosen: '', start: null, end: null };
     if (kind === 'material') return { ...baseIt, id: rid('m-'), name: '', channel: preset.channel || 'email', platform: 'Instagram', subject: '', copy: '', assets: [], publishAt: dayStart(2) + 10 * 3600000, owner: S.me, start: null, end: null };
     return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
@@ -1507,6 +1508,8 @@
       return `${fld('名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}
         <div id="wx-box">${pinBoxHtml()}</div>
         <label class="tgl"><input type="checkbox" name="onlyListed" ${it.onlyListed ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示清单里的产品</b><span class="muted">比如 Flash Sale:合集里放着所有候选产品,每天只显示当天这一组</span></span></label>
+        <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>这些产品的产品页显示倒计时</b><span class="muted">倒数到这份清单结束(Flash 每天那一组用),到期自动消失</span></span></label>
+        ${fld('产品页徽章文字', inp('badge', it.badge, '如:Flash Deal · 今日限时'), '可留空;和倒计时一起显示在产品页')}
         ${timeBlock(it, 'pin')}`;
     }
     if (it.kind === 'design') {
@@ -1788,7 +1791,7 @@
       if (g('priority')) v.priority = +g('priority').value || 0;
     }
     if (base.kind === 'tbstyle') { v.effect = ($('#ed-effect .is-active') || {}).dataset?.effect || 'none'; if (g('priority')) v.priority = +g('priority').value || 0; }
-    if (base.kind === 'pin') { v.collection = wx.collection; v.products = wx.products.map(({ id, handle, title, image }) => ({ id, handle, title, image })); v.onlyListed = !!g('onlyListed')?.checked; }
+    if (base.kind === 'pin') { v.collection = wx.collection; v.products = wx.products.map(({ id, handle, title, image }) => ({ id, handle, title, image })); v.onlyListed = !!g('onlyListed')?.checked; v.countdown = !!g('countdown')?.checked; }
     if (base.kind === 'design' || base.kind === 'material') { v.campaign = g('campaignOf')?.value || null; v.start = null; v.end = null; }
     delete v.campaignOf;
     if (base.kind === 'design') { v.deliverables = [...wx.deliverables]; v.chosen = wx.chosen; v.due = g('due').value ? fromInput(g('due').value + 'T18:00') : null; }

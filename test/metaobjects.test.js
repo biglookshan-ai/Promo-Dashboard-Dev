@@ -71,3 +71,23 @@ test('后加的类型缺了不影响「核心 4 个」;引用的类型没建好�
   assert.ok(st.filter((d) => d.core).every((d) => d.exists));
   assert.deepEqual(st.filter((d) => !d.exists).map((d) => d.type), ['cgp_product_tab', 'cgp_product_module', 'cgp_collection_pin']);
 });
+
+test('已建好的类型后来加了字段:补建时只补缺的字段,不重建', async () => {
+  const pin = DEFINITIONS.find((d) => d.type === 'cgp_collection_pin');
+  const oldKeys = pin.fields.map((f) => f.key).filter((k) => !['show_countdown', 'badge_text'].includes(k));
+  const updates = [];
+  const all = Object.fromEntries(DEFINITIONS.map((d, i) => [d.type, `gid://shopify/MetaobjectDefinition/${i + 1}`]));
+  const gql = async (ctx, query, vars) => {
+    if (query.includes('metaobjectDefinitionByType')) {
+      const keys = vars.type === 'cgp_collection_pin' ? oldKeys : DEFINITIONS.find((d) => d.type === vars.type).fields.map((f) => f.key);
+      return { metaobjectDefinitionByType: { id: all[vars.type], name: vars.type, metaobjectsCount: 0, capabilities: { publishable: { enabled: true } }, fieldDefinitions: keys.map((key) => ({ key })) } };
+    }
+    if (query.includes('metaobjectDefinitionUpdate')) { updates.push(vars); return { metaobjectDefinitionUpdate: { metaobjectDefinition: { id: vars.id }, userErrors: [] } }; }
+    throw new Error('不该建新类型:' + query.slice(0, 60));
+  };
+  const r = await ensureDefinitions({}, gql);
+  assert.deepEqual(r.created, []);
+  assert.deepEqual(r.updated, [{ type: 'cgp_collection_pin', fields: ['show_countdown', 'badge_text'] }]);
+  assert.equal(updates[0].id, all.cgp_collection_pin);
+  assert.deepEqual(updates[0].definition.fieldDefinitions.map((f) => f.create.key), ['show_countdown', 'badge_text']);
+});

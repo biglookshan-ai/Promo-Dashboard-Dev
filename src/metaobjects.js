@@ -125,6 +125,8 @@ export const DEFINITIONS = [
       t('collection', '合集', 'collection_reference'),
       t('products', '置顶的产品(按顺序)', 'list.product_reference'),
       t('only_listed', '只显示清单里的产品', 'boolean'),
+      t('show_countdown', '产品页显示倒计时', 'boolean', { description: '清单里的产品在产品页倒数到这份清单结束(Flash 每天那一组用)' }),
+      t('badge_text', '产品页徽章文字', 'single_line_text_field'),
       t('campaign', '所属活动', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
       t('starts_at', '开始(仅记录)', 'date_time'),
       t('ends_at', '结束(仅记录)', 'date_time'),
@@ -147,34 +149,50 @@ export function missingScopes(granted) {
 export async function definitionStatus(ctx, gql = graphql) {
   const out = [];
   for (const def of DEFINITIONS) {
-    const d = await gql(ctx, `query($type: String!) { metaobjectDefinitionByType(type: $type) { id name metaobjectsCount capabilities { publishable { enabled } } } }`, { type: def.type });
+    const d = await gql(ctx, `query($type: String!) { metaobjectDefinitionByType(type: $type) { id name metaobjectsCount capabilities { publishable { enabled } } fieldDefinitions { key } } }`, { type: def.type });
     const x = d.metaobjectDefinitionByType;
-    out.push({ type: def.type, name: def.name, core: !!def.core, exists: !!x, id: x?.id || null, entries: x?.metaobjectsCount ?? 0, publishable: !!x?.capabilities?.publishable?.enabled });
+    // 后来给这个类型加的字段(店里建得早的话会缺,点「补建」时补上)
+    const have = new Set((x?.fieldDefinitions || []).map((f) => f.key));
+    const missingFields = x && x.fieldDefinitions ? def.fields.filter((f) => !have.has(f.key)).map((f) => f.key) : [];
+    out.push({ type: def.type, name: def.name, core: !!def.core, exists: !!x, id: x?.id || null, entries: x?.metaobjectsCount ?? 0, publishable: !!x?.capabilities?.publishable?.enabled, missingFields });
   }
   return out;
 }
 
+const fieldInput = (f, ids) => ({
+  key: f.key, name: f.name, type: f.type,
+  ...(f.description ? { description: f.description } : {}),
+  ...(f.required ? { required: true } : {}),
+  ...(f.validations ? { validations: f.validations.map((v) => { const m = String(v.value).match(/^__DEF:(\w+)__$/); return { ...v, value: m ? ids[m[1]] : v.value }; }) } : {}),
+});
 function toInput(def, ids) {
   return {
     type: def.type, name: def.name, description: def.description, displayNameKey: def.displayNameKey,
     access: { storefront: 'PUBLIC_READ' },
     capabilities: { publishable: { enabled: def.publishable !== false } },
-    fieldDefinitions: def.fields.map((f) => ({
-      key: f.key, name: f.name, type: f.type,
-      ...(f.description ? { description: f.description } : {}),
-      ...(f.required ? { required: true } : {}),
-      ...(f.validations ? { validations: f.validations.map((v) => { const m = String(v.value).match(/^__DEF:(\w+)__$/); return { ...v, value: m ? ids[m[1]] : v.value }; }) } : {}),
-    })),
+    fieldDefinitions: def.fields.map((f) => fieldInput(f, ids)),
   };
 }
 
 // 只建缺的,已存在的不动(可以重复点,不会重复建)
 export async function ensureDefinitions(ctx, gql = graphql) {
   const status = await definitionStatus(ctx, gql);
-  const created = [], existing = [], errors = [];
+  const created = [], existing = [], errors = [], updated = [];
   const ids = Object.fromEntries(status.filter((x) => x.exists).map((x) => [x.type, x.id]));
   for (const def of DEFINITIONS) {
-    if (ids[def.type]) { existing.push(def.type); continue; }
+    if (ids[def.type]) {
+      existing.push(def.type);
+      const miss = status.find((x) => x.type === def.type)?.missingFields || [];
+      if (miss.length) {
+        const d = await gql(ctx, `mutation($id: ID!, $definition: MetaobjectDefinitionUpdateInput!) {
+          metaobjectDefinitionUpdate(id: $id, definition: $definition) { metaobjectDefinition { id } userErrors { field message code } } }`,
+        { id: ids[def.type], definition: { fieldDefinitions: def.fields.filter((f) => miss.includes(f.key)).map((f) => ({ create: fieldInput(f, ids) })) } });
+        const r = d.metaobjectDefinitionUpdate;
+        if (r?.userErrors?.length) errors.push({ type: def.type, message: '补字段失败:' + r.userErrors.map((e) => e.message).join('; ') });
+        else updated.push({ type: def.type, fields: miss });
+      }
+      continue;
+    }
     const needs = [...new Set(def.fields.flatMap((f) => (f.validations || []).map((v) => String(v.value).match(/^__DEF:(\w+)__$/)?.[1]).filter(Boolean)))];
     const missing = needs.filter((x) => !ids[x]);
     if (missing.length) { errors.push({ type: def.type, message: `要先建好 ${missing.join('、')},先跳过` }); continue; }
@@ -186,7 +204,7 @@ export async function ensureDefinitions(ctx, gql = graphql) {
     created.push(def.type);
     ids[def.type] = r.metaobjectDefinition.id;
   }
-  return { created, existing, errors };
+  return { created, existing, errors, updated };
 }
 
 // ---- 上下线开关 ----
@@ -243,6 +261,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
     Object.assign(f, {
       name: str(it.name || it.collection?.title), collection: toGid('Collection', it.collection?.id) || '',
       products: list((it.products || []).map((p) => toGid('Product', p.id)).filter(Boolean)), only_listed: it.onlyListed ? 'true' : 'false',
+      show_countdown: it.countdown ? 'true' : 'false', badge_text: str(it.badge),
     });
   }
   if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });

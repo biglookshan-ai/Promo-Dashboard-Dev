@@ -34,7 +34,9 @@ async function setupStatus(ctx) {
     // 后加的类型各自判断:缺哪个只影响用到它的页面
     pmReady: definitions.filter((d) => ['cgp_product_tab', 'cgp_product_module'].includes(d.type)).every((d) => d.exists),
     pinReady: definitions.filter((d) => d.type === 'cgp_collection_pin').every((d) => d.exists),
-    upgrade: definitions.filter((d) => !d.core && !d.exists).map((d) => d.type) };
+    upgrade: definitions.filter((d) => !d.core && !d.exists).map((d) => d.type),
+    // 已建好的类型后来加了字段:也算要补建(同一个按钮)
+    fieldsMissing: definitions.flatMap((d) => (d.exists ? (d.missingFields || []).map((k) => `${d.type}.${k}`) : [])) };
 }
 
 async function shopInfo(ctx) {
