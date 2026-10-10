@@ -32,3 +32,7 @@ export function clearToken(shop) {
   delete map[shop];
   save();
 }
+// 已授权过的店铺(直接开网页、没有 Shopify session token 时,用它确定是哪家店;本 app 只服务 cinegearpro 一家)
+export function knownShops() {
+  return Object.keys(load());
+}

@@ -10,6 +10,8 @@ import { uploadImage } from './files.js';
 import { scopeCounts, productCampaigns, tabProducts } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
+import { actorOf } from './members.js';
+import { larkEnabled } from './lark-login.js';
 
 // 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
 const APP_VERSION = { commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local', startedAt: Date.now() };
@@ -42,6 +44,9 @@ async function shopInfo(ctx) {
 
 // 认人:第一个打开的人自动成为审核人;之后新来的默认是编辑,审核人可以在「设置」里改
 function actorFor(state, userId) {
+  // v3 飞书登录:成员就是身份(管理员 = 审核人,其他 = 编辑;3.2 改成每项指定审批人)
+  const member = (state.members || []).find((x) => x.id === userId);
+  if (member) { member.lastSeen = Date.now(); return actorOf(member); }
   const id = userId || 'admin-token';
   let u = state.staff.find((x) => x.id === id);
   if (!u) {
@@ -56,7 +61,10 @@ function actorFor(state, userId) {
 function clientView(state, { me, setup, store, site }) {
   const hook = state.settings.larkWebhook || '';
   return {
-    mode: 'live', me, staff: state.staff, setup, store, site,
+    mode: 'live', me, setup, store, site,
+    // 飞书模式下「成员」代替旧的 Shopify 员工名单(名字 / 角色给页面显示用)
+    staff: larkEnabled() ? (state.members || []).filter((m) => m.status === 'active').map(actorOf) : state.staff,
+    lark: larkEnabled(),
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
     pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
     settings: { notify: state.settings.notify, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },

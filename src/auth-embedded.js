@@ -72,3 +72,59 @@ export function requireSession() {
     }
   };
 }
+
+// ---------------- v3:飞书登录后的访问控制 ----------------
+// 两种进入方式:
+//   ① 在 Shopify 后台里打开:有 Shopify session token(证明是本店后台)+ app 会话(证明是谁)
+//   ② 直接开网页:只有 app 会话;店铺授权用之前在后台里换到并存下的那份
+// 没配飞书(LARK_APP_ID / LARK_APP_SECRET 没填)时完全按旧方式:只认 Shopify session token。
+import { larkEnabled, verifySession } from './lark-login.js';
+import { load as loadSchedule } from './schedule-store.js';
+import { canSee } from './members.js';
+
+export function requireAccess() {
+  return async (req, res, next) => {
+    try {
+      const h = req.headers.authorization || '';
+      const st = h.startsWith('Bearer ') ? h.slice(7) : '';
+      let shop = null, token = null, sub = null;
+      if (st) {
+        const v = verifySessionToken(st);
+        shop = v.shop; sub = v.payload.sub ? String(v.payload.sub) : null;
+        token = process.env.SHOPIFY_ADMIN_TOKEN || await getAccessToken(shop, st);
+      }
+      if (!larkEnabled()) {
+        if (!shop) return res.status(401).json({ error: 'Missing session token', needsAuth: true });
+        req.ctx = { shop, token, user: sub, fromAdmin: true };
+        return next();
+      }
+      const sess = verifySession(req.headers['x-app-session']);
+      if (!shop && sess) {
+        shop = sess.shop;
+        token = process.env.SHOPIFY_ADMIN_TOKEN || getToken(shop);
+        if (!token) return res.status(401).json({ error: '店铺授权失效,请从 Shopify 后台打开一次 app', needsAuth: true });
+      }
+      if (!shop) return res.status(401).json({ error: '请先用飞书登录', needLogin: true });
+      req.ctx = { shop, token, user: null, member: null, fromAdmin: !!st };
+      if (sess && sess.shop === shop) {
+        const m = (loadSchedule(shop).members || []).find((x) => x.id === sess.uid);
+        if (m) { req.ctx.user = m.id; req.ctx.member = m; }
+      }
+      next();
+    } catch (e) {
+      res.status(401).json({ error: String(e.message || e), needsAuth: true });
+    }
+  };
+}
+
+// 飞书模式下:必须是已登录、已启用的成员;可指定页面权限
+export function needMember(page) {
+  return (req, res, next) => {
+    if (!larkEnabled()) return next();
+    const m = req.ctx.member;
+    if (!m) return res.status(401).json({ error: '请先用飞书登录', needLogin: true });
+    if (m.status !== 'active') return res.status(403).json({ error: m.status === 'disabled' ? '你的账号已被管理员停用' : '已登录,等管理员分配角色', pending: true });
+    if (page && !canSee(loadSchedule(req.ctx.shop), m, page)) return res.status(403).json({ error: '你没有这个页面的权限' });
+    next();
+  };
+}

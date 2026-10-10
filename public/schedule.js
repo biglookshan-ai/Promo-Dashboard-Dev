@@ -99,7 +99,7 @@
   }
   // 在后台里打开 → 问服务器;建好内容类型了就用正式数据
   async function detectMode() {
-    if (!(window.shopify && window.shopify.idToken)) return 'demo';
+    if (!(window.shopify && window.shopify.idToken) && !window.CGP_ME) return 'demo'; // 飞书登录后直接开网页也算正式数据
     try {
       const v = await api('GET', '/api/schedule/state');
       liveSetup = v.setup;
@@ -927,17 +927,87 @@
   // ================= 设置 =================
   const ACT = { up: '上线', down: '下线', approve: '批准', reject: '退回', submit: '提交审核', draft: '存草稿', reorder: '调整顺序', pause: '暂停', resume: '恢复', delete: '删除', edit: '修改' };
   const logRow = (l) => `<div class="logrow"><span class="logrow__t">${fDT(l.at)}</span><span class="lact lact--${l.action}">${ACT[l.action] || l.action}</span>${kindChip(l.kind)}<span class="logrow__x">${esc(l.title)}</span><span class="muted">${esc(l.note || '')}${l.by ? ' · ' + esc(l.by) : ''}</span></div>`;
+  // ---- v3 飞书登录:我 / 成员与角色(管理员)/ 角色能看的页面 ----
+  let MEM = null; // { members, roles, pages }(管理员才有)
+  function larkPanelsHtml() {
+    const me = window.CGP_ME || {};
+    const roleName = (k) => (me.roles || []).find((r) => r.key === k)?.name || k;
+    const mine = `<section class="panel"><div class="panel__h"><h3>我</h3><span class="tag tag--ok">飞书登录</span></div>
+      <div class="mrow">${me.member?.avatar ? `<img class="avatar-img" src="${esc(me.member.avatar)}" alt=""/>` : ''}<b>${esc(me.member?.name || '')}</b>
+        <span class="muted">${(me.member?.roles || []).map(roleName).join('、') || '—'}</span>
+        <button class="btn btn-sm btn-ghost" id="st-logout" type="button" style="margin-left:auto">退出登录</button></div>
+      <p class="muted">名字和头像来自飞书。能看哪些页面由管理员分配的角色决定。</p></section>`;
+    if (!me.admin) return `<div class="stgrid">${mine}</div>`;
+    return `<div class="stgrid">${mine}
+      <section class="panel"><div class="panel__h"><h3>怎么加同事</h3></div>
+        <p class="muted">让同事在 Shopify 后台打开这个 app(或直接打开 app 网址)用飞书登录一次,他就会出现在下面「待分配」里;给他勾上角色就能用了。
+        飞书应用的「可用范围」里也要有他,否则飞书不让他授权。</p></section></div>
+      <section class="panel"><div class="panel__h"><h3>成员</h3><span class="muted">管理员能看全部页面、管成员;其他角色只看勾选的页面</span></div><div id="st-members"><p class="muted">加载中…</p></div></section>
+      <section class="panel"><div class="panel__h"><h3>角色能看的页面</h3><span class="muted">设置、工具只有管理员能看</span></div><div id="st-roles"><p class="muted">加载中…</p></div></section>`;
+  }
+  async function bindLarkPanels() {
+    $('#st-logout')?.addEventListener('click', () => window.cgpLogout());
+    if (!window.CGP_ME?.admin) return;
+    try { MEM = await api('GET', '/api/members'); } catch (e) { $('#st-members').innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+    drawMembers(); drawRoles();
+  }
+  const ST_CN = { pending: '待分配', active: '启用', disabled: '停用' };
+  function drawMembers() {
+    const el = $('#st-members'); if (!el || !MEM) return;
+    const list = [...MEM.members].sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0) || (b.lastSeen || 0) - (a.lastSeen || 0));
+    el.innerHTML = `<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>角色</th><th>最近登录</th></tr></thead><tbody>
+      ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : ''}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}</td>
+        <td><select class="sel sel--sm" data-mstatus>${Object.entries(ST_CN).map(([k, v]) => `<option value="${k}" ${m.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td>${MEM.roles.map((r) => `<label class="chk"><input type="checkbox" data-mrole="${esc(r.key)}" ${(m.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
+        <td class="muted">${m.lastSeen ? fAgo(m.lastSeen) : '—'}</td></tr>`).join('')}</tbody></table>
+      ${list.some((m) => m.status === 'pending') ? '<p class="muted">「待分配」的人勾上角色后会自动启用。</p>' : ''}`;
+    $$('#st-members tr[data-mid]').forEach((tr) => {
+      const id = tr.dataset.mid;
+      const save = async (patch) => {
+        try { await api('PUT', `/api/members/${encodeURIComponent(id)}`, patch); toast('已更新'); MEM = await api('GET', '/api/members'); drawMembers(); }
+        catch (e) { toast(e.message, false); drawMembers(); }
+      };
+      tr.querySelector('[data-mstatus]').addEventListener('change', (e) => save({ status: e.target.value }));
+      tr.querySelectorAll('[data-mrole]').forEach((c) => c.addEventListener('change', () => save({ roles: [...tr.querySelectorAll('[data-mrole]:checked')].map((x) => x.dataset.mrole) })));
+    });
+  }
+  function drawRoles() {
+    const el = $('#st-roles'); if (!el || !MEM) return;
+    const pages = Object.entries(MEM.pages).filter(([k]) => !['settings', 'tools'].includes(k));
+    el.innerHTML = `<table class="mtable"><thead><tr><th>角色</th>${pages.map(([, v]) => `<th>${esc(v)}</th>`).join('')}<th></th></tr></thead><tbody>
+      ${MEM.roles.map((r) => `<tr data-rkey="${esc(r.key)}"><td><b>${esc(r.name)}</b></td>
+        ${pages.map(([k]) => `<td><input type="checkbox" data-rpage="${k}" ${r.key === 'admin' ? 'checked disabled' : r.pages.includes(k) ? 'checked' : ''}/></td>`).join('')}
+        <td>${r.key === 'admin' || r.builtin ? '' : `<button class="linkbtn" data-rdel="${esc(r.key)}">删除</button>`}</td></tr>`).join('')}</tbody></table>
+      <div class="rowin" style="margin-top:10px"><input class="inp" id="st-newrole" placeholder="新角色名称,比如:摄影" maxlength="20"/><button class="btn btn-sm" id="st-addrole" type="button">加角色</button>
+        <button class="btn btn-sm btn-primary" id="st-saveroles" type="button">保存角色设置</button></div>`;
+    const collect = () => MEM.roles.map((r) => {
+      const tr = el.querySelector(`tr[data-rkey="${CSS.escape(r.key)}"]`);
+      return { ...r, pages: tr ? [...tr.querySelectorAll('[data-rpage]:checked')].map((x) => x.dataset.rpage) : r.pages };
+    });
+    $('#st-addrole').addEventListener('click', () => {
+      const name = $('#st-newrole').value.trim(); if (!name) return toast('先填角色名称', false);
+      MEM.roles = [...collect(), { key: 'r' + Date.now().toString(36), name, pages: ['overview', 'campaigns'] }]; drawRoles();
+    });
+    el.querySelectorAll('[data-rdel]').forEach((b) => b.addEventListener('click', () => { MEM.roles = collect().filter((r) => r.key !== b.dataset.rdel); drawRoles(); }));
+    $('#st-saveroles').addEventListener('click', async () => {
+      try { const r = await api('PUT', '/api/roles', { roles: collect() }); MEM.roles = r.roles; toast('角色设置已保存;成员下次刷新页面生效'); drawRoles(); drawMembers(); }
+      catch (e) { toast(e.message, false); }
+    });
+  }
+
   function renderSettings() {
     const N = S.settings.notify;
     const live = MODE === 'live';
+    const larkOn = !!window.CGP_ME?.larkEnabled; // 开了飞书登录:成员管理和数据模式无关,一直显示
     const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''} ${live && !isApprover() ? 'disabled' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
     const hookVal = live ? '' : esc(S.settings.larkWebhook || '');
     const hookPh = live && S.settings.larkWebhookSet ? `已设置(结尾 ${esc(S.settings.larkWebhookTail)}),要换就粘贴新地址` : 'https://open.larksuite.com/open-apis/bot/v2/hook/…';
     $('#st-root').innerHTML = `
       ${pageHead('设置', '店铺连接、成员与审核、飞书通知、定时器和操作日志')}
       <section class="panel conn" id="st-conn"><div class="panel__h"><h3>店铺连接(正式数据)</h3></div><p class="muted">检查中…</p></section>
+      ${larkOn ? larkPanelsHtml() : ''}
       <div class="stgrid">
-        <section class="panel">
+        ${larkOn ? '' : `<section class="panel">
           ${live ? `<div class="panel__h"><h3>我</h3><span class="tag ${isApprover() ? 'tag--ok' : ''}">${isApprover() ? '审核人' : '编辑'}</span></div>
             <p class="muted">系统按登录 Shopify 后台的员工账号认人。第一个打开的人自动成为审核人。起个名字,飞书通知和日志里会显示。</p>
             <div class="rowin"><input class="inp" id="st-myname" value="${esc(me().name)}" maxlength="30"/><button class="btn btn-sm" id="st-myname-save" type="button">保存</button></div>`
@@ -951,7 +1021,7 @@
           ${S.staff.map((u) => `<div class="mrow"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span><b>${esc(u.name)}${u.id === S.me ? ' <span class="muted">(我)</span>' : ''}</b>
             ${live && u.lastSeen ? `<span class="muted">${fAgo(u.lastSeen)}来过</span>` : ''}
             <select class="sel sel--sm" data-role="${u.id}" ${live && !isApprover() ? 'disabled' : ''}><option value="approver" ${u.role === 'approver' ? 'selected' : ''}>审核人</option><option value="editor" ${u.role === 'editor' ? 'selected' : ''}>编辑</option></select></div>`).join('')}
-        </section>
+        </section>`}
         <section class="panel">
           <div class="panel__h"><h3>飞书通知</h3>${live ? (S.settings.larkWebhookSet ? '<span class="tag tag--ok">已连接</span>' : '<span class="tag tag--warn">未设置</span>') : ''}</div>
           <p class="muted">在飞书群里:设置 → 群机器人 → 添加机器人 → 自定义机器人,复制它的 webhook 地址粘贴到这里。建议同时开「签名校验」,把密钥也填上。</p>
@@ -989,8 +1059,9 @@
       try { const v = await api('POST', path, body); if (v.banners) { S = await normalizeLive(v); renderAll(); } if (okMsg) toast(okMsg); return v; }
       catch (e) { toast(e.message, false); return null; }
     };
+    if (larkOn) bindLarkPanels();
     if (live) {
-      $('#st-myname-save').addEventListener('click', () => post('/api/schedule/staff', { id: S.me, name: $('#st-myname').value }, '名字已保存'));
+      $('#st-myname-save')?.addEventListener('click', () => post('/api/schedule/staff', { id: S.me, name: $('#st-myname').value }, '名字已保存'));
       $$('[data-role]').forEach((el) => el.addEventListener('change', () => post('/api/schedule/staff', { id: el.dataset.role, role: el.value }, '角色已更新')));
       $$('[data-notify]').forEach((c) => c.addEventListener('change', () => post('/api/schedule/settings', { notify: { [c.dataset.notify]: c.checked } })));
       $('#st-hook-save')?.addEventListener('click', () => {
@@ -1001,7 +1072,7 @@
       });
       $('#st-test').addEventListener('click', () => post('/api/schedule/lark-test', {}, '测试消息已发到飞书群'));
     } else {
-      $('#st-me').addEventListener('change', (e) => { S.me = e.target.value; ord.banner = null; ord.topbar = null; save(); renderAll(); toast(`现在的身份:${me().name} · ${isApprover() ? '审核人' : '编辑'}`); });
+      $('#st-me')?.addEventListener('change', (e) => { S.me = e.target.value; ord.banner = null; ord.topbar = null; save(); renderAll(); toast(`现在的身份:${me().name} · ${isApprover() ? '审核人' : '编辑'}`); });
       $$('[data-role]').forEach((el) => el.addEventListener('change', () => { S.staff.find((u) => u.id === el.dataset.role).role = el.value; save(); renderAll(); }));
       $$('[data-notify]').forEach((c) => c.addEventListener('change', () => { N[c.dataset.notify] = c.checked; save(); }));
       $('#st-hook').addEventListener('change', (e) => { S.settings.larkWebhook = e.target.value.trim(); save(); toast('已保存 Webhook 地址(演示)'); });
@@ -1644,7 +1715,10 @@
     applySiteStyle(); hidePop();
     renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderCampaigns(); renderReviews(); renderSettings();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
-    $('#me-chip').innerHTML = `<button class="mechip" type="button" title="切换身份(演示)"><span class="avatar">${esc(me().name.slice(0, 1).toUpperCase())}</span>${esc(me().name)}<span class="muted">· ${isApprover() ? '审核人' : '编辑'}</span></button>`;
+    const L = window.CGP_ME; // 飞书登录了就显示登录的人和他的角色
+    $('#me-chip').innerHTML = L?.larkEnabled
+      ? `<button class="mechip" type="button" title="我的账号">${L.member.avatar ? `<img class="avatar-img" src="${esc(L.member.avatar)}" alt=""/>` : `<span class="avatar">${esc(L.member.name.slice(0, 1).toUpperCase())}</span>`}${esc(L.member.name)}<span class="muted">· ${esc(L.member.roles.map((k) => L.roles.find((r) => r.key === k)?.name || k).join('、'))}</span></button>`
+      : `<button class="mechip" type="button" title="切换身份(演示)"><span class="avatar">${esc(me().name.slice(0, 1).toUpperCase())}</span>${esc(me().name)}<span class="muted">· ${isApprover() ? '审核人' : '编辑'}</span></button>`;
   }
 
   // 事件委托:任何地方的 data-open / data-new / data-go / 审核按钮
@@ -1704,6 +1778,7 @@
   (async () => {
     try {
       [core, A] = await Promise.all([import('./lib/schedule-core.js'), import('./lib/schedule-actions.js')]);
+      await window.CGP_AUTH; // 飞书登录门(没开飞书 / 演示预览时直接放行)
       MODE = await detectMode();
       if (MODE === 'demo') await load();
       renderModeBar(); renderAll();

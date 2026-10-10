@@ -17,18 +17,13 @@ const fieldsDl = (fields) => (fields && fields.length)
   ? `<dl class="fields">${fields.map((f) => `<div class="field"><dt>${esc(f.name)}</dt><dd>${nl2br(f.value)}</dd></div>`).join('')}</dl>`
   : '<p class="muted fields">（无内容）</p>';
 
-async function sessionToken() {
-  if (!window.shopify || !window.shopify.idToken) throw new Error('请在 Shopify 后台里打开此 app(嵌入式)');
-  return await window.shopify.idToken();
-}
+// 请求头由 auth.js 统一给:后台里有 Shopify session token,飞书登录后还有 app 会话
 async function api(method, path, body) {
-  const t = await sessionToken();
-  const res = await fetch(path, {
-    method,
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const headers = { 'Content-Type': 'application/json', ...(await window.cgpHeaders()) };
+  if (!headers.Authorization && !headers['X-App-Session']) throw new Error('请在 Shopify 后台里打开此 app,或先用飞书登录');
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const json = await res.json().catch(() => ({}));
+  if (res.status === 401 && json.needLogin) { localStorage.removeItem('cgp-app-session'); location.reload(); }
   if (!res.ok) throw new Error(json.error || res.statusText);
   return json;
 }

@@ -2,7 +2,8 @@ import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { requireSession } from './auth-embedded.js';
+import { requireAccess, needMember } from './auth-embedded.js';
+import { publicAuthRouter, apiAuthRouter, authConfig } from './auth-routes.js';
 import { clearToken } from './token-store.js';
 import { runInventory } from './inventory.js';
 import { getCached, setCached } from './inventory-cache.js';
@@ -53,9 +54,16 @@ app.get('/api/config', (req, res) =>
   res.json({ apiKey: API_KEY, version: process.env.SHOPIFY_API_VERSION || '2026-04' })
 );
 
-// Everything below requires a valid App Bridge session token.
+// 飞书登录(v3):公开的跳转 / 回调页,和「飞书登录开没开」
+app.use('/auth', publicAuthRouter());
+app.get('/api/auth/config', authConfig);
+
+// 下面都要认人:Shopify session token(后台里打开)和 / 或 app 会话(飞书登录)。没配飞书时和以前一样只认 Shopify。
 const api = express.Router();
-api.use(requireSession());
+api.use(requireAccess());
+api.use(apiAuthRouter()); // /auth/lark/start、/auth/lark/poll、/me、/members、/roles
+// 工具(元数据总账 / 促销盘点)只给能看「工具」的人(管理员)
+api.use(['/inventory', '/registry', '/drill', '/annotations'], needMember('tools'));
 const wrap = (fn) => async (req, res) => {
   try { res.json(await fn(req)); }
   catch (e) { console.error(e); res.status(500).json({ error: String(e.message || e) }); }
@@ -125,7 +133,7 @@ api.put('/annotations', wrap(async (req) => {
 api.post('/reconnect', wrap(async (req) => { clearToken(req.ctx.shop); return { ok: true }; }));
 
 // ---- 排期系统(src/schedule-api.js)----
-api.use('/schedule', scheduleRouter());
+api.use('/schedule', needMember(), scheduleRouter());
 
 app.use('/api', api);
 

@@ -13,8 +13,11 @@ const fmt = (ms, o) => new Intl.DateTimeFormat('zh-CN', { timeZone: TZ, ...o }).
 const fDT = (ms) => fmt(ms, { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 export const londonDate = (ms) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(ms)); // YYYY-MM-DD
 export const londonHour = (ms) => Number(new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date(ms)));
-const who = (state, id) => state.staff.find((u) => u.id === id)?.name || '同事';
-const approvers = (state) => state.staff.filter((u) => u.role === 'approver').map((u) => u.name).join('、') || '审核人';
+const who = (state, id) => (state.members || []).find((u) => u.id === id)?.name || state.staff.find((u) => u.id === id)?.name || '同事';
+// 飞书模式:审核人 = 启用中的管理员;否则用旧的 Shopify 员工名单
+const approvers = (state) => ((state.members || []).some((m) => m.status === 'active')
+  ? state.members.filter((m) => m.status === 'active' && (m.roles || []).includes('admin')).map((m) => m.name)
+  : state.staff.filter((u) => u.role === 'approver').map((u) => u.name)).join('、') || '审核人';
 const line = (it) => `**${KIND_CN[it.kind]}** · ${titleOf(it)}`;
 
 // 要发的消息(纯函数,返回 [{ key?, card }]);真正发送在 deliver()

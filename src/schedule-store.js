@@ -16,7 +16,10 @@ export function emptyState() {
     banners: [], topbar: [], tbstyles: [], campaigns: [], pmodules: [],
     pendingOrder: null,
     log: [],
-    staff: [], // [{ id: Shopify 员工 id, name, role: 'approver' | 'editor', lastSeen }]
+    staff: [], // v2 旧名单:[{ id: Shopify 员工 id, name, role: 'approver' | 'editor', lastSeen }]
+    members: [], // v3 飞书登录的成员(见 src/members.js)
+    roles: null, // v3 角色(null = 默认角色)
+    larkTenant: null, // 第一位管理员所在的飞书企业
     settings: { larkWebhook: '', larkSecret: '', notify: { ...DEFAULT_NOTIFY } },
     notified: {}, // 已发过的提醒(去重用):{ 'endingSoon:<id>:<日期>': 时间 }
     imported: null, // 从主题导入的时间和数量
@@ -29,7 +32,7 @@ export function load(shop) {
   try {
     const s = JSON.parse(fs.readFileSync(fileOf(shop), 'utf8'));
     return {
-      ...base, ...s, pmodules: s.pmodules || [],
+      ...base, ...s, pmodules: s.pmodules || [], members: s.members || [],
       settings: { ...base.settings, ...s.settings, notify: { ...DEFAULT_NOTIFY, ...s.settings?.notify } },
       scheduler: { ...base.scheduler, ...s.scheduler },
     };

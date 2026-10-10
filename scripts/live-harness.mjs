@@ -8,7 +8,8 @@
 //      产品数用 scripts/demo-catalog.json(前台公开数据)。GET /__state 可以看写进「店铺」的东西。
 //   2. 真的 app 服务器(4795):node src/server.js,用 SHOPIFY_GRAPHQL_ORIGIN 指到假 Shopify,数据放临时目录。
 //   3. 入口代理(4793):把页面里的 App Bridge 换成一个假的 window.shopify(签好的 session token + 简易选择器)。
-// 启动参数:--no-scopes 模拟「还没加权限」;--fresh 每次清空数据;--core-only 模拟只建过第一期 4 个类型的老店铺。
+// 启动参数:--no-scopes 模拟「还没加权限」;--fresh 每次清空数据;--core-only 模拟只建过第一期 4 个类型的老店铺;
+//          --lark 打开飞书登录(假飞书,登录页可选「测试管理员 / 测试员工 / 测试设计」三个身份)。
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -36,6 +37,29 @@ if (args.has('--core-only')) {
   for (const type of ['cgp_campaign', 'cgp_banner_slide', 'cgp_topbar_message', 'cgp_topbar_style']) store.defs[type] = { id: `gid://shopify/MetaobjectDefinition/${store.n++}`, type, name: type };
 }
 const nid = (type) => `gid://shopify/${type}/${store.n++}`;
+
+// 假飞书(--lark):授权页列出几个测试身份,点哪个就以谁登录;换 token / 读用户信息都在本地
+const FAKE_USERS = { ou_admin: '测试管理员', ou_staff: '测试员工', ou_design: '测试设计' };
+function fakeLark(req, res, body) {
+  const u = new URL(req.url, 'http://x');
+  const json = (o) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+  if (u.pathname === '/lark-accounts/open-apis/authen/v1/authorize') {
+    const back = (id) => `${u.searchParams.get('redirect_uri')}?code=${id}&state=${encodeURIComponent(u.searchParams.get('state'))}`;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end(`<!doctype html><meta charset="utf-8"><title>假飞书登录</title><body style="font-family:sans-serif;padding:30px"><h3>假飞书登录(本地测试)</h3>
+      ${Object.entries(FAKE_USERS).map(([id, n]) => `<p><a id="${id}" href="${back(id)}">以「${n}」登录</a></p>`).join('')}
+      <p><a href="${u.searchParams.get('redirect_uri')}?error=access_denied&state=${encodeURIComponent(u.searchParams.get('state'))}">取消</a></p></body>`);
+  }
+  if (u.pathname === '/lark-open/open-apis/authen/v2/oauth/token') {
+    const b = JSON.parse(body || '{}');
+    return FAKE_USERS[b.code] ? json({ code: 0, access_token: `tok:${b.code}`, expires_in: 7200 }) : json({ code: 20003, msg: 'invalid code' });
+  }
+  if (u.pathname === '/lark-open/open-apis/authen/v1/user_info') {
+    const id = String(req.headers.authorization || '').replace('Bearer tok:', '');
+    return json({ code: 0, data: { open_id: id, union_id: `on_${id}`, name: FAKE_USERS[id], avatar_url: '', tenant_key: 'tenant-test' } });
+  }
+  res.writeHead(404); res.end();
+}
 // 前台目录里没有价格,按 id 编一个稳定的价格 / 折扣,只给预览用
 const fakeProduct = (p) => {
   const price = 100 + (p.id % 900), off = p.id % 3 === 0 ? 0 : 10 + (p.id % 30);
@@ -139,12 +163,15 @@ http.createServer((req, res) => {
   let body = [];
   req.on('data', (c) => body.push(c));
   req.on('end', () => {
+    if (req.url.startsWith('/lark-')) return fakeLark(req, res, Buffer.concat(body).toString());
     if (req.url === '/__state') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ defs: Object.keys(store.defs), objects: Object.values(store.objects) }, null, 1)); }
     if (req.url === '/__upload') { res.writeHead(201); return res.end(); }
+    if (req.method !== 'POST' || !req.url.includes('/graphql.json')) { res.writeHead(404); return res.end(); } // 比如浏览器顺带要的 favicon
     try {
       const { query, variables } = JSON.parse(Buffer.concat(body).toString() || '{}');
+      const data = gql(query, variables || {});
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ data: gql(query, variables || {}) }));
+      res.end(JSON.stringify({ data }));
     } catch (e) {
       console.error('[假 Shopify]', e.message);
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -156,7 +183,9 @@ http.createServer((req, res) => {
 // ---------------- 2. 真的 app 服务器 ----------------
 const app = spawn(process.execPath, ['src/server.js'], {
   cwd: ROOT, stdio: 'inherit',
-  env: { ...process.env, PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}` },
+  env: { ...process.env, PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}`,
+    // 假飞书只在 --lark 时打开(本地测试用的假凭证,和真飞书无关)
+    ...(args.has('--lark') ? { LARK_APP_ID: 'harness-lark-app', LARK_APP_SECRET: 'harness-lark-only', LARK_OPEN_ORIGIN: `http://localhost:${P.fake}/lark-open`, LARK_ACCOUNTS_ORIGIN: `http://localhost:${P.fake}/lark-accounts`, APP_URL: `http://localhost:${P.entry}` } : {}) },
 });
 process.on('exit', () => app.kill());
 process.on('SIGINT', () => process.exit());
