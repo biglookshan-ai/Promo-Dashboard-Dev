@@ -64,6 +64,7 @@ export function validate(it) {
     if (!(it.products || []).length) return '至少放一个要排在前面的产品';
   }
   if (it.kind === 'design' && !String(it.name || '').trim()) return '请填写设计需求的标题';
+  if (it.kind === 'design' && !(it.deliverables || []).length) return '还没上传设计稿;先存需求,交稿时再提交审核';
   if (it.kind === 'material') {
     if (!String(it.name || '').trim()) return '请填写物料标题';
     if (!CHANNEL_CN[it.channel]) return '请选择是邮件还是社媒帖子';
@@ -134,6 +135,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
         message = '已提交审核';
       } else if (mode === 'publish') {
         if (!isApprover(actor)) fail('只有审核人能直接发布,请提交审核');
+        if (kind === 'design' && !approved) fail('设计需求要先交稿、提交审核,批准后才算完成');
         const wasNew = !approved;
         Object.assign(it, v, { state: 'approved', pendingChange: null, rejectNote: null, lastReject: null });
         if (isNew) list.push(it);

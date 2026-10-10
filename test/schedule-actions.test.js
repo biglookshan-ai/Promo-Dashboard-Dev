@@ -167,6 +167,12 @@ test('设计需求:提交 = 交稿待审批;批准后不写 Shopify;待审批时
   assert.equal(applyAction(r.doc, { type: 'delete', id: 'd1' }, approver, T).doc.designs.length, 0);
 });
 
+test('设计需求:没交稿不能提交;审核人也不能直接「发布」成完成', () => {
+  const d = applyAction(doc(), { type: 'save', mode: 'draft', kind: 'design', isNew: true, values: { id: 'd1', name: '主 Banner' } }, approver, T).doc;
+  assert.throws(() => applyAction(d, { type: 'save', mode: 'submit', kind: 'design', id: 'd1', values: {} }, editor, T), /设计稿/);
+  assert.throws(() => applyAction(d, { type: 'save', mode: 'publish', kind: 'design', id: 'd1', values: { deliverables: [{ url: 'x' }] } }, approver, T), /交稿/);
+});
+
 test('宣传物料:要选渠道;批准后负责人标记已发布(带链接),可撤销', () => {
   assert.throws(() => applyAction(doc(), { type: 'save', mode: 'submit', kind: 'material', isNew: true, values: { id: 'm1', name: 'EBF 邮件' } }, editor, T), /邮件还是社媒/);
   let d = applyAction(doc(), { type: 'save', mode: 'submit', kind: 'material', isNew: true, values: { id: 'm1', name: 'EBF 邮件', channel: 'email', subject: 'Early BF is here', publishAt: T + D, owner: 'u2' } }, editor, T).doc;

@@ -720,6 +720,9 @@ async function start() {
   try { await load(); render(); }
   catch (e) { booted = false; $('#pr-root').innerHTML = `<div class="banner banner--danger">${esc(e.message)}</div>`; }
 }
+// 活动总控台里点改价计划 / 「+ 改价计划」时用
+window.cgpPriceOpen = async (id) => { await start(); const p = planById(id); if (p) { openEditor(p, false); loadCampaigns(); } };
+window.cgpPriceNew = async (campaign) => { await start(); const p = newPlan('window', false); p.campaign = campaign; p.name = campaign.name; openEditor(p, true); loadCampaigns(); };
 const show0 = window.showSection;
 window.showSection = (name) => { show0(name); if (name === 'price') start(); };
 await window.CGP_AUTH;

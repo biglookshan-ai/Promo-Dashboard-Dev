@@ -74,6 +74,7 @@
       tbstyles: seed.tbstyles.map((t) => conv(t, 'tbstyle')),
       pmodules: (seed.pmodules || []).map((m) => conv(m, 'pmodule')),
       campaigns: seed.campaigns.map((c) => conv(c, 'campaign')),
+      pins: [], designs: [], materials: [],
       log: seed.log.map((l) => ({ ...l, at: now() + l.at * DAY })),
       pendingOrder: null,
     };
@@ -88,12 +89,12 @@
       Object.assign(tagCounts, c.counts?.tags || {});
       Object.entries(c.counts?.collections || {}).forEach(([gid, x]) => { liveColCounts[gid] = x.count; });
     });
-    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [] };
+    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], designs: v.designs || [], materials: v.materials || [] };
   }
   async function load(force) {
     if (MODE === 'live') { S = await normalizeLive(await api('GET', '/api/schedule/state')); return; }
     const raw = !force && localStorage.getItem(DEMO_KEY);
-    if (raw) { S = JSON.parse(raw); return; }
+    if (raw) { S = JSON.parse(raw); S.pins ||= []; S.designs ||= []; S.materials ||= []; return; }
     S = materialize(await getSeed());
     save();
   }
@@ -113,7 +114,7 @@
     try {
       if (MODE === 'demo') {
         const r = A.applyAction(S, action, me(), now());
-        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k]; });
+        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pins', 'designs', 'materials', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k] ?? S[k]; });
         save(); renderAll();
         return r;
       }
@@ -128,14 +129,14 @@
     }
   }
 
-  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || [])];
-  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []) }[k]);
+  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || []), ...(S.pins || []), ...(S.designs || []), ...(S.materials || [])];
+  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []), pin: (S.pins ||= []), design: (S.designs ||= []), material: (S.materials ||= []) }[k]);
   const byId = (id) => all().find((x) => x.id === id);
   const camp = (id) => S.campaigns.find((c) => c.id === id);
   const me = () => S.staff.find((u) => u.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' };
   const isApprover = () => me().role === 'approver';
   const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
-  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块' };
+  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', design: '设计需求', material: '宣传物料', price: '改价' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
   const rid = (p) => p + Math.random().toString(36).slice(2, 9);
@@ -693,20 +694,82 @@
 
   // ================= 活动 =================
   const cpF = { st: 'live' };
+  // ================= 活动总控台 =================
+  // 一个活动下面的全部工作:网站内容 / 改价 / 设计需求 / 宣传物料,准备进度一眼看清,每类都能直接新建(自动挂在这个活动下)
+  let cpHub = null; // 正在看的活动 id
+  let hubPrice = { plans: null, err: '', at: 0 };
+  async function loadHubPrice() {
+    if (MODE !== 'live' || !(window.cgpCanSee && window.cgpCanSee('price'))) { hubPrice = { plans: null, err: '', at: now() }; return; }
+    try { hubPrice = { plans: (await api('GET', '/api/price/state')).plans, err: '', at: now() }; }
+    catch (e) { hubPrice = { plans: null, err: e.message, at: now() }; }
+    if (cpHub) renderCampaigns();
+  }
+  const PLAN_ST = { draft: '草稿', pending: '待审核', rejected: '被退回', scheduled: '已排期', running: '进行中', paused: '暂停中', ended: '已结束', done: '已完成' };
+  function hubRow(x) {
+    const ws = workState(x);
+    const sub = x.kind === 'design' ? `${x.assignee ? '设计师 ' + esc(x.assignee) + ' · ' : ''}${x.due ? `截止 ${fDate(x.due)}` : '没设截止'}${overdue(x) ? ' · <b class="tx-danger">已逾期</b>' : ''}`
+      : x.kind === 'material' ? `${CHANNEL[x.channel] || ''}${x.channel === 'social' && x.platform ? ' · ' + esc(x.platform) : ''} · ${x.publishAt ? fDT(x.publishAt) + ' 发布' : '没设发布时间'}${x.owner ? ' · ' + esc(who(x.owner)) : ''}`
+        : esc(winText(x));
+    const pic = x.kind === 'banner' ? `<span class="hrow__slide">${slideHtml(x, { w: 160 })}</span>`
+      : x.kind === 'design' && (x.chosen || x.deliverables?.[0]) ? `<span class="hrow__img" style="background-image:url('${esc(thumb(x.chosen || x.deliverables[0].url, 160))}')"></span>`
+        : x.kind === 'material' && x.assets?.[0] ? `<span class="hrow__img" style="background-image:url('${esc(thumb(x.assets[0].url, 160))}')"></span>` : `<span class="hrow__ico">${kindChip(x.kind)}</span>`;
+    const chipInPic = pic.includes('hrow__ico');
+    return `<button class="hrow" type="button" data-open="${x.id}">${pic}<span class="hrow__b"><span class="hrow__t">${chipInPic ? '' : kindChip(x.kind) + ' '}${esc(titleOf(x))}</span><span class="hrow__s">${sub}</span></span>${ws ? workBadge(x) : badge(x)}</button>`;
+  }
+  function hubHtml(c) {
+    const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
+    const content = [...mine('banner'), ...mine('topbar'), ...mine('tbstyle'), ...mine('pmodule'), ...mine('pin')];
+    const designs = mine('design'), mats = mine('material');
+    const canPrice = MODE === 'live' && window.cgpCanSee && window.cgpCanSee('price');
+    const plans = (hubPrice.plans || []).filter((p) => p.campaign?.id === c.id);
+    const work = [...content, ...designs, ...mats];
+    const isDone = (x) => (workState(x) ? workState(x)[0] === 'done' || (x.kind === 'material' && x.state === 'approved') : x.state === 'approved');
+    const done = work.filter(isDone).length + plans.filter((p) => p.state === 'approved').length;
+    const total = work.length + plans.length;
+    const waiting = work.filter((x) => x.state === 'pending' || x.pendingChange).length + plans.filter((p) => p.state === 'pending' || p.pendingChange).length;
+    const late = designs.filter(overdue).length + mats.filter((m) => workState(m)[0] === 'late').length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const add = (kind, label, extra = '') => `<button type="button" class="btn btn-sm" data-new="${kind}" data-for="${c.id}" ${extra}>${I.plus}${label}</button>`;
+    const sec = (title, sub, rows, adds, emptyMsg) => `<section class="panel hubsec"><div class="panel__h"><h3>${title}</h3><span class="muted">${sub}</span></div>
+      <div class="hrows">${rows || `<p class="muted">${emptyMsg}</p>`}</div><div class="hubsec__add">${adds}</div></section>`;
+    const priceRows = plans.map((p) => `<button class="hrow" type="button" data-price="${p.id}"><span class="hrow__ico">${kindChip('price')}</span><span class="hrow__b"><span class="hrow__t">${esc(p.name)}</span>
+      <span class="hrow__s">${p.kind === 'permanent' ? '永久调价' : '限时'} · ${p.slots.length} 个时段 · ${new Set(p.slots.flatMap((s) => s.items.map((i) => i.productId))).size} 个产品</span></span><span class="tag">${PLAN_ST[p.state === 'approved' ? 'scheduled' : p.state] || p.state}</span></button>`).join('');
+    return `
+      <button class="btn btn-ghost btn-back" type="button" data-hubback>← 全部活动</button>
+      <div class="hubhead">
+        <div><h2>${esc(c.name)} ${badge(c)}</h2><div class="muted">${I.clock}${esc(winText(c))} · 产品:${campScope(c, true)}</div></div>
+        <button class="btn" type="button" data-open="${c.id}">编辑活动设置</button>
+      </div>
+      <div class="hubprog">
+        <div class="hubprog__bar"><span style="width:${pct}%"></span></div>
+        <div class="hubprog__n"><b>${done}</b> / ${total} 项已就绪(${pct}%)${waiting ? ` · <span class="tx-warn">${waiting} 项等审批</span>` : ''}${late ? ` · <span class="tx-danger">${late} 项逾期 / 该发了</span>` : ''}</div>
+      </div>
+      ${sec('网站内容', '到点自动上线、结束自动下线', content.map(hubRow).join(''),
+        add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页促销模块版本')
+          + (MODE === 'live' && S.setup && S.setup.pinReady === false ? '<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">合集置顶清单(要先补建内容类型)</button>' : add('pin', '合集置顶清单')), '还没有内容')}
+      ${sec('改价', canPrice ? '定价同事负责;到点自动改、到期自动恢复' : '改价信息保密,只有定价同事和管理员能看', canPrice ? priceRows : '',
+        canPrice ? `<button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button>` : '', canPrice ? (hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…') : '你没有改价页的权限')}
+      ${sec('设计需求', '写清需求 → 设计交稿 → 审批 → 一键套用到 Banner', designs.map(hubRow).join(''), add('design', '设计需求'), '还没有设计需求')}
+      ${sec('宣传物料', 'app 不替你发,到时间提醒负责人;发完回填链接', mats.map(hubRow).join(''), add('material', '邮件', 'data-channel="email"') + add('material', '社媒帖子', 'data-channel="social"'), '还没有物料')}`;
+  }
+
   function renderCampaigns() {
+    const hubC = cpHub && camp(cpHub);
+    if (hubC) { $('#cp-root').innerHTML = hubHtml(hubC); if (!hubPrice.at || now() - hubPrice.at > 30000) loadHubPrice(); return; }
+    cpHub = null;
     const rows = S.campaigns.filter((c) => inTab(c, cpF.st)).sort((a, b) => RANK[status(a)] - RANK[status(b)] || (a.start ?? 0) - (b.start ?? 0));
     const card = (c) => {
       const bn = S.banners.filter((b) => b.campaign === c.id), tb = S.topbar.filter((t) => t.campaign === c.id), sty = S.tbstyles.filter((t) => t.campaign === c.id);
       const st = scopeTotal(c);
       const zero = [...(c.collections || []).filter((x) => colCount(x) === 0).map((x) => x.title), ...(c.tags || []).filter((t) => tagCount(t) === 0)];
-      return `<button class="ccard ${status(c) === 'ended' ? 'is-dim' : ''}" data-open="${c.id}" type="button">
+      return `<button class="ccard ${status(c) === 'ended' ? 'is-dim' : ''}" data-hub="${c.id}" type="button">
         <span class="ccard__top"><b>${esc(c.name)}</b>${badge(c)}</span>
         <span class="ccard__when">${I.clock}${winText(c)}</span>
         ${endingTag(c)}${syncTag(c)}
         <span class="ccard__row"><span class="muted">产品</span><span class="ccard__v ccard__v--col">${campScope(c, false, '<br>')}<br><span class="muted">合计${st.exact ? '' : '约'} <b>${st.total}${st.unknown ? '+' : ''}</b> 个${st.exact ? '(已去重)' : st.overlap ? '(可能有重叠)' : ''}</span></span></span>
         ${zero.length ? `<span class="tag tag--danger">⚠️ ${esc(zero.join('、'))} 里没有产品</span>` : ''}
         <span class="ccard__row"><span class="muted">产品页</span><span class="ccard__v">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : '<span class="muted">无徽章</span>'}${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span></span>
-        <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}</span></span>
+        <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}${(S.designs || []).some((d) => d.campaign === c.id) ? ` · ${(S.designs || []).filter((d) => d.campaign === c.id).length} 个设计需求` : ''}${(S.materials || []).some((m) => m.campaign === c.id) ? ` · ${(S.materials || []).filter((m) => m.campaign === c.id).length} 个物料` : ''}</span></span>
         ${bn.length ? `<span class="ccard__thumbs">${bn.map((b) => `<span class="ccard__t">${slideHtml(b, { w: 200 })}</span>`).join('')}</span>` : ''}
       </button>`;
     };
@@ -1281,6 +1344,9 @@
         tabs: c && c.collections?.length ? [newTab({ title: 'Top Picks', collection: c.collections[0], onlyDiscounted: true, sortByDiscount: true, countdown: !!c.countdown })] : [newTab()],
         priority: 10, order: (S.pmodules || []).length, start: c ? null : dayStart(7), end: c ? null : dayStart(14) };
     }
+    if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, start: preset.campaign ? null : dayStart(1), end: preset.campaign ? null : dayStart(2) };
+    if (kind === 'design') return { ...baseIt, id: rid('d-'), name: '', brief: '', spec: '', refs: '', due: dayStart(3), assignee: '', target: preset.target || '', deliverables: [], chosen: '', start: null, end: null };
+    if (kind === 'material') return { ...baseIt, id: rid('m-'), name: '', channel: preset.channel || 'email', platform: 'Instagram', subject: '', copy: '', assets: [], publishAt: dayStart(2) + 10 * 3600000, owner: S.me, start: null, end: null };
     return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
   }
   const fld = (label, html, hint = '') => `<label class="fld"><span>${label}</span>${html}${hint ? `<em>${hint}</em>` : ''}</label>`;
@@ -1324,7 +1390,125 @@
       <div class="scope__sum">${st.exact ? `合计 <b>${st.total}</b> 个产品(已去重,Shopify 实时计数)` : `合计约 <b>${st.total}${st.unknown ? '+' : ''}</b> 个产品${st.overlap ? (MODE === 'live' ? ',正在算去重后的准确数量…' : ',合集和标签之间可能有重叠(正式数据里会算出准确的去重数量)') : ''}`}</div>`;
   }
 
+  // ================= v3 工作项:合集置顶清单 / 设计需求 / 宣传物料 =================
+  let wx = null; // 编辑中的列表数据:置顶的合集和产品、设计稿、物料素材
+  const CHANNEL = { email: '邮件营销', social: '社媒帖子' };
+  const PLATFORMS = ['Instagram', 'Facebook', 'YouTube', 'TikTok', 'LinkedIn', 'X'];
+  const bannerSpec = () => `Banner 竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),一张图两边通用`;
+  const staffOpts = (sel) => S.staff.map((u) => `<option value="${esc(u.id)}" ${sel === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
+  const campaignOf = (it) => fld('所属活动', `<select class="sel" name="campaignOf"><option value="">不属于活动</option>${S.campaigns.map((c) => `<option value="${c.id}" ${it.campaign === c.id ? 'selected' : ''}>${esc(c.name)} · ${esc(winText(c))}</option>`).join('')}</select>`);
+  // 设计需求 / 物料自己的状态(它们不上线下线,看的是做到哪一步)
+  function workState(x) {
+    if (x.kind === 'design') {
+      if (x.state === 'approved') return ['done', '已完成'];
+      if (x.state === 'pending') return ['pending', '待审批'];
+      if (x.state === 'rejected') return ['rejected', '退回修改'];
+      return (x.deliverables || []).length ? ['doing', '进行中'] : ['todo', '未开始'];
+    }
+    if (x.kind === 'material') {
+      if (x.publishedAt) return ['done', '已发布'];
+      if (x.state === 'approved') return x.publishAt && x.publishAt < now() ? ['late', '该发了'] : ['scheduled', '待发布'];
+      if (x.state === 'pending') return ['pending', '待审批'];
+      if (x.state === 'rejected') return ['rejected', '退回修改'];
+      return ['todo', '草稿'];
+    }
+    return null;
+  }
+  const workBadge = (x) => { const [k, l] = workState(x); return `<span class="wst wst--${k}">${l}</span>`; };
+  const overdue = (d) => d.kind === 'design' && d.due && d.due < now() && d.state !== 'approved';
+
+  function pinBoxHtml() {
+    return `<div class="fld"><span>合集</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
+        <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button></div>
+        <em>合集页按下面的顺序把这些产品排在最前面,其他产品照原来的规则排在后面</em></div>
+      <div class="fld"><span>排在最前面的产品(按顺序)</span>
+        <div class="pinlist">${wx.products.map((p, i) => `<div class="pinrow"><b>${i + 1}</b>${p.image ? `<img src="${esc(thumb(p.image, 80))}" alt="">` : '<span class="pinrow__img"></span>'}<span class="pinrow__t">${esc(p.title)}</span>
+          <button type="button" class="btn btn-ghost btn-xs" data-wx="up" data-i="${i}" ${i ? '' : 'disabled'}>↑</button><button type="button" class="btn btn-ghost btn-xs" data-wx="down" data-i="${i}" ${i < wx.products.length - 1 ? '' : 'disabled'}>↓</button><button type="button" class="btn btn-ghost btn-xs" data-wx="rm" data-i="${i}">✕</button></div>`).join('') || '<span class="muted">还没加</span>'}</div>
+        <button type="button" class="btn btn-sm" data-wx="pickprod">${I.plus}添加产品</button></div>`;
+  }
+  const fileBoxHtml = (list, key, chosen) => `<div class="dlv">${list.map((d, i) => `<div class="dlv__i ${chosen && chosen === d.url ? 'is-on' : ''}">
+      <button type="button" class="dlv__img" ${key === 'deliverables' ? `data-wx="choose" data-i="${i}"` : ''} style="background-image:url('${esc(thumb(d.url, 300))}')" title="${key === 'deliverables' ? '点选要用的这张' : ''}"></button>
+      <span class="dlv__n">${esc(d.name || '')}</span><button type="button" class="linkbtn" data-wx="rmfile" data-key="${key}" data-i="${i}">删除</button></div>`).join('') || '<span class="muted">还没有</span>'}</div>
+    ${MODE === 'live' ? `<label class="btn btn-sm upl">上传${key === 'deliverables' ? '设计稿' : '素材'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-wx="upload" data-key="${key}" hidden/></label>` : '<em>演示模式不能上传,正式数据里可以</em>'}`;
+
+  function wxFormHtml(it) {
+    if (it.kind === 'pin') {
+      return `${fld('名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}
+        <div id="wx-box">${pinBoxHtml()}</div>
+        <label class="tgl"><input type="checkbox" name="onlyListed" ${it.onlyListed ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示清单里的产品</b><span class="muted">比如 Flash Sale:合集里放着所有候选产品,每天只显示当天这一组</span></span></label>
+        ${timeBlock(it, 'pin')}`;
+    }
+    if (it.kind === 'design') {
+      const banners = S.banners.filter((b) => status(b) !== 'ended' || b.id === it.target);
+      const target = it.target ? byId(it.target) : null;
+      return `${fld('标题', inp('name', it.name, '如:Early BF 主 Banner'))}
+        ${fld('需求说明', `<textarea class="inp" name="brief" rows="5" placeholder="要表达什么、主打哪些产品、文案、风格…">${esc(it.brief || '')}</textarea>`)}
+        <div class="fld2">${fld('用在哪张 Banner', `<select class="sel" name="target"><option value="">不对应 Banner(其他用途)</option>${banners.map((b) => `<option value="${b.id}" ${it.target === b.id ? 'selected' : ''}>${esc(titleOf(b))}</option>`).join('')}</select>`, '批准后可以一键把设计稿套用到这张 Banner')}
+          ${fld('尺寸规格', inp('spec', it.spec || (target ? bannerSpec() : ''), '如:1080×1080 社媒方图'))}</div>
+        ${fld('参考链接', `<textarea class="inp" name="refs" rows="2" placeholder="每行一个">${esc(it.refs || '')}</textarea>`)}
+        <div class="fld2">${fld('设计师', `<input class="inp" name="assignee" list="dz-staff" value="${esc(it.assignee || '')}" placeholder="名字"/><datalist id="dz-staff">${S.staff.map((u) => `<option value="${esc(u.name)}">`).join('')}</datalist>`)}
+          ${fld('截止日期', `<input class="inp" type="date" name="due" value="${it.due ? toInput(it.due).slice(0, 10) : ''}"/>`)}</div>
+        ${campaignOf(it)}
+        <div class="fld"><span>设计稿 <em>上传后点选要用的那张;交稿后点「提交审核」</em></span><div id="wx-box">${fileBoxHtml(wx.deliverables, 'deliverables', wx.chosen)}</div></div>
+        ${it.state === 'approved' && it.target && wx.chosen ? `<button type="button" class="btn btn-primary" data-wx="apply">把选中的设计稿套用到「${esc(titleOf(byId(it.target) || {}))}」</button>` : ''}`;
+    }
+    const ch = it.channel || 'email';
+    return `<div class="fld"><span>渠道</span><div class="seg" id="ed-channel">${Object.entries(CHANNEL).map(([k, l]) => `<button type="button" data-channel="${k}" class="${ch === k ? 'is-active' : ''}">${l}</button>`).join('')}</div></div>
+      ${fld('标题(后台看的)', inp('name', it.name, '如:EBF 开场邮件'))}
+      <div data-ch="email" ${ch === 'email' ? '' : 'hidden'}>${fld('邮件主题', inp('subject', it.subject, '收件人看到的标题'))}</div>
+      <div data-ch="social" ${ch === 'social' ? '' : 'hidden'}>${fld('平台', `<select class="sel" name="platform">${PLATFORMS.map((x) => `<option ${it.platform === x ? 'selected' : ''}>${x}</option>`).join('')}</select>`)}</div>
+      ${fld('文案 / 正文要点', `<textarea class="inp" name="copy" rows="6">${esc(it.copy || '')}</textarea>`)}
+      <div class="fld"><span>素材</span><div id="wx-box">${fileBoxHtml(wx.assets, 'assets')}</div></div>
+      <div class="fld2">${fld('发布时间', `<input class="inp" type="datetime-local" name="publishAt" value="${toInput(it.publishAt)}"/>`, '到时间提醒负责人去发;app 不会替你发')}
+        ${fld('负责人', `<select class="sel" name="owner"><option value="">不指定</option>${staffOpts(it.owner)}</select>`)}</div>
+      ${campaignOf(it)}
+      ${it.state === 'approved' ? `<div class="fld"><span>发布情况</span>${it.publishedAt
+        ? `<div class="note">已发布 ${fDT(it.publishedAt)}${it.publishedUrl ? ` · <a href="${esc(it.publishedUrl)}" target="_blank" rel="noopener">查看</a>` : ''} <button type="button" class="linkbtn" data-wx="unpublish">撤销</button></div>`
+        : `<div class="rowin"><input class="inp" id="pub-url" placeholder="发出去后粘贴链接(可不填)"/><button type="button" class="btn btn-sm btn-primary" data-wx="publish">标记已发布</button></div>`}</div>` : ''}`;
+  }
+
+  function wxPreviewHtml(v) {
+    if (v.kind === 'pin') {
+      return `<div class="pv-label">合集页最前面的样子</div>
+        <div class="pv-pins">${(v.products || []).slice(0, 12).map((p, i) => `<div class="pv-pin"><span class="pv-pin__n">${i + 1}</span><span class="pv-pin__img" ${p.image ? `style="background-image:url('${esc(thumb(p.image, 300))}')"` : ''}></span><span class="pv-pin__t">${esc(p.title)}</span></div>`).join('') || '<p class="muted">加了产品这里会按顺序显示</p>'}</div>
+        <p class="muted pv-cap">${v.collection ? `合集「${esc(v.collection.title)}」` : '合集'}${v.onlyListed ? '在生效期间只显示这些产品' : '先显示这些产品,后面接原来的顺序'};结束后恢复原来的排序。</p>`;
+    }
+    if (v.kind === 'design') {
+      const img = v.chosen || v.deliverables?.[0]?.url;
+      const target = v.target ? byId(v.target) : null;
+      return `${target ? `<div class="pv-label">套用到 Banner 后的样子</div><div class="pv-stage">${slideHtml({ ...target, image: img || target.image }, { w: 700, cls: 'is-main' })}</div>` : img ? `<div class="pv-label">选中的设计稿</div><img class="pv-dlv" src="${esc(thumb(img, 900))}" alt="">` : ''}
+        <div class="pv-label">需求</div><div class="pv-brief">${esc(v.brief || '(还没写需求说明)').replace(/\n/g, '<br>')}</div>
+        ${v.due ? `<p class="muted pv-cap">截止 ${fDate(v.due)}${overdue(v) ? ' · <b style="color:var(--danger)">已逾期</b>' : ''}${v.assignee ? ` · 设计师 ${esc(v.assignee)}` : ''}</p>` : ''}`;
+    }
+    const img = v.assets?.[0]?.url;
+    if ((v.channel || 'email') === 'email') {
+      return `<div class="pv-label">邮件预览</div><div class="pv-mail"><div class="pv-mail__h"><b>${esc(v.subject || '(邮件主题)')}</b><span class="muted">CineGearPro</span></div>
+        ${img ? `<img src="${esc(thumb(img, 900))}" alt="">` : ''}<div class="pv-mail__b">${esc(v.copy || '').replace(/\n/g, '<br>')}</div></div>
+        ${v.publishAt ? `<p class="muted pv-cap">计划 ${fDT(v.publishAt)} 发出</p>` : ''}`;
+    }
+    return `<div class="pv-label">${esc(v.platform || '社媒')} 帖子预览</div><div class="pv-post">${img ? `<img src="${esc(thumb(img, 900))}" alt="">` : '<div class="pv-post__ph"></div>'}<div class="pv-post__b">${esc(v.copy || '').replace(/\n/g, '<br>')}</div></div>
+      ${v.publishAt ? `<p class="muted pv-cap">计划 ${fDT(v.publishAt)} 发布</p>` : ''}`;
+  }
+
+  // 选合集 / 产品(置顶清单用)。在后台里用 Shopify 自带的选择器;演示时从演示数据里挑
+  async function pickPin(type) {
+    const m = (x) => ({ id: x.id, handle: x.handle, title: x.title, image: x.images?.[0]?.originalSrc || x.image || '' });
+    if (window.shopify && typeof window.shopify.resourcePicker === 'function') {
+      try {
+        const sel = await window.shopify.resourcePicker({ type: type === 'coll' ? 'collection' : 'product', multiple: type !== 'coll', action: 'select' });
+        if (!sel?.length) return;
+        if (type === 'coll') wx.collection = m(sel[0]);
+        else { const have = new Set(wx.products.map((p) => p.id)); wx.products.push(...sel.map(m).filter((p) => !have.has(p.id))); }
+        return true;
+      } catch { /* 不在后台 → 用演示数据 */ }
+    }
+    if (type === 'coll') { const c = S.collections[0]; if (c) wx.collection = m(c); }
+    else { const have = new Set(wx.products.map((p) => p.handle)); wx.products.push(...S.products.filter((p) => !have.has(p.handle)).slice(0, 3).map(m)); }
+    return true;
+  }
+
   function formHtml(it) {
+    if (['pin', 'design', 'material'].includes(it.kind)) return wxFormHtml(it);
     if (it.kind === 'banner') {
       const seenImg = new Set();
       const imgs = S.banners.filter((b) => b.image && !seenImg.has(b.image) && seenImg.add(b.image)).slice(0, 40);
@@ -1393,6 +1577,7 @@
   }
 
   function previewHtml(v) {
+    if (['pin', 'design', 'material'].includes(v.kind)) return wxPreviewHtml(v);
     if (v.kind === 'pmodule') {
       return `<div class="pv-label">首页上的样子</div>${moduleHtml(v, { activeTab: pvTab })}
         <p class="muted pv-cap">点页签切换预览。${MODE === 'live' ? '产品是按这个页签的设置从店里取的前几个。' : '演示数据只画占位;正式数据里会显示这个页签真实会出现的产品。'}到时间后首页这个模块整套换成它,结束回到平时版本。</p>`;
@@ -1519,7 +1704,7 @@
       if (['start', 'end', 'campaign', 'countdown', 'priority'].includes(el.name)) return;
       v[el.name] = el.value.trim();
     });
-    if (!base.isDefault) {
+    if (!base.isDefault && !['design', 'material'].includes(base.kind)) {
       const mode = ($('#ed-mode .is-active') || {}).dataset?.mode || 'range';
       if (mode === 'long') { v.start = null; v.end = null; v.campaign = null; }
       else if (mode === 'campaign') { v.start = null; v.end = null; v.campaign = g('campaign').value || null; }
@@ -1532,6 +1717,11 @@
       if (g('priority')) v.priority = +g('priority').value || 0;
     }
     if (base.kind === 'tbstyle') { v.effect = ($('#ed-effect .is-active') || {}).dataset?.effect || 'none'; if (g('priority')) v.priority = +g('priority').value || 0; }
+    if (base.kind === 'pin') { v.collection = wx.collection; v.products = wx.products.map(({ id, handle, title, image }) => ({ id, handle, title, image })); v.onlyListed = !!g('onlyListed')?.checked; }
+    if (base.kind === 'design' || base.kind === 'material') { v.campaign = g('campaignOf')?.value || null; v.start = null; v.end = null; }
+    delete v.campaignOf;
+    if (base.kind === 'design') { v.deliverables = [...wx.deliverables]; v.chosen = wx.chosen; v.due = g('due').value ? fromInput(g('due').value + 'T18:00') : null; }
+    if (base.kind === 'material') { v.channel = ($('#ed-channel .is-active') || {}).dataset?.channel || 'email'; v.assets = [...wx.assets]; v.publishAt = fromInput(g('publishAt').value); }
     if (base.kind === 'campaign') {
       v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
       v.countdown = g('countdown').checked; v.priority = +g('priority').value || 0;
@@ -1539,6 +1729,10 @@
     return v;
   }
   function validate(v) {
+    if (v.kind === 'pin' && !v.collection) return '请选要排序的合集';
+    if (v.kind === 'pin' && !v.products.length) return '至少放一个要排在前面的产品';
+    if ((v.kind === 'design' || v.kind === 'material') && !v.name) return '请填写标题';
+    if (v.kind === 'design' && !v.deliverables.length) return '还没上传设计稿;先点「保存需求」,交稿时再提交审核';
     if (v.kind === 'banner' && !v.image) return '请选一张图片';
     if (v.kind === 'topbar' && !v.text) return '请填写公告文字';
     if ((v.kind === 'campaign' || v.kind === 'tbstyle' || v.kind === 'pmodule') && !v.name) return '请填写名称';
@@ -1552,14 +1746,20 @@
     const isNew = !id; const it = id ? byId(id) : newItem(kind, preset);
     if (!it) return;
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
-    const base = { ...it, ...(it.pendingChange && !isApprover() ? it.pendingChange : {}) };
+    // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
+    const base = { ...it, ...(it.pendingChange && !isApprover() ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts };
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
+    wx = { collection: base.kind === 'pin' ? base.collection || null : null, products: base.kind === 'pin' ? [...(base.products || [])] : [],
+      deliverables: [...(base.deliverables || [])], chosen: base.chosen || '', assets: [...(base.assets || [])] };
     const s = status(it);
     const approver = isApprover();
     const live = it.state === 'approved';
     let acts = '';
-    if (approver) {
+    if (kind === 'design' && it.state !== 'approved') {
+      acts += '<button class="btn" data-act="draft" type="button">保存需求</button>';
+      acts += `<button class="btn btn-primary" data-act="submit" type="button">${it.state === 'pending' ? '更新交稿' : '交稿,提交审核'}</button>`;
+    } else if (approver) {
       if (!isNew && live && !it.isDefault) acts += `<button class="btn" data-act="pause" type="button">${it.paused ? '恢复显示' : s === 'live' ? '暂停(立即下线)' : '暂停'}</button>`;
       if (isNew || it.state !== 'approved') acts += '<button class="btn" data-act="draft" type="button">存草稿</button>';
       acts += `<button class="btn btn-primary" data-act="publish" type="button">${live ? '保存修改' : '保存并排期'}</button>`;
@@ -1567,7 +1767,7 @@
       if (isNew || ['draft', 'new', 'rejected'].includes(it.state)) acts += '<button class="btn" data-act="draft" type="button">存草稿</button>';
       acts += `<button class="btn btn-primary" data-act="submit" type="button">${live ? '提交修改审核' : '提交审核'}</button>`;
     }
-    const canDelete = !isNew && !it.isDefault && ['draft', 'rejected', 'ended'].includes(s);
+    const canDelete = !isNew && !it.isDefault && (['design', 'material'].includes(it.kind) ? it.state !== 'pending' : ['draft', 'rejected', 'ended'].includes(s));
     const notes = [];
     if (endingSoon(it)) notes.push(`<div class="note note--warn">⚠️ ${relDay(win(it).end)}(${fDT(win(it).end)})自动下架。要继续显示就把结束时间往后改${win(it).via ? '(它跟随活动,要改活动的结束时间)' : ''}。</div>`);
     if (it.pendingChange) notes.push(`<div class="note note--warn">${esc(who(it.pendingChange.by))} 提交了修改,正在等审核。${approver ? '去「审核」页批准后才会替换线上版本。' : '批准前线上保持原来的版本。'}</div>`);
@@ -1635,6 +1835,54 @@
     f.addEventListener('change', (e) => {
       if (e.target.dataset?.tck) edTabs[+e.target.dataset.i][e.target.dataset.tck] = e.target.checked;
       refreshPv();
+    });
+    // ---- 合集置顶清单 / 设计需求 / 宣传物料 ----
+    const redrawWx = () => {
+      const box = $('#wx-box'); if (!box) return;
+      box.innerHTML = it.kind === 'pin' ? pinBoxHtml() : it.kind === 'design' ? fileBoxHtml(wx.deliverables, 'deliverables', wx.chosen) : fileBoxHtml(wx.assets, 'assets');
+      refreshPv();
+    };
+    f.addEventListener('click', async (e) => {
+      const ch = e.target.closest('#ed-channel button');
+      if (ch) {
+        $$('#ed-channel button').forEach((b) => b.classList.toggle('is-active', b === ch));
+        $$('#ed-form [data-ch]').forEach((x) => { x.hidden = x.dataset.ch !== ch.dataset.channel; });
+        return refreshPv();
+      }
+      const w = e.target.closest('[data-wx]'); if (!w || w.tagName === 'INPUT') return;
+      const i = +w.dataset.i; const a = w.dataset.wx;
+      if (a === 'pickcoll' || a === 'pickprod') { if (await pickPin(a === 'pickcoll' ? 'coll' : 'prod')) redrawWx(); return; }
+      if (a === 'up' || a === 'down') { const j = a === 'up' ? i - 1 : i + 1; [wx.products[i], wx.products[j]] = [wx.products[j], wx.products[i]]; return redrawWx(); }
+      if (a === 'rm') { wx.products.splice(i, 1); return redrawWx(); }
+      if (a === 'choose') { wx.chosen = wx.deliverables[i].url; return redrawWx(); }
+      if (a === 'rmfile') { const k = w.dataset.key; const [gone] = wx[k].splice(i, 1); if (k === 'deliverables' && gone?.url === wx.chosen) wx.chosen = wx.deliverables[0]?.url || ''; return redrawWx(); }
+      if (a === 'publish' || a === 'unpublish') {
+        const r = await act({ type: 'markPublished', id: it.id, url: $('#pub-url')?.value || '', undo: a === 'unpublish' });
+        if (r) { closeDrawer(); toast(r.message); }
+        return;
+      }
+      if (a === 'apply') {
+        const d = wx.deliverables.find((x) => x.url === wx.chosen);
+        const target = it.target;
+        closeDrawer();
+        openEditor('banner', target, { override: { image: d.url, imageId: d.id || '' } });
+        toast('已带入设计稿,确认文字后保存(会照常走审核)');
+      }
+    });
+    f.addEventListener('change', async (e) => {
+      const up = e.target.closest('input[data-wx="upload"]'); if (!up) return;
+      const file = up.files?.[0]; if (!file) return;
+      if (file.size > 20 * 1024 * 1024) return toast('图片太大了(最多 20MB)', false);
+      const lab = up.closest('label'); const old = lab.firstChild.textContent; lab.firstChild.textContent = '上传中…';
+      try {
+        const res = await fetch(`/api/schedule/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { ...(await window.cgpHeaders()), 'Content-Type': file.type }, body: file });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(j.error || res.statusText);
+        const k = up.dataset.key;
+        wx[k].push({ url: j.url, id: j.id, name: file.name, at: now() });
+        if (k === 'deliverables' && !wx.chosen) wx.chosen = j.url;
+        redrawWx(); toast('已上传到 Shopify 文件库');
+      } catch (err) { toast('上传失败:' + err.message, false); lab.firstChild.textContent = old; }
     });
     // 预览里点页签:切换预览的页签
     $('#ed-pv').addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (t && edTabs) { pvTab = +t.dataset.pmtab; refreshPv(); } });
@@ -1718,7 +1966,7 @@
     }
   }
   function closeDrawer() {
-    clearInterval(pvTimer); ed = null; edTabs = null; hidePop();
+    clearInterval(pvTimer); ed = null; edTabs = null; wx = null; hidePop();
     $('#drawer').hidden = true; $('#drawer-mask').hidden = true; $('#drawer').innerHTML = '';
     document.body.classList.remove('no-scroll');
   }
@@ -1740,7 +1988,14 @@
     const o = e.target.closest('[data-open]');
     if (o && o.closest('.section')) { const x = byId(o.dataset.open); if (x) openEditor(x.kind, x.id); return; }
     const n = e.target.closest('[data-new]');
-    if (n && n.closest('.section')) { openEditor(n.dataset.new); return; }
+    if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : undefined); return; }
+    const hb = e.target.closest('[data-hub]');
+    if (hb) { cpHub = hb.dataset.hub; hubPrice.at = 0; renderCampaigns(); window.scrollTo(0, 0); return; }
+    if (e.target.closest('[data-hubback]')) { cpHub = null; renderCampaigns(); return; }
+    const pr = e.target.closest('[data-price]');
+    if (pr && window.cgpPriceOpen) { showSection('price'); window.cgpPriceOpen(pr.dataset.price); return; }
+    const pn = e.target.closest('[data-pricenew]');
+    if (pn && window.cgpPriceNew) { const c = camp(pn.dataset.pricenew); showSection('price'); window.cgpPriceNew({ id: c.id, name: c.name }); return; }
     const g = e.target.closest('[data-go]');
     if (g) { showSection(g.dataset.go); return; }
     const ap = e.target.closest('[data-approve]'); if (ap) return approve(ap.dataset.approve);
