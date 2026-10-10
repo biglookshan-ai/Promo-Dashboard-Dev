@@ -6,7 +6,7 @@
 // 其他脚本用 window.cgpHeaders() 拿请求头,启动前 await window.CGP_AUTH。
 (function () {
   const KEY = 'cgp-app-session';
-  const SECTION_PAGE = { overview: 'overview', campaigns: 'campaigns', banners: 'banners', topbar: 'topbar', pmodules: 'pmodules', reviews: 'reviews', price: 'price', settings: 'settings', metafields: 'tools' };
+  const SECTION_PAGE = { overview: 'overview', preview: 'overview', campaigns: 'campaigns', banners: 'banners', topbar: 'topbar', pmodules: 'pmodules', reviews: 'reviews', price: 'price', settings: 'settings', metafields: 'tools' };
   const embedded = () => !!(window.shopify && window.shopify.idToken);
 
   window.cgpHeaders = async function () {

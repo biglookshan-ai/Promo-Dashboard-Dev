@@ -407,63 +407,104 @@
     return { s, e, lines, title: ys === ye ? `${ys} 年 ${ms}–${me2} 月` : `${ys} 年 ${ms} 月 – ${ye} 年 ${me2} 月` };
   }
 
-  // ================= 首页快照 =================
-  // 选一个时间点,按那一刻会生效的内容画出首页:顶栏(含当时的节日样式)、Banner 轮播(按当时的顺序)、两个商品模块。
-  // 时间点来自所有内容的上下线时刻(「变化节点」),可以一个个往后翻,看未来首页长什么样。
-  let snapAt = null; // null = 现在
-  const snapT = () => snapAt ?? now();
-  // 未来 120 天内所有会发生变化的时刻(已批准的内容才算)
-  function changePoints() {
-    const t = now(); const set = new Set();
+  // ================= 时间线(共用) =================
+  // 把「所有内容的上下线时刻」排成一条可点的时间线,代替原来的「看哪天」下拉。
+  // kinds 决定看哪些类型的变化;点一个时刻 = 看那一刻网站长什么样。
+  function tlPoints(kinds) {
+    const t = now(); const map = new Map();
     for (const x of all()) {
-      if (x.kind === 'campaign' || x.isDefault || x.state !== 'approved' || x.paused) continue;
+      if (!kinds.includes(x.kind) || x.isDefault || x.state !== 'approved' || x.paused) continue;
       const w = win(x);
-      for (const at of [w.start, w.end]) if (at != null && at > t && at < t + 120 * DAY) set.add(at);
+      for (const [at, up] of [[w.start, true], [w.end, false]]) {
+        if (at == null || at <= t || at > t + 120 * DAY) continue;
+        if (!map.has(at)) map.set(at, { at, ups: [], downs: [] });
+        map.get(at)[up ? 'ups' : 'downs'].push(x);
+      }
     }
-    return [...set].sort((a, b) => a - b);
+    return [...map.values()].sort((a, b) => a.at - b.at);
   }
-  // 这一刻相对上一刻的变化(哪些上线、哪些下线)
-  function changesAt(at) {
-    const out = [];
-    for (const x of all()) {
-      if (x.kind === 'campaign' || x.isDefault || x.state !== 'approved') continue;
-      const w = win(x);
-      if (w.start === at) out.push({ x, up: true });
-      if (w.end === at) out.push({ x, up: false });
-    }
-    return out;
+  // id = 这条时间线的名字(每个页面一条);at = 现在看的时刻(null = 此刻)
+  function tlHtml(id, points, at) {
+    const idx = at == null ? -1 : points.findIndex((p) => p.at === at);
+    const dot = (label, sub, v, on, n) => `<button class="tl__dot ${on ? 'is-on' : ''}" type="button" data-tl="${id}" data-at="${v}">
+      <span class="tl__lab">${label}</span><span class="tl__pin"></span><span class="tl__sub">${sub}</span>${n ? `<span class="tl__n">${n}</span>` : ''}</button>`;
+    return `<div class="tl">
+      <button class="btn btn-sm btn-ghost" type="button" data-tlnav="${id}" data-d="-1" ${idx <= -1 ? 'disabled' : ''}>${I.left}</button>
+      <div class="tl__rail">
+        ${dot('现在', fMD(now()), 'now', at == null, 0)}
+        ${points.map((p) => dot(fMD(p.at), fmt(p.at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), p.at, at === p.at, p.ups.length + p.downs.length)).join('')
+          || '<span class="muted tl__none">接下来 120 天没有变化</span>'}
+      </div>
+      <button class="btn btn-sm btn-ghost" type="button" data-tlnav="${id}" data-d="1" ${points.length && idx < points.length - 1 ? '' : 'disabled'}>${I.right}</button>
+    </div>`;
   }
-  function snapshotHtml() {
-    const T = snapT();
-    const pts = changePoints();
-    const idx = snapAt == null ? -1 : pts.indexOf(snapAt);
+  function tlChanges(points, at) {
+    const p = points.find((x) => x.at === at); if (!p) return '';
+    const one = (x, up) => `<button class="snapchg__i" type="button" data-open="${x.id}" data-pop="${x.id}"><span class="snapchg__a snapchg__a--${up ? 'up' : 'down'}">${up ? '上线' : '下线'}</span>${kindChip(x.kind)} ${esc(titleOf(x))}</button>`;
+    return `<div class="snapchg">这一刻:${p.ups.map((x) => one(x, true)).join('')}${p.downs.map((x) => one(x, false)).join('')}</div>`;
+  }
+  // 点时间线 / 前后翻(各页共用);setter 负责存到各自的变量里并重画
+  function wireTimeline(id, points, get, set) {
+    $$(`[data-tl="${id}"]`).forEach((b) => b.addEventListener('click', () => set(b.dataset.at === 'now' ? null : +b.dataset.at)));
+    $$(`[data-tlnav="${id}"]`).forEach((b) => b.addEventListener('click', () => {
+      const cur = get(); const i = cur == null ? -1 : points.findIndex((p) => p.at === cur);
+      const j = i + Number(b.dataset.d);
+      set(j < 0 ? null : (points[Math.min(j, points.length - 1)]?.at ?? null));
+    }));
+  }
+
+  // ================= 预览页(首页此刻 / 未来长什么样) =================
+  let pvAt = null;      // 看哪个时刻(null = 现在)
+  let pvModTab = { sale: 0, feature: 0 }; // 预览里各模块看哪个页签
+  const PV_KINDS = ['banner', 'topbar', 'tbstyle', 'pmodule', 'pin'];
+  function renderPreview() {
+    const T = pvAt ?? now();
+    const points = tlPoints(PV_KINDS);
     const style = activeStyle(T);
     const msgs = S.topbar.filter((x) => status(x, T) === 'live').sort(byOrder);
     const bns = S.banners.filter((b) => status(b, T) === 'live').sort(byOrder);
     const mods = ['sale', 'feature'].map((m) => ({ m, v: activeVersion(m, T) })).filter((x) => x.v);
-    const chg = snapAt == null ? [] : changesAt(snapAt);
-    const future = snapAt != null;
-    const jump = (label, at, on) => `<button class="snapchip ${on ? 'is-on' : ''}" type="button" data-snap="${at == null ? 'now' : at}">${label}</button>`;
-    return `<section class="panel snap">
-      <div class="panel__h"><h3>首页快照</h3><span class="muted">按时间点看首页会长什么样 —— 顶栏、Banner 轮播、两个商品模块,都是那一刻实际会显示的</span></div>
-      <div class="snapbar">
-        <button class="btn btn-sm btn-ghost" data-snapnav="-1" type="button" ${idx <= -1 ? 'disabled' : ''}>${I.left} 上一个变化</button>
-        <b class="snapbar__t">${future ? `${fDT(T)} · ${relDay(T)}` : '现在'}</b>
-        <button class="btn btn-sm btn-ghost" data-snapnav="1" type="button" ${pts.length && idx < pts.length - 1 ? '' : 'disabled'}>下一个变化 ${I.right}</button>
-        <span class="snapbar__pts">${jump('现在', null, snapAt == null)}${pts.slice(0, 8).map((at) => jump(fMD(at) + ' ' + fmt(at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), at, snapAt === at)).join('')}${pts.length > 8 ? `<span class="muted">…另有 ${pts.length - 8} 个变化</span>` : ''}</span>
-      </div>
-      ${chg.length ? `<div class="snapchg">这一刻:${chg.map((c) => `<button class="snapchg__i" type="button" data-open="${c.x.id}" data-pop="${c.x.id}"><span class="snapchg__a snapchg__a--${c.up ? 'up' : 'down'}">${c.up ? '上线' : '下线'}</span>${kindChip(c.x.kind)} ${esc(titleOf(c.x))}</button>`).join('')}</div>` : ''}
-      <div class="snapview">
-        ${msgs.length ? topbarHtml(msgs.map((m) => tbMsg(m, style)).join(''), { style }) : '<div class="snapnone">这一刻顶栏没有公告</div>'}
-        <div class="snapbody">
-          ${bns.length ? `<div class="snaprow">${bns.map((b, i) => `<span class="snapslide" data-open="${b.id}" data-pop="${b.id}" title="第 ${i + 1} 张 · ${esc(titleOf(b))}">${slideHtml(b, { w: 200 })}</span>`).join('')}</div>`
-          : '<div class="snapnone">这一刻首页轮播没有排期 Banner(前台会显示主题里原来的 slide)</div>'}
-          ${mods.map(({ m, v }) => `<div class="snapmod"><div class="snapmod__h">${MODULE_CN[m]}${v.isDefault ? '<span class="tag">平时版本</span>' : `<span class="tag tag--accent">排期版本:${esc(v.name)}</span>`}</div>${moduleHtml(v, { small: true })}</div>`).join('')}
+    const pins = (S.pins || []).filter((p) => status(p, T) === 'live');
+    $('#pv-root').innerHTML = `
+      ${pageHead('预览', '按时间点看网站长什么样 —— 顶栏、Banner 轮播、首页两个商品模块,都是那一刻顾客实际会看到的')}
+      <section class="panel">
+        ${tlHtml('pv', points, pvAt)}
+        ${tlChanges(points, pvAt)}
+        <div class="pvwrap">
+          <div class="pvsite">
+            ${msgs.length ? topbarHtml(msgs.map((m) => tbMsg(m, style)).join(''), { style }) : '<div class="snapnone">这一刻顶栏没有公告</div>'}
+            <div class="pvsite__b">
+              ${bns.length ? `<div class="pvbns">${bns.map((b, i) => `<span class="pvbn" data-open="${b.id}" data-pop="${b.id}" title="${esc(titleOf(b))}"><span class="pvbn__n">${i + 1}</span>${slideHtml(b, { w: 430 })}</span>`).join('')}</div>`
+                : '<div class="snapnone">这一刻首页轮播没有排期 Banner(前台会显示主题里原来的 slide)</div>'}
+              ${mods.map(({ m, v }) => `<div class="pvmod">
+                <div class="pvmod__h">${MODULE_CN[m]}${v.isDefault ? '<span class="tag">平时版本</span>' : `<span class="tag tag--accent">排期版本:${esc(v.name)}</span>`}
+                  <button class="linkbtn" data-open="${v.id}" type="button">去编辑</button></div>
+                ${moduleHtml(v, { activeTab: Math.min(pvModTab[m] || 0, (v.tabs || []).length - 1), pm: m })}</div>`).join('')}
+            </div>
+          </div>
+          <aside class="pvside">
+            <div class="pvside__t">这一刻在生效的</div>
+            <div class="pvside__g"><span>顶栏样式</span><b>${esc(style.name || '默认样式')}</b></div>
+            <div class="pvside__g"><span>顶栏公告</span><b>${msgs.length} 条</b>${msgs.map((m) => `<button class="pvside__i" data-open="${m.id}" type="button">${esc(titleOf(m))}</button>`).join('') || '<span class="muted">无</span>'}</div>
+            <div class="pvside__g"><span>Banner</span><b>${bns.length} 张</b></div>
+            ${mods.map(({ m, v }) => `<div class="pvside__g"><span>${MODULE_CN[m]}</span><b>${esc(v.name || '平时版本')}</b><span class="muted">${(v.tabs || []).map((t) => esc(tabLabel(t))).join(' · ')}</span></div>`).join('')}
+            <div class="pvside__g"><span>合集置顶</span>${pins.length ? pins.map((p) => `<button class="pvside__i" data-open="${p.id}" type="button">${esc(p.collection?.title || titleOf(p))}:${(p.products || []).length} 个${p.onlyListed ? '(只显示这些)' : ''}</button>`).join('') : '<span class="muted">无</span>'}</div>
+          </aside>
         </div>
-      </div>
-      <p class="muted">这里画的是 app 排期的部分。顾客实际看到的还有主题里固定的区块(导航、Top Categories 等),那些不归这里管。</p>
-    </section>`;
+        <p class="muted">这里画的是 app 排期的部分。顾客实际看到的还有主题里固定的区块(导航、Top Categories 等),那些不归这里管。</p>
+      </section>`;
+    wireTimeline('pv', points, () => pvAt, (v) => { pvAt = v; renderPreview(); });
+    // 商品模块:取真实产品(正式数据)
+    for (const { m, v } of mods) {
+      const t = (v.tabs || [])[pvModTab[m] || 0];
+      if (t) loadTabPreview(t, () => { if ($('#pv-root') && isActive('preview')) renderPreview(); });
+    }
+    $$('#pv-root [data-pmtab]').forEach((el) => el.addEventListener('click', () => {
+      const wrap = el.closest('.pvmod'); const m = wrap?.dataset.pm; if (!m) return;
+      pvModTab[m] = +el.dataset.pmtab; renderPreview();
+    }));
   }
+  const isActive = (name) => !!document.getElementById('section-' + name)?.classList.contains('is-active');
 
   function renderOverview() {
     const items = all(); const t = now(); const in7 = t + 7 * DAY;
@@ -543,7 +584,7 @@
         ${stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews')}
       </div>
       ${alertsHtml(['banner', 'topbar', 'campaign', 'tbstyle', 'pmodule'])}
-      ${snapshotHtml()}
+      <section class="panel pvlink"><div><b>想看首页长什么样?</b><span class="muted">「预览」页按时间点画出顶栏、Banner 轮播和两个商品模块</span></div><button class="btn btn-sm" data-go="preview" type="button">打开预览</button></section>
       <section class="panel">
         <div class="gtbar">
           <div class="gtbar__l">
@@ -583,14 +624,6 @@
     $$('#ov-zoom button').forEach((b) => b.addEventListener('click', () => { ov.zoom = b.dataset.zoom; ov.offset = 0; renderOverview(); }));
     $$('#ov-root [data-nav]').forEach((b) => b.addEventListener('click', () => { ov.offset = +b.dataset.nav ? ov.offset + +b.dataset.nav : 0; renderOverview(); }));
     $$('#ov-root [data-kind]').forEach((b) => b.addEventListener('click', () => { ov.kinds[b.dataset.kind] = !ov.kinds[b.dataset.kind]; renderOverview(); }));
-    // 首页快照:跳到某个时间点 / 前后翻
-    $$('#ov-root [data-snap]').forEach((b) => b.addEventListener('click', () => { snapAt = b.dataset.snap === 'now' ? null : +b.dataset.snap; renderOverview(); }));
-    $$('#ov-root [data-snapnav]').forEach((b) => b.addEventListener('click', () => {
-      const pts = changePoints(); const i = snapAt == null ? -1 : pts.indexOf(snapAt);
-      const j = i + (+b.dataset.snapnav);
-      snapAt = j < 0 ? null : pts[Math.min(j, pts.length - 1)] ?? null;
-      renderOverview();
-    }));
   }
 
   // ================= 排序(Banner 轮播 / 顶栏轮播共用)=================
@@ -621,7 +654,7 @@
   }
 
   // ================= Banner =================
-  const bnF = { st: 'live', tag: '', day: 0 };
+  const bnF = { st: 'live', tag: '', at: null };
   function orderCard(b, T, list, editing, isNow) {
     const liveAtT = list.filter((x) => status(x, T) === 'live');
     const s = status(b, T);
@@ -643,25 +676,26 @@
   }
   function renderBannerOrder() {
     const editing = !!ord.banner;
-    const T = bnF.day ? dayStart(bnF.day) + (now() - today0()) : now();
+    const T = bnF.at ?? now();
     const list = editing ? ord.banner.map((id) => S.banners.find((b) => b.id === id)).filter(Boolean) : ordPipeline('banner');
-    const days = [0, 1, 3, 7, 14, 30].map((d) => `<option value="${d}" ${bnF.day === d ? 'selected' : ''}>${d === 0 ? '此刻' : `${d} 天后(${fDate(dayStart(d))})`}</option>`).join('');
+    const points = tlPoints(['banner']);
     const pend = S.pendingOrder && S.pendingOrder.kind === 'banner';
     $('#bn-order').innerHTML = `
       <div class="panel__h">
         <h3>${editing ? '调整轮播顺序' : '首页轮播顺序'}</h3>
         <span class="muted">${editing ? '拖动卡片换位置,点「保存顺序」才生效'
-          : `看哪天:<select class="sel sel--sm" id="bn-day">${days}</select>`}
+          : `看哪一刻:<b>${bnF.at == null ? '现在' : `${fDT(T)} · ${relDay(T)}`}</b>`}
           ${editing ? `<button class="btn btn-sm" data-ordact="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-ordact="save" type="button">${isApprover() ? '保存顺序' : '提交顺序审核'}</button>`
             : `<button class="btn btn-sm" data-ordact="edit" type="button" ${pend ? 'disabled' : ''}>${I.sort}调整顺序</button>`}</span>
       </div>
+      ${editing ? '' : tlHtml('bn', points, bnF.at) + tlChanges(points, bnF.at)}
       ${pend ? `<div class="note note--warn">${esc(who(S.pendingOrder.by))} 提交了新的轮播顺序,等审核中;批准前前台保持现在的顺序。</div>` : ''}
       <p class="muted oc__help">数字 = 在首页轮播里的位置;<b>→5</b> = 上线后会排第 5 张。淡色的是这一刻还没上线的,它们已经排好了位置,到点自动插进去。</p>
-      <div class="ocs ${editing ? 'ocs--edit' : ''}" id="bn-ocs">${list.map((b) => orderCard(b, T, list, editing, !bnF.day)).join('') || '<span class="muted">没有上线中或已排期的 Banner</span>'}</div>`;
-    if (!editing) $('#bn-day').addEventListener('change', (e) => { bnF.day = +e.target.value; renderBannerOrder(); });
+      <div class="ocs ${editing ? 'ocs--edit' : ''}" id="bn-ocs">${list.map((b) => orderCard(b, T, list, editing, bnF.at == null)).join('') || '<span class="muted">没有上线中或已排期的 Banner</span>'}</div>`;
+    if (!editing) wireTimeline('bn', points, () => bnF.at, (v) => { bnF.at = v; renderBannerOrder(); });
     $$('#bn-order [data-ordact]').forEach((b) => b.addEventListener('click', () => {
       const a = b.dataset.ordact;
-      if (a === 'edit') { ord.banner = ordPipeline('banner').map((x) => x.id); bnF.day = 0; renderBannerOrder(); }
+      if (a === 'edit') { ord.banner = ordPipeline('banner').map((x) => x.id); bnF.at = null; renderBannerOrder(); }
       else if (a === 'cancel') { ord.banner = null; renderBannerOrder(); }
       else saveOrder('banner');
     }));
@@ -694,14 +728,14 @@
   }
 
   // ================= 顶栏 =================
-  let tbDay = 0; let tbTimer = null; let tbIdx = 0; const tbF = { st: 'live' };
+  let tbAt = null; let tbTimer = null; let tbIdx = 0; const tbF = { st: 'live' };
   function renderTopbar() {
-    const at = dayStart(tbDay) + (now() - today0());
+    const at = tbAt ?? now();
+    const points = tlPoints(['topbar', 'tbstyle']);
     const liveAt = S.topbar.filter((t) => status(t, at) === 'live').sort(byOrder);
     const styleAt = activeStyle(at);
     const editing = !!ord.topbar;
     const rows = editing ? ord.topbar.map((id) => S.topbar.find((t) => t.id === id)).filter(Boolean) : S.topbar.filter((t) => inTab(t, tbF.st)).sort(byStatusThenOrder);
-    const days = [0, 1, 3, 7, 14, 30, 60, 75, 90].map((d) => `<option value="${d}" ${tbDay === d ? 'selected' : ''}>${d === 0 ? '此刻' : `${d} 天后(${fDate(dayStart(d))})`}</option>`).join('');
     const styles = [...S.tbstyles].sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0) || byStatusThenOrder(a, b));
     const pend = S.pendingOrder && S.pendingOrder.kind === 'topbar';
     $('#tb-root').innerHTML = `
@@ -710,10 +744,19 @@
       ${alertsHtml(['topbar', 'tbstyle'])}
       <section class="panel">
         <div class="panel__h"><h3>预览顶栏</h3>
-          <span class="muted">看哪天:<select class="sel sel--sm" id="tb-day">${days}</select>
+          <span class="muted">看哪一刻:<b>${tbAt == null ? '现在' : `${fDT(at)} · ${relDay(at)}`}</b>
             <button class="btn btn-sm btn-ghost" id="tb-prev" type="button" aria-label="上一条">${I.left}</button><button class="btn btn-sm btn-ghost" id="tb-next" type="button" aria-label="下一条">${I.right}</button></span></div>
+        ${tlHtml('tb', points, tbAt)}
+        ${tlChanges(points, tbAt)}
         ${topbarHtml('', { style: styleAt, id: 'tb-msg' })}
-        <p class="muted tbpv__note">这一天用 <b>${esc(styleAt.name || '默认样式')}</b> 样式,轮播 <b>${liveAt.length}</b> 条:${liveAt.map((t) => esc(titleOf(t))).join(' · ') || '无'}</p>
+        <p class="muted tbpv__note">这一刻用 <b>${esc(styleAt.name || '默认样式')}</b> 样式,轮播 <b>${liveAt.length}</b> 条(下面是每一条的完整内容,前台按这个顺序轮着显示)</p>
+        <div class="tbnow">${liveAt.map((t, i) => `<button class="tbnow__i" type="button" data-open="${t.id}" data-pop="${t.id}">
+          <span class="tbnow__n">${i + 1}</span>
+          <span class="tbnow__bar" style="background:${esc(styleAt.bg)};color:${esc(styleAt.color)}">${tbMsg(t, styleAt)}</span>
+          <span class="tbnow__m"><span class="kchip">${esc(t.category || '')}</span>${I.clock}${esc(winText(t))}${t.link ? ` · <span class="mono">${esc(t.link)}</span>` : ''}</span>
+        </button>`).join('') || '<span class="muted">这一刻没有公告</span>'}</div>
+        <div class="tbnow__style">这一刻的样式:<b>${esc(styleAt.name || '默认样式')}</b> · 底色 <span class="mono">${esc(styleAt.bg)}</span> · 文字 <span class="mono">${esc(styleAt.color)}</span>${styleAt.effect && styleAt.effect !== 'none' ? ` · 特效 ${esc(EFFECT[styleAt.effect] || styleAt.effect)}` : ''}${styleAt.decoLeft || styleAt.decoRight ? ` · 装饰 ${esc(styleAt.decoLeft || '')}${esc(styleAt.decoRight || '')}` : ''}
+          ${styleAt.id ? `<button class="linkbtn" data-open="${styleAt.id}" type="button">去编辑样式</button>` : ''}</div>
       </section>
       <section class="panel">
         <div class="panel__h"><h3>样式(节日主题)</h3><span class="muted">到了时间自动换装,结束后回到默认样式;同时有多个时,优先级高的生效</span></div>
@@ -748,7 +791,7 @@
     clearInterval(tbTimer); tbTimer = setInterval(() => { tbIdx++; show(); }, 4000);
     $('#tb-prev').addEventListener('click', () => { tbIdx--; show(); });
     $('#tb-next').addEventListener('click', () => { tbIdx++; show(); });
-    $('#tb-day').addEventListener('change', (e) => { tbDay = +e.target.value; renderTopbar(); });
+    wireTimeline('tb', points, () => tbAt, (v) => { tbAt = v; renderTopbar(); });
     $$('#tb-root .ftab').forEach((b) => b.addEventListener('click', () => { tbF.st = b.dataset.st; renderTopbar(); }));
     $$('#tb-root [data-tbord]').forEach((b) => b.addEventListener('click', () => {
       const a = b.dataset.tbord;
@@ -944,7 +987,7 @@
   // 首页上的样子:标题两段 + 页签 + 产品卡(正式数据里取真实产品,演示时是占位)
   const pmPreviewCache = {};
   const tabKey = (t) => JSON.stringify([t.source, t.collection?.id, (t.products || []).map((p) => p.id), t.onlyDiscounted, t.sortByDiscount, t.newestFirst, t.limit]);
-  function moduleHtml(v, { activeTab = 0, small = false } = {}) {
+  function moduleHtml(v, { activeTab = 0, small = false, pm = '' } = {}) {
     const c = pmColors(v); const tabs = v.tabs || []; const t = tabs[activeTab] || tabs[0];
     const cached = t && pmPreviewCache[tabKey(t)];
     const cards = cached?.items?.length ? cached.items.slice(0, 5).map((p) => `<span class="pmv__card">
@@ -952,7 +995,7 @@
         <span class="pmv__t">${esc(p.title)}</span>
         <span class="pmv__p">${p.compareAt ? `<s>£${Number(p.compareAt).toFixed(2)}</s>` : ''}<b>£${Number(p.price).toFixed(2)}</b></span></span>`).join('')
       : Array.from({ length: 5 }, () => '<span class="pmv__card pmv__card--ph"><span class="pmv__img"></span><span class="pmv__t"></span></span>').join('');
-    return `<div class="pmv ${small ? 'pmv--sm' : ''}">
+    return `<div class="pmv ${small ? 'pmv--sm' : ''}" ${pm ? `data-pm="${pm}"` : ''}>
       <div class="pmv__h">${v.title ? `<span style="color:${esc(c.titleColor)}">${esc(v.title)}</span>` : ''}${v.title2 ? `<span style="color:${esc(c.title2Color)}">${esc(v.title2)}</span>` : ''}${!v.title && !v.title2 ? '<span class="muted">(没有标题)</span>' : ''}</div>
       <div class="pmv__tabs">${tabs.map((x, i) => `<span class="pmv__tab" data-pmtab="${i}" style="${i === activeTab ? `background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}` : ''}">${esc(tabLabel(x))}</span>`).join('')}</div>
       ${small ? '' : `<div class="pmv__grid">${cards}</div>
@@ -2037,7 +2080,7 @@
   // ================= 全局 =================
   function renderAll() {
     applySiteStyle(); hidePop();
-    renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderCampaigns(); renderReviews(); renderSettings();
+    renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderCampaigns(); renderReviews(); renderSettings();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     const L = window.CGP_ME; // 飞书登录了就显示登录的人和他的角色
     $('#me-chip').innerHTML = L?.larkEnabled
