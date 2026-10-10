@@ -987,10 +987,22 @@
   // 首页上的样子:标题两段 + 页签 + 产品卡(正式数据里取真实产品,演示时是占位)
   const pmPreviewCache = {};
   const tabKey = (t) => JSON.stringify([t.source, t.collection?.id, (t.products || []).map((p) => p.id), t.onlyDiscounted, t.sortByDiscount, t.newestFirst, t.limit]);
+  // 演示模式里的示例产品:用演示目录里的真实产品(图和标题是真的),价格按 id 算一个稳定的示例值
+  function demoItems(t) {
+    const pool = S.products || []; if (!pool.length) return [];
+    const seed = [...tabKey(t || {})].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+    return Array.from({ length: 5 }, (_, i) => {
+      const p = pool[(seed + i * 37) % pool.length];
+      const base = 80 + (p.id % 1200);
+      const off = t?.onlyDiscounted || (p.id % 3 === 0) ? 10 + (p.id % 30) : 0;
+      return { title: p.title, image: p.image, price: (base * (1 - off / 100)).toFixed(2), compareAt: off ? base.toFixed(2) : null, off };
+    });
+  }
   function moduleHtml(v, { activeTab = 0, small = false, pm = '' } = {}) {
     const c = pmColors(v); const tabs = v.tabs || []; const t = tabs[activeTab] || tabs[0];
     const cached = t && pmPreviewCache[tabKey(t)];
-    const cards = cached?.items?.length ? cached.items.slice(0, 5).map((p) => `<span class="pmv__card">
+    const list = cached?.items?.length ? cached.items.slice(0, 5) : (MODE === 'demo' ? demoItems(t) : []);
+    const cards = list.length ? list.map((p) => `<span class="pmv__card">
         <span class="pmv__img" style="background-image:url('${esc(thumb(p.image, 300))}')">${p.off ? `<span class="pmv__off">${p.off}% OFF</span>` : ''}</span>
         <span class="pmv__t">${esc(p.title)}</span>
         <span class="pmv__p">${p.compareAt ? `<s>£${Number(p.compareAt).toFixed(2)}</s>` : ''}<b>£${Number(p.price).toFixed(2)}</b></span></span>`).join('')
@@ -999,7 +1011,7 @@
       <div class="pmv__h">${v.title ? `<span style="color:${esc(c.titleColor)}">${esc(v.title)}</span>` : ''}${v.title2 ? `<span style="color:${esc(c.title2Color)}">${esc(v.title2)}</span>` : ''}${!v.title && !v.title2 ? '<span class="muted">(没有标题)</span>' : ''}</div>
       <div class="pmv__tabs">${tabs.map((x, i) => `<span class="pmv__tab" data-pmtab="${i}" style="${i === activeTab ? `background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}` : ''}">${esc(tabLabel(x))}</span>`).join('')}</div>
       ${small ? '' : `<div class="pmv__grid">${cards}</div>
-      <div class="pmv__foot">${t ? `${tabSummary(t)}${cached ? ` · 现在符合条件的有 ${cached.shown}${cached.approx ? '+' : ''} 个` : MODE === 'live' ? ' · 正在取产品…' : ' · 演示数据只画占位,正式数据里显示真实产品'}` : ''}</div>`}
+      <div class="pmv__foot">${t ? `${tabSummary(t)}${cached ? ` · 现在符合条件的有 ${cached.shown}${cached.approx ? '+' : ''} 个` : MODE === 'live' ? ' · 正在取产品…' : ' · <b>示例产品</b>(演示模式画的是真实产品的图和名字,价格是编的;切到正式数据就是这个页签真正会出现的产品)'}` : ''}</div>`}
     </div>`;
   }
   // 正式数据:取某个页签的前几个产品(只给后台预览用)
@@ -2131,8 +2143,9 @@
         <button class="linkbtn" id="mode-demo" type="button">临时看演示数据</button>`;
       $('#mode-demo').addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
     } else if (liveSetup?.ready) {
-      bar.innerHTML = `<span class="demobar__tag">演示模式</span><span>店里的内容类型已经建好,可以用正式数据了。</span>
-        <button class="linkbtn" id="mode-live" type="button">切换到正式数据</button><button class="linkbtn" id="demo-reset" type="button">重置演示数据</button>`;
+      bar.className = 'demobar demobar--ready';
+      bar.innerHTML = `<span class="demobar__tag">演示模式</span><span>现在看到的是<b>示例数据</b> —— 商品模块里的产品、价格都是编的。店里的内容类型已经建好了,切过去就能看到真实产品和真实排期。</span>
+        <button class="btn btn-sm btn-primary" id="mode-live" type="button">切换到正式数据</button><button class="linkbtn" id="demo-reset" type="button">重置演示数据</button>`;
       $('#mode-live').addEventListener('click', () => { localStorage.removeItem(FORCE_DEMO); location.reload(); });
     }
     $('#demo-reset')?.addEventListener('click', onDemoReset);
