@@ -4,6 +4,7 @@ import {
   roundCents, priceByRule, targetFor, pair, samePair, planStatus, assignmentAt, indexItems,
   planWork, decide, commit, holdVariant, sweep, finishPlans, itemWarnings, overlaps, discountPct,
 } from '../src/price/price-core.js';
+import * as core0 from '../src/price/price-core.js';
 
 const H = 3600_000;
 const item = (variantId, price, extra = {}) => ({ variantId, productId: `P-${variantId}`, title: variantId, price, refPrice: '100.00', refCompareAt: null, ...extra });
@@ -259,4 +260,19 @@ test('重叠提示:谁生效', () => {
   assert.equal(o.length, 1);
   assert.equal(o[0].wins, true);
   assert.equal(overlaps(site, [site, flash])[0].wins, false);
+});
+
+test('跟随活动时间:活动改了时间,计划跟着改;没勾的不动;永久调价不设结束时间', () => {
+  const { syncCampaignTimes } = core0;
+  const mk = (id, follow, camp) => ({ id, name: id, kind: 'window', followCampaign: follow, campaign: camp, slots: [{ id: 's', start: 100, end: 200, items: [] }] });
+  const st = { plans: [mk('a', true, { id: 'c1', name: '旧名' }), mk('b', false, { id: 'c1', name: 'EBF' }), mk('c', true, { id: 'c9', name: '没了' })] };
+  st.plans.push({ ...mk('d', true, { id: 'c1', name: 'EBF' }), kind: 'permanent' });
+  const changed = syncCampaignTimes(st, [{ id: 'c1', name: 'EBF', start: 1000, end: 2000 }]);
+  assert.deepEqual(changed.map((x) => x.plan.id), ['a', 'd']);
+  assert.deepEqual(st.plans[0].slots[0], { id: 's', start: 1000, end: 2000, items: [] });
+  assert.equal(st.plans[0].campaign.name, 'EBF'); // 名字也跟着更新
+  assert.deepEqual(st.plans[1].slots[0], { id: 's', start: 100, end: 200, items: [] }); // 没勾的不动
+  assert.deepEqual(st.plans[2].slots[0], { id: 's', start: 100, end: 200, items: [] }); // 活动找不到就不动
+  assert.equal(st.plans[3].slots[0].end, null); // 永久调价没有结束时间
+  assert.deepEqual(syncCampaignTimes(st, [{ id: 'c1', name: 'EBF', start: 1000, end: 2000 }]), []); // 已经一致就不重复改
 });

@@ -180,7 +180,7 @@ function planRow(p, s) {
         <span class="tag ${p.kind === 'window' ? 'tag--' + layerCls(p) : ''}">${kindLabel(p)}</span>
         ${p.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${holds ? `<span class="tag tag--danger">${holds} 个暂停接管</span>` : ''}
-        ${p.campaign ? `<span class="tag">活动:${esc(p.campaign.name)}</span>` : ''}
+        ${p.campaign ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : ''}
         <span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}
       </div>
       <div class="plan__say">${planSay(p)}</div>
@@ -242,14 +242,14 @@ function newPlan(kind) {
     scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
     tagsAdd: [], tagsRemove: [],
     slots: [{ id: uid('s_'), start: dayAt(1), end: kind === 'permanent' ? null : dayAt(8), items: [], collection: null }],
-    state: 'new', excluded: [], owner: S.me.id, approver: null, cc: [],
+    followCampaign: false, state: 'new', excluded: [], owner: S.me.id, approver: null, cc: [],
   };
 }
 function openEditor(plan, isNew) {
   const p = clone(plan);
   p.rule ||= { mode: p.kind === 'permanent' ? 'percent_up' : 'percent_off', value: 15, rounding: '', from: 'price' };
   p.scope ||= { mode: 'products', collections: [], products: [], vendor: '', tag: '', type: '' };
-  p.color ||= COLORS[0]; p.tagsAdd ||= []; p.tagsRemove ||= [];
+  p.color ||= COLORS[0]; p.tagsAdd ||= []; p.tagsRemove ||= []; p.followCampaign = !!p.followCampaign;
   E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, resolvedKey: isNew ? '' : scopeKey(p) };
   renderChrome(); render(); window.scrollTo(0, 0);
 }
@@ -287,7 +287,7 @@ function summaryHtml() {
     <div class="pr-sum__h"><span class="pr-dot" style="background:${esc(p.color)}"></span><b>${esc(p.name || '(还没起名字)')}</b></div>
     <ul>
       ${line(`${esc(scopeSay)} · <b>${RULE_MODES[p.rule.mode].say(p.rule.value)}</b>${p.rule.rounding ? `,尾数取 ${p.rule.rounding === '99' ? '.99' : '整数'}` : ''}${p.rule.from === 'compare' ? ',按划线价算' : ''}`)}
-      ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束并<b>自动恢复原价</b>` : ',<b>不恢复</b>(永久调价)'}`)}
+      ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束并<b>自动恢复原价</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
       ${line(core.COMPARE_CN[p.compare] || '划线价不动')}
       ${p.kind === 'window' ? line(`层级:${core.LAYER_CN[p.layer]}(同一产品被几个限时计划管时,限时抢购 > 品牌/合集 > 全场)`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
@@ -332,9 +332,10 @@ function editorHtml() {
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期自动恢复原价)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
         ${p.kind === 'window' ? `<div class="row" style="margin-bottom:10px"><span class="muted">层级</span><span class="pr-seg">${[['sitewide', '全场'], ['brand', '品牌 / 合集'], ['flash', '限时抢购']].map(([k, l]) => `<button type="button" class="${p.layer === k ? 'is-on' : ''}" data-a="layer" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>` : ''}
+        ${p.campaign ? `<label class="row" style="margin-bottom:10px;font-size:13px"><input type="checkbox" data-f="followcamp" ${p.followCampaign ? 'checked' : ''} ${ro ? 'disabled' : ''}/> 跟随活动「${esc(p.campaign.name)}」的时间 <span class="muted">活动改时间,这个计划跟着一起改</span></label>` : ''}
         <div class="grid2">
-          <label class="pr-fld">开始<input class="inp" type="datetime-local" data-f="start" value="${toInput(sl.start)}" ${ro || started() ? 'disabled' : ''}/>${!ro && !started() ? '<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">设成现在(批准后一分钟内执行)</button>' : ''}</label>
-          ${p.kind === 'window' ? `<label class="pr-fld">结束(恢复原价)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>已经开始的计划也能改结束时间</em></label>` : ''}
+          <label class="pr-fld">开始<input class="inp" type="datetime-local" data-f="start" value="${toInput(sl.start)}" ${ro || started() || p.followCampaign ? 'disabled' : ''}/>${!ro && !started() && !p.followCampaign ? '<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">设成现在(批准后一分钟内执行)</button>' : ''}</label>
+          ${p.kind === 'window' ? `<label class="pr-fld">结束(恢复原价)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
         </div>
         ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进合集 <em>只能选手动合集;结束自动移出(原来就在的不动)。Flash 当天那一组常用</em>
           ${sl.collection ? `<div class="row"><span class="tag tag--accent">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>`
@@ -529,6 +530,12 @@ function footHtml() {
 
 // ---- 编辑器里的改动 ----
 function touch() { E.dirty = true; }
+// 勾了「跟随活动时间」:把活动的开始 / 结束填进来(执行器每轮也会再对齐一次)
+function applyCampaignTime() {
+  const c = (cache.campaigns || []).find((x) => x.id === E.plan.campaign?.id);
+  if (!c || c.start == null) { toast('这个活动还没设开始时间', false); E.plan.followCampaign = false; return; }
+  const s = curSlot(); s.start = c.start; s.end = E.plan.kind === 'window' ? c.end ?? null : null;
+}
 const toItem = (pr, v, rule) => {
   const it = { variantId: v.id, productId: pr.id, title: `${pr.title}${v.title ? ' - ' + v.title : ''}`, product: pr.title, variant: v.title, sku: v.sku, vendor: pr.vendor, image: pr.image,
     refPrice: v.price, refCompareAt: v.compareAt, cost: v.cost, price: null };
@@ -582,7 +589,7 @@ function values() {
   const p = E.plan;
   return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer : null,
     compare: p.compare || (p.kind === 'window' ? 'original' : 'keep'), campaign: p.campaign, note: p.note, slots: p.slots,
-    rule: p.rule, scope: p.scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove,
+    rule: p.rule, scope: p.scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
     owner: p.owner || null, approver: p.approver || null, cc: p.cc || [] };
 }
 
@@ -775,7 +782,13 @@ document.addEventListener('change', async (ev) => {
     case 'rrounding': E.plan.rule.rounding = el.value; E.resolvedKey = ''; touch(); render(); break;
     case 'rfrom': E.plan.rule.from = el.value; E.resolvedKey = ''; touch(); render(); break;
     case 'svendor': case 'stag': case 'stype': E.plan.scope[{ svendor: 'vendor', stag: 'tag', stype: 'type' }[f]] = el.value.trim(); E.resolvedKey = ''; touch(); break;
-    case 'campaign': { const c = (cache.campaigns || []).find((x) => x.id === el.value); E.plan.campaign = c ? { id: c.id, name: c.name } : null; touch(); break; }
+    case 'campaign': {
+      const c = (cache.campaigns || []).find((x) => x.id === el.value);
+      E.plan.campaign = c ? { id: c.id, name: c.name } : null;
+      if (!c) E.plan.followCampaign = false; else if (E.plan.followCampaign) applyCampaignTime();
+      touch(); render(); break;
+    }
+    case 'followcamp': E.plan.followCampaign = el.checked; if (el.checked) applyCampaignTime(); touch(); render(); break;
     case 'owner': E.plan.owner = el.value || null; touch(); break;
     case 'approver': E.plan.approver = el.value || null; touch(); render(); break; // 换审批人会改变底部按钮(审批人自己提交 = 直接生效)
     case 'cc': { const set = new Set(E.plan.cc || []); el.checked ? set.add(el.value) : set.delete(el.value); E.plan.cc = [...set]; touch(); break; }

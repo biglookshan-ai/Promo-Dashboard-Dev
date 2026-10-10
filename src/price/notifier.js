@@ -86,6 +86,11 @@ export function reportMessages(state, rep, { appUrl, now = Date.now(), members =
     out.push({ to: [...new Set([...fresh.flatMap((f) => toPlan(f.planId)), ...admins(members)])], card: { title: '❌ 改价失败', color: 'red', button: btn,
       lines: [...fresh.slice(0, 8).map((f) => `· ${f.title || f.collection || ''}${f.title || f.collection ? ':' : ''}${f.message}`), fresh.length > 8 ? `……共 ${fresh.length} 条` : '', '执行器下一分钟自动重试'] } });
   }
+  for (const m of rep.moved || []) if (n.decision) {
+    const p = planOf(m.planId);
+    out.push({ to: p ? peopleOf(p, members) : admins(members), card: { title: '🕑 改价时间跟着活动改了', color: 'blue', button: btn,
+      lines: [`**${m.plan}**`, `活动「${m.campaign}」改了时间,这个计划跟着改成:`, `${fmt(m.to.start)}${m.to.end ? ` → ${fmt(m.to.end)}` : ' 起'}`] } });
+  }
   for (const f of rep.finished) if (n.end) out.push({ to: toPlan(f.planId), card: { title: '✅ 永久调价已全部完成', color: 'green', button: btn, lines: [`**${f.plan}**`] } });
   if (n.unapproved) {
     for (const p of state.plans) {

@@ -401,3 +401,23 @@ export function planTags(state, now) {
   }
   return out;
 }
+
+// ---------- 跟随活动时间 ----------
+// 计划勾了「跟随活动时间」时,开始 / 结束用活动的。活动改了时间,改价跟着一起改(用户 2026-10-10 要求)。
+// campaigns:[{ id, name, start, end }](网站更新中心的活动)。直接改 state,返回有变化的计划。
+export function syncCampaignTimes(state, campaigns = []) {
+  const byId = new Map(campaigns.map((c) => [c.id, c]));
+  const changed = [];
+  for (const plan of state.plans || []) {
+    if (!plan.followCampaign || !plan.campaign?.id) continue;
+    const c = byId.get(plan.campaign.id);
+    if (!c || c.start == null) continue;
+    const s = plan.slots?.[0]; if (!s) continue;
+    const end = plan.kind === 'window' ? c.end ?? null : null;
+    if (s.start === c.start && s.end === end) continue;
+    changed.push({ plan, from: { start: s.start, end: s.end }, to: { start: c.start, end } });
+    s.start = c.start; s.end = end;
+    if (plan.campaign.name !== c.name) plan.campaign.name = c.name;
+  }
+  return changed;
+}

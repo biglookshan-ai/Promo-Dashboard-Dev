@@ -812,7 +812,7 @@
       if (ce != null && (x.end == null || x.end > ce + HOUR)) out.push({ level: 'warn', id: x.id, text: `${name}${x.end == null ? '没设结束时间,活动结束后还会一直显示' : `比活动晚 ${relSpan(x.end - ce)}下线(${fDT(x.end)})`}` });
     }
     for (const p of livePlans) {
-      if (p.kind !== 'window') continue;
+      if (p.kind !== 'window' || p.followCampaign) continue; // 跟随活动时间的本来就一致
       const ps = Math.min(...p.slots.map((s) => s.start)), pe = Math.max(...p.slots.map((s) => s.end));
       if (cs != null && Math.abs(ps - cs) > HOUR) out.push({ level: 'warn', price: p.id, text: `改价「${p.name}」${ps < cs ? '比活动早' : '比活动晚'} ${relSpan(Math.abs(ps - cs))}开始:${ps < cs ? '价格先降了,网站内容还没上' : '网站内容上了,价格还没降'}` });
       if (ce != null && Math.abs(pe - ce) > HOUR) out.push({ level: 'warn', price: p.id, text: `改价「${p.name}」${pe > ce ? '比活动晚' : '比活动早'} ${relSpan(Math.abs(pe - ce))}结束` });
@@ -1508,10 +1508,19 @@
 
   // ================= v3 工作项:合集置顶清单 / 设计需求 / 宣传物料 =================
   let wx = null; // 编辑中的列表数据:置顶的合集和产品、设计稿、物料素材
+  let wxPlans = null; // 能导入的改价计划(按需加载)
+  function wxPlansHtml() {
+    if (wxPlans == null) return '<button type="button" class="btn btn-sm" data-wx="loadplans">看看有哪些改价计划</button>';
+    if (!wxPlans.length) return '<span class="muted">还没有改价计划</span>';
+    return `<div class="results">${wxPlans.map((p) => `<div class="result"><b style="flex:1">${esc(p.name)}</b>
+      <span class="muted">${p.n} 个产品 · ${p.when}</span><button type="button" class="btn btn-sm" data-wx="useplan" data-id="${esc(p.id)}">用它的产品</button></div>`).join('')}</div>`;
+  }
   function pinBoxHtml() {
     return `<div class="fld"><span>合集</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
         <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button></div>
         <em>合集页按下面的顺序把这些产品排在最前面,其他产品照原来的规则排在后面</em></div>
+      ${window.cgpCanSee && window.cgpCanSee('price') && MODE === 'live' ? `<div class="fld"><span>从改价计划导入 <em>Flash 当天改价的那批产品,不用再填一遍</em></span>
+        <div id="wx-plans">${wxPlansHtml()}</div></div>` : ''}
       <div class="fld"><span>排在最前面的产品(按顺序)</span>
         <div class="pinlist">${wx.products.map((p, i) => `<div class="pinrow"><b>${i + 1}</b>${p.image ? `<img src="${esc(thumb(p.image, 80))}" alt="">` : '<span class="pinrow__img"></span>'}<span class="pinrow__t">${esc(p.title)}</span>
           <button type="button" class="btn btn-ghost btn-xs" data-wx="up" data-i="${i}" ${i ? '' : 'disabled'}>↑</button><button type="button" class="btn btn-ghost btn-xs" data-wx="down" data-i="${i}" ${i < wx.products.length - 1 ? '' : 'disabled'}>↓</button><button type="button" class="btn btn-ghost btn-xs" data-wx="rm" data-i="${i}">✕</button></div>`).join('') || '<span class="muted">还没加</span>'}</div>
@@ -1798,6 +1807,7 @@
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])] };
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
     wx = { collection: base.kind === 'pin' ? base.collection || null : null, products: base.kind === 'pin' ? [...(base.products || [])] : [] };
+    wxPlans = null; // 每次打开抽屉重新按需加载
     const s = status(it);
     const approver = isApprover();
     const live = it.state === 'approved';
@@ -1883,6 +1893,7 @@
     const redrawWx = () => {
       const box = $('#wx-box'); if (!box) return;
       box.innerHTML = pinBoxHtml();
+      const pb = $('#wx-plans'); if (pb) pb.innerHTML = wxPlansHtml();
       refreshPv();
     };
     f.addEventListener('click', async (e) => {
@@ -1900,6 +1911,25 @@
       const w = e.target.closest('[data-wx]'); if (!w || w.tagName === 'INPUT') return;
       const i = +w.dataset.i; const a = w.dataset.wx;
       if (a === 'pickcoll' || a === 'pickprod') { if (await pickPin(a === 'pickcoll' ? 'coll' : 'prod')) redrawWx(); return; }
+      if (a === 'loadplans') {
+        try {
+          const d = await api('GET', '/api/price/state');
+          wxPlans = d.plans.filter((p) => p.slots?.some((x) => x.items?.length)).map((p) => {
+            const its = p.slots.flatMap((x) => x.items);
+            const prods = [...new Map(its.map((i) => [i.productId, i])).values()];
+            return { id: p.id, name: p.name, n: prods.length, when: fDT(Math.min(...p.slots.map((x) => x.start))), prods };
+          });
+        } catch (e) { toast(e.message, false); wxPlans = []; }
+        $('#wx-plans').innerHTML = wxPlansHtml(); return;
+      }
+      if (a === 'useplan') {
+        const pl = wxPlans.find((x) => x.id === w.dataset.id); if (!pl) return;
+        const have = new Set(wx.products.map((x) => x.id));
+        const add = pl.prods.filter((x) => !have.has(x.productId)).map((x) => ({ id: x.productId, title: x.product || x.title, image: x.image || '' }));
+        wx.products.push(...add);
+        toast(`加了 ${add.length} 个产品(按改价计划里的顺序)`);
+        redrawWx(); return;
+      }
       if (a === 'up' || a === 'down') { const j = a === 'up' ? i - 1 : i + 1; [wx.products[i], wx.products[j]] = [wx.products[j], wx.products[i]]; return redrawWx(); }
       if (a === 'rm') { wx.products.splice(i, 1); return redrawWx(); }
     });

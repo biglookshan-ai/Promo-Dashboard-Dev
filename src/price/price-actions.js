@@ -13,7 +13,7 @@ export const canApprove = (a, plan) => !!a && (isAdminActor(a) || (!!plan?.appro
 
 // 计划里可编辑的字段
 export const EDIT_KEYS = ['name', 'kind', 'layer', 'compare', 'campaign', 'note', 'slots', 'rule', 'approver', 'owner', 'cc',
-  'color', 'scope', 'tagsAdd', 'tagsRemove'];
+  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign'];
 const pick = (v) => Object.fromEntries(EDIT_KEYS.filter((k) => k in v).map((k) => [k, clone(v[k])]));
 
 export function addLog(doc, now, action, plan, note, actor) {
@@ -26,6 +26,7 @@ export function validate(p, settings = {}) {
   if (!String(p.name || '').trim()) return '请填写计划名称';
   if (!['window', 'permanent'].includes(p.kind)) return '请选择类型(限时 / 永久)';
   if (p.kind === 'window' && !['flash', 'brand', 'sitewide'].includes(p.layer)) return '请选择层级';
+  if (p.followCampaign && !p.campaign?.id) return '勾了「跟随活动时间」就要先选一个活动';
   const slots = p.slots || [];
   if (!slots.length) return '至少要有一个时段';
   if (p.kind === 'permanent' && slots.length !== 1) return '永久调价只能有一个生效时间';
@@ -61,7 +62,7 @@ function checkLocked(plan, next, now) {
   if (plan.state !== 'approved') return;
   if (plan.kind === 'permanent' && Object.keys(plan.applied || {}).length) fail('这个永久调价已经开始执行,不能再改;要停就点「停止」');
   for (const s of plan.slots) {
-    if (s.start > now) continue;
+    if (s.start > now || plan.followCampaign) continue; // 跟随活动的时间由活动决定,不算人为改动
     const n = (next.slots || []).find((x) => x.id === s.id);
     if (!n) fail('已经开始的时段不能删除;要提前结束请用「停止」或「排除产品」');
     if (slotKey(n) !== slotKey(s)) fail('已经开始的时段不能改(时间、产品、价格都锁定了);只能暂停、停止或排除产品');

@@ -7,7 +7,7 @@
 //   5. 永久计划全部执行完 → 标记完成
 // 规则都在 price-core.js;这里只管调用、读写 Shopify、存盘、记日志。
 import { load, save, withLock, appendLedger, appendLog, listShops } from './store.js';
-import { planWork, decide, commit, holdVariant, sweep, setIntent, clearIntent, recoverIntents, planCollections, planTags, finishPlans, samePair, pair } from './price-core.js';
+import { planWork, decide, commit, holdVariant, sweep, setIntent, clearIntent, recoverIntents, planCollections, planTags, syncCampaignTimes, finishPlans, samePair, pair } from './price-core.js';
 import { realIO } from './shop-io.js';
 import { getToken } from '../token-store.js';
 import { reportMessages, deliver as realDeliver } from './notifier.js';
@@ -26,7 +26,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
   return withLock(shop, async () => {
     const state = load(shop);
     const ctx = { shop, token };
-    const rep = { at: now, written: [], failures: [], holds: [], recovered: [], collections: [], tags: [], finished: [] };
+    const rep = { at: now, written: [], failures: [], holds: [], recovered: [], collections: [], tags: [], moved: [], finished: [] };
     const planOf = (rec) => rec.asg?.plan || rec.perm?.plan || null;
     const planName = (id) => state.plans.find((p) => p.id === id)?.name || '';
     const brief = (rec, extra = {}) => {
@@ -38,6 +38,14 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
 
     try {
       if (!token) throw new Error('没有店铺授权(请在 Shopify 后台打开一次 app)');
+
+      // 0. 勾了「跟随活动时间」的计划:按活动现在的时间对齐(活动改时间,改价跟着改)
+      const moved = syncCampaignTimes(state, loadSchedule(shop).campaigns || []);
+      for (const m of moved) {
+        appendLog(state, { at: now, action: 'follow', planId: m.plan.id, plan: m.plan.name, by: '执行器',
+          note: `跟随活动「${m.plan.campaign.name}」改时间:${m.to.start ? new Date(m.to.start).toISOString() : ''}${m.to.end ? ' → ' + new Date(m.to.end).toISOString() : ''}` });
+      }
+      if (moved.length) { rep.moved = moved.map((m) => ({ planId: m.plan.id, plan: m.plan.name, campaign: m.plan.campaign.name, to: m.to })); save(shop, state); }
 
       // 1. 上一轮中断留下的意图
       const intentIds = Object.keys(state.vault).filter((v) => state.vault[v].intent);
