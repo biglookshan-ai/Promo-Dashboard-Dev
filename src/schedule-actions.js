@@ -7,11 +7,8 @@
 // 返回 { doc, effects, message }。effects 交给服务器执行(写 Shopify / 发飞书),浏览器演示模式忽略。
 import { itemStatus, campaignIndex } from './schedule-core.js';
 
-export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins', design: 'designs', material: 'materials' };
-export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: '合集置顶清单', design: '设计需求', material: '宣传物料' };
-// 只存在 app 里、不写进 Shopify 的工作项(审批流程一样,批准了也不上线 / 下线)
-export const APP_ONLY = ['design', 'material'];
-export const CHANNEL_CN = { email: '邮件营销', social: '社媒帖子' };
+export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins' };
+export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: '合集置顶清单' };
 export const MODULE_CN = { sale: '促销模块', feature: '推荐 / 新品模块' };
 export const ORDERABLE = ['banner', 'topbar'];
 
@@ -20,16 +17,15 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   'emoji', 'text', 'link', 'category', 'name', 'collections', 'tags', 'products', 'badge', 'countdown', 'priority',
   'bg', 'color', 'accent', 'effect', 'decoLeft', 'decoRight', 'start', 'end', 'campaign',
   'module', 'title2', 'titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText', 'tabs', 'isDefault',
-  // v3 活动总控台的工作项:合集置顶清单 / 设计需求 / 宣传物料
-  'collection', 'onlyListed', 'brief', 'spec', 'refs', 'due', 'assignee', 'target', 'deliverables', 'chosen',
-  'channel', 'platform', 'subject', 'copy', 'assets', 'publishAt', 'owner', 'note'];
+  // v3:合集置顶清单;活动关联的飞书任务链接
+  'collection', 'onlyListed', 'larkLinks'];
 
 export class ActionError extends Error {}
 const fail = (msg) => { throw new ActionError(msg); };
 
 export const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
   : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
-export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || []), ...(doc.designs || []), ...(doc.materials || [])];
+export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || [])];
 export const findItem = (doc, id) => allOf(doc).find((x) => x.id === id);
 const isApprover = (actor) => actor?.role === 'approver';
 
@@ -62,12 +58,6 @@ export function validate(it) {
   if (it.kind === 'pin') {
     if (!it.collection?.id) return '请选要排序的合集';
     if (!(it.products || []).length) return '至少放一个要排在前面的产品';
-  }
-  if (it.kind === 'design' && !String(it.name || '').trim()) return '请填写设计需求的标题';
-  if (it.kind === 'design' && !(it.deliverables || []).length) return '还没上传设计稿;先存需求,交稿时再提交审核';
-  if (it.kind === 'material') {
-    if (!String(it.name || '').trim()) return '请填写物料标题';
-    if (!CHANNEL_CN[it.channel]) return '请选择是邮件还是社媒帖子';
   }
   if (it.start != null && it.end != null && it.end <= it.start) return '结束时间要晚于开始时间';
   return '';
@@ -135,7 +125,6 @@ export function applyAction(input, action, actor, now = Date.now()) {
         message = '已提交审核';
       } else if (mode === 'publish') {
         if (!isApprover(actor)) fail('只有审核人能直接发布,请提交审核');
-        if (kind === 'design' && !approved) fail('设计需求要先交稿、提交审核,批准后才算完成');
         const wasNew = !approved;
         Object.assign(it, v, { state: 'approved', pendingChange: null, rejectNote: null, lastReject: null });
         if (isNew) list.push(it);
@@ -211,8 +200,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
       const it = findItem(doc, action.id) || fail('找不到这条内容');
       if (it.isDefault) fail('默认样式不能删除');
       const s = itemStatus(it, campaignIndex(doc.campaigns), now);
-      if (APP_ONLY.includes(it.kind)) { if (s === 'pending') fail('还在等审批,先批准或退回再删'); }
-      else if (!['draft', 'rejected', 'ended'].includes(s)) fail('只能删除草稿、被退回或已结束的内容');
+      if (!['draft', 'rejected', 'ended'].includes(s)) fail('只能删除草稿、被退回或已结束的内容');
       if (!isApprover(actor) && it.by !== actor.id) fail('只能删除自己建的内容');
       if (it.kind === 'campaign' && followersOf(doc, it.id).length) fail('还有 Banner / 顶栏挂在这个活动下,先把它们改成别的时间方式');
       const list = L(it.kind); list.splice(list.indexOf(it), 1);
@@ -220,16 +208,6 @@ export function applyAction(input, action, actor, now = Date.now()) {
       if (it.shopifyId) effects.push({ type: 'remove', shopifyId: it.shopifyId });
       for (const tab of it.tabs || []) if (tab.shopifyId) effects.push({ type: 'remove', shopifyId: tab.shopifyId });
       return { doc, effects, message: '已删除' };
-    }
-
-    case 'markPublished': {
-      const it = findItem(doc, action.id) || fail('找不到这条内容');
-      if (it.kind !== 'material') fail('只有宣传物料需要标记发布');
-      if (it.state !== 'approved') fail('批准后才能标记已发布');
-      if (!isApprover(actor) && it.by !== actor.id && it.owner !== actor.id) fail('只有负责人或审核人能标记');
-      it.publishedAt = action.undo ? null : now; it.publishedUrl = action.undo ? '' : String(action.url || '').trim();
-      addLog(doc, now, 'publish', it, action.undo ? '撤销「已发布」' : `已发布${it.publishedUrl ? ':' + it.publishedUrl : ''}`, actor);
-      return { doc, effects, message: action.undo ? '已撤销' : '已标记为已发布', id: it.id };
     }
 
     case 'order': {

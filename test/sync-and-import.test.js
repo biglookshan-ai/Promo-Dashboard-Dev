@@ -197,18 +197,12 @@ test('导入:首页两个商品模块 → 各一个平时版本(页签不限数�
   assert.equal(again.pmodules.length, 0);
 });
 
-test('设计需求 / 物料批准了也不写 Shopify;合集置顶清单写成 cgp_collection_pin', async () => {
-  const { runEffects } = await import('../src/sync.js');
+test('合集置顶清单写成 cgp_collection_pin', async () => {
   const { fieldsFor } = await import('../src/metaobjects.js');
-  const calls = [];
-  const gql = async (ctx, q) => { calls.push(q); return {}; };
-  const state = { campaigns: [], banners: [], topbar: [], tbstyles: [], pmodules: [], pins: [], log: [], settings: { notify: {} },
-    designs: [{ id: 'd1', kind: 'design', state: 'approved', name: 'x' }], materials: [{ id: 'm1', kind: 'material', state: 'approved', name: 'y', channel: 'email' }] };
-  const r = await runEffects({}, state, [{ type: 'sync', id: 'd1' }, { type: 'sync', id: 'm1' }], { gql });
-  assert.equal(calls.length, 0);
-  assert.deepEqual(r.errors || [], []);
-  const f = Object.fromEntries(fieldsFor({ kind: 'pin', name: 'Flash D1', collection: { id: '5', title: 'Flash' }, products: [{ id: '1' }, { id: 'gid://shopify/Product/2' }], onlyListed: true, start: 0, end: 1000 }).map((x) => [x.key, x.value]));
+  const f = Object.fromEntries(fieldsFor({ kind: 'pin', name: 'Flash D1', collection: { id: '5', title: 'Flash' }, products: [{ id: '1' }, { id: 'gid://shopify/Product/2' }], onlyListed: true, countdown: true, badge: 'Flash Deal', start: 0, end: 1000 }).map((x) => [x.key, x.value]));
   assert.equal(f.collection, 'gid://shopify/Collection/5');
   assert.deepEqual(JSON.parse(f.products), ['gid://shopify/Product/1', 'gid://shopify/Product/2']);
   assert.equal(f.only_listed, 'true');
+  assert.equal(f.show_countdown, 'true');
+  assert.equal(f.badge_text, 'Flash Deal');
 });

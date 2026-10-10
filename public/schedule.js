@@ -74,7 +74,7 @@
       tbstyles: seed.tbstyles.map((t) => conv(t, 'tbstyle')),
       pmodules: (seed.pmodules || []).map((m) => conv(m, 'pmodule')),
       campaigns: seed.campaigns.map((c) => conv(c, 'campaign')),
-      pins: [], designs: [], materials: [],
+      pins: [],
       log: seed.log.map((l) => ({ ...l, at: now() + l.at * DAY })),
       pendingOrder: null,
     };
@@ -89,12 +89,12 @@
       Object.assign(tagCounts, c.counts?.tags || {});
       Object.entries(c.counts?.collections || {}).forEach(([gid, x]) => { liveColCounts[gid] = x.count; });
     });
-    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], designs: v.designs || [], materials: v.materials || [] };
+    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [] };
   }
   async function load(force) {
     if (MODE === 'live') { S = await normalizeLive(await api('GET', '/api/schedule/state')); return; }
     const raw = !force && localStorage.getItem(DEMO_KEY);
-    if (raw) { S = JSON.parse(raw); S.pins ||= []; S.designs ||= []; S.materials ||= []; return; }
+    if (raw) { S = JSON.parse(raw); S.pins ||= []; return; }
     S = materialize(await getSeed());
     save();
   }
@@ -114,7 +114,7 @@
     try {
       if (MODE === 'demo') {
         const r = A.applyAction(S, action, me(), now());
-        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pins', 'designs', 'materials', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k] ?? S[k]; });
+        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pins', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k] ?? S[k]; });
         save(); renderAll();
         return r;
       }
@@ -129,14 +129,14 @@
     }
   }
 
-  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || []), ...(S.pins || []), ...(S.designs || []), ...(S.materials || [])];
-  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []), pin: (S.pins ||= []), design: (S.designs ||= []), material: (S.materials ||= []) }[k]);
+  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || []), ...(S.pins || [])];
+  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []), pin: (S.pins ||= []) }[k]);
   const byId = (id) => all().find((x) => x.id === id);
   const camp = (id) => S.campaigns.find((c) => c.id === id);
   const me = () => S.staff.find((u) => u.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' };
   const isApprover = () => me().role === 'approver';
   const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
-  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', design: '设计需求', material: '宣传物料', price: '改价' };
+  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', price: '改价' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
   const rid = (p) => p + Math.random().toString(36).slice(2, 9);
@@ -695,7 +695,7 @@
   // ================= 活动 =================
   const cpF = { st: 'live' };
   // ================= 活动总控台 =================
-  // 一个活动下面的全部工作:网站内容 / 改价 / 设计需求 / 宣传物料,准备进度一眼看清,每类都能直接新建(自动挂在这个活动下)
+  // 一个活动下面所有「网站要更新的东西」:网站内容(Banner / 顶栏 / 首页模块 / 合集置顶)+ 改价;具体要求和分工在关联的飞书任务里
   let cpHub = null; // 正在看的活动 id
   let hubPrice = { plans: null, err: '', at: 0 };
   async function loadHubPrice() {
@@ -706,47 +706,37 @@
   }
   const PLAN_ST = { draft: '草稿', pending: '待审核', rejected: '被退回', scheduled: '已排期', running: '进行中', paused: '暂停中', ended: '已结束', done: '已完成' };
   function hubRow(x) {
-    const ws = workState(x);
-    const sub = x.kind === 'design' ? `${x.assignee ? '设计师 ' + esc(x.assignee) + ' · ' : ''}${x.due ? `截止 ${fDate(x.due)}` : '没设截止'}${overdue(x) ? ' · <b class="tx-danger">已逾期</b>' : ''}`
-      : x.kind === 'material' ? `${CHANNEL[x.channel] || ''}${x.channel === 'social' && x.platform ? ' · ' + esc(x.platform) : ''} · ${x.publishAt ? fDT(x.publishAt) + ' 发布' : '没设发布时间'}${x.owner ? ' · ' + esc(who(x.owner)) : ''}`
-        : esc(winText(x));
-    const pic = x.kind === 'banner' ? `<span class="hrow__slide">${slideHtml(x, { w: 160 })}</span>`
-      : x.kind === 'design' && (x.chosen || x.deliverables?.[0]) ? `<span class="hrow__img" style="background-image:url('${esc(thumb(x.chosen || x.deliverables[0].url, 160))}')"></span>`
-        : x.kind === 'material' && x.assets?.[0] ? `<span class="hrow__img" style="background-image:url('${esc(thumb(x.assets[0].url, 160))}')"></span>` : `<span class="hrow__ico">${kindChip(x.kind)}</span>`;
-    const chipInPic = pic.includes('hrow__ico');
-    return `<button class="hrow" type="button" data-open="${x.id}">${pic}<span class="hrow__b"><span class="hrow__t">${chipInPic ? '' : kindChip(x.kind) + ' '}${esc(titleOf(x))}</span><span class="hrow__s">${sub}</span></span>${ws ? workBadge(x) : badge(x)}</button>`;
+    const pic = x.kind === 'banner' ? `<span class="hrow__slide">${slideHtml(x, { w: 160 })}</span>` : `<span class="hrow__ico">${kindChip(x.kind)}</span>`;
+    const chipInPic = x.kind !== 'banner';
+    return `<button class="hrow" type="button" data-open="${x.id}">${pic}<span class="hrow__b"><span class="hrow__t">${chipInPic ? '' : kindChip(x.kind) + ' '}${esc(titleOf(x))}</span><span class="hrow__s">${esc(winText(x))}</span></span>${badge(x)}</button>`;
   }
-  // ---- 一致性检查(活动总控台)----
-  // 文案里说的折扣 vs 实际改价、各项时间 vs 活动时间、设计截止 vs Banner 上线、物料发布时间、快开始了还没批准
+
+  // ---- 一致性检查:文案折扣 vs 实际改价、各项时间 vs 活动时间、快开始了还没批准 ----
   const pctClaims = (text) => {
     const t = String(text || '');
     const out = [];
     for (const m of t.matchAll(/up\s*to\s*(\d{1,2})\s*%/gi)) out.push({ pct: +m[1], upTo: true });
     for (const m of t.matchAll(/(\d{1,2})\s*%\s*off/gi)) if (!out.some((x) => x.pct === +m[1])) out.push({ pct: +m[1], upTo: false });
-    for (const m of t.matchAll(/(\d)(?:\.\d)?\s*折/g)) out.push({ pct: 100 - +m[1] * 10, upTo: false, zh: true });
+    for (const m of t.matchAll(/(\d)(?:\.\d)?\s*折/g)) out.push({ pct: 100 - +m[1] * 10, upTo: false });
     return out;
   };
-  const textsOf = (x) => (x.kind === 'banner' ? [x.title, x.subtitle, x.description] : x.kind === 'topbar' ? [x.text]
-    : x.kind === 'pmodule' ? [x.title, x.title2] : x.kind === 'material' ? [x.subject, x.copy] : []).join(' ');
+  const textsOf = (x) => (x.kind === 'banner' ? [x.title, x.subtitle, x.description] : x.kind === 'topbar' ? [x.text] : x.kind === 'pmodule' ? [x.title, x.title2] : []).join(' ');
   const HOUR = 3600000;
+  const relSpan = (ms) => (ms >= DAY ? `${Math.round(ms / DAY)} 天` : `${Math.max(1, Math.round(ms / HOUR))} 小时`);
   function consistencyChecks(c, plans) {
     const out = [];
-    const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
-    const content = [...mine('banner'), ...mine('topbar'), ...mine('pmodule'), ...mine('pin')];
-    const mats = mine('material'), designs = mine('design');
-    // 1. 文案里的折扣
+    const content = ['banner', 'topbar', 'pmodule', 'pin'].flatMap((k) => listOf(k).filter((x) => x.campaign === c.id));
     const livePlans = (plans || []).filter((p) => ['approved', 'pending'].includes(p.state) && !p.stopped);
     const maxOff = livePlans.reduce((m, p) => Math.max(m, ...p.slots.flatMap((s) => s.items.filter((i) => i.price != null).map((i) => Math.round((1 - Number(i.price) / Number(i.refPrice)) * 100)))), 0);
-    for (const x of plans === undefined ? [] : [...content, ...mats]) { // undefined = 改价数据还在加载
+    for (const x of plans === undefined ? [] : content) { // undefined = 改价数据还在加载
       for (const cl of pctClaims(textsOf(x))) {
         const name = `${KIND[x.kind]}「${titleOf(x)}」`;
-        if (plans == null) { out.push({ level: 'info', id: x.id, text: `${name}写了 ${cl.pct}%${cl.upTo ? '(up to)' : ' off'},你没有改价页权限,没法核对实际折扣` }); continue; }
+        if (plans == null) { out.push({ level: 'info', id: x.id, text: `${name}写了 ${cl.pct}%,你没有改价页权限,没法核对实际折扣` }); continue; }
         if (!livePlans.length) { out.push({ level: 'warn', id: x.id, text: `${name}写了 ${cl.pct}%${cl.upTo ? '(up to)' : ' off'},但这个活动还没有改价计划` }); continue; }
         if (maxOff < cl.pct - 1) out.push({ level: 'warn', id: x.id, text: `${name}写${cl.upTo ? ' up to' : ''} ${cl.pct}%,但本活动改价最多只降 ${maxOff}%` });
         else if (cl.upTo && maxOff > cl.pct + 5) out.push({ level: 'info', id: x.id, text: `${name}写 up to ${cl.pct}%,实际最多降 ${maxOff}%,文案可以写得更吸引人` });
       }
     }
-    // 2. 时间对不上
     const cs = c.start, ce = c.end;
     for (const x of content) {
       if (x.start == null && x.end == null) continue; // 跟随活动时间
@@ -760,50 +750,40 @@
       if (cs != null && Math.abs(ps - cs) > HOUR) out.push({ level: 'warn', price: p.id, text: `改价「${p.name}」${ps < cs ? '比活动早' : '比活动晚'} ${relSpan(Math.abs(ps - cs))}开始:${ps < cs ? '价格先降了,网站内容还没上' : '网站内容上了,价格还没降'}` });
       if (ce != null && Math.abs(pe - ce) > HOUR) out.push({ level: 'warn', price: p.id, text: `改价「${p.name}」${pe > ce ? '比活动晚' : '比活动早'} ${relSpan(Math.abs(pe - ce))}结束` });
     }
-    // 3. 设计截止 vs Banner 上线
-    for (const d of designs) {
-      const b = d.target && byId(d.target); if (!b || !d.due || d.state === 'approved') continue;
-      const bs = win(b).start;
-      if (bs != null && d.due > bs) out.push({ level: 'warn', id: d.id, text: `设计「${titleOf(d)}」截止(${fDate(d.due)})比要用它的 Banner 上线(${fDT(bs)})还晚` });
-    }
-    // 4. 物料发布时间
-    for (const m of mats) {
-      if (!m.publishAt || m.publishedAt) continue;
-      if (ce != null && m.publishAt > ce) out.push({ level: 'warn', id: m.id, text: `${CHANNEL[m.channel]}「${titleOf(m)}」计划在活动结束后才发(${fDT(m.publishAt)})` });
-      if (cs != null && m.publishAt < cs - 7 * DAY) out.push({ level: 'info', id: m.id, text: `${CHANNEL[m.channel]}「${titleOf(m)}」比活动早一周以上发(${fDT(m.publishAt)}),确认是预热吗` });
-    }
-    // 5. 快开始了还没批准
     if (cs != null && cs > now() && cs - now() < 2 * DAY) {
-      const notYet = [...content, ...mats].filter((x) => x.state !== 'approved').length + designs.filter((d) => d.state !== 'approved').length + livePlans.filter((p) => p.state !== 'approved').length;
-      if (notYet) out.push({ level: 'warn', text: `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项没批准 / 没完成` });
+      const notYet = content.filter((x) => x.state !== 'approved').length + livePlans.filter((p) => p.state !== 'approved').length;
+      if (notYet) out.push({ level: 'warn', text: `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项没批准` });
     }
     return out;
   }
-  const relSpan = (ms) => (ms >= DAY ? `${Math.round(ms / DAY)} 天` : `${Math.max(1, Math.round(ms / HOUR))} 小时`);
   function checksHtml(c, plans) {
     const list = consistencyChecks(c, plans);
-    return `<section class="panel hubsec"><div class="panel__h"><h3>一致性检查</h3><span class="muted">文案折扣 vs 实际改价、各项时间 vs 活动时间、设计和物料的时间</span></div>
+    return `<section class="panel hubsec"><div class="panel__h"><h3>一致性检查</h3><span class="muted">文案折扣 vs 实际改价、各项时间 vs 活动时间</span></div>
       ${list.length ? `<div class="hchecks">${list.map((x) => `<div class="hcheck hcheck--${x.level}">${x.level === 'warn' ? '⚠️' : 'ℹ️'} <span>${esc(x.text)}</span>${x.id ? `<button type="button" class="linkbtn" data-open="${x.id}">去改</button>` : x.price ? `<button type="button" class="linkbtn" data-price="${x.price}">去改</button>` : ''}</div>`).join('')}</div>`
         : '<p class="muted">✓ 没发现对不上的地方</p>'}</section>`;
+  }
+  // 关联的飞书任务:链接 + 名字(任务状态在接好飞书任务权限后显示)
+  const larkTaskGuid = (url) => (String(url).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0] || '';
+  function larkLinksHtml(c) {
+    const links = c.larkLinks || [];
+    return `<section class="panel hubsec"><div class="panel__h"><h3>关联的飞书任务</h3><span class="muted">具体要求、设计、文案、分工都在飞书任务里;在「编辑活动设置」里贴链接</span></div>
+      ${links.length ? `<div class="larklinks">${links.map((l) => `<a class="larklink" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="larklink__ico">✓</span><span class="larklink__b"><b>${esc(l.label || '飞书任务')}</b><span class="muted">${/task_?list|tasklist/i.test(l.url) ? '任务清单' : '任务'}${larkTaskGuid(l.url) ? '' : ' · 链接里没找到任务编号'}</span></span><span class="larklink__go">↗</span></a>`).join('')}</div>`
+        : `<p class="muted">还没关联。<button type="button" class="linkbtn" data-open="${c.id}">去贴飞书任务链接</button></p>`}</section>`;
   }
   function hubHtml(c) {
     const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
     const content = [...mine('banner'), ...mine('topbar'), ...mine('tbstyle'), ...mine('pmodule'), ...mine('pin')];
-    const designs = mine('design'), mats = mine('material');
     const canPrice = MODE === 'live' && window.cgpCanSee && window.cgpCanSee('price');
     const plans = (hubPrice.plans || []).filter((p) => p.campaign?.id === c.id);
-    const work = [...content, ...designs, ...mats];
-    const isDone = (x) => (workState(x) ? workState(x)[0] === 'done' || (x.kind === 'material' && x.state === 'approved') : x.state === 'approved');
-    const done = work.filter(isDone).length + plans.filter((p) => p.state === 'approved').length;
-    const total = work.length + plans.length;
-    const waiting = work.filter((x) => x.state === 'pending' || x.pendingChange).length + plans.filter((p) => p.state === 'pending' || p.pendingChange).length;
-    const late = designs.filter(overdue).length + mats.filter((m) => workState(m)[0] === 'late').length;
+    const done = content.filter((x) => x.state === 'approved').length + plans.filter((p) => p.state === 'approved').length;
+    const total = content.length + plans.length;
+    const waiting = content.filter((x) => x.state === 'pending' || x.pendingChange).length + plans.filter((p) => p.state === 'pending' || p.pendingChange).length;
     const pct = total ? Math.round((done / total) * 100) : 0;
-    const add = (kind, label, extra = '') => `<button type="button" class="btn btn-sm" data-new="${kind}" data-for="${c.id}" ${extra}>${I.plus}${label}</button>`;
+    const add = (kind, label) => `<button type="button" class="btn btn-sm" data-new="${kind}" data-for="${c.id}">${I.plus}${label}</button>`;
     const sec = (title, sub, rows, adds, emptyMsg) => `<section class="panel hubsec"><div class="panel__h"><h3>${title}</h3><span class="muted">${sub}</span></div>
       <div class="hrows">${rows || `<p class="muted">${emptyMsg}</p>`}</div><div class="hubsec__add">${adds}</div></section>`;
     const priceRows = plans.map((p) => `<button class="hrow" type="button" data-price="${p.id}"><span class="hrow__ico">${kindChip('price')}</span><span class="hrow__b"><span class="hrow__t">${esc(p.name)}</span>
-      <span class="hrow__s">${p.kind === 'permanent' ? '永久调价' : '限时'} · ${p.slots.length} 个时段 · ${new Set(p.slots.flatMap((s) => s.items.map((i) => i.productId))).size} 个产品</span></span><span class="tag">${PLAN_ST[p.state === 'approved' ? 'scheduled' : p.state] || p.state}</span></button>`).join('');
+      <span class="hrow__s">${p.kind === 'permanent' ? '永久调价' : '限时'} · ${new Set(p.slots.flatMap((s) => s.items.map((i) => i.productId))).size} 个产品 · ${fDT(Math.min(...p.slots.map((s) => s.start)))}</span></span><span class="tag">${PLAN_ST[p.state === 'approved' ? 'scheduled' : p.state] || p.state}</span></button>`).join('');
     return `
       <button class="btn btn-ghost btn-back" type="button" data-hubback>← 全部活动</button>
       <div class="hubhead">
@@ -812,16 +792,15 @@
       </div>
       <div class="hubprog">
         <div class="hubprog__bar"><span style="width:${pct}%"></span></div>
-        <div class="hubprog__n"><b>${done}</b> / ${total} 项已就绪(${pct}%)${waiting ? ` · <span class="tx-warn">${waiting} 项等审批</span>` : ''}${late ? ` · <span class="tx-danger">${late} 项逾期 / 该发了</span>` : ''}</div>
+        <div class="hubprog__n"><b>${done}</b> / ${total} 项已批准(${pct}%)${waiting ? ` · <span class="tx-warn">${waiting} 项等审批</span>` : ''}</div>
       </div>
+      ${larkLinksHtml(c)}
       ${checksHtml(c, canPrice ? (hubPrice.plans || undefined) : null)}
       ${sec('网站内容', '到点自动上线、结束自动下线', content.map(hubRow).join(''),
         add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页促销模块版本')
           + (MODE === 'live' && S.setup && S.setup.pinReady === false ? '<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">合集置顶清单(要先补建内容类型)</button>' : add('pin', '合集置顶清单')), '还没有内容')}
       ${sec('改价', canPrice ? '定价同事负责;到点自动改、到期自动恢复' : '改价信息保密,只有定价同事和管理员能看', canPrice ? priceRows : '',
-        canPrice ? `<button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button>` : '', canPrice ? (hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…') : '你没有改价页的权限')}
-      ${sec('设计需求', '写清需求 → 设计交稿 → 审批 → 一键套用到 Banner', designs.map(hubRow).join(''), add('design', '设计需求'), '还没有设计需求')}
-      ${sec('宣传物料', 'app 不替你发,到时间提醒负责人;发完回填链接', mats.map(hubRow).join(''), add('material', '邮件', 'data-channel="email"') + add('material', '社媒帖子', 'data-channel="social"'), '还没有物料')}`;
+        canPrice ? `<button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button>` : '', canPrice ? (hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…') : '你没有改价页的权限')}`;
   }
 
   function renderCampaigns() {
@@ -840,7 +819,7 @@
         <span class="ccard__row"><span class="muted">产品</span><span class="ccard__v ccard__v--col">${campScope(c, false, '<br>')}<br><span class="muted">合计${st.exact ? '' : '约'} <b>${st.total}${st.unknown ? '+' : ''}</b> 个${st.exact ? '(已去重)' : st.overlap ? '(可能有重叠)' : ''}</span></span></span>
         ${zero.length ? `<span class="tag tag--danger">⚠️ ${esc(zero.join('、'))} 里没有产品</span>` : ''}
         <span class="ccard__row"><span class="muted">产品页</span><span class="ccard__v">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : '<span class="muted">无徽章</span>'}${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span></span>
-        <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}${(S.designs || []).some((d) => d.campaign === c.id) ? ` · ${(S.designs || []).filter((d) => d.campaign === c.id).length} 个设计需求` : ''}${(S.materials || []).some((m) => m.campaign === c.id) ? ` · ${(S.materials || []).filter((m) => m.campaign === c.id).length} 个物料` : ''}</span></span>
+        <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}${(c.larkLinks || []).length ? ` · ${c.larkLinks.length} 个飞书任务` : ''}</span></span>
         ${bn.length ? `<span class="ccard__thumbs">${bn.map((b) => `<span class="ccard__t">${slideHtml(b, { w: 200 })}</span>`).join('')}</span>` : ''}
       </button>`;
     };
@@ -1417,8 +1396,6 @@
         priority: 10, order: (S.pmodules || []).length, start: c ? null : dayStart(7), end: c ? null : dayStart(14) };
     }
     if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, countdown: false, badge: '', start: preset.campaign ? null : dayStart(1), end: preset.campaign ? null : dayStart(2) };
-    if (kind === 'design') return { ...baseIt, id: rid('d-'), name: '', brief: '', spec: '', refs: '', due: dayStart(3), assignee: '', target: preset.target || '', deliverables: [], chosen: '', start: null, end: null };
-    if (kind === 'material') return { ...baseIt, id: rid('m-'), name: '', channel: preset.channel || 'email', platform: 'Instagram', subject: '', copy: '', assets: [], publishAt: dayStart(2) + 10 * 3600000, owner: S.me, start: null, end: null };
     return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
   }
   const fld = (label, html, hint = '') => `<label class="fld"><span>${label}</span>${html}${hint ? `<em>${hint}</em>` : ''}</label>`;
@@ -1464,31 +1441,6 @@
 
   // ================= v3 工作项:合集置顶清单 / 设计需求 / 宣传物料 =================
   let wx = null; // 编辑中的列表数据:置顶的合集和产品、设计稿、物料素材
-  const CHANNEL = { email: '邮件营销', social: '社媒帖子' };
-  const PLATFORMS = ['Instagram', 'Facebook', 'YouTube', 'TikTok', 'LinkedIn', 'X'];
-  const bannerSpec = () => `Banner 竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),一张图两边通用`;
-  const staffOpts = (sel) => S.staff.map((u) => `<option value="${esc(u.id)}" ${sel === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
-  const campaignOf = (it) => fld('所属活动', `<select class="sel" name="campaignOf"><option value="">不属于活动</option>${S.campaigns.map((c) => `<option value="${c.id}" ${it.campaign === c.id ? 'selected' : ''}>${esc(c.name)} · ${esc(winText(c))}</option>`).join('')}</select>`);
-  // 设计需求 / 物料自己的状态(它们不上线下线,看的是做到哪一步)
-  function workState(x) {
-    if (x.kind === 'design') {
-      if (x.state === 'approved') return ['done', '已完成'];
-      if (x.state === 'pending') return ['pending', '待审批'];
-      if (x.state === 'rejected') return ['rejected', '退回修改'];
-      return (x.deliverables || []).length ? ['doing', '进行中'] : ['todo', '未开始'];
-    }
-    if (x.kind === 'material') {
-      if (x.publishedAt) return ['done', '已发布'];
-      if (x.state === 'approved') return x.publishAt && x.publishAt < now() ? ['late', '该发了'] : ['scheduled', '待发布'];
-      if (x.state === 'pending') return ['pending', '待审批'];
-      if (x.state === 'rejected') return ['rejected', '退回修改'];
-      return ['todo', '草稿'];
-    }
-    return null;
-  }
-  const workBadge = (x) => { const [k, l] = workState(x); return `<span class="wst wst--${k}">${l}</span>`; };
-  const overdue = (d) => d.kind === 'design' && d.due && d.due < now() && d.state !== 'approved';
-
   function pinBoxHtml() {
     return `<div class="fld"><span>合集</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
         <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button></div>
@@ -1498,11 +1450,6 @@
           <button type="button" class="btn btn-ghost btn-xs" data-wx="up" data-i="${i}" ${i ? '' : 'disabled'}>↑</button><button type="button" class="btn btn-ghost btn-xs" data-wx="down" data-i="${i}" ${i < wx.products.length - 1 ? '' : 'disabled'}>↓</button><button type="button" class="btn btn-ghost btn-xs" data-wx="rm" data-i="${i}">✕</button></div>`).join('') || '<span class="muted">还没加</span>'}</div>
         <button type="button" class="btn btn-sm" data-wx="pickprod">${I.plus}添加产品</button></div>`;
   }
-  const fileBoxHtml = (list, key, chosen) => `<div class="dlv">${list.map((d, i) => `<div class="dlv__i ${chosen && chosen === d.url ? 'is-on' : ''}">
-      <button type="button" class="dlv__img" ${key === 'deliverables' ? `data-wx="choose" data-i="${i}"` : ''} style="background-image:url('${esc(thumb(d.url, 300))}')" title="${key === 'deliverables' ? '点选要用的这张' : ''}"></button>
-      <span class="dlv__n">${esc(d.name || '')}</span><button type="button" class="linkbtn" data-wx="rmfile" data-key="${key}" data-i="${i}">删除</button></div>`).join('') || '<span class="muted">还没有</span>'}</div>
-    ${MODE === 'live' ? `<label class="btn btn-sm upl">上传${key === 'deliverables' ? '设计稿' : '素材'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-wx="upload" data-key="${key}" hidden/></label>` : '<em>演示模式不能上传,正式数据里可以</em>'}`;
-
   function wxFormHtml(it) {
     if (it.kind === 'pin') {
       return `${fld('名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}
@@ -1512,33 +1459,7 @@
         ${fld('产品页徽章文字', inp('badge', it.badge, '如:Flash Deal · 今日限时'), '可留空;和倒计时一起显示在产品页')}
         ${timeBlock(it, 'pin')}`;
     }
-    if (it.kind === 'design') {
-      const banners = S.banners.filter((b) => status(b) !== 'ended' || b.id === it.target);
-      const target = it.target ? byId(it.target) : null;
-      return `${fld('标题', inp('name', it.name, '如:Early BF 主 Banner'))}
-        ${fld('需求说明', `<textarea class="inp" name="brief" rows="5" placeholder="要表达什么、主打哪些产品、文案、风格…">${esc(it.brief || '')}</textarea>`)}
-        <div class="fld2">${fld('用在哪张 Banner', `<select class="sel" name="target"><option value="">不对应 Banner(其他用途)</option>${banners.map((b) => `<option value="${b.id}" ${it.target === b.id ? 'selected' : ''}>${esc(titleOf(b))}</option>`).join('')}</select>`, '批准后可以一键把设计稿套用到这张 Banner')}
-          ${fld('尺寸规格', inp('spec', it.spec || (target ? bannerSpec() : ''), '如:1080×1080 社媒方图'))}</div>
-        ${fld('参考链接', `<textarea class="inp" name="refs" rows="2" placeholder="每行一个">${esc(it.refs || '')}</textarea>`)}
-        <div class="fld2">${fld('设计师', `<input class="inp" name="assignee" list="dz-staff" value="${esc(it.assignee || '')}" placeholder="名字"/><datalist id="dz-staff">${S.staff.map((u) => `<option value="${esc(u.name)}">`).join('')}</datalist>`)}
-          ${fld('截止日期', `<input class="inp" type="date" name="due" value="${it.due ? toInput(it.due).slice(0, 10) : ''}"/>`)}</div>
-        ${campaignOf(it)}
-        <div class="fld"><span>设计稿 <em>上传后点选要用的那张;交稿后点「提交审核」</em></span><div id="wx-box">${fileBoxHtml(wx.deliverables, 'deliverables', wx.chosen)}</div></div>
-        ${it.state === 'approved' && it.target && wx.chosen ? `<button type="button" class="btn btn-primary" data-wx="apply">把选中的设计稿套用到「${esc(titleOf(byId(it.target) || {}))}」</button>` : ''}`;
-    }
-    const ch = it.channel || 'email';
-    return `<div class="fld"><span>渠道</span><div class="seg" id="ed-channel">${Object.entries(CHANNEL).map(([k, l]) => `<button type="button" data-channel="${k}" class="${ch === k ? 'is-active' : ''}">${l}</button>`).join('')}</div></div>
-      ${fld('标题(后台看的)', inp('name', it.name, '如:EBF 开场邮件'))}
-      <div data-ch="email" ${ch === 'email' ? '' : 'hidden'}>${fld('邮件主题', inp('subject', it.subject, '收件人看到的标题'))}</div>
-      <div data-ch="social" ${ch === 'social' ? '' : 'hidden'}>${fld('平台', `<select class="sel" name="platform">${PLATFORMS.map((x) => `<option ${it.platform === x ? 'selected' : ''}>${x}</option>`).join('')}</select>`)}</div>
-      ${fld('文案 / 正文要点', `<textarea class="inp" name="copy" rows="6">${esc(it.copy || '')}</textarea>`)}
-      <div class="fld"><span>素材</span><div id="wx-box">${fileBoxHtml(wx.assets, 'assets')}</div></div>
-      <div class="fld2">${fld('发布时间', `<input class="inp" type="datetime-local" name="publishAt" value="${toInput(it.publishAt)}"/>`, '到时间提醒负责人去发;app 不会替你发')}
-        ${fld('负责人', `<select class="sel" name="owner"><option value="">不指定</option>${staffOpts(it.owner)}</select>`)}</div>
-      ${campaignOf(it)}
-      ${it.state === 'approved' ? `<div class="fld"><span>发布情况</span>${it.publishedAt
-        ? `<div class="note">已发布 ${fDT(it.publishedAt)}${it.publishedUrl ? ` · <a href="${esc(it.publishedUrl)}" target="_blank" rel="noopener">查看</a>` : ''} <button type="button" class="linkbtn" data-wx="unpublish">撤销</button></div>`
-        : `<div class="rowin"><input class="inp" id="pub-url" placeholder="发出去后粘贴链接(可不填)"/><button type="button" class="btn btn-sm btn-primary" data-wx="publish">标记已发布</button></div>`}</div>` : ''}`;
+    return '';
   }
 
   function wxPreviewHtml(v) {
@@ -1547,21 +1468,7 @@
         <div class="pv-pins">${(v.products || []).slice(0, 12).map((p, i) => `<div class="pv-pin"><span class="pv-pin__n">${i + 1}</span><span class="pv-pin__img" ${p.image ? `style="background-image:url('${esc(thumb(p.image, 300))}')"` : ''}></span><span class="pv-pin__t">${esc(p.title)}</span></div>`).join('') || '<p class="muted">加了产品这里会按顺序显示</p>'}</div>
         <p class="muted pv-cap">${v.collection ? `合集「${esc(v.collection.title)}」` : '合集'}${v.onlyListed ? '在生效期间只显示这些产品' : '先显示这些产品,后面接原来的顺序'};结束后恢复原来的排序。</p>`;
     }
-    if (v.kind === 'design') {
-      const img = v.chosen || v.deliverables?.[0]?.url;
-      const target = v.target ? byId(v.target) : null;
-      return `${target ? `<div class="pv-label">套用到 Banner 后的样子</div><div class="pv-stage">${slideHtml({ ...target, image: img || target.image }, { w: 700, cls: 'is-main' })}</div>` : img ? `<div class="pv-label">选中的设计稿</div><img class="pv-dlv" src="${esc(thumb(img, 900))}" alt="">` : ''}
-        <div class="pv-label">需求</div><div class="pv-brief">${esc(v.brief || '(还没写需求说明)').replace(/\n/g, '<br>')}</div>
-        ${v.due ? `<p class="muted pv-cap">截止 ${fDate(v.due)}${overdue(v) ? ' · <b style="color:var(--danger)">已逾期</b>' : ''}${v.assignee ? ` · 设计师 ${esc(v.assignee)}` : ''}</p>` : ''}`;
-    }
-    const img = v.assets?.[0]?.url;
-    if ((v.channel || 'email') === 'email') {
-      return `<div class="pv-label">邮件预览</div><div class="pv-mail"><div class="pv-mail__h"><b>${esc(v.subject || '(邮件主题)')}</b><span class="muted">CineGearPro</span></div>
-        ${img ? `<img src="${esc(thumb(img, 900))}" alt="">` : ''}<div class="pv-mail__b">${esc(v.copy || '').replace(/\n/g, '<br>')}</div></div>
-        ${v.publishAt ? `<p class="muted pv-cap">计划 ${fDT(v.publishAt)} 发出</p>` : ''}`;
-    }
-    return `<div class="pv-label">${esc(v.platform || '社媒')} 帖子预览</div><div class="pv-post">${img ? `<img src="${esc(thumb(img, 900))}" alt="">` : '<div class="pv-post__ph"></div>'}<div class="pv-post__b">${esc(v.copy || '').replace(/\n/g, '<br>')}</div></div>
-      ${v.publishAt ? `<p class="muted pv-cap">计划 ${fDT(v.publishAt)} 发布</p>` : ''}`;
+    return '';
   }
 
   // 选合集 / 产品(置顶清单用)。在后台里用 Shopify 自带的选择器;演示时从演示数据里挑
@@ -1581,8 +1488,9 @@
     return true;
   }
 
+  const larkEdHtml = () => (ed.larkLinks.length ? `<div class="chips">${ed.larkLinks.map((l, i) => `<span class="chip"><span class="chip__t">${esc(l.label || '飞书任务')}</span><a class="lk" href="${esc(l.url)}" target="_blank" rel="noopener">打开↗</a><button type="button" class="chip__x" data-lk="rm" data-i="${i}" aria-label="移除">${I.x}</button></span>`).join('')}</div>` : '<span class="muted">还没关联</span>');
   function formHtml(it) {
-    if (['pin', 'design', 'material'].includes(it.kind)) return wxFormHtml(it);
+    if (it.kind === 'pin') return wxFormHtml(it);
     if (it.kind === 'banner') {
       const seenImg = new Set();
       const imgs = S.banners.filter((b) => b.image && !seenImg.has(b.image) && seenImg.add(b.image)).slice(0, 40);
@@ -1643,6 +1551,9 @@
         <em>在任一合集里、带任一标签、或被单独指定的产品,都会显示本活动的徽章和倒计时。点「后台↗ / 前台↗」可以核对具体是哪些产品。</em></div>
       <div class="fld2">${fld('产品页徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'))}${fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在多个活动里时,数字大的优先')}</div>
       <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>产品页显示倒计时</b><span class="muted">全站统一样式,倒数到活动结束,到期自动消失</span></span></label>
+      <div class="fld"><span>关联的飞书任务 <em>具体要求、设计、文案、分工放在飞书任务里;贴任务或任务清单的链接,可以起个名字(如「设计」「文案」「定价」)</em></span>
+        <div id="ed-lark">${larkEdHtml()}</div>
+        <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div></div>
       ${it.state !== 'new' ? `<div class="fld"><span>挂在本活动下的内容</span>
         <div class="attach">${[...bn, ...tb, ...sty, ...pm].map((x) => `<button type="button" class="attach__i" data-open="${x.id}" data-pop="${x.id}">
           ${x.kind === 'banner' ? `<span class="attach__slide">${slideHtml(x, { w: 200 })}</span>` : miniThumb(x)}
@@ -1651,7 +1562,7 @@
   }
 
   function previewHtml(v) {
-    if (['pin', 'design', 'material'].includes(v.kind)) return wxPreviewHtml(v);
+    if (v.kind === 'pin') return wxPreviewHtml(v);
     if (v.kind === 'pmodule') {
       return `<div class="pv-label">首页上的样子</div>${moduleHtml(v, { activeTab: pvTab })}
         <p class="muted pv-cap">点页签切换预览。${MODE === 'live' ? '产品是按这个页签的设置从店里取的前几个。' : '演示数据只画占位;正式数据里会显示这个页签真实会出现的产品。'}到时间后首页这个模块整套换成它,结束回到平时版本。</p>`;
@@ -1778,7 +1689,7 @@
       if (['start', 'end', 'campaign', 'countdown', 'priority'].includes(el.name)) return;
       v[el.name] = el.value.trim();
     });
-    if (!base.isDefault && !['design', 'material'].includes(base.kind)) {
+    if (!base.isDefault) {
       const mode = ($('#ed-mode .is-active') || {}).dataset?.mode || 'range';
       if (mode === 'long') { v.start = null; v.end = null; v.campaign = null; }
       else if (mode === 'campaign') { v.start = null; v.end = null; v.campaign = g('campaign').value || null; }
@@ -1792,11 +1703,8 @@
     }
     if (base.kind === 'tbstyle') { v.effect = ($('#ed-effect .is-active') || {}).dataset?.effect || 'none'; if (g('priority')) v.priority = +g('priority').value || 0; }
     if (base.kind === 'pin') { v.collection = wx.collection; v.products = wx.products.map(({ id, handle, title, image }) => ({ id, handle, title, image })); v.onlyListed = !!g('onlyListed')?.checked; v.countdown = !!g('countdown')?.checked; }
-    if (base.kind === 'design' || base.kind === 'material') { v.campaign = g('campaignOf')?.value || null; v.start = null; v.end = null; }
-    delete v.campaignOf;
-    if (base.kind === 'design') { v.deliverables = [...wx.deliverables]; v.chosen = wx.chosen; v.due = g('due').value ? fromInput(g('due').value + 'T18:00') : null; }
-    if (base.kind === 'material') { v.channel = ($('#ed-channel .is-active') || {}).dataset?.channel || 'email'; v.assets = [...wx.assets]; v.publishAt = fromInput(g('publishAt').value); }
     if (base.kind === 'campaign') {
+      v.larkLinks = ed.larkLinks.map((l) => ({ url: l.url, label: l.label }));
       v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
       v.countdown = g('countdown').checked; v.priority = +g('priority').value || 0;
     }
@@ -1805,8 +1713,6 @@
   function validate(v) {
     if (v.kind === 'pin' && !v.collection) return '请选要排序的合集';
     if (v.kind === 'pin' && !v.products.length) return '至少放一个要排在前面的产品';
-    if ((v.kind === 'design' || v.kind === 'material') && !v.name) return '请填写标题';
-    if (v.kind === 'design' && !v.deliverables.length) return '还没上传设计稿;先点「保存需求」,交稿时再提交审核';
     if (v.kind === 'banner' && !v.image) return '请选一张图片';
     if (v.kind === 'topbar' && !v.text) return '请填写公告文字';
     if ((v.kind === 'campaign' || v.kind === 'tbstyle' || v.kind === 'pmodule') && !v.name) return '请填写名称';
@@ -1822,18 +1728,14 @@
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
     // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
     const base = { ...it, ...(it.pendingChange && !isApprover() ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
-    ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts };
+    ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])] };
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
-    wx = { collection: base.kind === 'pin' ? base.collection || null : null, products: base.kind === 'pin' ? [...(base.products || [])] : [],
-      deliverables: [...(base.deliverables || [])], chosen: base.chosen || '', assets: [...(base.assets || [])] };
+    wx = { collection: base.kind === 'pin' ? base.collection || null : null, products: base.kind === 'pin' ? [...(base.products || [])] : [] };
     const s = status(it);
     const approver = isApprover();
     const live = it.state === 'approved';
     let acts = '';
-    if (kind === 'design' && it.state !== 'approved') {
-      acts += '<button class="btn" data-act="draft" type="button">保存需求</button>';
-      acts += `<button class="btn btn-primary" data-act="submit" type="button">${it.state === 'pending' ? '更新交稿' : '交稿,提交审核'}</button>`;
-    } else if (approver) {
+    if (approver) {
       if (!isNew && live && !it.isDefault) acts += `<button class="btn" data-act="pause" type="button">${it.paused ? '恢复显示' : s === 'live' ? '暂停(立即下线)' : '暂停'}</button>`;
       if (isNew || it.state !== 'approved') acts += '<button class="btn" data-act="draft" type="button">存草稿</button>';
       acts += `<button class="btn btn-primary" data-act="publish" type="button">${live ? '保存修改' : '保存并排期'}</button>`;
@@ -1841,7 +1743,7 @@
       if (isNew || ['draft', 'new', 'rejected'].includes(it.state)) acts += '<button class="btn" data-act="draft" type="button">存草稿</button>';
       acts += `<button class="btn btn-primary" data-act="submit" type="button">${live ? '提交修改审核' : '提交审核'}</button>`;
     }
-    const canDelete = !isNew && !it.isDefault && (['design', 'material'].includes(it.kind) ? it.state !== 'pending' : ['draft', 'rejected', 'ended'].includes(s));
+    const canDelete = !isNew && !it.isDefault && ['draft', 'rejected', 'ended'].includes(s);
     const notes = [];
     if (endingSoon(it)) notes.push(`<div class="note note--warn">⚠️ ${relDay(win(it).end)}(${fDT(win(it).end)})自动下架。要继续显示就把结束时间往后改${win(it).via ? '(它跟随活动,要改活动的结束时间)' : ''}。</div>`);
     if (it.pendingChange) notes.push(`<div class="note note--warn">${esc(who(it.pendingChange.by))} 提交了修改,正在等审核。${approver ? '去「审核」页批准后才会替换线上版本。' : '批准前线上保持原来的版本。'}</div>`);
@@ -1913,50 +1815,26 @@
     // ---- 合集置顶清单 / 设计需求 / 宣传物料 ----
     const redrawWx = () => {
       const box = $('#wx-box'); if (!box) return;
-      box.innerHTML = it.kind === 'pin' ? pinBoxHtml() : it.kind === 'design' ? fileBoxHtml(wx.deliverables, 'deliverables', wx.chosen) : fileBoxHtml(wx.assets, 'assets');
+      box.innerHTML = pinBoxHtml();
       refreshPv();
     };
     f.addEventListener('click', async (e) => {
-      const ch = e.target.closest('#ed-channel button');
-      if (ch) {
-        $$('#ed-channel button').forEach((b) => b.classList.toggle('is-active', b === ch));
-        $$('#ed-form [data-ch]').forEach((x) => { x.hidden = x.dataset.ch !== ch.dataset.channel; });
-        return refreshPv();
+      const lk = e.target.closest('[data-lk]');
+      if (lk) {
+        if (lk.dataset.lk === 'rm') ed.larkLinks.splice(+lk.dataset.i, 1);
+        else {
+          const url = $('#lk-url').value.trim(); const label = $('#lk-label').value.trim();
+          if (!/^https:\/\/[^\s]*(larksuite|feishu|larkoffice)\.(com|cn)\//i.test(url)) return toast('请粘贴飞书任务或任务清单的链接', false);
+          if (ed.larkLinks.some((x) => x.url === url)) return toast('这个链接已经加过了', false);
+          ed.larkLinks.push({ url, label: label.slice(0, 30) }); $('#lk-url').value = ''; $('#lk-label').value = '';
+        }
+        $('#ed-lark').innerHTML = larkEdHtml(); return;
       }
       const w = e.target.closest('[data-wx]'); if (!w || w.tagName === 'INPUT') return;
       const i = +w.dataset.i; const a = w.dataset.wx;
       if (a === 'pickcoll' || a === 'pickprod') { if (await pickPin(a === 'pickcoll' ? 'coll' : 'prod')) redrawWx(); return; }
       if (a === 'up' || a === 'down') { const j = a === 'up' ? i - 1 : i + 1; [wx.products[i], wx.products[j]] = [wx.products[j], wx.products[i]]; return redrawWx(); }
       if (a === 'rm') { wx.products.splice(i, 1); return redrawWx(); }
-      if (a === 'choose') { wx.chosen = wx.deliverables[i].url; return redrawWx(); }
-      if (a === 'rmfile') { const k = w.dataset.key; const [gone] = wx[k].splice(i, 1); if (k === 'deliverables' && gone?.url === wx.chosen) wx.chosen = wx.deliverables[0]?.url || ''; return redrawWx(); }
-      if (a === 'publish' || a === 'unpublish') {
-        const r = await act({ type: 'markPublished', id: it.id, url: $('#pub-url')?.value || '', undo: a === 'unpublish' });
-        if (r) { closeDrawer(); toast(r.message); }
-        return;
-      }
-      if (a === 'apply') {
-        const d = wx.deliverables.find((x) => x.url === wx.chosen);
-        const target = it.target;
-        closeDrawer();
-        openEditor('banner', target, { override: { image: d.url, imageId: d.id || '' } });
-        toast('已带入设计稿,确认文字后保存(会照常走审核)');
-      }
-    });
-    f.addEventListener('change', async (e) => {
-      const up = e.target.closest('input[data-wx="upload"]'); if (!up) return;
-      const file = up.files?.[0]; if (!file) return;
-      if (file.size > 20 * 1024 * 1024) return toast('图片太大了(最多 20MB)', false);
-      const lab = up.closest('label'); const old = lab.firstChild.textContent; lab.firstChild.textContent = '上传中…';
-      try {
-        const res = await fetch(`/api/schedule/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { ...(await window.cgpHeaders()), 'Content-Type': file.type }, body: file });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(j.error || res.statusText);
-        const k = up.dataset.key;
-        wx[k].push({ url: j.url, id: j.id, name: file.name, at: now() });
-        if (k === 'deliverables' && !wx.chosen) wx.chosen = j.url;
-        redrawWx(); toast('已上传到 Shopify 文件库');
-      } catch (err) { toast('上传失败:' + err.message, false); lab.firstChild.textContent = old; }
     });
     // 预览里点页签:切换预览的页签
     $('#ed-pv').addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (t && edTabs) { pvTab = +t.dataset.pmtab; refreshPv(); } });

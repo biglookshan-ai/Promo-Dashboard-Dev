@@ -50,7 +50,7 @@ const KIND_ORDER = { campaign: 0, tbstyle: 1, banner: 2, topbar: 3, pmodule: 4, 
 export async function runEffects(ctx, state, effects, { gql = graphql, now = Date.now(), appUrl = '', send } = {}) {
   const errors = [];
   const ids = [...new Set(effects.filter((e) => e.type === 'sync').map((e) => e.id))]
-    .map((id) => findItem(state, id)).filter((it) => it && it.state === 'approved' && TYPE_OF[it.kind]) // 设计需求 / 物料只在 app 里
+    .map((id) => findItem(state, id)).filter((it) => it && it.state === 'approved' && TYPE_OF[it.kind])
     .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
   const seen = new Set();
   for (const it of ids) {

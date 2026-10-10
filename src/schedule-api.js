@@ -70,7 +70,7 @@ function clientView(state, { me, setup, store, site }) {
     staff: larkEnabled() ? (state.members || []).filter((m) => m.status === 'active').map(actorOf) : state.staff,
     lark: larkEnabled(),
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
-    pins: state.pins || [], designs: state.designs || [], materials: state.materials || [],
+    pins: state.pins || [],
     pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
     settings: { notify: state.settings.notify, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
     collections: [], products: [], tagCounts: {},
