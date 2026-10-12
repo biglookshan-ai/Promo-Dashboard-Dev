@@ -955,7 +955,7 @@
     };
     $('#pn-root').innerHTML = `
       ${pageHead('合集排序', '让合集页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
-        need ? '' : `<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶清单</button>`)}
+        need ? '' : `${MODE === 'live' && isApprover() ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶清单</button>`)}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
       ${alertsHtml(['pin'])}
       <section class="panel">
@@ -981,6 +981,24 @@
         </section>`;
       }).join('') : (need ? '' : empty('还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
     wireTimeline('pn', points, () => pnAt, (v) => { pnAt = v; renderPins(); });
+    // 立即执行一次:不用等定时器那一分钟,而且把「做了什么 / 为什么没做」直接说出来
+    $('#pn-run')?.addEventListener('click', async (e) => {
+      const b = e.currentTarget; const old2 = b.textContent; b.disabled = true; b.textContent = '执行中…';
+      try {
+        const { rep } = await api('POST', '/api/schedule/col-run');
+        const WHY = { automated: '按条件自动归类的合集,Shopify 不让手动排 → 用前台排序', 'too-many': '要临时移出的产品太多 → 用前台排序', 'no-scope': 'app 还没有「改产品 / 合集」的权限' };
+        const say = [
+          ...rep.applied.map((x) => `✅ 「${x.title}」按「${x.pin}」排好了:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了合集` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}`),
+          ...rep.restored.map((x) => `↩️ 「${x.title}」已还原成接管前的顺序`),
+          ...rep.skipped.map((x) => `⏭ ${x.title ? `「${x.title}」` : ''}没改店里的合集:${WHY[x.why] || (String(x.why || '').startsWith('sort:') ? `这个合集现在不是「手动」排序 → 用前台排序` : x.why)}`),
+          ...rep.holds.map((x) => `⏸ 「${x.title}」有人在后台手动改过,已停手`),
+          ...rep.failures.map((x) => `❌ ${x.message}`),
+        ];
+        await load(); renderAll();
+        toast(say.length ? say.join(' · ') : '这一刻没有生效中的清单,什么都不用做', !rep.failures.length);
+      } catch (err) { toast(err.message, false); }
+      b.disabled = false; b.textContent = old2;
+    });
     $$('#pn-root [data-colhold], #pn-root [data-colrelease]').forEach((b) => b.addEventListener('click', async () => {
       const release = 'colrelease' in b.dataset;
       b.disabled = true;
@@ -1723,10 +1741,14 @@
     const q = wxQ.trim().toLowerCase();
     const shown = q ? rest.filter((p) => p.title.toLowerCase().includes(q)) : rest;
     const cap = wxShowAll ? 500 : 12;
+    // 排了、但现在不在这个合集里的产品(从「添加产品」加进来的)
+    const inCol = new Set((wxAll?.products || []).map(pidOf));
+    const outside = wxAll && !wxAll.demo ? wx.products.filter((p) => !inCol.has(pidOf(p))) : [];
+    const realMode = !!(wxAll?.manualOk && !(MODE === 'live' && S.setup && S.setup.canWriteProducts === false));
     const row = (p, i, where) => `<div class="pinrow pinrow--${where}">
       <b>${where === 'top' ? i + 1 : (p.pos ? wx.products.length + rest.indexOf(p) + 1 : '')}</b>
       ${p.image ? `<img src="${esc(thumb(p.image, 80))}" alt="">` : '<span class="pinrow__img"></span>'}
-      <span class="pinrow__t">${esc(p.title)}${p.off ? `<span class="tag tag--danger chip--sm">${p.off}% OFF</span>` : ''}${p.draft ? '<span class="tag tag--warn chip--sm">草稿</span>' : ''}</span>
+      <span class="pinrow__t">${esc(p.title)}${where === 'top' && outside.some((x) => pidOf(x) === pidOf(p)) ? `<span class="tag ${realMode ? 'tag--accent' : 'tag--danger'} chip--sm">不在这个合集里</span>` : ''}${p.off ? `<span class="tag tag--danger chip--sm">${p.off}% OFF</span>` : ''}${p.draft ? '<span class="tag tag--warn chip--sm">草稿</span>' : ''}</span>
       ${where === 'top' ? `<button type="button" class="btn btn-ghost btn-xs" data-wx="up" data-i="${i}" ${i ? '' : 'disabled'} title="上移">↑</button>
           <button type="button" class="btn btn-ghost btn-xs" data-wx="down" data-i="${i}" ${i < wx.products.length - 1 ? '' : 'disabled'} title="下移">↓</button>
           <button type="button" class="btn btn-ghost btn-xs" data-wx="hide" data-id="${esc(String(p.id))}" title="这次不显示它">🚫</button>
@@ -1750,6 +1772,9 @@
         <div id="wx-plans">${wxPlansHtml()}</div></div>` : ''}
       <div class="fld"><span>合集页的顺序 <em>上面这几个是你排的,排完接着就是店里原来的顺序</em></span>
         <div class="pinlist">${wx.products.map((p, i) => row(p, i, 'top')).join('') || '<span class="muted">还没排;从下面的列表点「排上来」,或右边「添加产品」从别处加</span>'}</div>
+        ${outside.length ? `<div class="note ${realMode ? '' : 'note--warn'} note--sm">${realMode
+    ? `上面有 <b>${outside.length} 个产品本来不在这个合集里</b> —— 清单生效时会自动<b>加进合集</b>并排到你放的位置,结束再移出去。`
+    : `上面有 <b>${outside.length} 个产品不在这个合集里</b>,而这个合集只能用前台排序 —— <b>前台显示不出来</b>。要让它出现,先在 Shopify 后台把它加进这个合集。`}</div>` : ''}
         <div class="pinsep">—— 下面照店里原来的顺序 ${wxAll?.demo ? '(演示模式:示例产品,不是这个合集真正的成员)' : ''}——</div>
         ${wxAll && !wxAll.error ? `<div class="pinq"><input class="inp inp--sm" id="wx-q" placeholder="在这 ${rest.length} 个产品里搜…" value="${esc(wxQ)}"/></div>
           <div class="pinlist pinlist--rest">${shown.slice(0, cap).map((p, i) => row(p, i, 'rest')).join('') || '<span class="muted">没有了</span>'}</div>

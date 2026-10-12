@@ -1066,3 +1066,4 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 em.warn { color: var(--danger); }
 .pv-pin.is-pin .pv-pin__n { background: var(--accent); }
 .pv-pin:not(.is-pin) { opacity: .65; }
+.note--sm { font-size: 12px; padding: 6px 10px; margin: 0 0 8px; }

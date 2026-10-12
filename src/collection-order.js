@@ -42,16 +42,18 @@ export function desiredOrder(snapshotIds, currentIds, pin) {
   const listed = new Set((pin.products || []).map((p) => nid(p.id)));
   const hide = new Set((pin.hidden || []).map((p) => nid(p.id)));
   if (pin.onlyListed) for (const id of cur) if (!listed.has(id)) hide.add(id);
-  const head = [];
+  const head = []; const add = [];   // add = 清单里排了、但现在不在这个合集里的 → 要加进合集
   const used = new Set();
   for (const p of pin.products || []) {
     const id = nid(p.id);
-    if (have.has(id) && !hide.has(id) && !used.has(id)) { head.push(id); used.add(id); }
+    if (hide.has(id) || used.has(id)) continue;
+    if (!have.has(id)) add.push(id);
+    head.push(id); used.add(id);
   }
   const tail = [];
   for (const id of (snapshotIds || []).map(nid)) if (have.has(id) && !used.has(id) && !hide.has(id)) { tail.push(id); used.add(id); }
   for (const id of cur) if (!used.has(id) && !hide.has(id)) { tail.push(id); used.add(id); } // 期间新加进合集的排最后
-  return { order: [...head, ...tail], remove: cur.filter((id) => hide.has(id)), pinned: head };
+  return { order: [...head, ...tail], remove: cur.filter((id) => hide.has(id)), add, pinned: head };
 }
 
 // 还原的样子:照快照的顺序(只算现在还在的),快照里没有的(后来加的)排最后
@@ -170,26 +172,31 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql } = {
           rep.skipped.push({ collection: cid, title: col.title, pin: pin.name, why: 'too-many', n: probe.remove.length });
           continue;
         }
-        // 上一轮移出去、这轮又该回来的,先加回来
+        const pinned = new Set((pin.products || []).map((p) => nid(p.id)));
         const stillOut = new Set(probe.remove);
-        const back = (st?.removed || []).filter((id) => !stillOut.has(id));
-        await addTo(ctx, cid, back, gql);
-        const col2 = back.length ? await readCollection(ctx, cid, gql) : col;
+        const back = (st?.removed || []).filter((id) => !stillOut.has(id));   // 上轮移出去、这轮该回来的
+        const drop = (st?.added || []).filter((id) => !pinned.has(id));       // 上轮我们加进去、这轮清单里没有了的
+        await addTo(ctx, cid, [...back, ...probe.add], gql);                  // 清单里排了但不在合集里的,加进合集
+        await removeFrom(ctx, cid, drop, gql);
+        const changed = back.length || probe.add.length || drop.length;
+        const col2 = changed ? await readCollection(ctx, cid, gql) : col;
         const d = desiredOrder(snapshot, col2.ids, pin);
         await removeFrom(ctx, cid, d.remove, gql);
         const after = col2.ids.filter((id) => !d.remove.includes(id));
         const mv = movesFor(after, d.order);
         await reorder(ctx, cid, mv, gql);
         state.colState[cid] = { collection: cid, title: col.title, pinId: pin.id, pinName: pin.name, signature: sig(pin),
-          snapshot, removed: d.remove, wrote: d.pinned, at: now };
-        rep.applied.push({ collection: cid, title: col.title, pin: pin.name, moved: mv.length, removed: d.remove.length, added: back.length });
+          snapshot, removed: d.remove, added: [...new Set([...(st?.added || []).filter((id) => pinned.has(id)), ...probe.add])],
+          wrote: d.pinned, at: now };
+        rep.applied.push({ collection: cid, title: col.title, pin: pin.name, moved: mv.length, removed: d.remove.length, added: probe.add.length, back: back.length });
       } else {
-        // 没有清单生效了 → 还原
+        // 没有清单生效了 → 还原:移出去的加回来、我们加进去的移出去、顺序照快照
         await addTo(ctx, cid, st.removed || [], gql);
-        const col2 = (st.removed || []).length ? await readCollection(ctx, cid, gql) : col;
+        await removeFrom(ctx, cid, st.added || [], gql);
+        const col2 = (st.removed || []).length || (st.added || []).length ? await readCollection(ctx, cid, gql) : col;
         const mv = movesFor(col2.ids, restoreOrder(st.snapshot, col2.ids));
         await reorder(ctx, cid, mv, gql);
-        rep.restored.push({ collection: cid, title: col.title, pin: st.pinName, moved: mv.length, added: (st.removed || []).length });
+        rep.restored.push({ collection: cid, title: col.title, pin: st.pinName, moved: mv.length, added: (st.removed || []).length, removed: (st.added || []).length });
         delete state.colState[cid];
       }
     } catch (e) {

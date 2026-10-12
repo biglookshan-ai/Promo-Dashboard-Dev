@@ -12,6 +12,7 @@ import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 import { actorOf } from './members.js';
 import { larkEnabled } from './lark-login.js';
+import { alignCollections } from './collection-order.js';
 
 // 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
 const APP_VERSION = { commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local', startedAt: Date.now() };
@@ -245,6 +246,20 @@ export function scheduleRouter() {
     else { delete st.hold; delete st.signature; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个合集的顺序(下一轮按清单重排)', by: a.name }); }
     replace(req.ctx.shop, s);
     return { ok: true };
+  })));
+
+  // ---- 合集排序:立即跑一次(不用等定时器那一分钟),顺便把结果说清楚 ----
+  r.post('/col-run', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const a = actorFor(s, req.ctx.user);
+    if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能手动执行');
+    delete s.colNoScope; // 手动点就重试一次,不受「今天别再试」限制
+    const rep = await alignCollections(req.ctx, s, { now: Date.now(), gql: graphql });
+    for (const x of rep.applied) appendLog(s, { action: 'up', kind: 'pin', title: x.title, by: a.name,
+      note: `手动执行:按「${x.pin}」排了店里的合集(${x.moved} 个换位置${x.added ? `、${x.added} 个加进合集` : ''}${x.removed ? `、${x.removed} 个临时移出` : ''})` });
+    for (const x of rep.restored) appendLog(s, { action: 'down', kind: 'pin', title: x.title, note: '手动执行:合集顺序已还原', by: a.name });
+    replace(req.ctx.shop, s);
+    return { rep };
   })));
 
   // ---- 产品数 / 查产品 ----

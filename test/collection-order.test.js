@@ -20,9 +20,10 @@ test('勾了不显示的产品要移出合集,也不占位置', () => {
   assert.deepEqual(d.remove, ['1']);
 });
 
-test('清单里的产品已经不在合集里了就跳过(不会凭空加回来)', () => {
+test('清单里排了合集以外的产品:算进顺序,并标成「要加进合集」', () => {
   const d = desiredOrder(CUR, ['2', '3'], pin({ products: [P(9), P(3)] }));
-  assert.deepEqual(d.order, ['3', '2']);
+  assert.deepEqual(d.order, ['9', '3', '2']);
+  assert.deepEqual(d.add, ['9']);
 });
 
 test('期间新加进合集的产品排到最后,不打乱原顺序', () => {
@@ -167,4 +168,29 @@ test('写失败不炸,记下来下一轮重试', async () => {
   const r = await alignCollections({}, state, { now: 1500, gql: shop.gql });
   assert.equal(r.failures.length, 1);
   assert.equal(state.colState['99'], undefined); // 没写成功就不记接管
+});
+
+test('清单里排了合集以外的产品 → 真的加进合集,结束再移出去', async () => {
+  const shop = fakeShop();                       // 合集里是 1..5
+  const p = pin({ products: [P(99), P(2)], start: 1000, end: 2000 }); // 99 不在合集里
+  const state = stateWith(p);
+  const r1 = await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  assert.equal(r1.applied[0].added, 1);
+  assert.deepEqual(shop.ids, ['99', '2', '1', '3', '4', '5']);  // 加进来了,还排在第一个
+  assert.deepEqual(state.colState['99'].added, ['99']);
+  await alignCollections({}, state, { now: 3000, gql: shop.gql }); // 结束
+  assert.deepEqual(shop.ids, ['1', '2', '3', '4', '5']);          // 原样,加进来的那个移出去了
+});
+
+test('中途把合集外的产品从清单里删掉 → 下一轮从合集里移出去', async () => {
+  const shop = fakeShop();
+  const p = pin({ products: [P(99)], start: 1000, end: 9000 });
+  const state = stateWith(p);
+  await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  assert.ok(shop.ids.includes('99'));
+  p.products = [P(3)];
+  await alignCollections({}, state, { now: 1600, gql: shop.gql });
+  assert.equal(shop.ids.includes('99'), false);
+  assert.deepEqual(shop.ids, ['3', '1', '2', '4', '5']);
+  assert.deepEqual(state.colState['99'].added, []);
 });

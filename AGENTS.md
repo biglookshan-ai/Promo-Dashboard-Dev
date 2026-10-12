@@ -60,7 +60,7 @@
 ### 关键
 
 - **规则只有一份**:`src/schedule-core.js`(上下线判断)+ `src/schedule-actions.js`(存草稿 / 提交 / 发布 / 批准 / 退回 / 暂停 / 删除 / 排序,含权限检查)是纯函数,**服务器和浏览器共用**(服务器以 `/lib/*.js` 只放行这两个文件给页面 import)。演示模式在浏览器里跑它,正式模式由服务器跑。**别在 `public/schedule.js` 里再写一套规则。**
-- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(7 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签 + 合集置顶清单,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(123 个,含改价的 41 个、合集排序的 15 个)。
+- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(7 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签 + 合集置顶清单,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(125 个,含改价的 41 个、合集排序的 17 个)。
 - **本地测正式数据**:`node scripts/live-harness.mjs --fresh` → http://localhost:4793(`?user=1002` 是第二个人;`--core-only` 模拟只建了核心 4 个类型的老店)。真的 app 服务器 + 假 Shopify(内存,主题文件读本地 worktree,产品数读 `scripts/demo-catalog.json`),`http://localhost:4794/__state` 看写进「店铺」的东西。只靠 `SHOPIFY_GRAPHQL_ORIGIN` 环境变量指过去,线上别设。
 - **建内容类型、从主题导入**都只能由用户在「设置 → 店铺连接」点按钮触发,别在部署 / 启动时自动做。
 - 认人:**v3 起改为飞书登录**(店里多人共用 Shopify 账号);Shopify session token 只证明「从本店后台打开」。第一次登录的人默认「待分配」,管理员分配角色后才能用;第一个管理员 = 第一个从 Shopify 后台里用飞书登录的人。(v2 旧做法:session token 的 `sub` = 员工 id、第一个打开的人是审核人。)
@@ -90,6 +90,8 @@
       隐藏的用 `collectionRemoveProducts` 临时移出;接管前存**原始顺序快照**(`state.colState[合集id].snapshot`),结束 / 暂停 / 删除自动还原、移出的加回来。
     · 按条件自动归类的合集、或现在不是手动排序的 → Shopify 不让手动排,**跳过不写**,由主题在前台排(`CGP_COLLECTION_PIN`)。
       「只显示清单里的」要移出的产品超过 `MAX_REMOVE`(100)也退回前台方式。
+  清单里可以排**合集以外的产品**:真的改合集模式下执行时 `collectionAddProducts` 加进去(记在 `colState[].added`),结束移出;前台模式做不到(主题只有合集自己的产品数据),编辑器里会标红。
+  调试用:合集排序页有「立即执行一次」(`POST /api/schedule/col-run`,管理员),直接把 applied / skipped / holds / failures 翻成人话。
   ⛔ 有人在 Shopify 后台手动改过顺序(我们排最前的那几个不在最前了)→ **暂停接管**,绝不覆盖别人的改动;界面上给「按清单重新排 / 就用现在的」两个按钮(`POST /api/schedule/col-hold`)。
   ⛔ **合集 / 产品 id 有时是数字、有时是 gid**(Shopify 资源选择器给 gid,种子数据和主题导入给数字)—— 比较一律用 `numId()` 取末尾数字,直接 `===` 会静默漏掉(2026-10-12 踩过:置顶清单对不上首页页签)。
 - 本地看演示界面:`node scripts/demo-preview.mjs`(端口 4790)。
