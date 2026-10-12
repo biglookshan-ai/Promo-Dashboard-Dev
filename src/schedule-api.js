@@ -4,7 +4,7 @@ import { load, update, replace, appendLog } from './schedule-store.js';
 import { applyAction, ActionError, findItem, LIST } from './schedule-actions.js';
 import { performAction, withLock, runEffects } from './sync.js';
 import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQUIRED_SCOPES } from './metaobjects.js';
-import { schedulerInfo } from './scheduler.js';
+import { schedulerInfo, logColReport } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { uploadImage } from './files.js';
 import { scopeCounts, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
@@ -67,10 +67,10 @@ function actorFor(state, userId) {
 }
 
 // 给页面用的形状(不回传 webhook 原文和签名密钥)
-function clientView(state, { me, setup, store, site }) {
+function clientView(state, { me, setup, store, site, themePin = null }) {
   const hook = state.settings.larkWebhook || '';
   return {
-    mode: 'live', me, setup, store, site,
+    mode: 'live', me, setup, store, site, themePin, // themePin:正在用的主题能不能在前台按清单排(null = 不知道)
     // 飞书模式下「成员」代替旧的 Shopify 员工名单(名字 / 角色给页面显示用)
     staff: larkEnabled() ? (state.members || []).filter((m) => m.status === 'active').map(actorOf) : state.staff,
     lark: larkEnabled(),
@@ -103,7 +103,7 @@ export function scheduleRouter() {
       cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx)),
       cached(shop, 'theme', 600_000, () => readMainTheme(req.ctx).catch(() => null)),
     ]);
-    return clientView(state, { me: actorFor(state, req.ctx.user).id, setup, store: { handle: info.handle, domain: info.domain, name: info.name }, site: theme?.style || null });
+    return clientView(state, { me: actorFor(state, req.ctx.user).id, setup, store: { handle: info.handle, domain: info.domain, name: info.name }, site: theme?.style || null, themePin: theme ? !!theme.pinReady : null });
   }
 
   // ---- 读 ----
@@ -131,7 +131,19 @@ export function scheduleRouter() {
         replace(shop, s); out.state = s;
       });
     }
-    return { ...(await view(req, out.state)), message: out.message, id: out.id, syncErrors: out.syncErrors, larkErrors: out.larkErrors };
+    // 动的是合集置顶清单:马上把店里的合集对齐一次(手动合集真的改;自动归类的合集只会报「用前台排序」)
+    let colRep = null; let state2 = out.state;
+    if (action.kind === 'pin' || /^pin-/.test(String(action.id || out.id || ''))) {
+      colRep = await withLock(shop, async () => {
+        const s = load(shop); const now = Date.now();
+        const record = historyRecorder(shop);
+        const rep = await alignCollections(req.ctx, s, { now, gql: graphql, record }).catch((e) => ({ applied: [], restored: [], holds: [], skipped: [], failures: [{ message: String(e.message || e) }] }));
+        record.flush(); logColReport(s, rep, '保存后自动执行', now);
+        replace(shop, s); state2 = s;
+        return rep;
+      });
+    }
+    return { ...(await view(req, state2)), message: out.message, id: out.id, syncErrors: out.syncErrors, larkErrors: out.larkErrors, colRep };
   }));
 
   // ---- 设置 / 成员 ----
@@ -264,9 +276,7 @@ export function scheduleRouter() {
     const record = historyRecorder(req.ctx.shop);
     const rep = await alignCollections(req.ctx, s, { now: Date.now(), gql: graphql, record });
     record.flush();
-    for (const x of rep.applied) appendLog(s, { action: 'up', kind: 'pin', title: x.title, by: a.name,
-      note: `手动执行:按「${x.pin}」排了店里的合集(${x.moved} 个换位置${x.added ? `、${x.added} 个加进合集` : ''}${x.removed ? `、${x.removed} 个临时移出` : ''})` });
-    for (const x of rep.restored) appendLog(s, { action: 'down', kind: 'pin', title: x.title, note: '手动执行:合集顺序已还原', by: a.name });
+    logColReport(s, rep, `${a.name}(手动执行)`);
     replace(req.ctx.shop, s);
     return { rep };
   })));

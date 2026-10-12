@@ -6,7 +6,7 @@ import { graphql } from './shopify.js';
 import { parseThemeJson, findSlider, findTopbar, siteStyle, normalizeLink, shopImageName, findProductModules } from './theme-content.js';
 import { findImageByFilename, createImageFromUrl } from './files.js';
 
-const FILES = ['templates/index.json', 'sections/header-group.json', 'config/settings_data.json'];
+const FILES = ['templates/index.json', 'sections/header-group.json', 'config/settings_data.json', 'snippets/cgp-search-head.liquid'];
 
 export async function readMainTheme(ctx, gql = graphql) {
   const t = await gql(ctx, '{ themes(first: 1, roles: [MAIN]) { nodes { id name } } }');
@@ -19,7 +19,9 @@ export async function readMainTheme(ctx, gql = graphql) {
   const header = byName['sections/header-group.json'] ? parseThemeJson(byName['sections/header-group.json']) : { sections: {} };
   const settings = byName['config/settings_data.json'] ? parseThemeJson(byName['config/settings_data.json']) : null;
   const slider = findSlider(index), topbar = findTopbar(header);
-  return { theme, slider, topbar, modules: findProductModules(index), style: siteStyle({ slider, topbar, settingsData: settings }) };
+  // 正在用的主题有没有装上「前台按置顶清单排序」的代码(自动归类的合集只能靠它)
+  const pinReady = /CGP_COLLECTION_PIN/.test(byName['snippets/cgp-search-head.liquid'] || '');
+  return { theme, slider, topbar, modules: findProductModules(index), style: siteStyle({ slider, topbar, settingsData: settings }), pinReady };
 }
 
 // 生成要导入的条目(不写 Shopify;写入交给同步)。existing = 已有条目的 source 集合,避免重复导入。

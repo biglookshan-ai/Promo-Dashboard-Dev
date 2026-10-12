@@ -182,7 +182,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
         if (same && driftedFrom(st.wrote, col.ids)) {          // 有人在后台改过 → 暂停接管,不覆盖
           st.hold = 'manual'; st.holdAt = now;
           record(cid, col.ids, { why: '有人在 Shopify 后台改过顺序', title: col.title, pin: pin.name });
-          rep.holds.push({ collection: cid, title: col.title, reason: 'manual', pin: pin.name });
+          rep.holds.push({ collection: cid, title: col.title, reason: 'manual', pin: pin.name, fresh: true }); // 刚发现的才记日志
           continue;
         }
         // 要移出去太多(「只显示清单里的」碰上大合集)→ 不动店里的合集,交给前台处理

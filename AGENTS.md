@@ -100,6 +100,8 @@
     · 按条件自动归类的合集、或现在不是手动排序的 → Shopify 不让手动排,**跳过不写**,由主题在前台排(`CGP_COLLECTION_PIN`)。
       「只显示清单里的」要移出的产品超过 `MAX_REMOVE`(100)也退回前台方式。
   清单里可以排**合集以外的产品**:真的改合集模式下执行时 `collectionAddProducts` 加进去(记在 `colState[].added`),结束移出;前台模式做不到(主题只有合集自己的产品数据),编辑器里会标红。
+  保存 / 批准 / 暂停 / 删除置顶清单时,`/api/schedule/act` 会马上跑一次 `alignCollections`(结果放在返回的 `colRep`,页面拼成一句话提示),不用等定时器。
+  `readMainTheme` 顺带读 `snippets/cgp-search-head.liquid`,判断正在用的主题有没有前台排序代码(`themePin`),没有时编辑器提醒「顾客暂时看不到」。
   调试用:合集排序页有「立即执行一次」(`POST /api/schedule/col-run`,管理员),直接把 applied / skipped / holds / failures 翻成人话。
   ⛔ 有人在 Shopify 后台手动改过顺序(我们排最前的那几个不在最前了)→ **暂停接管**,绝不覆盖别人的改动;界面上给「按清单重新排 / 就用现在的」两个按钮(`POST /api/schedule/col-hold`)。
   ⛔ **合集 / 产品 id 有时是数字、有时是 gid**(Shopify 资源选择器给 gid,种子数据和主题导入给数字)—— 比较一律用 `numId()` 取末尾数字,直接 `===` 会静默漏掉(2026-10-12 踩过:置顶清单对不上首页页签)。

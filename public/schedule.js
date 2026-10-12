@@ -995,14 +995,7 @@
       const b = e.currentTarget; const old2 = b.textContent; b.disabled = true; b.textContent = '执行中…';
       try {
         const { rep } = await api('POST', '/api/schedule/col-run');
-        const WHY = { automated: '按条件自动归类的合集,Shopify 不让手动排 → 用前台排序', 'too-many': '要临时移出的产品太多 → 用前台排序', 'no-scope': 'app 还没有「改产品 / 合集」的权限' };
-        const say = [
-          ...rep.applied.map((x) => `✅ 「${x.title}」按「${x.pin}」排好了:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了合集` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}`),
-          ...rep.restored.map((x) => `↩️ 「${x.title}」已还原成接管前的顺序`),
-          ...rep.skipped.map((x) => `⏭ ${x.title ? `「${x.title}」` : ''}没改店里的合集:${WHY[x.why] || (String(x.why || '').startsWith('sort:') ? `这个合集现在不是「手动」排序 → 用前台排序` : x.why)}`),
-          ...rep.holds.map((x) => `⏸ 「${x.title}」有人在后台手动改过,已停手`),
-          ...rep.failures.map((x) => `❌ ${x.message}`),
-        ];
+        const say = colSay(rep);
         await load(); renderAll();
         toast(say.length ? say.join(' · ') : '这一刻没有生效中的清单,什么都不用做', !rep.failures.length);
       } catch (err) { toast(err.message, false); }
@@ -1277,7 +1270,7 @@
     if (!r) return;
     if (id === '__order') return toast(r.message);
     const it = byId(id); const s = it ? status(it) : '';
-    toast(s === 'scheduled' ? `已批准 · 将在 ${fDT(win(it).start)} 自动上线` : s === 'live' ? '已批准 · 已上线' : `已批准${s ? ' · ' + ST[s] : ''}`);
+    toast([s === 'scheduled' ? `已批准 · 将在 ${fDT(win(it).start)} 自动上线` : s === 'live' ? '已批准 · 已上线' : `已批准${s ? ' · ' + ST[s] : ''}`, ...colSay(r.colRep, it?.collection?.id)].join(' · '), !(r.colRep?.failures?.length));
   }
   // 嵌入 Shopify 后台的 iframe 里 prompt/confirm 可能被浏览器拦截,一律用页面内的输入框和二次确认
   function askReject(btn) {
@@ -1800,7 +1793,7 @@
       : wxAll?.error ? `<em class="warn">读不到这个合集的产品:${esc(wxAll.error)}</em>`
         : wxAll?.demo ? `<em class="warn">演示模式:下面是<b>随便凑的示例产品,不是「${esc(wxAll.title)}」真正的成员</b> —— 演示模式读不到店里的合集。切到正式数据(设置 → 店铺连接)后,这里会列出这个合集现在真正的产品和顺序。</em>`
           : wxAll ? `<em>${!wxAll.manualOk
-            ? `${wxAll.automated ? '这是<b>按条件自动归类</b>的合集' : `这个合集现在按<b>${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}</b>排序`} —— Shopify 不让手动排,这份清单<b>用前台排序</b>实现(合集页和首页模块按你排的显示,店里的合集不动)。`
+            ? `${wxAll.automated ? '这是<b>按条件自动归类</b>的合集' : `这个合集现在按<b>${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}</b>排序`} —— Shopify 不让手动排,这份清单<b>用前台排序</b>实现:Shopify 后台里合集的顺序<b>不会变</b>,顾客看到的合集页和首页模块按你排的显示。${S.themePin === false ? '<b class="warn">正在用的主题还没装上前台排序的代码(现在只装在测试主题上),顾客暂时看不到效果。</b>' : ''}`
             : !realMode ? '手动合集,但 app 现在<b>没有「改产品 / 合集」的权限</b> —— 先用前台排序;装上权限后就会真的改店里的合集。'
               : '手动合集 —— 到点会<b>真的</b>按网格里的顺序改店里的合集,结束自动还原。'}共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(太多了,只列出前 ${wxAll.products.length} 个)` : ''}${wxAll.takenBy ? ` · 现在由「${esc(wxAll.takenBy.pinName || '')}」接管着,网格里的对比基准是接管前的原样` : ''}
               ${MODE === 'live' ? ' · <button type="button" class="linkbtn" data-wx="hist">看这个合集的历史版本 / 回滚</button>' : ''}</em>` : '';
@@ -2438,7 +2431,7 @@
       let r;
       if (kindOfAct === 'pause' || kindOfAct === 'delete') {
         busy(true); r = await act({ type: kindOfAct, id: it.id }); busy(false);
-        if (r) { closeDrawer(); toast(r.message); }
+        if (r) { closeDrawer(); toast([r.message, ...colSay(r.colRep, it.collection?.id)].join(' · '), !(r.colRep?.failures?.length)); }
         return;
       }
       const v = readForm(base);
@@ -2452,10 +2445,25 @@
       closeDrawer();
       if (mode === 'publish') {
         const saved = byId(it.id); const st2 = saved ? status(saved) : '';
-        toast(st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`);
+        const col = colSay(r.colRep, saved?.collection?.id);
+        toast([st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`, ...col].join(' · '), !(r.colRep?.failures?.length));
       } else toast(mode === 'submit' ? `已提交审核${MODE === 'live' ? ' · 已通知审核人' : ' · 已在飞书 @审核人(演示)'}` : '已存草稿');
     }
   }
+  // 合集排序执行结果 → 人话(立即执行一次、保存后自动执行共用)
+  function colSay(rep, onlyCol) { // onlyCol:只说这个合集的(保存某份清单时,别把其他合集的情况也念一遍)
+    if (!rep) return [];
+    if (onlyCol) { const k = numId(onlyCol); const f = (x) => !x.collection || numId(x.collection) === k; rep = { applied: rep.applied.filter(f), restored: rep.restored.filter(f), skipped: rep.skipped.filter(f), holds: rep.holds.filter(f), failures: rep.failures.filter(f) }; }
+    const WHY = { automated: '这是按条件自动归类的合集,Shopify 不让手动排,店里的合集不会变,只在前台按你排的显示', 'too-many': '要临时移出的产品太多,改用前台排序(店里的合集不动)', 'no-scope': 'app 还没有「改产品 / 合集」的权限' };
+    return [
+      ...rep.applied.map((x) => `✅ 店里的「${x.title}」已按「${x.pin}」排好:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了合集` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}`),
+      ...rep.restored.map((x) => `↩️ 「${x.title}」已还原成接管前的顺序`),
+      ...rep.skipped.map((x) => `⏭ ${x.title ? `「${x.title}」` : ''}${WHY[x.why] || (String(x.why || '').startsWith('sort:') ? '这个合集现在不是「手动」排序,店里的合集不会变,只在前台按你排的显示' : x.why)}`),
+      ...rep.holds.map((x) => `⏸ 「${x.title}」有人在后台手动改过,app 已停手`),
+      ...rep.failures.map((x) => `❌ ${x.message}`),
+    ];
+  }
+
   // ================= 合集顺序的历史版本 / 回滚 =================
   // 左边:每一版(什么时候、为什么、谁、和上一版比变了什么);右边:选中那一版的网格,和「现在」对比 ——
   // 红框 = 回滚后会加回合集,红虚线 = 会换位置,灰 = 后来才加进来的(回滚不删,排到最后)

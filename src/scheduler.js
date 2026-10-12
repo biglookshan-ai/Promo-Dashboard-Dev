@@ -16,6 +16,17 @@ import { graphql } from './shopify.js';
 
 export const INTERVAL_MS = 60_000;
 
+// 合集排序一轮的结果写进操作日志(定时器、保存后自动执行共用)
+export function logColReport(state, col, by, now = Date.now()) {
+  for (const a of col.applied) appendLog(state, { at: now, action: 'up', kind: 'pin', title: a.title, by,
+    note: `按「${a.pin}」排了店里的合集:${a.moved} 个产品换位置${a.added ? `、${a.added} 个加进合集` : ''}${a.removed ? `、${a.removed} 个临时移出` : ''}${a.back ? `、${a.back} 个加回来` : ''}` });
+  for (const r of col.restored) appendLog(state, { at: now, action: 'down', kind: 'pin', title: r.title, by,
+    note: `「${r.pin}」结束,合集顺序已还原${r.added ? `(${r.added} 个产品加回合集)` : ''}` });
+  for (const h of col.holds) if (h.fresh) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: h.title, by,
+    note: '有人在 Shopify 后台手动改过这个合集的顺序 —— 已暂停接管,不覆盖别人的改动' });
+  for (const f of col.failures) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: f.collection || '合集排序', note: f.message, by });
+}
+
 // 跑一个店铺一轮。依赖都可以注入,方便测试。
 export function runOnce(shop, { now = Date.now(), token = getToken(shop), setStatus = realSetStatus, send, gql = graphql, collections = alignCollections } = {}) {
   return withLock(shop, async () => {
@@ -51,13 +62,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
       try { col = await collections({ shop, token }, state, { now, gql, record }); }
       catch (e) { col.failures.push({ message: String(e.message || e) }); }
       record.flush();
-      for (const a of col.applied) appendLog(state, { at: now, action: 'up', kind: 'pin', title: a.title, by: '定时器',
-        note: `按「${a.pin}」排了店里的合集:${a.moved} 个产品换位置${a.removed ? `、${a.removed} 个临时移出` : ''}${a.added ? `、${a.added} 个加回来` : ''}` });
-      for (const r of col.restored) appendLog(state, { at: now, action: 'down', kind: 'pin', title: r.title, by: '定时器',
-        note: `「${r.pin}」结束,合集顺序已还原${r.added ? `(${r.added} 个产品加回合集)` : ''}` });
-      for (const h of col.holds) if (!h.logged) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: h.title, by: '定时器',
-        note: '有人在 Shopify 后台手动改过这个合集的顺序 —— 已暂停接管,不覆盖别人的改动' });
-      for (const f of col.failures) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: f.collection || '合集排序', note: f.message, by: '定时器' });
+      logColReport(state, col, '定时器', now);
     }
 
     const opts = { appUrl: state.appUrl || '', now };
