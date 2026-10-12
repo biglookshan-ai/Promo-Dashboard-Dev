@@ -550,6 +550,8 @@ textarea.inp { resize: vertical; }
 .note { font-size: 12.5px; border-radius: 8px; padding: 8px 11px; margin-bottom: 12px; background: var(--accent-soft); color: #2a45b8; }
 .note--warn { background: var(--warn-soft); color: #6b4a00; }
 .note--danger { background: var(--danger-soft); color: var(--danger); }
+.note--ok { background: var(--ok-soft); color: #176648; }
+.note .btn { margin-left: 8px; }
 .attach { display: flex; flex-direction: column; gap: 4px; }
 .attach__i { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 6px 9px; font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; color: inherit; }
 .attach__i .stb { margin-left: auto; }
@@ -1049,3 +1051,18 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 .pmv__pin { position: absolute; bottom: 4px; left: 4px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; border-radius: 3px; padding: 0 4px; }
 .pmv__pinnote { margin-top: 4px; color: var(--text-2); }
 .pmv__pinnote .linkbtn { margin-left: 4px; }
+
+/* ---------- 合集排序编辑器:照 Shopify 那样列出合集全部产品 ---------- */
+.pinsep { display: flex; align-items: center; gap: 8px; margin: 8px 0 6px; font-size: 11.5px; color: var(--text-3); }
+.pinq { margin-bottom: 6px; }
+.inp--sm { padding: 4px 8px; font-size: 12.5px; }
+.pinlist--rest { max-height: 320px; overflow: auto; }
+.pinlist--rest .pinrow { background: #fff; }
+.pinlist--hide .pinrow { background: var(--surface-2); opacity: .75; }
+.pinlist--hide .pinrow__t { text-decoration: line-through; }
+.pinrow .tag { flex: none; margin-left: 4px; }
+.pinrow--top { background: var(--accent-soft); border-color: #d5dcff; }
+.pinrow--top b { color: var(--accent); font-weight: 700; }
+em.warn { color: var(--danger); }
+.pv-pin.is-pin .pv-pin__n { background: var(--accent); }
+.pv-pin:not(.is-pin) { opacity: .65; }

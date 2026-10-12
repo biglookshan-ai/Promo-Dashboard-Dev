@@ -10,11 +10,13 @@ import { setPublishStatus as realSetStatus } from './metaobjects.js';
 import { getToken } from './token-store.js';
 import { withLock } from './sync.js';
 import { schedulerMessages, digestMessages, deliver } from './notifier.js';
+import { alignCollections } from './collection-order.js';
+import { graphql } from './shopify.js';
 
 export const INTERVAL_MS = 60_000;
 
 // 跑一个店铺一轮。依赖都可以注入,方便测试。
-export function runOnce(shop, { now = Date.now(), token = getToken(shop), setStatus = realSetStatus, send } = {}) {
+export function runOnce(shop, { now = Date.now(), token = getToken(shop), setStatus = realSetStatus, send, gql = graphql, collections = alignCollections } = {}) {
   return withLock(shop, async () => {
     const state = load(shop);
     const camps = campaignIndex(state.campaigns);
@@ -41,11 +43,25 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     for (const f of failures) appendLog(state, { at: now, action: 'failure', kind: f.kind || 'system', title: f.title || '定时器', note: f.message, by: '定时器' });
     state.scheduler = { lastRun: now, lastError: failures[0]?.message || null, lastChanges: changes.length };
 
+    // 合集排序:把手动合集真的对齐到「这一刻该有的顺序」(自动归类的合集跳过,由主题前台排)
+    let col = { applied: [], restored: [], holds: [], failures: [], skipped: [] };
+    if (token && collections) {
+      try { col = await collections({ shop, token }, state, { now, gql }); }
+      catch (e) { col.failures.push({ message: String(e.message || e) }); }
+      for (const a of col.applied) appendLog(state, { at: now, action: 'up', kind: 'pin', title: a.title, by: '定时器',
+        note: `按「${a.pin}」排了店里的合集:${a.moved} 个产品换位置${a.removed ? `、${a.removed} 个临时移出` : ''}${a.added ? `、${a.added} 个加回来` : ''}` });
+      for (const r of col.restored) appendLog(state, { at: now, action: 'down', kind: 'pin', title: r.title, by: '定时器',
+        note: `「${r.pin}」结束,合集顺序已还原${r.added ? `(${r.added} 个产品加回合集)` : ''}` });
+      for (const h of col.holds) if (!h.logged) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: h.title, by: '定时器',
+        note: '有人在 Shopify 后台手动改过这个合集的顺序 —— 已暂停接管,不覆盖别人的改动' });
+      for (const f of col.failures) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: f.collection || '合集排序', note: f.message, by: '定时器' });
+    }
+
     const opts = { appUrl: state.appUrl || '', now };
     const msgs = [...schedulerMessages(state, { changes, failures }, opts), ...digestMessages(state, opts)];
     await deliver(state, msgs, { send, now });
     replace(shop, state);
-    return { changes, failures };
+    return { changes, failures, collections: col };
   });
 }
 

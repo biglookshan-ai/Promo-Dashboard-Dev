@@ -7,7 +7,7 @@ import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQU
 import { schedulerInfo } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { uploadImage } from './files.js';
-import { scopeCounts, productCampaigns, tabProducts } from './counts.js';
+import { scopeCounts, productCampaigns, tabProducts, collectionProducts } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 import { actorOf } from './members.js';
@@ -36,7 +36,9 @@ async function setupStatus(ctx) {
     pinReady: definitions.filter((d) => d.type === 'cgp_collection_pin').every((d) => d.exists),
     upgrade: definitions.filter((d) => !d.core && !d.exists).map((d) => d.type),
     // 已建好的类型后来加了字段:也算要补建(同一个按钮)
-    fieldsMissing: definitions.flatMap((d) => (d.exists ? (d.missingFields || []).map((k) => `${d.type}.${k}`) : [])) };
+    fieldsMissing: definitions.flatMap((d) => (d.exists ? (d.missingFields || []).map((k) => `${d.type}.${k}`) : [])),
+    // 「真的改店里的合集」要这个权限;没有也不影响别的功能,只是那种清单退回前台排序
+    canWriteProducts: (await grantedScopes(ctx)).includes('write_products') };
 }
 
 async function shopInfo(ctx) {
@@ -71,6 +73,9 @@ function clientView(state, { me, setup, store, site }) {
     lark: larkEnabled(),
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
     pins: state.pins || [],
+    // 哪些合集现在被真的改了顺序(含「暂停接管」);原始顺序快照留在服务器,不发给页面
+    colState: Object.fromEntries(Object.entries(state.colState || {}).map(([k, c]) => [k,
+      { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, at: c.at }])),
     pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
     settings: { notify: state.settings.notify, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
     collections: [], products: [], tagCounts: {},
@@ -104,6 +109,7 @@ export function scheduleRouter() {
     const v = await view(req, state);
     const info = await cached(req.ctx.shop, 'shop', 3600_000, () => shopInfo(req.ctx));
     state.appUrl = info.appUrl;
+    if (state.colNoScope && v.setup?.canWriteProducts) delete state.colNoScope; // 权限补上了 → 下一轮重新试着排合集
     replace(req.ctx.shop, state); // 记下新来的员工、app 地址(飞书按钮用)
     return v;
   })));
@@ -223,6 +229,23 @@ export function scheduleRouter() {
 
   // ---- 首页商品模块:页签预览(取前几个产品给编辑器看)----
   r.post('/tab-products', wrap(async (req) => tabProducts(req.ctx, req.body || {})));
+
+  // ---- 合集排序:这个合集现在在店里的真实顺序 ----
+  r.get('/collection-products', wrap(async (req) => cached(req.ctx.shop, `col:${req.query.id}`, 60_000, () => collectionProducts(req.ctx, String(req.query.id || '')))));
+
+  // ---- 合集排序:有人在后台手改过被暂停接管了,点「重新接管」清掉 ----
+  r.post('/col-hold', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const a = actorFor(s, req.ctx.user);
+    if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能重新接管');
+    const key = String(req.body?.collection || '').split('/').pop();
+    const st = (s.colState || {})[key];
+    if (!st) throw new ActionError('这个合集现在没有被接管');
+    if (req.body?.release) { delete s.colState[key]; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '放手不管这个合集的顺序(保持现在后台里的样子)', by: a.name }); }
+    else { delete st.hold; delete st.signature; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个合集的顺序(下一轮按清单重排)', by: a.name }); }
+    replace(req.ctx.shop, s);
+    return { ok: true };
+  })));
 
   // ---- 产品数 / 查产品 ----
   r.post('/counts', wrap(async (req) => scopeCounts(req.ctx, req.body || {})));

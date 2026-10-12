@@ -89,7 +89,7 @@
       Object.assign(tagCounts, c.counts?.tags || {});
       Object.entries(c.counts?.collections || {}).forEach(([gid, x]) => { liveColCounts[gid] = x.count; });
     });
-    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [] };
+    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], colState: v.colState || {} };
   }
   async function load(force) {
     if (MODE === 'live') { S = await normalizeLive(await api('GET', '/api/schedule/state')); return; }
@@ -967,14 +967,28 @@
         const act = activePin(g.cid, T);
         // 首页哪些模块页签也吃这个合集(同名的只说一次)
         const used = [...new Set(modTabsUsing(g.cid).map((u) => `${MODULE_CN[u.v.module]}·${tabLabel(u.t)}`))];
+        const cs = (S.colState || {})[String(g.cid)];
         return `<section class="panel pngroup">
           <div class="panel__h"><h3>${esc(g.title)}</h3>
             <span class="muted">${act ? `这一刻按「${esc(titleOf(act))}」排${act.onlyListed ? ',而且只显示清单里的产品' : ''}` : '这一刻没有清单生效,按合集原来的顺序'}
               ${used.length ? ` · 首页${used.slice(0, 3).map((u) => `「${esc(u)}」`).join('')}${used.length > 3 ? '等' : ''}页签也用这个合集` : ''}</span></div>
+          ${cs ? (cs.hold
+    ? `<div class="note note--warn">有人在 Shopify 后台手动改过这个合集的顺序,<b>app 已经停手</b>,不会覆盖别人的改动。
+        <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按清单重新排</button>
+        <button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">就用现在的,别管了</button></div>`
+    : `<div class="note note--ok">店里这个合集现在<b>真的</b>按「${esc(cs.pinName || '')}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了合集` : ''} · 结束会自动还原成接管前的顺序。</div>`) : ''}
           <div class="pnlist">${g.list.map(card).join('')}</div>
         </section>`;
       }).join('') : (need ? '' : empty('还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
     wireTimeline('pn', points, () => pnAt, (v) => { pnAt = v; renderPins(); });
+    $$('#pn-root [data-colhold], #pn-root [data-colrelease]').forEach((b) => b.addEventListener('click', async () => {
+      const release = 'colrelease' in b.dataset;
+      b.disabled = true;
+      try {
+        await api('POST', '/api/schedule/col-hold', { collection: release ? b.dataset.colrelease : b.dataset.colhold, release });
+        await load(); renderAll(); toast(release ? '好,这个合集的顺序交回给你' : '好,下一分钟按清单重新排');
+      } catch (e) { toast(e.message, false); b.disabled = false; }
+    }));
     $$('#pn-root [data-pindup]').forEach((b) => b.addEventListener('click', (e) => {
       e.stopPropagation();
       const p = byId(b.dataset.pindup); if (!p) return;
@@ -1676,16 +1690,70 @@
     return `<div class="results">${wxPlans.map((p) => `<div class="result"><b style="flex:1">${esc(p.name)}</b>
       <span class="muted">${p.n} 个产品 · ${p.when}</span><button type="button" class="btn btn-sm" data-wx="useplan" data-id="${esc(p.id)}">用它的产品</button></div>`).join('')}</div>`;
   }
+  // ---- 合集排序编辑器:照 Shopify 后台那样,把合集里**全部**产品按真实顺序列出来 ----
+  // wxAll = 这个合集现在在店里的样子(顺序、能不能手动排、一共几个);wxQ = 下半截的搜索词
+  let wxAll = null; let wxQ = ''; let wxShowAll = false; let wxBusy = false;
+  const SORT_CN = { BEST_SELLING: '最畅销', ALPHA_ASC: '字母 A–Z', ALPHA_DESC: '字母 Z–A', CREATED: '最早上架', CREATED_DESC: '最新上架', PRICE_ASC: '价格从低到高', PRICE_DESC: '价格从高到低', MANUAL: '手动' };
+  const pidOf = (p) => numId(p.id);
+  async function loadWxAll(redraw) {
+    const c = wx.collection; wxAll = null; wxQ = ''; wxShowAll = false;
+    if (!c) return redraw && redraw();
+    if (MODE !== 'live') { // 演示:没有真实成员,用演示目录凑一组当「合集里原来的产品」
+      const pool = (S.products || []).slice(0, 24).map((p, i) => ({ id: p.id, title: p.title, handle: p.handle, image: p.image, pos: i + 1 }));
+      wxAll = { title: c.title, manualOk: !/clearance/i.test(c.handle || ''), automated: /clearance/i.test(c.handle || ''), total: pool.length, products: pool, truncated: false, demo: true };
+      return redraw && redraw();
+    }
+    wxBusy = true; redraw && redraw();
+    try { wxAll = await api('GET', `/api/schedule/collection-products?id=${encodeURIComponent(c.id)}`); }
+    catch (e) { wxAll = { error: e.message, products: [] }; }
+    wxBusy = false; redraw && redraw();
+  }
+  // 最终顺序 = 排好的(wx.products)在前,其余照店里原来的顺序;隐藏的单独一堆
+  function wxSplit() {
+    const hide = new Set((wx.hidden || []).map(pidOf));
+    const top = new Set(wx.products.map(pidOf));
+    const rest = (wxAll?.products || []).filter((p) => !top.has(pidOf(p)) && !hide.has(pidOf(p)));
+    return { rest, hide };
+  }
   function pinBoxHtml() {
+    const { rest } = wxSplit();
+    const hidden = wx.hidden || [];
+    const q = wxQ.trim().toLowerCase();
+    const shown = q ? rest.filter((p) => p.title.toLowerCase().includes(q)) : rest;
+    const cap = wxShowAll ? 500 : 12;
+    const row = (p, i, where) => `<div class="pinrow pinrow--${where}">
+      <b>${where === 'top' ? i + 1 : (p.pos ? wx.products.length + rest.indexOf(p) + 1 : '')}</b>
+      ${p.image ? `<img src="${esc(thumb(p.image, 80))}" alt="">` : '<span class="pinrow__img"></span>'}
+      <span class="pinrow__t">${esc(p.title)}${p.off ? `<span class="tag tag--danger chip--sm">${p.off}% OFF</span>` : ''}${p.draft ? '<span class="tag tag--warn chip--sm">草稿</span>' : ''}</span>
+      ${where === 'top' ? `<button type="button" class="btn btn-ghost btn-xs" data-wx="up" data-i="${i}" ${i ? '' : 'disabled'} title="上移">↑</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-wx="down" data-i="${i}" ${i < wx.products.length - 1 ? '' : 'disabled'} title="下移">↓</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-wx="hide" data-id="${esc(String(p.id))}" title="这次不显示它">🚫</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-wx="rm" data-i="${i}" title="放回原位(不再固定)">✕</button>`
+    : where === 'rest' ? `<button type="button" class="btn btn-xs" data-wx="totop" data-id="${esc(String(p.id))}" title="排到最前面">置顶</button>
+          <button type="button" class="btn btn-xs" data-wx="pinhere" data-id="${esc(String(p.id))}" title="加到上面排好的最后">排上来</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-wx="hide" data-id="${esc(String(p.id))}" title="这次不显示它">🚫</button>`
+    : `<button type="button" class="btn btn-xs" data-wx="unhide" data-id="${esc(String(p.id))}">恢复显示</button>`}
+    </div>`;
+    const colNote = !wx.collection ? '' : wxBusy ? '<em>正在读这个合集现在的顺序…</em>'
+      : wxAll?.error ? `<em class="warn">读不到这个合集的产品:${esc(wxAll.error)}</em>`
+        : wxAll ? `<em>${!wxAll.manualOk
+          ? `${wxAll.automated ? '这是<b>按条件自动归类</b>的合集' : `这个合集现在按<b>${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}</b>排序`} —— Shopify 不让手动排,所以这份清单<b>用前台排序</b>实现(合集页和首页模块按你排的显示,店里的合集不动)。`
+          : MODE === 'live' && S.setup && S.setup.canWriteProducts === false ? '手动合集,但 app 现在<b>没有「改产品 / 合集」的权限</b> —— 这份清单先用前台排序(合集页和首页模块按你排的显示);装上权限后就会真的改店里的合集。'
+            : '手动合集 —— 到点会<b>真的</b>按你排的顺序改店里的合集,结束自动还原。'}共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(太多了,这里只列出前 ${wxAll.products.length} 个)` : ''}</em>` : '';
     return `<div class="fld"><span>合集</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
-        <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button></div>
-        <em>合集页按下面的顺序把这些产品排在最前面,其他产品照原来的规则排在后面</em></div>
+        <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button></div>${colNote}</div>
       ${window.cgpCanSee && window.cgpCanSee('price') && MODE === 'live' ? `<div class="fld"><span>从改价计划导入 <em>Flash 当天改价的那批产品,不用再填一遍</em></span>
         <div id="wx-plans">${wxPlansHtml()}</div></div>` : ''}
-      <div class="fld"><span>排在最前面的产品(按顺序)</span>
-        <div class="pinlist">${wx.products.map((p, i) => `<div class="pinrow"><b>${i + 1}</b>${p.image ? `<img src="${esc(thumb(p.image, 80))}" alt="">` : '<span class="pinrow__img"></span>'}<span class="pinrow__t">${esc(p.title)}</span>
-          <button type="button" class="btn btn-ghost btn-xs" data-wx="up" data-i="${i}" ${i ? '' : 'disabled'}>↑</button><button type="button" class="btn btn-ghost btn-xs" data-wx="down" data-i="${i}" ${i < wx.products.length - 1 ? '' : 'disabled'}>↓</button><button type="button" class="btn btn-ghost btn-xs" data-wx="rm" data-i="${i}">✕</button></div>`).join('') || '<span class="muted">还没加</span>'}</div>
-        <button type="button" class="btn btn-sm" data-wx="pickprod">${I.plus}添加产品</button></div>`;
+      <div class="fld"><span>合集页的顺序 <em>上面这几个是你排的,排完接着就是店里原来的顺序</em></span>
+        <div class="pinlist">${wx.products.map((p, i) => row(p, i, 'top')).join('') || '<span class="muted">还没排;从下面的列表点「排上来」,或右边「添加产品」从别处加</span>'}</div>
+        <div class="pinsep">—— 下面照店里原来的顺序 ——</div>
+        ${wxAll && !wxAll.error ? `<div class="pinq"><input class="inp inp--sm" id="wx-q" placeholder="在这 ${rest.length} 个产品里搜…" value="${esc(wxQ)}"/></div>
+          <div class="pinlist pinlist--rest">${shown.slice(0, cap).map((p, i) => row(p, i, 'rest')).join('') || '<span class="muted">没有了</span>'}</div>
+          ${shown.length > cap ? `<button type="button" class="btn btn-sm" data-wx="showall">还有 ${shown.length - cap} 个,全部显示</button>` : ''}`
+    : wx.collection ? '' : '<p class="muted">选了合集之后,这里会列出合集里现在的全部产品,可以直接排序、穿插、隐藏。</p>'}
+        <button type="button" class="btn btn-sm" data-wx="pickprod">${I.plus}添加产品(合集以外的也行)</button></div>
+      ${hidden.length ? `<div class="fld"><span>这次不显示的产品(${hidden.length} 个) <em>只在这份清单生效的这段时间里藏起来,结束自动恢复</em></span>
+        <div class="pinlist pinlist--hide">${hidden.map((p, i) => row(p, i, 'hide')).join('')}</div></div>` : ''}`;
   }
   function wxFormHtml(it) {
     if (it.kind === 'pin') {
@@ -1700,12 +1768,17 @@
   }
 
   function wxPreviewHtml(v) {
-    if (v.kind === 'pin') {
-      return `<div class="pv-label">合集页最前面的样子</div>
-        <div class="pv-pins">${(v.products || []).slice(0, 12).map((p, i) => `<div class="pv-pin"><span class="pv-pin__n">${i + 1}</span><span class="pv-pin__img" ${p.image ? `style="background-image:url('${esc(thumb(p.image, 300))}')"` : ''}></span><span class="pv-pin__t">${esc(p.title)}</span></div>`).join('') || '<p class="muted">加了产品这里会按顺序显示</p>'}</div>
-        <p class="muted pv-cap">${v.collection ? `合集「${esc(v.collection.title)}」` : '合集'}${v.onlyListed ? '在生效期间只显示这些产品' : '先显示这些产品,后面接原来的顺序'};结束后恢复原来的排序。</p>`;
-    }
-    return '';
+    if (v.kind !== 'pin') return '';
+    // 画「生效时合集页从上往下的样子」:你排的在前(高亮),接着是店里原来的顺序(淡的),隐藏的不画
+    const hide = new Set((v.hidden || []).map((p) => numId(p.id)));
+    const top = new Set((v.products || []).map((p) => numId(p.id)));
+    const rest = v.onlyListed ? [] : (wxAll?.products || []).filter((p) => !top.has(numId(p.id)) && !hide.has(numId(p.id)));
+    const list = [...(v.products || []).map((p) => ({ ...p, pinned: true })), ...rest];
+    const more = list.length - 12;
+    return `<div class="pv-label">生效时合集页的样子</div>
+      <div class="pv-pins">${list.slice(0, 12).map((p, i) => `<div class="pv-pin ${p.pinned ? 'is-pin' : ''}"><span class="pv-pin__n">${i + 1}</span><span class="pv-pin__img" ${p.image ? `style="background-image:url('${esc(thumb(p.image, 300))}')"` : ''}></span><span class="pv-pin__t">${esc(p.title)}</span></div>`).join('') || '<p class="muted">排好产品这里会按顺序显示</p>'}</div>
+      ${more > 0 ? `<p class="muted pv-cap">…后面还有 ${more} 个,照店里原来的顺序</p>` : ''}
+      <p class="muted pv-cap">${v.collection ? `合集「${esc(v.collection.title)}」` : '合集'}:${v.onlyListed ? '生效期间<b>只显示</b>你排的这些产品' : '先显示你排的,后面接原来的顺序'}${(v.hidden || []).length ? `;另有 <b>${v.hidden.length} 个产品这段时间不显示</b>` : ''};结束后恢复原来的排序。</p>`;
   }
 
   // 选合集 / 产品(置顶清单用)。在后台里用 Shopify 自带的选择器;演示时从演示数据里挑
@@ -1939,7 +2012,9 @@
       if (g('priority')) v.priority = +g('priority').value || 0;
     }
     if (base.kind === 'tbstyle') { v.effect = ($('#ed-effect .is-active') || {}).dataset?.effect || 'none'; if (g('priority')) v.priority = +g('priority').value || 0; }
-    if (base.kind === 'pin') { v.collection = wx.collection; v.products = wx.products.map(({ id, handle, title, image }) => ({ id, handle, title, image })); v.onlyListed = !!g('onlyListed')?.checked; v.countdown = !!g('countdown')?.checked; }
+    if (base.kind === 'pin') { v.collection = wx.collection; v.products = wx.products.map(({ id, handle, title, image }) => ({ id, handle, title, image }));
+      v.hidden = (wx.hidden || []).map(({ id, handle, title, image }) => ({ id, handle, title, image }));
+      v.onlyListed = !!g('onlyListed')?.checked; v.countdown = !!g('countdown')?.checked; }
     if (base.kind === 'campaign') {
       v.larkLinks = ed.larkLinks.map((l) => ({ url: l.url, label: l.label }));
       v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
@@ -1967,7 +2042,8 @@
     const base = { ...it, ...(it.pendingChange && !isApprover() ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])] };
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
-    wx = { collection: base.kind === 'pin' ? base.collection || null : null, products: base.kind === 'pin' ? [...(base.products || [])] : [] };
+    wx = { collection: base.kind === 'pin' ? base.collection || null : null, products: base.kind === 'pin' ? [...(base.products || [])] : [], hidden: base.kind === 'pin' ? [...(base.hidden || [])] : [] };
+    wxAll = null; wxQ = ''; wxShowAll = false; wxBusy = false;
     wxPlans = null; // 每次打开抽屉重新按需加载
     const s = status(it);
     const approver = isApprover();
@@ -2027,6 +2103,7 @@
     if (kind === 'campaign' && MODE === 'live' && !ed.counts) fetchCounts();
     const f = $('#ed-form');
     f.addEventListener('input', (e) => {
+      if (e.target.id === 'wx-q') { wxQ = e.target.value; wxShowAll = false; return redrawWx(); }
       if (e.target.dataset.tf) { edTabs[+e.target.dataset.i][e.target.dataset.tf] = e.target.value; }
       if (e.target.name === 'image' && f.querySelector('[name="imageId"]')) f.querySelector('[name="imageId"]').value = '';
       refreshPv();
@@ -2053,10 +2130,13 @@
     // ---- 合集置顶清单 / 设计需求 / 宣传物料 ----
     const redrawWx = () => {
       const box = $('#wx-box'); if (!box) return;
+      const had = document.activeElement?.id === 'wx-q';
       box.innerHTML = pinBoxHtml();
       const pb = $('#wx-plans'); if (pb) pb.innerHTML = wxPlansHtml();
+      if (had) { const q = $('#wx-q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
       refreshPv();
     };
+    if (it.kind === 'pin' && wx.collection) loadWxAll(redrawWx); // 打开就去读这个合集现在的顺序
     f.addEventListener('click', async (e) => {
       const lk = e.target.closest('[data-lk]');
       if (lk) {
@@ -2071,7 +2151,12 @@
       }
       const w = e.target.closest('[data-wx]'); if (!w || w.tagName === 'INPUT') return;
       const i = +w.dataset.i; const a = w.dataset.wx;
-      if (a === 'pickcoll' || a === 'pickprod') { if (await pickPin(a === 'pickcoll' ? 'coll' : 'prod')) redrawWx(); return; }
+      if (a === 'pickcoll' || a === 'pickprod') {
+        const before = wx.collection?.id;
+        if (await pickPin(a === 'pickcoll' ? 'coll' : 'prod')) redrawWx();
+        if (a === 'pickcoll' && wx.collection?.id !== before) loadWxAll(redrawWx); // 换了合集 → 重新读这个合集现在的顺序
+        return;
+      }
       if (a === 'loadplans') {
         try {
           const d = await api('GET', '/api/price/state');
@@ -2093,6 +2178,24 @@
       }
       if (a === 'up' || a === 'down') { const j = a === 'up' ? i - 1 : i + 1; [wx.products[i], wx.products[j]] = [wx.products[j], wx.products[i]]; return redrawWx(); }
       if (a === 'rm') { wx.products.splice(i, 1); return redrawWx(); }
+      // ---- 合集里原有的产品:排上来 / 置顶 / 隐藏 / 恢复 ----
+      const find = (id) => (wxAll?.products || []).find((p) => pidOf(p) === numId(id)) || wx.products.find((p) => pidOf(p) === numId(id)) || (wx.hidden || []).find((p) => pidOf(p) === numId(id));
+      const keep = (p) => ({ id: p.id, handle: p.handle, title: p.title, image: p.image || '' });
+      if (a === 'pinhere' || a === 'totop') {
+        const p = find(w.dataset.id); if (!p) return;
+        wx.products = wx.products.filter((x) => pidOf(x) !== pidOf(p));
+        if (a === 'totop') wx.products.unshift(keep(p)); else wx.products.push(keep(p));
+        return redrawWx();
+      }
+      if (a === 'hide') {
+        const p = find(w.dataset.id); if (!p) return;
+        wx.hidden ||= [];
+        wx.products = wx.products.filter((x) => pidOf(x) !== pidOf(p));
+        if (!wx.hidden.some((x) => pidOf(x) === pidOf(p))) wx.hidden.push(keep(p));
+        return redrawWx();
+      }
+      if (a === 'unhide') { wx.hidden = (wx.hidden || []).filter((x) => pidOf(x) !== numId(w.dataset.id)); return redrawWx(); }
+      if (a === 'showall') { wxShowAll = true; return redrawWx(); }
     });
     // 预览里点页签:切换预览的页签
     $('#ed-pv').addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (t && edTabs) { pvTab = +t.dataset.pmtab; refreshPv(); } });

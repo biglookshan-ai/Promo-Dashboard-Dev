@@ -73,14 +73,38 @@ function fakeLark(req, res, body) {
 // 前台目录里没有价格,按 id 编一个稳定的价格 / 折扣,只给预览用
 const fakeProduct = (p) => {
   const price = 100 + (p.id % 900), off = p.id % 3 === 0 ? 0 : 10 + (p.id % 30);
-  return { id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, publishedAt: null, featuredMedia: { preview: { image: { url: p.image } } },
+  return { id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, publishedAt: null, status: 'ACTIVE', featuredMedia: { preview: { image: { url: p.image } } },
     variants: { nodes: [{ price: String(price), compareAtPrice: off ? String(Math.round(price / (1 - off / 100))) : null }] } };
 };
 const SCOPES = args.has('--no-scopes') ? ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions']
   : ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions', 'write_metaobject_definitions', 'write_metaobjects', 'write_files', 'write_products', 'read_inventory'];
 
+// 合集成员(有状态):排期系统真的改合集顺序时,改的就是这里 —— 第一次用到时按合集 handle 的关键词凑一组
+const colMembers = new Map();
+const colOf = (id) => cat.collections.find((x) => `gid://shopify/Collection/${x.id}` === String(id));
+function membersOf(c) {
+  const key = `${c.id}`;
+  if (!colMembers.has(key)) {
+    const k = (c.handle || '').split('-')[0];
+    colMembers.set(key, cat.products.filter((p) => p.handle.includes(k)).map((p) => String(p.id)));
+  }
+  return colMembers.get(key);
+}
+
 function gql(query, v) {
   const q = query.replace(/\s+/g, ' ');
+  // 合集排序:先认自己的合集(别被改价那套假数据截走)
+  if (/collection(Reorder|Add|Remove)Products/.test(q) && colOf(v.id)) {
+    const c = colOf(v.id); const ids = membersOf(c);
+    const nums = (v.p || []).map((x) => String(x).split('/').pop());
+    if (q.includes('collectionReorderProducts')) {
+      for (const m of v.moves) { const id = String(m.id).split('/').pop(); const at = ids.indexOf(id); if (at === -1) continue; ids.splice(at, 1); ids.splice(+m.newPosition, 0, id); }
+      return { collectionReorderProducts: { job: { id: 'job-1' }, userErrors: [] } };
+    }
+    if (q.includes('collectionRemoveProducts')) { colMembers.set(`${c.id}`, ids.filter((id) => !nums.includes(id))); return { collectionRemoveProducts: { userErrors: [] } }; }
+    for (const id of nums) if (!ids.includes(id)) ids.push(id);
+    return { collectionAddProducts: { userErrors: [] } };
+  }
   const pr = priceGql(q, v); if (pr !== undefined) return pr; // 改价模块的查询(scripts/fake-price-shop.mjs)
   if (q.includes('accessScopes')) return { currentAppInstallation: { accessScopes: SCOPES.map((handle) => ({ handle })) } };
   if (q.includes('primaryDomain')) return { shop: { name: 'CineGearPro(测试)', myshopifyDomain: SHOP, primaryDomain: { url: 'https://www.cinegearpro.co.uk' } }, currentAppInstallation: { app: { handle: 'promo-dashboard-dev' } } };
@@ -140,11 +164,18 @@ function gql(query, v) {
     return { collectionByIdentifier: c ? { id: `gid://shopify/Collection/${c.id}`, handle: c.handle, title: c.title, productsCount: { count: c.count ?? 0 } } : null };
   }
   if (q.includes('collection(id: $id)')) {
-    // 页签预览:用前台目录里带这个合集名关键词的产品凑一组(假 Shopify 不知道合集成员)
+    // 页签预览 / 合集排序:用前台目录里带这个合集名关键词的产品凑一组(假 Shopify 不知道真实成员)
     const c = cat.collections.find((x) => `gid://shopify/Collection/${x.id}` === v.id);
-    const key = (c?.handle || '').split('-')[0];
-    const list = cat.products.filter((p) => p.handle.includes(key)).slice(0, 60).map(fakeProduct);
-    return { collection: c ? { title: c.title, productsCount: { count: c.count ?? 0 }, products: { nodes: list } } : null };
+    if (!c) return { collection: null };
+    const byId = new Map(cat.products.map((p) => [String(p.id), p]));
+    const all = membersOf(c).map((id) => byId.get(id)).filter(Boolean).map(fakeProduct);
+    // clearance 当成「按条件自动归类」的合集(不能手动排序),别的当手动合集 —— 两条路都能在本地试
+    const automated = /clearance/.test(c.handle || '');
+    const first = Number((q.match(/products\(first: (\d+)/) || [])[1] || 60);
+    const start = v.after ? Number(v.after) : 0;
+    const nodes = all.slice(start, start + first);
+    return { collection: { title: c.title, sortOrder: automated ? 'BEST_SELLING' : 'MANUAL', ruleSet: automated ? { appliedDisjunctively: false } : null,
+      productsCount: { count: all.length }, products: { nodes, pageInfo: { hasNextPage: start + first < all.length, endCursor: String(start + first) } } } };
   }
   if (q.includes('productsCount')) {
     const out = {};
@@ -177,6 +208,17 @@ http.createServer((req, res) => {
     if (req.url.startsWith('/lark-')) return fakeLark(req, res, Buffer.concat(body).toString());
     if (req.url === '/__state') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ defs: Object.keys(store.defs), objects: Object.values(store.objects) }, null, 1)); }
     if (req.url === '/__upload') { res.writeHead(201); return res.end(); }
+    // GET /__cols 看现在「店里」各合集的顺序(只列被动过的)
+    if (req.url.startsWith('/__cols')) {
+      const want = new URL(req.url, 'http://x').searchParams.get('id');
+      const byId = new Map(cat.products.map((p) => [String(p.id), p.title]));
+      const out = {};
+      for (const [cid, ids] of colMembers) if (!want || cid === String(want).split('/').pop()) {
+        const c = cat.collections.find((x) => String(x.id) === cid);
+        out[c?.handle || cid] = { n: ids.length, first: ids.slice(0, 8).map((id) => byId.get(id) || id) };
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(out, null, 1));
+    }
     if (req.url === '/__price') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(priceState(), null, 1)); }
     if (req.url.startsWith('/__price/set')) { const r = priceSet(new URL(req.url, 'http://x').searchParams); res.writeHead(r ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(r)); }
     if (req.url === '/__dms') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(DMS, null, 1)); }
@@ -212,7 +254,7 @@ function sessionToken(sub) {
   const h = b64({ alg: 'HS256', typ: 'JWT' }), p = b64({ iss: `https://${SHOP}/admin`, dest: `https://${SHOP}`, aud: KEY, sub, exp: now + 86400, nbf: now - 10, iat: now, jti: crypto.randomUUID() });
   return `${h}.${p}.${crypto.createHmac('sha256', SECRET).update(`${h}.${p}`).digest('base64url')}`;
 }
-const pickC = cat.collections.filter((c) => ['dzofilm-vespid-prime-cine-lens', 'clearance'].includes(c.handle));
+const pickC = cat.collections.filter((c) => ['dzofilm-vespid-prime-cine-lens', 'cinediskpro-sale', 'clearance'].includes(c.handle));
 const pickP = cat.products.filter((p) => p.tags.includes('New Gear')).slice(0, 2);
 const PICK = {
   collection: pickC.map((c) => ({ id: `gid://shopify/Collection/${c.id}`, handle: c.handle, title: c.title })),
@@ -221,8 +263,10 @@ const PICK = {
 const fakeBridge = (user) => `<script>
   // 本地测试用的假 App Bridge:session token 由测试环境签好;选择器用浏览器自带的简单列表
   window.shopify = { idToken: async () => ${JSON.stringify(sessionToken(user))},
-    // 模拟 Shopify 选择器:固定返回两个真实的合集 / 产品(数据来自前台公开目录)
-    resourcePicker: async ({ type }) => (${JSON.stringify(PICK)})[type] };
+    // 模拟 Shopify 选择器:返回真实的合集 / 产品(数据来自前台公开目录);合集每点一次换下一个,方便试不同情况
+    resourcePicker: async ({ type }) => { const L = (${JSON.stringify(PICK)})[type];
+      if (type !== 'collection') return L;
+      window.__pick = ((window.__pick || 0) + 1) % L.length; return [L[window.__pick]]; } };
 </script>`;
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');

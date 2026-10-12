@@ -18,7 +18,7 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   'bg', 'color', 'accent', 'effect', 'decoLeft', 'decoRight', 'start', 'end', 'campaign',
   'module', 'title2', 'titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText', 'tabs', 'isDefault',
   // v3:合集置顶清单;活动关联的飞书任务链接
-  'collection', 'onlyListed', 'larkLinks'];
+  'collection', 'onlyListed', 'larkLinks', 'hidden'];
 
 export class ActionError extends Error {}
 const fail = (msg) => { throw new ActionError(msg); };

@@ -6,6 +6,7 @@
 //    所以合计如果恰好等于全店产品数(而单项加起来明显更少),就判定为不可信,不显示。
 import { graphql } from './shopify.js';
 import { toGid } from './metaobjects.js';
+import { ActionError } from './schedule-actions.js';
 
 const numId = (id) => String(id || '').split('/').pop();
 const q = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -80,4 +81,34 @@ export async function tabProducts(ctx, tab, gql = graphql) {
   if (tab.sortByDiscount) items.sort((a, b) => b.off - a.off);
   const limit = Number(tab.limit) || 0;
   return { items: items.slice(0, Math.min(N, limit || N)), shown: limit ? Math.min(limit, items.length) : items.length, approx: nodes.length >= 60 };
+}
+
+// 合集排序编辑器:把一个合集**现在在店里的真实顺序**整份取出来(最多 MAX 个)。
+//   manualOk = 这个合集能不能真的手动排序 / 手动加减产品(按条件自动归类的合集 Shopify 不让)。
+const COL_MAX = 500;
+export async function collectionProducts(ctx, id, gql = graphql) {
+  const gid = toGid('Collection', id);
+  const FIELDS = 'id title handle status featuredMedia { preview { image { url } } } variants(first: 20) { nodes { price compareAtPrice } }';
+  const out = []; let after = null; let title = ''; let sortOrder = null; let ruleSet = null; let total = null; let more = false;
+  for (let i = 0; i < 5; i++) {
+    const d = await gql(ctx, `query($id: ID!, $after: String) { collection(id: $id) { title sortOrder productsCount { count } ruleSet { appliedDisjunctively }
+        products(first: 100, after: $after, sortKey: COLLECTION_DEFAULT) { nodes { ${FIELDS} } pageInfo { hasNextPage endCursor } } } }`, { id: gid, after });
+    const c = d.collection;
+    if (!c) throw new ActionError('找不到这个合集(可能已经删了)');
+    title = c.title; sortOrder = c.sortOrder; ruleSet = c.ruleSet; total = c.productsCount?.count ?? null;
+    out.push(...c.products.nodes);
+    if (!c.products.pageInfo.hasNextPage) { after = null; break; }
+    after = c.products.pageInfo.endCursor;
+    if (out.length >= COL_MAX) { more = true; break; }
+  }
+  const products = out.slice(0, COL_MAX).map((p, i) => {
+    const best = p.variants.nodes.reduce((acc, v) => {
+      const pr = Number(v.price), cmp = Number(v.compareAtPrice || 0);
+      const off = cmp > pr ? Math.round(((cmp - pr) / cmp) * 100) : 0;
+      return off > acc.off ? { off, price: pr, cmp } : acc;
+    }, { off: 0, price: Number(p.variants.nodes[0]?.price || 0), cmp: 0 });
+    return { id: p.id, title: p.title, handle: p.handle, image: p.featuredMedia?.preview?.image?.url || '', pos: i + 1, price: best.price, off: best.off, draft: p.status !== 'ACTIVE' };
+  });
+  // 真的能改店里的顺序 = 不是按条件自动归类 + 现在就是「手动」排序(Shopify 只让手动排序的合集调顺序)
+  return { id: gid, title, sortOrder, automated: !!ruleSet, manualOk: !ruleSet && sortOrder === 'MANUAL', total, products, truncated: more || (total != null && total > products.length) };
 }

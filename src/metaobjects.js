@@ -124,6 +124,7 @@ export const DEFINITIONS = [
       t('name', '名称', 'single_line_text_field', { required: true }),
       t('collection', '合集', 'collection_reference'),
       t('products', '置顶的产品(按顺序)', 'list.product_reference'),
+      t('hidden_products', '这段时间不显示的产品', 'list.product_reference', { description: '清单生效期间,这些产品不在这个合集页和首页模块里出现;结束自动恢复' }),
       t('only_listed', '只显示清单里的产品', 'boolean'),
       t('show_countdown', '产品页显示倒计时', 'boolean', { description: '清单里的产品在产品页倒数到这份清单结束(Flash 每天那一组用)' }),
       t('badge_text', '产品页徽章文字', 'single_line_text_field'),
@@ -260,7 +261,8 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
   } else if (it.kind === 'pin') {
     Object.assign(f, {
       name: str(it.name || it.collection?.title), collection: toGid('Collection', it.collection?.id) || '',
-      products: list((it.products || []).map((p) => toGid('Product', p.id)).filter(Boolean)), only_listed: it.onlyListed ? 'true' : 'false',
+      products: list((it.products || []).map((p) => toGid('Product', p.id)).filter(Boolean)),
+      hidden_products: list((it.hidden || []).map((p) => toGid('Product', p.id)).filter(Boolean)), only_listed: it.onlyListed ? 'true' : 'false',
       show_countdown: it.countdown ? 'true' : 'false', badge_text: str(it.badge),
     });
   }
