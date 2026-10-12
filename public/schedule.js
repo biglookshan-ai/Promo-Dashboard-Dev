@@ -1698,9 +1698,11 @@
   async function loadWxAll(redraw) {
     const c = wx.collection; wxAll = null; wxQ = ''; wxShowAll = false;
     if (!c) return redraw && redraw();
-    if (MODE !== 'live') { // 演示:没有真实成员,用演示目录凑一组当「合集里原来的产品」
-      const pool = (S.products || []).slice(0, 24).map((p, i) => ({ id: p.id, title: p.title, handle: p.handle, image: p.image, pos: i + 1 }));
-      wxAll = { title: c.title, manualOk: !/clearance/i.test(c.handle || ''), automated: /clearance/i.test(c.handle || ''), total: pool.length, products: pool, truncated: false, demo: true };
+    if (MODE !== 'live') { // 演示模式读不到店里的合集成员,只能拿演示目录凑一组让人试手感(界面上会写明不是真的)
+      const seed = [...(c.handle || c.title || '')].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+      const pool = (S.products || []); const n = Math.min(24, pool.length);
+      wxAll = { title: c.title, demo: true, truncated: false, total: n,
+        products: Array.from({ length: n }, (_, i) => { const p = pool[(seed + i * 11) % pool.length]; return { id: p.id, title: p.title, handle: p.handle, image: p.image, pos: i + 1 }; }) };
       return redraw && redraw();
     }
     wxBusy = true; redraw && redraw();
@@ -1736,7 +1738,9 @@
     </div>`;
     const colNote = !wx.collection ? '' : wxBusy ? '<em>正在读这个合集现在的顺序…</em>'
       : wxAll?.error ? `<em class="warn">读不到这个合集的产品:${esc(wxAll.error)}</em>`
-        : wxAll ? `<em>${!wxAll.manualOk
+        : wxAll?.demo ? `<em class="warn">演示模式:下面列的是<b>随便凑的示例产品,不是「${esc(wxAll.title)}」真正的成员</b> —— 演示模式读不到店里的合集。
+            切到正式数据(设置 → 店铺连接)后,这里会列出这个合集现在真正的产品和顺序。</em>`
+          : wxAll ? `<em>${!wxAll.manualOk
           ? `${wxAll.automated ? '这是<b>按条件自动归类</b>的合集' : `这个合集现在按<b>${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}</b>排序`} —— Shopify 不让手动排,所以这份清单<b>用前台排序</b>实现(合集页和首页模块按你排的显示,店里的合集不动)。`
           : MODE === 'live' && S.setup && S.setup.canWriteProducts === false ? '手动合集,但 app 现在<b>没有「改产品 / 合集」的权限</b> —— 这份清单先用前台排序(合集页和首页模块按你排的显示);装上权限后就会真的改店里的合集。'
             : '手动合集 —— 到点会<b>真的</b>按你排的顺序改店里的合集,结束自动还原。'}共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(太多了,这里只列出前 ${wxAll.products.length} 个)` : ''}</em>` : '';
@@ -1746,7 +1750,7 @@
         <div id="wx-plans">${wxPlansHtml()}</div></div>` : ''}
       <div class="fld"><span>合集页的顺序 <em>上面这几个是你排的,排完接着就是店里原来的顺序</em></span>
         <div class="pinlist">${wx.products.map((p, i) => row(p, i, 'top')).join('') || '<span class="muted">还没排;从下面的列表点「排上来」,或右边「添加产品」从别处加</span>'}</div>
-        <div class="pinsep">—— 下面照店里原来的顺序 ——</div>
+        <div class="pinsep">—— 下面照店里原来的顺序 ${wxAll?.demo ? '(演示模式:示例产品,不是这个合集真正的成员)' : ''}——</div>
         ${wxAll && !wxAll.error ? `<div class="pinq"><input class="inp inp--sm" id="wx-q" placeholder="在这 ${rest.length} 个产品里搜…" value="${esc(wxQ)}"/></div>
           <div class="pinlist pinlist--rest">${shown.slice(0, cap).map((p, i) => row(p, i, 'rest')).join('') || '<span class="muted">没有了</span>'}</div>
           ${shown.length > cap ? `<button type="button" class="btn btn-sm" data-wx="showall">还有 ${shown.length - cap} 个,全部显示</button>` : ''}`
@@ -1778,6 +1782,7 @@
     return `<div class="pv-label">生效时合集页的样子</div>
       <div class="pv-pins">${list.slice(0, 12).map((p, i) => `<div class="pv-pin ${p.pinned ? 'is-pin' : ''}"><span class="pv-pin__n">${i + 1}</span><span class="pv-pin__img" ${p.image ? `style="background-image:url('${esc(thumb(p.image, 300))}')"` : ''}></span><span class="pv-pin__t">${esc(p.title)}</span></div>`).join('') || '<p class="muted">排好产品这里会按顺序显示</p>'}</div>
       ${more > 0 ? `<p class="muted pv-cap">…后面还有 ${more} 个,照店里原来的顺序</p>` : ''}
+      ${wxAll?.demo ? '<p class="muted pv-cap">演示模式:淡色那些是示例产品,不是这个合集真正的成员。</p>' : ''}
       <p class="muted pv-cap">${v.collection ? `合集「${esc(v.collection.title)}」` : '合集'}:${v.onlyListed ? '生效期间<b>只显示</b>你排的这些产品' : '先显示你排的,后面接原来的顺序'}${(v.hidden || []).length ? `;另有 <b>${v.hidden.length} 个产品这段时间不显示</b>` : ''};结束后恢复原来的排序。</p>`;
   }
 
@@ -1793,7 +1798,11 @@
         return true;
       } catch { /* 不在后台 → 用演示数据 */ }
     }
-    if (type === 'coll') { const c = S.collections[0]; if (c) wx.collection = m(c); }
+    if (type === 'coll') { // 演示:每点一次换下一个合集
+      const L = S.collections || []; if (!L.length) return;
+      const at = Math.max(0, L.findIndex((x) => String(x.id) === String(wx.collection?.id)));
+      wx.collection = m(L[(at + 1) % L.length]);
+    }
     else { const have = new Set(wx.products.map((p) => p.handle)); wx.products.push(...S.products.filter((p) => !have.has(p.handle)).slice(0, 3).map(m)); }
     return true;
   }
