@@ -79,6 +79,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
     // 哪些合集现在被真的改了顺序(含「暂停接管」);原始顺序快照留在服务器,不发给页面
     colState: Object.fromEntries(Object.entries(state.colState || {}).map(([k, c]) => [k,
       { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, at: c.at }])),
+    sortFlags: Object.fromEntries(Object.entries(state.sortFlags || {}).map(([k, f]) => [k, { pinName: f.pinName, title: f.title }])),
     pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
     settings: { notify: state.settings.notify, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
     collections: [], products: [], tagCounts: {},
@@ -249,8 +250,12 @@ export function scheduleRouter() {
   // 编辑器要的「原来的顺序」:app 正在接管这个合集时,是接管前的快照(合集现在的顺序已经被改过了);没接管就是现在的顺序
   r.get('/collection-products', wrap(async (req) => {
     const out = await collectionProducts(req.ctx, String(req.query.id || ''));
-    const st = (load(req.ctx.shop).colState || {})[colNid(out.id)];
-    return { ...out, baseline: st?.snapshot || null, takenBy: st ? { pinId: st.pinId, pinName: st.pinName, hold: st.hold || null } : null };
+    const s0 = load(req.ctx.shop);
+    const st = (s0.colState || {})[colNid(out.id)];
+    // 合集页排序方式:如果是 app 因为清单临时打开的「完全按顺序」,编辑器要看到的是改之前的样子
+    const fl = (s0.sortFlags || {})[colNid(out.id)];
+    const sortRule = fl ? { ...out.sortRule, off: fl.prev?.value === 'true', byPin: fl.pinName } : out.sortRule;
+    return { ...out, sortRule, baseline: st?.snapshot || null, takenBy: st ? { pinId: st.pinId, pinName: st.pinName, hold: st.hold || null } : null };
   }));
 
   // ---- 合集排序:有人在后台手改过被暂停接管了,点「重新接管」清掉 ----

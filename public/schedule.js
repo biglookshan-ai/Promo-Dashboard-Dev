@@ -89,7 +89,7 @@
       Object.assign(tagCounts, c.counts?.tags || {});
       Object.entries(c.counts?.collections || {}).forEach(([gid, x]) => { liveColCounts[gid] = x.count; });
     });
-    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], colState: v.colState || {} };
+    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], colState: v.colState || {}, sortFlags: v.sortFlags || {} };
   }
   async function load(force) {
     if (MODE === 'live') { S = await normalizeLive(await api('GET', '/api/schedule/state')); return; }
@@ -946,7 +946,7 @@
       const prods = p.products || [];
       return `<div class="pnrow ${on ? 'is-on' : ''}">
         <button class="pnrow__main" type="button" data-open="${p.id}" data-pop="${p.id}">
-          <span class="pnrow__h"><b>${esc(titleOf(p))}</b>${badgeAt(p, T)}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">产品页倒计时</span>' : ''}</span>
+          <span class="pnrow__h"><b>${esc(titleOf(p))}</b>${badgeAt(p, T)}${p.fullOrder ? '<span class="tag tag--accent">完全按清单顺序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">产品页倒计时</span>' : ''}</span>
           <span class="pnrow__w">${I.clock}${esc(winText(p))}</span>
           <span class="pnrow__ps">${prods.slice(0, 8).map((x, i) => `<span class="pnrow__p" title="${esc(x.title)}"><span class="pnrow__n">${i + 1}</span>${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 8 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}${prods.length ? '' : '<span class="muted">还没加产品</span>'}</span>
         </button>
@@ -968,6 +968,7 @@
         // 首页哪些模块页签也吃这个合集(同名的只说一次)
         const used = [...new Set(modTabsUsing(g.cid).map((u) => `${MODULE_CN[u.v.module]}·${tabLabel(u.t)}`))];
         const cs = (S.colState || {})[String(g.cid)];
+        const sf = (S.sortFlags || {})[String(g.cid)];
         return `<section class="panel pngroup">
           <div class="panel__h"><h3>${esc(g.title)}${MODE === 'live' && g.cid !== '?' ? ` <button class="btn btn-sm pn-hist" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本 / 回滚</button>` : ''}</h3>
             <span class="muted">${act ? `这一刻按「${esc(titleOf(act))}」排${act.onlyListed ? ',而且只显示清单里的产品' : ''}` : '这一刻没有清单生效,按合集原来的顺序'}
@@ -986,6 +987,7 @@
               ${tie ? '它们的开始时间一样(比如都是「长期显示」),<b>前台和店里可能各用一份,顺序会打架</b> —— 请暂停不用的那份,或者给它们设不同的开始时间。'
                 : `只有开始时间最晚的「${esc(titleOf(act))}」会用上,它结束后才轮到别的。不需要的可以暂停或删掉。`}</div>`;
           })()}
+          ${sf ? `<div class="note note--ok">合集页现在<b>完全按清单顺序</b>显示(「${esc(sf.pinName || '')}」生效期间),结束自动恢复原来的排序方式。</div>` : ''}
           <div class="pnlist">${g.list.map(card).join('')}</div>
         </section>`;
       }).join('') : (need ? '' : empty('还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
@@ -1807,9 +1809,14 @@
                 : '手动合集 —— 到点会<b>真的</b>按网格里的顺序改店里的合集(包括加 / 移出产品),结束自动还原。'}共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(太多了,只列出前 ${wxAll.products.length} 个)` : ''}${wxAll.takenBy ? ` · 现在由「${esc(wxAll.takenBy.pinName || '')}」接管着,网格里的对比基准是接管前的原样` : ''}
               ${MODE === 'live' ? ' · <button type="button" class="linkbtn" data-wx="hist">看这个合集的历史版本 / 回滚</button>' : ''}</em>` : '';
     const sum = OD.diffSummary(d);
+    // 搜索引擎在合集页默认「手动前 N 个 + 其余新到旧」:没开「完全按我排的顺序」时,网格第 (前缀 + N) 位以后前台会按新到旧
+    const rule = wxAll?.sortRule || { off: false, pinManual: 12, pinNew: 0 };
+    const nativeAll = rule.off;                                  // 这个合集本来就完全按合集顺序
+    const newestFrom = !wx.fullOrder && !nativeAll && !rule.pinNew && wx.onlyN == null ? prefix + rule.pinManual : null;
     const grid = wx.order.map((p, i) => {
       const cut = wx.onlyN != null && i >= wx.onlyN;
-      const line = wx.onlyN != null && i === wx.onlyN ? `<div class="pg__cutline">—— 只显示前 ${wx.onlyN} 个,下面的这段时间不显示 ——</div>` : '';
+      const line = wx.onlyN != null && i === wx.onlyN ? `<div class="pg__cutline">—— 只显示前 ${wx.onlyN} 个,下面的这段时间不显示 ——</div>`
+        : newestFrom != null && i === newestFrom ? `<div class="pg__cutline pg__cutline--new">—— 前台从这里开始按「新到旧」显示,不是网格里的顺序(合集页默认只照手动顺序显示前 ${rule.pinManual} 个)· 打开上面的「完全按我排的顺序」就一模一样 ——</div>` : '';
       return line + wxCard(p, i, d, cut);
     }).join('');
     return `<div class="fld"><span>合集</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
@@ -1829,6 +1836,11 @@
       <label class="tgl pg__only"><input type="checkbox" id="wx-only" ${wx.onlyN != null ? 'checked' : ''}/><span class="tgl__ui"></span>
         <span><b>只显示前 <input class="inp inp--xs" id="wx-onlyn" type="number" min="1" max="${Math.max(1, wx.order.length)}" value="${wx.onlyN ?? Math.max(1, Math.min(prefix || 5, wx.order.length))}" ${wx.onlyN != null ? '' : 'disabled'}/> 个</b>
           <span class="muted">比如 Flash Sale:合集里放着所有候选产品,每天只显示当天这一组;后面的这段时间不显示</span></span></label>
+      <label class="tgl pg__only"><input type="checkbox" id="wx-full" ${wx.fullOrder || nativeAll ? 'checked' : ''} ${nativeAll ? 'disabled' : ''}/><span class="tgl__ui"></span>
+        <span><b>生效期间完全按我排的顺序显示</b><span class="muted">${nativeAll
+          ? '这个合集本来就完全按合集顺序显示,不用开'
+          : `合集页默认${rule.pinNew ? `先放最新 ${rule.pinNew} 个、再` : ''}只照手动顺序显示前 ${rule.pinManual} 个,其余按新到旧;打开后这份清单生效期间完全按网格里的顺序(顾客自己选别的排序时照常),清单结束自动恢复。只改这个合集,不影响别的合集`}${rule.byPin ? `(现在由「${esc(rule.byPin)}」临时打开着)` : ''}</span></span></label>
+      ${!wx.fullOrder && !nativeAll && rule.pinNew ? `<div class="note note--warn note--sm">这个合集前台默认会把最新的 ${rule.pinNew} 个产品放最前,和网格的顺序不完全一样 —— 打开「完全按我排的顺序」就一模一样。</div>` : ''}
       ${warns.map((w) => `<div class="note note--warn note--sm">${w}</div>`).join('')}
       <p class="muted pg__tip">拖动卡片到任意位置;或点左上角的序号直接输入要移到第几位。存的时候只记你动过的部分,没动的照原来的顺序。</p>
       <div class="pg" id="pg">${grid || '<p class="muted">这个合集里还没有产品</p>'}</div>
@@ -2122,7 +2134,7 @@
       const byId = new Map(wx.order.map((p) => [pidOf(p), p]));
       v.collection = wx.collection; v.products = keepIds.map((id) => slim(byId.get(id)));
       v.hidden = wx.hidden.map(slim);
-      v.onlyListed = wx.onlyN != null; v.countdown = !!g('countdown')?.checked;
+      v.onlyListed = wx.onlyN != null; v.fullOrder = !!wx.fullOrder; v.countdown = !!g('countdown')?.checked;
     }
     if (base.kind === 'campaign') {
       v.larkLinks = ed.larkLinks.map((l) => ({ url: l.url, label: l.label }));
@@ -2153,7 +2165,7 @@
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])] };
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
     wx = base.kind === 'pin' ? { collection: base.collection || null, order: [...(base.products || [])], hidden: [...(base.hidden || [])],
-      onlyN: base.onlyListed ? (base.products || []).length : null, init: { products: base.products || [], hidden: base.hidden || [] } } : null;
+      onlyN: base.onlyListed ? (base.products || []).length : null, fullOrder: !!base.fullOrder, init: { products: base.products || [], hidden: base.hidden || [] } } : null;
     wxAll = null; wxBase = []; wxQ = ''; wxPosEdit = null; wxBusy = false;
     wxPlans = null; // 每次打开抽屉重新按需加载
     const s = status(it);
@@ -2246,6 +2258,7 @@
     });
     // ---- 合集排序网格:「只显示前 N 个」开关、输入序号移动、拖拽 ----
     f.addEventListener('change', (e) => {
+      if (e.target.id === 'wx-full') { wx.fullOrder = e.target.checked; return redrawWx(); }
       if (e.target.id !== 'wx-only') return;
       if (e.target.checked) { const n = +($('#wx-onlyn')?.value) || 5; wx.onlyN = Math.max(1, Math.min(n, wx.order.length)); } else wx.onlyN = null;
       redrawWx();
@@ -2462,7 +2475,7 @@
   // 合集排序执行结果 → 人话(立即执行一次、保存后自动执行共用)
   function colSay(rep, onlyCol) { // onlyCol:只说这个合集的(保存某份清单时,别把其他合集的情况也念一遍)
     if (!rep) return [];
-    if (onlyCol) { const k = numId(onlyCol); const f = (x) => !x.collection || numId(x.collection) === k; rep = { applied: rep.applied.filter(f), restored: rep.restored.filter(f), skipped: rep.skipped.filter(f), holds: rep.holds.filter(f), failures: rep.failures.filter(f) }; }
+    if (onlyCol) { const k = numId(onlyCol); const f = (x) => !x.collection || numId(x.collection) === k; rep = { applied: rep.applied.filter(f), restored: rep.restored.filter(f), skipped: rep.skipped.filter(f), holds: rep.holds.filter(f), failures: rep.failures.filter(f), sortOn: (rep.sortOn || []).filter(f), sortOff: (rep.sortOff || []).filter(f) }; }
     const WHY = { 'too-many': '要临时移出的产品太多,改用前台排序(店里的合集不动)', 'no-scope': 'app 还没有「改产品 / 合集」的权限' };
     const sortWhy = (x) => `这个合集的排序方式是「${SORT_CN[String(x.why).slice(5)] || String(x.why).slice(5)}」,不是「手动」→ 后台顺序没法改,只在前台按你排的显示(在 Shopify 后台把排序改成「手动」就能真的改)`;
     return [
@@ -2470,6 +2483,8 @@
       ...rep.restored.map((x) => `↩️ 「${x.title}」已还原成接管前的顺序`),
       ...rep.skipped.map((x) => `⏭ ${x.title ? `「${x.title}」` : ''}${WHY[x.why] || (String(x.why || '').startsWith('sort:') ? sortWhy(x) : x.why)}`),
       ...rep.holds.map((x) => `⏸ 「${x.title}」有人在后台手动改过,app 已停手`),
+      ...(rep.sortOn || []).map((x) => `📐 「${x.title}」合集页改成完全按清单顺序显示`),
+      ...(rep.sortOff || []).map((x) => `📐 「${x.title}」合集页的排序方式恢复成原来的设置`),
       ...rep.failures.map((x) => `❌ ${x.message}`),
     ];
   }

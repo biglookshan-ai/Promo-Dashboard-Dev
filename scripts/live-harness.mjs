@@ -81,6 +81,7 @@ const SCOPES = args.has('--no-scopes') ? ['read_products', 'read_themes', 'read_
 
 // 合集成员(有状态):排期系统真的改合集顺序时,改的就是这里 —— 第一次用到时按合集 handle 的关键词凑一组
 const colMembers = new Map();
+const colMeta = new Map(); // 合集字段(custom.cgp_sort_off 等):`${合集id}:${key}` → { value, type }
 const colOf = (id) => cat.collections.find((x) => `gid://shopify/Collection/${x.id}` === String(id));
 function membersOf(c) {
   const key = `${c.id}`;
@@ -104,6 +105,15 @@ function gql(query, v) {
     if (q.includes('collectionRemoveProducts')) { colMembers.set(`${c.id}`, ids.filter((id) => !nums.includes(id))); return { collectionRemoveProducts: { userErrors: [] } }; }
     for (const id of nums) if (!ids.includes(id)) ids.push(id);
     return { collectionAddProducts: { userErrors: [] } };
+  }
+  // 合集字段:搜索引擎的「完全按合集顺序」开关 custom.cgp_sort_off
+  if (q.includes('metafieldsSet') && v.m?.[0]?.ownerId?.includes('/Collection/')) {
+    for (const m of v.m) colMeta.set(`${m.ownerId.split('/').pop()}:${m.key}`, { value: m.value, type: m.type });
+    return { metafieldsSet: { metafields: v.m.map((m, i) => ({ id: `gid://shopify/Metafield/${i}` })), userErrors: [] } };
+  }
+  if (q.includes('metafieldsDelete') && v.m?.[0]?.ownerId?.includes('/Collection/')) {
+    for (const m of v.m) colMeta.delete(`${m.ownerId.split('/').pop()}:${m.key}`);
+    return { metafieldsDelete: { deletedMetafields: v.m.map((m) => ({ key: m.key })), userErrors: [] } };
   }
   // 带条件的合集:改它的「单独加的产品 / 排除」名单(API 2026-07 的 collectionUpdate → sourcesToUpdate)
   if (q.includes('collectionUpdate') && v.c?.sourcesToUpdate && colOf(v.c.id)) {
@@ -192,7 +202,9 @@ function gql(query, v) {
     const start = v.after ? Number(v.after) : 0;
     const nodes = all.slice(start, start + first);
     const sources = automated ? [{ __typename: 'CollectionConditionsSource', id: `gid://shopify/CollectionConditionsSource/${c.id}`, shareable: false, inclusion: { conditions: [{ __typename: 'CollectionSourceInclusionCondition' }] } }] : [];
-    return { collection: { title: c.title, sortOrder: manualSort ? 'MANUAL' : 'BEST_SELLING', ruleSet: automated ? { appliedDisjunctively: false } : null, sources,
+    const meta = (k) => colMeta.get(`${c.id}:${k}`) || null;
+    return { collection: { id: `gid://shopify/Collection/${c.id}`, title: c.title, sortOrder: manualSort ? 'MANUAL' : 'BEST_SELLING', ruleSet: automated ? { appliedDisjunctively: false } : null, sources,
+      metafield: meta('cgp_sort_off'), sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new'),
       productsCount: { count: all.length }, products: { nodes, pageInfo: { hasNextPage: start + first < all.length, endCursor: String(start + first) } } } };
   }
   if (q.includes('productsCount')) {
@@ -233,7 +245,7 @@ http.createServer((req, res) => {
       const out = {};
       for (const [cid, ids] of colMembers) if (!want || cid === String(want).split('/').pop()) {
         const c = cat.collections.find((x) => String(x.id) === cid);
-        out[c?.handle || cid] = { n: ids.length, first: ids.slice(0, 8).map((id) => byId.get(id) || id) };
+        out[c?.handle || cid] = { n: ids.length, sortOff: colMeta.get(`${cid}:cgp_sort_off`)?.value ?? null, first: ids.slice(0, 8).map((id) => byId.get(id) || id) };
       }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify(out, null, 1));
     }

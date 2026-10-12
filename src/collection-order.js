@@ -182,7 +182,7 @@ const settled = (added, removed, ids) => added.every((id) => ids.includes(id)) &
 //   返回 { applied:[], restored:[], holds:[], failures:[], skipped:[] }
 const DAY = 86400_000;
 export async function alignCollections(ctx, state, { now = Date.now(), gql, record = () => {} } = {}) {
-  const rep = { applied: [], restored: [], holds: [], failures: [], skipped: [] };
+  const rep = { applied: [], restored: [], holds: [], failures: [], skipped: [], sortOn: [], sortOff: [] };
   state.colState ||= {};
   // 上次因为「没有改产品的权限」失败过 → 一天之内不再试(装了权限重新打开 app 会清掉)
   if (state.colNoScope && now - state.colNoScope < DAY) { rep.skipped.push({ why: 'no-scope' }); return rep; }
@@ -297,8 +297,51 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
       rep.failures.push({ collection: cid, message: msg });
     }
   }
+  await alignSortFlags(ctx, state, { now, gql, rep }); // 清单勾了「完全按我排的顺序」:同步合集页的排序方式
   return rep;
 }
 
 // 清单内容变了就要重排:名字不算,排的产品 / 隐藏的产品算
 export const sig = (pin) => JSON.stringify([(pin.products || []).map((p) => nid(p.id)), (pin.hidden || []).map((p) => nid(p.id)), !!pin.onlyListed]);
+
+// ---------- 合集页「完全按清单顺序显示」----------
+// 搜索引擎在合集页默认是「手动顺序前 12 个 + 其余新到旧」(主题里写死的,每个合集可以用字段 custom.cgp_sort_off 关掉)。
+// 清单勾了 fullOrder:**清单生效期间**把这个合集的 cgp_sort_off 设成 true(搜索引擎就完全按合集自己的顺序);
+// 清单结束 / 暂停 / 删除 / 取消勾选 → 恢复成改之前的值(原来没有就删掉)。只动这一个合集的这一个字段,不改主题。
+// state.sortFlags[合集id] = { prev: 改之前的值(null = 原来没有), pinId, pinName, title, at }
+const SORT_Q = `query($id: ID!) { collection(id: $id) { id title metafield(namespace: "custom", key: "cgp_sort_off") { value type } } }`;
+const MF_SET = `mutation($m: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $m) { metafields { id } userErrors { field message } } }`;
+const MF_DEL = `mutation($m: [MetafieldIdentifierInput!]!) { metafieldsDelete(metafields: $m) { deletedMetafields { key } userErrors { field message } } }`;
+async function setSortOff(ctx, cid, value, type, gql) {
+  const d = await gql(ctx, MF_SET, { m: [{ ownerId: gid(cid), namespace: 'custom', key: 'cgp_sort_off', type: type || 'boolean', value: String(value) }] });
+  const e = d.metafieldsSet?.userErrors?.[0]; if (e) throw new Error(e.message);
+}
+async function deleteSortOff(ctx, cid, gql) {
+  const d = await gql(ctx, MF_DEL, { m: [{ ownerId: gid(cid), namespace: 'custom', key: 'cgp_sort_off' }] });
+  const e = d.metafieldsDelete?.userErrors?.[0]; if (e) throw new Error(e.message);
+}
+export async function alignSortFlags(ctx, state, { now = Date.now(), gql, rep }) {
+  state.sortFlags ||= {};
+  const want = new Map([...livePins(state.pins || [], state.campaigns || [], now)].filter(([, p]) => p.fullOrder));
+  for (const cid of new Set([...want.keys(), ...Object.keys(state.sortFlags)])) {
+    const pin = want.get(cid) || null; const fl = state.sortFlags[cid] || null;
+    try {
+      if (pin && !fl) { // 刚生效:记下改之前的值,再打开
+        const d = await gql(ctx, SORT_Q, { id: gid(cid) });
+        if (!d.collection) continue;
+        const mf = d.collection.metafield;
+        if (!mf || mf.value !== 'true') await setSortOff(ctx, cid, 'true', 'boolean', gql);
+        state.sortFlags[cid] = { prev: mf ? { value: mf.value, type: mf.type } : null, pinId: pin.id, pinName: pin.name, title: d.collection.title, at: now };
+        rep.sortOn.push({ collection: cid, title: d.collection.title, pin: pin.name, already: mf?.value === 'true' });
+      } else if (pin && fl) { // 换成另一份同样勾了的清单接着用(比如 Flash 第 1 天 → 第 2 天):不重复记「改之前」
+        Object.assign(fl, { pinId: pin.id, pinName: pin.name });
+      } else if (!pin && fl) { // 结束了:恢复成改之前的样子
+        if (fl.prev) await setSortOff(ctx, cid, fl.prev.value, fl.prev.type, gql); else await deleteSortOff(ctx, cid, gql);
+        delete state.sortFlags[cid];
+        rep.sortOff.push({ collection: cid, title: fl.title, pin: fl.pinName });
+      }
+    } catch (e) {
+      rep.failures.push({ collection: cid, message: `合集页排序方式没改成:${e.message || e}` });
+    }
+  }
+}

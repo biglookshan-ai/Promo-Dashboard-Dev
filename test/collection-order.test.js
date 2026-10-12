@@ -231,3 +231,72 @@ test('move 随机打乱也都能排对', () => {
     assert.deepEqual(apply(cur, movesFor(cur, want)), want);
   }
 });
+
+// ---- 合集页「完全按清单顺序显示」:清单生效时打开 custom.cgp_sort_off,结束恢复原样 ----
+function sortShop({ sortOrder = 'BEST_SELLING', mf = null } = {}) {
+  const shop = { mf, calls: [] };
+  shop.gql = async (ctx, q, v) => {
+    if (q.includes('cgp_sort_off') && q.includes('collection(id')) return { collection: { id: v.id, title: 'Easter Deals', metafield: shop.mf } };
+    if (q.includes('metafieldsSet')) { const m = v.m[0]; shop.calls.push(['set', m.value, m.type]); shop.mf = { value: m.value, type: m.type }; return { metafieldsSet: { metafields: [{ id: 'm' }], userErrors: [] } }; }
+    if (q.includes('metafieldsDelete')) { shop.calls.push(['delete']); shop.mf = null; return { metafieldsDelete: { deletedMetafields: [{ key: 'cgp_sort_off' }], userErrors: [] } }; }
+    if (q.includes('collection(id: $id)')) return { collection: { id: v.id, title: 'Easter Deals', sortOrder, ruleSet: null, products: { nodes: ['1', '2', '3'].map((id) => ({ id: `gid://shopify/Product/${id}` })), pageInfo: { hasNextPage: false } } } };
+    throw new Error('没想到的查询 ' + q.slice(0, 40));
+  };
+  return shop;
+}
+
+test('完全按清单顺序:生效时打开,结束删掉(原来没有这个字段)', async () => {
+  const shop = sortShop();
+  const state = stateWith(pin({ products: [P(3)], fullOrder: true, start: 1000, end: 9000 }));
+  const r1 = await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  assert.equal(r1.sortOn.length, 1);
+  assert.deepEqual(shop.mf, { value: 'true', type: 'boolean' });
+  const r2 = await alignCollections({}, state, { now: 1600, gql: shop.gql }); // 已经是开着的:不再写
+  assert.equal(r2.sortOn.length, 0); assert.equal(shop.calls.length, 1);
+  const r3 = await alignCollections({}, state, { now: 9500, gql: shop.gql }); // 结束
+  assert.equal(r3.sortOff.length, 1);
+  assert.equal(shop.mf, null);                                              // 原来没有 → 删掉
+  assert.equal(state.sortFlags['99'], undefined);
+});
+
+test('完全按清单顺序:原来有值的,结束恢复成原来的值;原来就开着的,不写也不乱删', async () => {
+  const shop = sortShop({ mf: { value: 'false', type: 'boolean' } });
+  const state = stateWith(pin({ products: [P(3)], fullOrder: true, start: 1000, end: 9000 }));
+  await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  assert.equal(shop.mf.value, 'true');
+  await alignCollections({}, state, { now: 9500, gql: shop.gql });
+  assert.deepEqual(shop.mf, { value: 'false', type: 'boolean' });
+
+  const shop2 = sortShop({ mf: { value: 'true', type: 'boolean' } });
+  const state2 = stateWith(pin({ products: [P(3)], fullOrder: true, start: 1000, end: 9000 }));
+  await alignCollections({}, state2, { now: 1500, gql: shop2.gql });
+  assert.equal(shop2.calls.length, 0);
+  await alignCollections({}, state2, { now: 9500, gql: shop2.gql });
+  assert.deepEqual(shop2.mf, { value: 'true', type: 'boolean' });         // 还是开着
+});
+
+test('完全按清单顺序:暂停 / 取消勾选也会恢复;没勾的清单不碰这个字段', async () => {
+  const shop = sortShop();
+  const p = pin({ products: [P(3)], fullOrder: true, start: 1000, end: 9000 });
+  const state = stateWith(p);
+  await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  p.fullOrder = false;
+  const r = await alignCollections({}, state, { now: 1600, gql: shop.gql });
+  assert.equal(r.sortOff.length, 1); assert.equal(shop.mf, null);
+  const shop2 = sortShop();
+  await alignCollections({}, stateWith(pin({ products: [P(3)], start: 1000, end: 9000 })), { now: 1500, gql: shop2.gql });
+  assert.equal(shop2.calls.length, 0);
+});
+
+test('完全按清单顺序:第 1 天接第 2 天(都勾了),中间不恢复、不重复记', async () => {
+  const shop = sortShop({ mf: { value: 'false', type: 'boolean' } });
+  const d1 = pin({ id: 'd1', products: [P(3)], fullOrder: true, start: 1000, end: 5000 });
+  const d2 = pin({ id: 'd2', products: [P(2)], fullOrder: true, start: 5000, end: 9000 });
+  const state = { pins: [d1, d2], campaigns: [], colState: {} };
+  await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  await alignCollections({}, state, { now: 6000, gql: shop.gql });
+  assert.equal(state.sortFlags['99'].pinId, 'd2');
+  assert.deepEqual(state.sortFlags['99'].prev, { value: 'false', type: 'boolean' }); // 还是最早那个「改之前」
+  await alignCollections({}, state, { now: 9500, gql: shop.gql });
+  assert.deepEqual(shop.mf, { value: 'false', type: 'boolean' });
+});

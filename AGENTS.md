@@ -60,7 +60,7 @@
 ### 关键
 
 - **规则只有一份**:`src/schedule-core.js`(上下线判断)+ `src/schedule-actions.js`(存草稿 / 提交 / 发布 / 批准 / 退回 / 暂停 / 删除 / 排序,含权限检查)是纯函数,**服务器和浏览器共用**(服务器以 `/lib/*.js` 只放行这两个文件给页面 import)。演示模式在浏览器里跑它,正式模式由服务器跑。**别在 `public/schedule.js` 里再写一套规则。**
-- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(7 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签 + 合集置顶清单,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(142 个,含改价的 41 个、合集排序 / 顺序对比的 34 个)。
+- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(7 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签 + 合集置顶清单,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(146 个,含改价的 41 个、合集排序 / 顺序对比的 38 个)。
 - **本地测正式数据**:`node scripts/live-harness.mjs --fresh` → http://localhost:4793(app 用 API 2026-07;`--old-api` 模拟 2026-04)(`?user=1002` 是第二个人;`--core-only` 模拟只建了核心 4 个类型的老店)。真的 app 服务器 + 假 Shopify(内存,主题文件读本地 worktree,产品数读 `scripts/demo-catalog.json`),`http://localhost:4794/__state` 看写进「店铺」的东西。只靠 `SHOPIFY_GRAPHQL_ORIGIN` 环境变量指过去,线上别设。
 - **建内容类型、从主题导入**都只能由用户在「设置 → 店铺连接」点按钮触发,别在部署 / 启动时自动做。
 - 认人:**v3 起改为飞书登录**(店里多人共用 Shopify 账号);Shopify session token 只证明「从本店后台打开」。第一次登录的人默认「待分配」,管理员分配角色后才能用;第一个管理员 = 第一个从 Shopify 后台里用飞书登录的人。(v2 旧做法:session token 的 `sub` = 员工 id、第一个打开的人是审核人。)
@@ -111,6 +111,10 @@
   清单里可以排**合集以外的产品**:真的改合集模式下执行时 `collectionAddProducts` 加进去(记在 `colState[].added`),结束移出;前台模式做不到(主题只有合集自己的产品数据),编辑器里会标红。
   保存 / 批准 / 暂停 / 删除置顶清单时,`/api/schedule/act` 会马上跑一次 `alignCollections`(结果放在返回的 `colRep`,页面拼成一句话提示),不用等定时器。
   `readMainTheme` 顺带读 `snippets/cgp-search-head.liquid`,判断正在用的主题有没有前台排序代码(`themePin`),没有时编辑器提醒「顾客暂时看不到」。
+  **清单开关「生效期间完全按我排的顺序显示」**(`pin.fullOrder`,2026-10-12 用户要求「只改 app、跟着清单生效失效」):搜索引擎在合集页默认「手动前 12 个 + 其余新到旧」
+  (主题里写死,每个合集可以用合集字段 `custom.cgp_sort_off` / `cgp_pin_manual` / `cgp_pin_new` 改,线上主题已经认)。清单勾了它,生效期间 app 把这个合集的
+  `custom.cgp_sort_off` 设成 true,结束 / 暂停 / 删除 / 取消勾选时恢复成改之前的值(原来没有就删掉)——`alignSortFlags`,记在 `state.sortFlags`。
+  **不改主题、不改别的合集**。连着两份都勾了的清单(Flash 第 1 天 → 第 2 天)中间不恢复。编辑器没开时会在网格第(前缀 + 12)位画一条「前台从这里开始按新到旧」的线。
   调试用:合集排序页有「立即执行一次」(`POST /api/schedule/col-run`,管理员),直接把 applied / skipped / holds / failures 翻成人话。
   ⛔ 有人在 Shopify 后台手动改过顺序(我们排最前的那几个不在最前了)→ **暂停接管**,绝不覆盖别人的改动;界面上给「按清单重新排 / 就用现在的」两个按钮(`POST /api/schedule/col-hold`)。
   ⛔ **合集 / 产品 id 有时是数字、有时是 gid**(Shopify 资源选择器给 gid,种子数据和主题导入给数字)—— 比较一律用 `numId()` 取末尾数字,直接 `===` 会静默漏掉(2026-10-12 踩过:置顶清单对不上首页页签)。

@@ -25,6 +25,10 @@ export function logColReport(state, col, by, now = Date.now()) {
   for (const h of col.holds) if (h.fresh) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: h.title, by,
     note: '有人在 Shopify 后台手动改过这个合集的顺序 —— 已暂停接管,不覆盖别人的改动' });
   for (const f of col.failures) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: f.collection || '合集排序', note: f.message, by });
+  for (const x of col.sortOn || []) appendLog(state, { at: now, action: 'up', kind: 'pin', title: x.title, by,
+    note: `「${x.pin}」生效:合集页改成完全按清单顺序显示(不套「手动前 12 个 + 其余新到旧」)${x.already ? ',原来就是这样' : ''}` });
+  for (const x of col.sortOff || []) appendLog(state, { at: now, action: 'down', kind: 'pin', title: x.title, by,
+    note: `「${x.pin}」结束:合集页的排序方式恢复成原来的设置` });
 }
 
 // 跑一个店铺一轮。依赖都可以注入,方便测试。
