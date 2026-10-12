@@ -169,12 +169,14 @@ function gql(query, v) {
     if (!c) return { collection: null };
     const byId = new Map(cat.products.map((p) => [String(p.id), p]));
     const all = membersOf(c).map((id) => byId.get(id)).filter(Boolean).map(fakeProduct);
-    // clearance 当成「按条件自动归类」的合集(不能手动排序),别的当手动合集 —— 两条路都能在本地试
-    const automated = /clearance/.test(c.handle || '');
+    // 本地试三种情况:clearance = 带条件 + 按最畅销排(只能前台排);cinediskpro-sale = 带条件 + 手动排序(Shopify 2026 新版合集,顺序能真的改);
+    // 其余 = 纯手动合集(顺序和加减产品都能真的改)
+    const automated = /clearance|cinediskpro-sale/.test(c.handle || '');
+    const manualSort = !/clearance/.test(c.handle || '');
     const first = Number((q.match(/products\(first: (\d+)/) || [])[1] || 60);
     const start = v.after ? Number(v.after) : 0;
     const nodes = all.slice(start, start + first);
-    return { collection: { title: c.title, sortOrder: automated ? 'BEST_SELLING' : 'MANUAL', ruleSet: automated ? { appliedDisjunctively: false } : null,
+    return { collection: { title: c.title, sortOrder: manualSort ? 'MANUAL' : 'BEST_SELLING', ruleSet: automated ? { appliedDisjunctively: false } : null,
       productsCount: { count: all.length }, products: { nodes, pageInfo: { hasNextPage: start + first < all.length, endCursor: String(start + first) } } } };
   }
   if (q.includes('productsCount')) {

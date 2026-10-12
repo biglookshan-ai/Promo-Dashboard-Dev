@@ -309,10 +309,11 @@ export function scheduleRouter() {
     if (!v) throw new ActionError('找不到这个版本');
     const col = await readCollection(req.ctx, cid, graphql);
     if (!col) throw new ActionError('找不到这个合集');
-    if (!col.manualOk) throw new ActionError('这是按条件自动归类(或不是手动排序)的合集,Shopify 不让手动调顺序,回滚不了');
+    if (!col.manualOk) throw new ActionError(`这个合集现在的排序方式是「${col.sortOrder}」,不是「手动」,Shopify 不让调顺序 —— 先在后台把排序改成「手动」再回滚`);
     const when = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Europe/London', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(v.at));
     recordVersion(req.ctx.shop, cid, col.ids, { why: `回滚前(准备回到 ${when} 那一版)`, by: a.name, title: col.title });
-    const missing = v.ids.filter((id) => !col.ids.includes(id));
+    // 那一版有、现在没有的产品:纯手动合集加回来;带条件的合集不去改它的条件,这些就排不回去
+    const missing = col.membershipOk ? v.ids.filter((id) => !col.ids.includes(id)) : [];
     if (missing.length) {
       const d = await graphql(req.ctx, `mutation($id: ID!, $p: [ID!]!) { collectionAddProducts(id: $id, productIds: $p) { userErrors { message } } }`,
         { id: `gid://shopify/Collection/${cid}`, p: missing.map((id) => `gid://shopify/Product/${id}`) });

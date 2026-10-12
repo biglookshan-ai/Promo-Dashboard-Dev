@@ -60,7 +60,7 @@
 ### 关键
 
 - **规则只有一份**:`src/schedule-core.js`(上下线判断)+ `src/schedule-actions.js`(存草稿 / 提交 / 发布 / 批准 / 退回 / 暂停 / 删除 / 排序,含权限检查)是纯函数,**服务器和浏览器共用**(服务器以 `/lib/*.js` 只放行这两个文件给页面 import)。演示模式在浏览器里跑它,正式模式由服务器跑。**别在 `public/schedule.js` 里再写一套规则。**
-- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(7 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签 + 合集置顶清单,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(136 个,含改价的 41 个、合集排序 / 顺序对比的 28 个)。
+- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(7 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签 + 合集置顶清单,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(138 个,含改价的 41 个、合集排序 / 顺序对比的 30 个)。
 - **本地测正式数据**:`node scripts/live-harness.mjs --fresh` → http://localhost:4793(`?user=1002` 是第二个人;`--core-only` 模拟只建了核心 4 个类型的老店)。真的 app 服务器 + 假 Shopify(内存,主题文件读本地 worktree,产品数读 `scripts/demo-catalog.json`),`http://localhost:4794/__state` 看写进「店铺」的东西。只靠 `SHOPIFY_GRAPHQL_ORIGIN` 环境变量指过去,线上别设。
 - **建内容类型、从主题导入**都只能由用户在「设置 → 店铺连接」点按钮触发,别在部署 / 启动时自动做。
 - 认人:**v3 起改为飞书登录**(店里多人共用 Shopify 账号);Shopify session token 只证明「从本店后台打开」。第一次登录的人默认「待分配」,管理员分配角色后才能用;第一个管理员 = 第一个从 Shopify 后台里用飞书登录的人。(v2 旧做法:session token 的 `sub` = 员工 id、第一个打开的人是审核人。)
@@ -94,7 +94,12 @@
   每版只存产品 id 顺序(11 个产品约 0.2KB、500 个约 7KB),和上一版一样不记,每个合集最多 100 版 / 90 天。
   回滚(`POST /api/schedule/col-rollback`,管理员,再点一次确认):那一版有、现在没有的加回来;后来才加进合集的**不删**,排到最后;正被清单接管的合集会设 `hold='rollback'`,免得下一分钟又排回去。
   `movesFor` 只给最长递增子序列以外的产品发 move(插到目标里前一个产品后面),再模拟验证一遍,不对就退回逐个排 —— 300 次随机打乱的测试在 `test/collection-order.test.js`。
-  **两种执行方式**(`src/collection-order.js`,每分钟由 `scheduler.js` 对齐):
+  ⛔ **Shopify 2026 新版合集**(2026-10-12 用户纠正过):合集可以「条件 + 单独加的产品 + 排除」混在一起,**带条件的合集只要排序方式设成「手动」也能用 `collectionReorderProducts` 调顺序**
+  (它只要求 `sortOrder = MANUAL`)。别再用「有 ruleSet = 不能手动排」判断。`readCollection` / `collectionProducts` 现在给两个开关:
+  `manualOk = sortOrder === 'MANUAL'`(能真的调顺序)、`membershipOk = manualOk && 没有条件`(还能真的加 / 移出单个产品;带条件的合集加减产品要改它的条件来源
+  `collectionUpdate(sourcesToUpdate: [{ condition: { id, inclusion|exclusion: { selectionsToAdd } } }])`,还没做,先交给前台)。
+  API 2026-07 起 `ruleSet` 弃用、改 `Collection.sources`;**用了新功能(多个来源、排除条件)的合集在 2026-07 之前的接口里查不到**。代码按 `SHOPIFY_API_VERSION` 自动切换查询(`NEW_COLLECTIONS`),建议 Railway 改成 2026-07。
+  **执行方式**(`src/collection-order.js`,每分钟由 `scheduler.js` 对齐):
     · 手动排序的合集(`!ruleSet && sortOrder === 'MANUAL'`)→ **真的改店里的合集**:`collectionReorderProducts` 把排好的移到最前,
       隐藏的用 `collectionRemoveProducts` 临时移出;接管前存**原始顺序快照**(`state.colState[合集id].snapshot`),结束 / 暂停 / 删除自动还原、移出的加回来。
     · 按条件自动归类的合集、或现在不是手动排序的 → Shopify 不让手动排,**跳过不写**,由主题在前台排(`CGP_COLLECTION_PIN`)。

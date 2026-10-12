@@ -13,6 +13,7 @@
 //   · 清单结束 / 暂停 / 删除 / 退回 → 下一轮自动还原,还原完清掉记录。
 import { itemStatus, campaignIndex, effectiveWindow } from './schedule-core.js';
 import { diffOrder } from './order-diff.js';
+import { NEW_COLLECTIONS } from './shopify.js';
 
 export const nid = (x) => String(x ?? '').split('/').pop();
 const gid = (id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/Collection/${id}`);
@@ -108,11 +109,17 @@ export function driftedFrom(wroteOrder, currentIds) {
 
 // ---------- 和 Shopify 打交道 ----------
 
-const COL_Q = `query($id: ID!, $after: String) { collection(id: $id) { id title sortOrder ruleSet { appliedDisjunctively }
+// 合集有没有「条件」:旧接口看 ruleSet;2026-07 起还要看 sources(条件 / 子合集来源)
+export const RULES = NEW_COLLECTIONS
+  ? 'ruleSet { appliedDisjunctively } sources { __typename ... on CollectionConditionsSource { inclusion { conditions { __typename } } } }'
+  : 'ruleSet { appliedDisjunctively }';
+const COL_Q = `query($id: ID!, $after: String) { collection(id: $id) { id title sortOrder ${RULES}
     products(first: 250, after: $after, sortKey: COLLECTION_DEFAULT) { nodes { id } pageInfo { hasNextPage endCursor } } } }`;
 const REORDER = `mutation($id: ID!, $moves: [MoveInput!]!) { collectionReorderProducts(id: $id, moves: $moves) { job { id } userErrors { field message } } }`;
 const REMOVE = `mutation($id: ID!, $p: [ID!]!) { collectionRemoveProducts(id: $id, productIds: $p) { userErrors { field message } } }`;
 const ADD = `mutation($id: ID!, $p: [ID!]!) { collectionAddProducts(id: $id, productIds: $p) { userErrors { field message } } }`;
+// 只有「单独加的产品」不算条件;有条件、或者从别的合集取产品,才算
+export const hasRules = (c) => !!c.ruleSet || (c.sources || []).some((x) => x.__typename === 'CollectionSubCollectionsSource' || (x.inclusion?.conditions || []).length > 0);
 
 export async function readCollection(ctx, id, gql) {
   let after = null; const ids = []; let info = null;
@@ -120,13 +127,16 @@ export async function readCollection(ctx, id, gql) {
     const d = await gql(ctx, COL_Q, { id: gid(id), after });
     const c = d.collection;
     if (!c) return null;
-    info = { id: c.id, title: c.title, sortOrder: c.sortOrder, automated: !!c.ruleSet };
+    info = { id: c.id, title: c.title, sortOrder: c.sortOrder, automated: hasRules(c) };
     ids.push(...c.products.nodes.map((n) => nid(n.id)));
     if (!c.products.pageInfo.hasNextPage) break;
     after = c.products.pageInfo.endCursor;
   }
-  // 手动排序的合集才能真的排;自动归类的、或者现在按别的方式排序的,都交给前台排
-  return { ...info, ids, manualOk: !info.automated && info.sortOrder === 'MANUAL' };
+  // 新版合集(2026):只要排序方式是「手动」,带条件的合集也能用接口调顺序(collectionReorderProducts 只要求 sortOrder = MANUAL)。
+  //   manualOk     = 能真的调店里的顺序
+  //   membershipOk = 还能真的加 / 移出单个产品 —— 先只对纯手动合集做;带条件的合集加减产品要改它的「条件来源」,留给前台处理
+  const manualOk = info.sortOrder === 'MANUAL';
+  return { ...info, ids, manualOk, membershipOk: manualOk && !info.automated };
 }
 
 const CHUNK = 200;
@@ -169,16 +179,24 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
     try {
       const col = await readCollection(ctx, cid, gql);
       if (!col) { delete state.colState[cid]; continue; }
-      // 自动归类 / 不是手动排序 → 不写店里,交给主题前台排
+      // 排序方式不是「手动」→ Shopify 不让调顺序,不写店里,交给主题前台排
       if (!col.manualOk) {
         if (st) { delete state.colState[cid]; }
-        if (pin) rep.skipped.push({ collection: cid, title: col.title, pin: pin.name, why: col.automated ? 'automated' : `sort:${col.sortOrder}` });
+        if (pin) rep.skipped.push({ collection: cid, title: col.title, pin: pin.name, why: `sort:${col.sortOrder}`, automated: col.automated });
         continue;
       }
       if (pin) {
+        // 带条件的合集(手动排序):顺序真的改;单个产品的加 / 移出先不动它的条件,交给前台(主题隐藏「不显示」的;合集外的显示不出来)
+        const front = col.membershipOk ? null : {
+          hidden: (pin.hidden || []).length + (pin.onlyListed ? col.ids.filter((id) => !(pin.products || []).some((p) => nid(p.id) === id)).length : 0),
+          outside: (pin.products || []).filter((p) => !col.ids.includes(nid(p.id))).length,
+        };
+        const realPin = front ? { ...pin, hidden: [], onlyListed: false, products: (pin.products || []).filter((p) => col.ids.includes(nid(p.id))) } : pin;
         const snapshot = st?.snapshot || col.ids;            // 第一次接管:先记下原始顺序
         const same = st && st.pinId === pin.id && st.signature === sig(pin);
         if (same && !driftedFrom(st.wrote, col.ids)) continue; // 已经是想要的样子,什么都不用做
+        // 调顺序在 Shopify 那边是异步任务(job),刚写完的几分钟内读到旧顺序很正常 —— 先等等,不算有人改过
+        if (same && driftedFrom(st.wrote, col.ids) && now - (st.at || 0) < 3 * 60_000) continue;
         if (same && driftedFrom(st.wrote, col.ids)) {          // 有人在后台改过 → 暂停接管,不覆盖
           st.hold = 'manual'; st.holdAt = now;
           record(cid, col.ids, { why: '有人在 Shopify 后台改过顺序', title: col.title, pin: pin.name });
@@ -186,13 +204,13 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
           continue;
         }
         // 要移出去太多(「只显示清单里的」碰上大合集)→ 不动店里的合集,交给前台处理
-        const probe = desiredOrder(snapshot, col.ids, pin);
+        const probe = desiredOrder(snapshot, col.ids, realPin);
         if (probe.remove.length > MAX_REMOVE) {
           rep.skipped.push({ collection: cid, title: col.title, pin: pin.name, why: 'too-many', n: probe.remove.length });
           continue;
         }
         if (!st) record(cid, col.ids, { why: 'app 接管前的原样', title: col.title, pin: pin.name });
-        const pinned = new Set((pin.products || []).map((p) => nid(p.id)));
+        const pinned = new Set((realPin.products || []).map((p) => nid(p.id)));
         const stillOut = new Set(probe.remove);
         const back = (st?.removed || []).filter((id) => !stillOut.has(id));   // 上轮移出去、这轮该回来的
         const drop = (st?.added || []).filter((id) => !pinned.has(id));       // 上轮我们加进去、这轮清单里没有了的
@@ -200,7 +218,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
         await removeFrom(ctx, cid, drop, gql);
         const changed = back.length || probe.add.length || drop.length;
         const col2 = changed ? await readCollection(ctx, cid, gql) : col;
-        const d = desiredOrder(snapshot, col2.ids, pin);
+        const d = desiredOrder(snapshot, col2.ids, realPin);
         await removeFrom(ctx, cid, d.remove, gql);
         const after = col2.ids.filter((id) => !d.remove.includes(id));
         const mv = movesFor(after, d.order);
@@ -210,7 +228,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
           wrote: d.pinned, at: now };
         record(cid, d.order, { why: `按「${pin.name}」排`, title: col.title, pin: pin.name });
         // 「换位置」只算原来就在合集里、被挪动的(新加进来的那几个单独算)
-        rep.applied.push({ collection: cid, title: col.title, pin: pin.name, moved: mv.filter((m) => !probe.add.includes(nid(m.id))).length, removed: d.remove.length, added: probe.add.length, back: back.length });
+        rep.applied.push({ collection: cid, title: col.title, pin: pin.name, moved: mv.filter((m) => !probe.add.includes(nid(m.id))).length, removed: d.remove.length, added: probe.add.length, back: back.length, front });
       } else {
         // 没有清单生效了 → 还原:移出去的加回来、我们加进去的移出去、顺序照快照
         await addTo(ctx, cid, st.removed || [], gql);

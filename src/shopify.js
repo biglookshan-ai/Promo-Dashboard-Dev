@@ -2,6 +2,9 @@
 // from the App Bridge session token (see auth-embedded.js), or from a fixed
 // SHOPIFY_ADMIN_TOKEN for CLI use.
 const VERSION = process.env.SHOPIFY_API_VERSION || '2026-04';
+export const API_VERSION = VERSION;
+// 2026-07 起合集有了新模型(Collection.sources:条件 + 单独加的产品 + 排除);旧版本的接口看不到用了新功能的合集
+export const NEW_COLLECTIONS = VERSION >= '2026-07';
 // 只给本地测试环境用(scripts/live-harness.mjs 的假 Shopify);线上不设这个变量
 const ORIGIN = process.env.SHOPIFY_GRAPHQL_ORIGIN || '';
 

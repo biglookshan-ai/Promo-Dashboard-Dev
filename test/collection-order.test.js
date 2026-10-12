@@ -128,22 +128,24 @@ test('整轮:改了清单内容 → 重排,之前移出的加回来', async () =
   assert.deepEqual(shop.ids, ['3', '1', '2', '4', '5']); // 5 加回来了,照快照的位置排在最后
 });
 
-test('整轮:有人在后台手动改过 → 暂停接管,不覆盖', async () => {
+test('整轮:有人在后台手动改过 → 暂停接管,不覆盖(刚写完的几分钟内不算,Shopify 调顺序是异步的)', async () => {
   const shop = fakeShop();
-  const p = pin({ products: [P(4), P(2)], start: 1000, end: 9000 });
+  const p = pin({ products: [P(4), P(2)], start: 1000, end: 10 * 60_000 });
   const state = stateWith(p);
   await alignCollections({}, state, { now: 1500, gql: shop.gql });
   shop.ids = ['1', '4', '2', '3', '5']; // 同事在 Shopify 后台把 1 拖到了最前
-  const r = await alignCollections({}, state, { now: 1600, gql: shop.gql });
+  const early = await alignCollections({}, state, { now: 60_000, gql: shop.gql });
+  assert.equal(early.holds.length, 0);              // 1 分钟内:可能只是任务还没跑完,先等
+  const r = await alignCollections({}, state, { now: 5 * 60_000, gql: shop.gql });
   assert.equal(r.holds.length, 1);
   assert.deepEqual(shop.ids, ['1', '4', '2', '3', '5']); // 没被覆盖
   assert.equal(state.colState['99'].hold, 'manual');
-  const r2 = await alignCollections({}, state, { now: 1700, gql: shop.gql }); // 之后几轮也不再动
+  const r2 = await alignCollections({}, state, { now: 6 * 60_000, gql: shop.gql }); // 之后几轮也不再动
   assert.equal(r2.holds.length, 1); assert.equal(r2.applied.length, 0);
 });
 
-test('自动归类的合集 / 不是手动排序的合集:不动店里的,交给前台排', async () => {
-  for (const o of [{ automated: true }, { sortOrder: 'BEST_SELLING' }]) {
+test('不是「手动」排序的合集:不动店里的,交给前台排', async () => {
+  for (const o of [{ sortOrder: 'BEST_SELLING' }, { sortOrder: 'BEST_SELLING', automated: true }]) {
     const shop = fakeShop(o);
     const state = stateWith(pin({ products: [P(4)], start: 1000, end: 9000 }));
     const r = await alignCollections({}, state, { now: 1500, gql: shop.gql });
@@ -151,6 +153,19 @@ test('自动归类的合集 / 不是手动排序的合集:不动店里的,交给
     assert.equal(shop.calls.length, 0);
     assert.deepEqual(shop.ids, ['1', '2', '3', '4', '5']);
   }
+});
+
+test('带条件的合集,但排序设成了「手动」(Shopify 2026 新版合集):顺序真的改,加 / 移出产品交给前台', async () => {
+  const shop = fakeShop({ automated: true });
+  const p = pin({ products: [P(99), P(4), P(2)], hidden: [P(5)], start: 1000, end: 9000 }); // 99 不在合集里,5 要隐藏
+  const state = stateWith(p);
+  const r = await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  assert.equal(r.applied.length, 1);
+  assert.deepEqual(shop.ids, ['4', '2', '1', '3', '5']);                  // 顺序真的改了;5 还在合集里(前台隐藏)
+  assert.ok(!shop.calls.some((c) => c[0] === 'add' || c[0] === 'remove')); // 没去动它的产品
+  assert.deepEqual(r.applied[0].front, { hidden: 1, outside: 1 });
+  await alignCollections({}, state, { now: 10_000, gql: shop.gql });       // 结束 → 还原
+  assert.deepEqual(shop.ids, ['1', '2', '3', '4', '5']);
 });
 
 test('要移出去太多(只显示清单里的 + 大合集)→ 不动店里的合集', async () => {
