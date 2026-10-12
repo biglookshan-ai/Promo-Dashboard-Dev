@@ -149,7 +149,8 @@
     live: '上线中', scheduled: '已排期', pending: '待审核', draft: '草稿', ended: '已结束',
     paused: '已暂停', rejected: '已退回', waiting: '等活动批准',
   };
-  const badge = (it) => { const s = status(it); return `<span class="stb stb--${s}"><span class="dot"></span>${ST[s]}</span>`; };
+  const badgeAt = (it, t) => { const s = status(it, t); return `<span class="stb stb--${s}"><span class="dot"></span>${ST[s]}</span>`; };
+  const badge = (it) => badgeAt(it, now());
   function winText(it) {
     const w = win(it);
     const r = w.start == null && w.end == null ? '长期显示'
@@ -479,7 +480,7 @@
               ${mods.map(({ m, v }) => `<div class="pvmod">
                 <div class="pvmod__h">${MODULE_CN[m]}${v.isDefault ? '<span class="tag">平时版本</span>' : `<span class="tag tag--accent">排期版本:${esc(v.name)}</span>`}
                   <button class="linkbtn" data-open="${v.id}" type="button">去编辑</button></div>
-                ${moduleHtml(v, { activeTab: Math.min(pvModTab[m] || 0, (v.tabs || []).length - 1), pm: m })}</div>`).join('')}
+                ${moduleHtml(v, { activeTab: Math.min(pvModTab[m] || 0, (v.tabs || []).length - 1), pm: m, at: T })}</div>`).join('')}
             </div>
           </div>
           <aside class="pvside">
@@ -500,7 +501,7 @@
       if (t) loadTabPreview(t, () => { if ($('#pv-root') && isActive('preview')) renderPreview(); });
     }
     $$('#pv-root [data-pmtab]').forEach((el) => el.addEventListener('click', () => {
-      const wrap = el.closest('.pvmod'); const m = wrap?.dataset.pm; if (!m) return;
+      const wrap = el.closest('[data-pm]'); const m = wrap?.dataset.pm; if (!m) return;
       pvModTab[m] = +el.dataset.pmtab; renderPreview();
     }));
   }
@@ -913,6 +914,86 @@
         canPrice ? `<button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button>` : '', canPrice ? (hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…') : '你没有改价页的权限')}`;
   }
 
+  // ================= 合集排序(置顶清单) =================
+  // 按合集分组:每个合集下面是按时间排好的清单(Flash 每天一份)。可以「复制成下一天」,不用重填。
+  let pnAt = null; // 预览看哪一刻
+  // 合集 id 有时是数字、有时是 gid(选择器给的),一律按末尾数字比
+  const pinsOf = (cid) => (S.pins || []).filter((p) => p.collection && numId(p.collection.id) === numId(cid));
+  // 这一刻这个合集生效的清单(同时有几份时,开始晚的赢 —— 和主题里的规则一致)
+  function activePin(cid, t = now()) {
+    return pinsOf(cid).filter((p) => status(p, t) === 'live').sort((a, b) => (win(b).start ?? 0) - (win(a).start ?? 0))[0] || null;
+  }
+  // 哪些首页模块页签用了这个合集(改排序会影响它们)
+  function modTabsUsing(cid) {
+    const out = [];
+    for (const v of S.pmodules || []) for (const t of v.tabs || []) if (t.source !== 'products' && t.collection && numId(t.collection.id) === numId(cid)) out.push({ v, t });
+    return out;
+  }
+  function renderPins() {
+    const need = MODE === 'live' && S.setup && S.setup.pinReady === false;
+    const T = pnAt ?? now();
+    const points = tlPoints(['pin']);
+    const groups = new Map();
+    for (const p of S.pins || []) {
+      const cid = p.collection ? numId(p.collection.id) : '?';
+      if (!groups.has(cid)) groups.set(cid, { cid, title: p.collection?.title || '(没选合集)', list: [] });
+      groups.get(cid).list.push(p);
+    }
+    for (const g of groups.values()) g.list.sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0));
+    const rows = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title));
+    const card = (p) => {
+      const on = status(p, T) === 'live';
+      const prods = p.products || [];
+      return `<div class="pnrow ${on ? 'is-on' : ''}">
+        <button class="pnrow__main" type="button" data-open="${p.id}" data-pop="${p.id}">
+          <span class="pnrow__h"><b>${esc(titleOf(p))}</b>${badgeAt(p, T)}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">产品页倒计时</span>' : ''}</span>
+          <span class="pnrow__w">${I.clock}${esc(winText(p))}</span>
+          <span class="pnrow__ps">${prods.slice(0, 8).map((x, i) => `<span class="pnrow__p" title="${esc(x.title)}"><span class="pnrow__n">${i + 1}</span>${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 8 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}${prods.length ? '' : '<span class="muted">还没加产品</span>'}</span>
+        </button>
+        <span class="pnrow__acts"><button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button></span>
+      </div>`;
+    };
+    $('#pn-root').innerHTML = `
+      ${pageHead('合集排序', '让合集页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
+        need ? '' : `<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶清单</button>`)}
+      ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
+      ${alertsHtml(['pin'])}
+      <section class="panel">
+        <div class="panel__h"><h3>这一刻各合集的排序</h3><span class="muted">${pnAt == null ? '现在' : `${fDT(T)} · ${relDay(T)}`}</span></div>
+        ${tlHtml('pn', points, pnAt)}
+        ${tlChanges(points, pnAt)}
+      </section>
+      ${rows.length ? rows.map((g) => {
+        const act = activePin(g.cid, T);
+        // 首页哪些模块页签也吃这个合集(同名的只说一次)
+        const used = [...new Set(modTabsUsing(g.cid).map((u) => `${MODULE_CN[u.v.module]}·${tabLabel(u.t)}`))];
+        return `<section class="panel pngroup">
+          <div class="panel__h"><h3>${esc(g.title)}</h3>
+            <span class="muted">${act ? `这一刻按「${esc(titleOf(act))}」排${act.onlyListed ? ',而且只显示清单里的产品' : ''}` : '这一刻没有清单生效,按合集原来的顺序'}
+              ${used.length ? ` · 首页${used.slice(0, 3).map((u) => `「${esc(u)}」`).join('')}${used.length > 3 ? '等' : ''}页签也用这个合集` : ''}</span></div>
+          <div class="pnlist">${g.list.map(card).join('')}</div>
+        </section>`;
+      }).join('') : (need ? '' : empty('还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
+    wireTimeline('pn', points, () => pnAt, (v) => { pnAt = v; renderPins(); });
+    $$('#pn-root [data-pindup]').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const p = byId(b.dataset.pindup); if (!p) return;
+      const w = win(p);
+      // 原来有时间 → 整段往后推一天;原来没设时间(长期 / 跟随活动)→ 给它明天一整天
+      const start = w.start == null ? dayStart(1) : w.start + DAY;
+      const end = w.start == null ? dayStart(2) : (w.end == null ? null : w.end + DAY);
+      // 名字:原来叫「… 第 N 天」就自动变成第 N+1 天,否则换成新的日期
+      const old = String(p.name || ''); const dayN = old.match(/第\s*(\d+)\s*天\s*$/);
+      const stem = old.replace(/[\s·\-—]*(第\s*\d+\s*天|\d+月\d+日|\d+\/\d+(\s*周.)?)\s*$/, '').trim() || p.collection?.title || '置顶清单';
+      openEditor('pin', null, { dup: {
+        ...p, id: rid('pin-'), state: 'new', shopifyId: null, syncedStatus: null, pendingChange: null, paused: false, by: S.me,
+        name: dayN ? `${stem} 第 ${+dayN[1] + 1} 天` : `${stem} ${fDate(start)}`, start, end,
+        collection: p.collection || null, products: (p.products || []).map((x) => ({ ...x })), campaign: p.campaign || null,
+      } });
+      toast('已复制成下一天 —— 换掉产品、确认时间,再提交');
+    }));
+  }
+
   function renderCampaigns() {
     const hubC = cpHub && camp(cpHub);
     if (hubC) { $('#cp-root').innerHTML = hubHtml(hubC); if (!hubPrice.at || now() - hubPrice.at > 30000) loadHubPrice(); return; }
@@ -998,20 +1079,31 @@
       return { title: p.title, image: p.image, price: (base * (1 - off / 100)).toFixed(2), compareAt: off ? base.toFixed(2) : null, off };
     });
   }
-  function moduleHtml(v, { activeTab = 0, small = false, pm = '' } = {}) {
+  function moduleHtml(v, { activeTab = 0, small = false, pm = '', at = null } = {}) {
     const c = pmColors(v); const tabs = v.tabs || []; const t = tabs[activeTab] || tabs[0];
     const cached = t && pmPreviewCache[tabKey(t)];
-    const list = cached?.items?.length ? cached.items.slice(0, 5) : (MODE === 'demo' ? demoItems(t) : []);
+    const base = cached?.items?.length ? cached.items : (MODE === 'demo' ? demoItems(t) : []);
+    // 合集排序:这个页签用的合集在这一刻有置顶清单的话,前几个位置就是清单里的产品(主题里也是这么排的)
+    const pin = t && t.source !== 'products' && t.collection?.id ? activePin(t.collection.id, at ?? now()) : null;
+    let list = base;
+    if (pin) {
+      const have = new Set((pin.products || []).map((p) => numId(p.id)));
+      const info = new Map(base.map((x) => [numId(x.id), x]));
+      const pinned = (pin.products || []).map((p, i) => { const k = info.get(numId(p.id)) || {}; return { ...k, id: p.id, title: p.title || k.title, image: p.image || k.image, price: k.price ?? null, pinned: i + 1 }; });
+      list = [...pinned, ...(pin.onlyListed ? [] : base.filter((x) => !have.has(numId(x.id))))];
+    }
+    list = list.slice(0, 5);
     const cards = list.length ? list.map((p) => `<span class="pmv__card">
-        <span class="pmv__img" style="background-image:url('${esc(thumb(p.image, 300))}')">${p.off ? `<span class="pmv__off">${p.off}% OFF</span>` : ''}</span>
+        <span class="pmv__img" style="background-image:url('${esc(thumb(p.image, 300))}')">${p.off ? `<span class="pmv__off">${p.off}% OFF</span>` : ''}${p.pinned ? `<span class="pmv__pin">置顶 ${p.pinned}</span>` : ''}</span>
         <span class="pmv__t">${esc(p.title)}</span>
-        <span class="pmv__p">${p.compareAt ? `<s>£${Number(p.compareAt).toFixed(2)}</s>` : ''}<b>£${Number(p.price).toFixed(2)}</b></span></span>`).join('')
+        <span class="pmv__p">${p.price == null ? '<span class="muted">价格看店里</span>' : `${p.compareAt ? `<s>£${Number(p.compareAt).toFixed(2)}</s>` : ''}<b>£${Number(p.price).toFixed(2)}</b>`}</span></span>`).join('')
       : Array.from({ length: 5 }, () => '<span class="pmv__card pmv__card--ph"><span class="pmv__img"></span><span class="pmv__t"></span></span>').join('');
     return `<div class="pmv ${small ? 'pmv--sm' : ''}" ${pm ? `data-pm="${pm}"` : ''}>
       <div class="pmv__h">${v.title ? `<span style="color:${esc(c.titleColor)}">${esc(v.title)}</span>` : ''}${v.title2 ? `<span style="color:${esc(c.title2Color)}">${esc(v.title2)}</span>` : ''}${!v.title && !v.title2 ? '<span class="muted">(没有标题)</span>' : ''}</div>
       <div class="pmv__tabs">${tabs.map((x, i) => `<span class="pmv__tab" data-pmtab="${i}" style="${i === activeTab ? `background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}` : ''}">${esc(tabLabel(x))}</span>`).join('')}</div>
       ${small ? '' : `<div class="pmv__grid">${cards}</div>
-      <div class="pmv__foot">${t ? `${tabSummary(t)}${cached ? ` · 现在符合条件的有 ${cached.shown}${cached.approx ? '+' : ''} 个` : MODE === 'live' ? ' · 正在取产品…' : ' · <b>示例产品</b>(演示模式画的是真实产品的图和名字,价格是编的;切到正式数据就是这个页签真正会出现的产品)'}` : ''}</div>`}
+      <div class="pmv__foot">${t ? `${tabSummary(t)}${cached ? ` · 现在符合条件的有 ${cached.shown}${cached.approx ? '+' : ''} 个` : MODE === 'live' ? ' · 正在取产品…' : ' · <b>示例产品</b>(演示模式画的是真实产品的图和名字,价格是编的;切到正式数据就是这个页签真正会出现的产品)'}` : ''}
+        ${pin ? `<div class="pmv__pinnote">这一刻这个合集按「<b>${esc(titleOf(pin))}</b>」排:${(pin.products || []).length} 个产品置顶${pin.onlyListed ? ',而且只显示这些' : ''} <button class="linkbtn" data-open="${pin.id}" type="button">改清单</button></div>` : ''}</div>`}
     </div>`;
   }
   // 正式数据:取某个页签的前几个产品(只给后台预览用)
@@ -1868,7 +1960,7 @@
   }
   function openEditor(kind, id, preset) {
     hidePop();
-    const isNew = !id; const it = id ? byId(id) : newItem(kind, preset);
+    const isNew = !id; const it = id ? byId(id) : (preset?.dup || newItem(kind, preset));
     if (!it) return;
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
     // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
@@ -2092,7 +2184,7 @@
   // ================= 全局 =================
   function renderAll() {
     applySiteStyle(); hidePop();
-    renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderCampaigns(); renderReviews(); renderSettings();
+    renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderCampaigns(); renderReviews(); renderSettings();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     const L = window.CGP_ME; // 飞书登录了就显示登录的人和他的角色
     $('#me-chip').innerHTML = L?.larkEnabled
