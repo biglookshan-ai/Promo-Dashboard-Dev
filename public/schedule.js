@@ -1762,7 +1762,7 @@
   // 能不能真的改店里的合集:顺序(排序方式是「手动」就行,带条件的也可以)/ 加减单个产品(只做纯手动合集)
   const canWrite = () => !(MODE === 'live' && S.setup && S.setup.canWriteProducts === false);
   const realModeOf = () => !!(wxAll?.manualOk && canWrite());
-  const realMemberOf = () => !!(wxAll?.membershipOk && canWrite());
+  const realMemberOf = () => !!((wxAll?.membershipOk || wxAll?.selectionOk) && canWrite());
   function wxCard(p, i, d, cut) {
     const id = pidOf(p);
     const isNew = d.added.has(id); const isMoved = d.moved.has(id);
@@ -1787,9 +1787,11 @@
     const outside = wxAll && !wxAll.demo && !wxAll.error ? wx.order.filter((p) => !wxBase.includes(pidOf(p)) && !(wxAll.products || []).some((x) => pidOf(x) === pidOf(p))).length : 0;
     const removeN = wx.hidden.length + (wx.onlyN != null ? Math.max(0, wx.order.length - wx.onlyN) : 0);
     const warns = [];
-    if (outside && !realMember) warns.push(`有 <b>${outside} 个产品不在这个合集里</b>${wxAll?.automated ? ',这个合集带条件,app 不去改它的条件' : ''} —— <b>它们显示不出来</b>。要让它出现,先在 Shopify 后台把它单独加进这个合集(新版合集可以在条件之外单独加产品)。`);
-    if (outside && realMember) warns.push(`红框「新加」的 ${outside} 个产品本来不在这个合集里 —— 生效时会自动<b>加进合集</b>,结束再移出去。`);
-    if (realMode && !realMember && removeN) warns.push(`有 ${removeN} 个产品设成了「这段时间不显示」:这个合集带条件,app 不去改它的条件,所以它们<b>还留在 Shopify 的合集里</b>,只在顾客看到的页面上隐藏${S.themePin === false ? '(正在用的主题还没装上前台代码,现在只在测试主题上有效)' : ''}。`);
+    const why = wxAll?.needsNewApi ? '(要让 app 能改带条件的合集,先把 API 版本升到 2026-07)' : wxAll?.sharedSource ? '(这个合集的条件来源是共享的,改了会连带改到别的合集,app 不碰)' : '';
+    if (outside && !realMember) warns.push(`有 <b>${outside} 个产品不在这个合集里</b> —— <b>它们显示不出来</b>${why}。要让它出现,先在 Shopify 后台把它单独加进这个合集。`);
+    if (outside && realMember) warns.push(`红框「新加」的 ${outside} 个产品本来不在这个合集里 —— 生效时会自动<b>加进合集</b>${wxAll?.selectionOk ? '(加进这个合集的「单独加的产品」名单,不动条件)' : ''},结束再拿掉。`);
+    if (realMode && !realMember && removeN) warns.push(`有 ${removeN} 个产品设成了「这段时间不显示」:它们<b>还留在 Shopify 的合集里</b>,只在顾客看到的页面上隐藏${why}${S.themePin === false ? '(正在用的主题还没装上前台代码,现在只在测试主题上有效)' : ''}。`);
+    if (realMember && wxAll?.selectionOk && removeN) warns.push(`「这段时间不显示」的 ${removeN} 个产品,生效时会加进这个合集的「排除」名单(不动条件),结束再拿掉。`);
     if (!realMode && wxAll && !wxAll.demo && prefix > 50) warns.push(`前台排序最多能固定前 50 个位置,你现在排到了第 ${prefix} 位 —— 第 51 位以后的调整前台不会生效。`);
     if (!realMember && wxAll && !wxAll.demo && wx.hidden.length > 50) warns.push(`前台排序最多能隐藏 50 个产品,你现在隐藏了 ${wx.hidden.length} 个。`);
     if (realMember && removeN > 100) warns.push(`要临时移出合集的产品有 ${removeN} 个(超过 100 个)—— 这份清单会改用前台排序,不动店里的合集。`);
@@ -1800,7 +1802,8 @@
             ? `这个合集现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的合集调顺序,所以这份清单<b>用前台排序</b>:后台里的顺序不会变,顾客看到的合集页和首页模块按你排的显示。
               想让后台也变,在 Shopify 后台把这个合集的排序改成「手动」(带条件的合集也可以)。${S.themePin === false ? '<b class="warn">正在用的主题还没装上前台排序的代码(现在只装在测试主题上),顾客暂时看不到效果。</b>' : ''}`
             : !canWrite() ? '手动排序的合集,但 app 现在<b>没有「改产品 / 合集」的权限</b> —— 先用前台排序;装上权限后就会真的改店里的合集。'
-              : wxAll.automated ? '带条件的合集,排序方式是「手动」—— 到点会<b>真的</b>按网格里的顺序改店里的合集,结束自动还原;单个产品的加 / 移出不去改它的条件,交给前台。'
+              : wxAll.selectionOk ? '带条件的合集,排序方式是「手动」—— 到点会<b>真的</b>改店里的合集:顺序照网格,合集外的产品加进「单独加的产品」、不显示的加进「排除」名单,<b>你设的条件不动</b>;结束自动撤掉、顺序还原。'
+                : wxAll.automated ? `带条件的合集,排序方式是「手动」—— 到点会<b>真的</b>按网格里的顺序改店里的合集,结束自动还原;单个产品的加 / 移出交给前台${wxAll.needsNewApi ? '(把 API 版本升到 2026-07 后,app 就能直接改这个合集的「单独加的产品 / 排除」名单)' : wxAll.sharedSource ? '(这个合集的条件来源是共享的,app 不碰)' : ''}。`
                 : '手动合集 —— 到点会<b>真的</b>按网格里的顺序改店里的合集(包括加 / 移出产品),结束自动还原。'}共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(太多了,只列出前 ${wxAll.products.length} 个)` : ''}${wxAll.takenBy ? ` · 现在由「${esc(wxAll.takenBy.pinName || '')}」接管着,网格里的对比基准是接管前的原样` : ''}
               ${MODE === 'live' ? ' · <button type="button" class="linkbtn" data-wx="hist">看这个合集的历史版本 / 回滚</button>' : ''}</em>` : '';
     const sum = OD.diffSummary(d);
@@ -2463,7 +2466,7 @@
     const WHY = { 'too-many': '要临时移出的产品太多,改用前台排序(店里的合集不动)', 'no-scope': 'app 还没有「改产品 / 合集」的权限' };
     const sortWhy = (x) => `这个合集的排序方式是「${SORT_CN[String(x.why).slice(5)] || String(x.why).slice(5)}」,不是「手动」→ 后台顺序没法改,只在前台按你排的显示(在 Shopify 后台把排序改成「手动」就能真的改)`;
     return [
-      ...rep.applied.map((x) => `✅ 店里的「${x.title}」已按「${x.pin}」排好:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了合集` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}${x.front?.hidden ? `;${x.front.hidden} 个「不显示」的由前台隐藏(带条件的合集,产品还在合集里)` : ''}${x.front?.outside ? `;${x.front.outside} 个合集外的产品加不进去(要先在后台单独加进合集)` : ''}`),
+      ...rep.applied.map((x) => `✅ 店里的「${x.title}」已按「${x.pin}」排好:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了合集` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}${x.front?.hidden ? `;${x.front.hidden} 个「不显示」的由前台隐藏(产品还在合集里)` : ''}${x.front?.outside ? `;${x.front.outside} 个合集外的产品加不进去(要先在后台单独加进合集)` : ''}${x.front?.needsNewApi && (x.front.hidden || x.front.outside) ? '。把 API 版本升到 2026-07,app 就能直接改带条件的合集' : ''}${x.pending ? ';加进 / 排除的产品 Shopify 还在后台生效中,生效后会自动把顺序排好' : ''}`),
       ...rep.restored.map((x) => `↩️ 「${x.title}」已还原成接管前的顺序`),
       ...rep.skipped.map((x) => `⏭ ${x.title ? `「${x.title}」` : ''}${WHY[x.why] || (String(x.why || '').startsWith('sort:') ? sortWhy(x) : x.why)}`),
       ...rep.holds.map((x) => `⏸ 「${x.title}」有人在后台手动改过,app 已停手`),

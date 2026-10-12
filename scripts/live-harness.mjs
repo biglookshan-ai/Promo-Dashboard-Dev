@@ -105,6 +105,21 @@ function gql(query, v) {
     for (const id of nums) if (!ids.includes(id)) ids.push(id);
     return { collectionAddProducts: { userErrors: [] } };
   }
+  // 带条件的合集:改它的「单独加的产品 / 排除」名单(API 2026-07 的 collectionUpdate → sourcesToUpdate)
+  if (q.includes('collectionUpdate') && v.c?.sourcesToUpdate && colOf(v.c.id)) {
+    const c = colOf(v.c.id); let ids = membersOf(c);
+    const cond = v.c.sourcesToUpdate[0].condition;
+    for (const part of ['inclusion', 'exclusion']) for (const op of ['selectionsToAdd', 'selectionsToRemove']) {
+      for (const x of cond[part]?.[op] || []) {
+        const id = String(x.productId).split('/').pop();
+        const into = (part === 'inclusion') === (op === 'selectionsToAdd'); // 加进单独产品 / 拿掉排除 → 进合集
+        if (into && !ids.includes(id)) ids.push(id);
+        if (!into) ids = ids.filter((y) => y !== id);
+      }
+    }
+    colMembers.set(`${c.id}`, ids);
+    return { collectionUpdate: { collection: { id: v.c.id }, job: { id: 'job-src', done: true }, userErrors: [] } };
+  }
   const pr = priceGql(q, v); if (pr !== undefined) return pr; // 改价模块的查询(scripts/fake-price-shop.mjs)
   if (q.includes('accessScopes')) return { currentAppInstallation: { accessScopes: SCOPES.map((handle) => ({ handle })) } };
   if (q.includes('primaryDomain')) return { shop: { name: 'CineGearPro(测试)', myshopifyDomain: SHOP, primaryDomain: { url: 'https://www.cinegearpro.co.uk' } }, currentAppInstallation: { app: { handle: 'promo-dashboard-dev' } } };
@@ -176,7 +191,8 @@ function gql(query, v) {
     const first = Number((q.match(/products\(first: (\d+)/) || [])[1] || 60);
     const start = v.after ? Number(v.after) : 0;
     const nodes = all.slice(start, start + first);
-    return { collection: { title: c.title, sortOrder: manualSort ? 'MANUAL' : 'BEST_SELLING', ruleSet: automated ? { appliedDisjunctively: false } : null,
+    const sources = automated ? [{ __typename: 'CollectionConditionsSource', id: `gid://shopify/CollectionConditionsSource/${c.id}`, shareable: false, inclusion: { conditions: [{ __typename: 'CollectionSourceInclusionCondition' }] } }] : [];
+    return { collection: { title: c.title, sortOrder: manualSort ? 'MANUAL' : 'BEST_SELLING', ruleSet: automated ? { appliedDisjunctively: false } : null, sources,
       productsCount: { count: all.length }, products: { nodes, pageInfo: { hasNextPage: start + first < all.length, endCursor: String(start + first) } } } };
   }
   if (q.includes('productsCount')) {
@@ -241,7 +257,7 @@ http.createServer((req, res) => {
 // ---------------- 2. 真的 app 服务器 ----------------
 const app = spawn(process.execPath, ['src/server.js'], {
   cwd: ROOT, stdio: 'inherit',
-  env: { ...process.env, PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_SHOP: SHOP, SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}`,
+  env: { ...process.env, SHOPIFY_API_VERSION: args.has('--old-api') ? '2026-04' : '2026-07', PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_SHOP: SHOP, SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}`,
     // 假飞书只在 --lark 时打开(本地测试用的假凭证,和真飞书无关)
     ...(args.has('--lark') ? { LARK_APP_ID: 'harness-lark-app', LARK_APP_SECRET: 'harness-lark-only', LARK_OPEN_ORIGIN: `http://localhost:${P.fake}/lark-open`, LARK_ACCOUNTS_ORIGIN: `http://localhost:${P.fake}/lark-accounts`, APP_URL: `http://localhost:${P.entry}` } : {}) },
 });

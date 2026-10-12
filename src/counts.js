@@ -7,7 +7,8 @@
 import { graphql } from './shopify.js';
 import { toGid } from './metaobjects.js';
 import { ActionError } from './schedule-actions.js';
-import { RULES, hasRules } from './collection-order.js';
+import { RULES, hasRules, ownSource } from './collection-order.js';
+import { NEW_COLLECTIONS } from './shopify.js';
 
 const numId = (id) => String(id || '').split('/').pop();
 const q = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -90,13 +91,13 @@ const COL_MAX = 500;
 export async function collectionProducts(ctx, id, gql = graphql) {
   const gid = toGid('Collection', id);
   const FIELDS = 'id title handle status featuredMedia { preview { image { url } } } variants(first: 20) { nodes { price compareAtPrice } }';
-  const out = []; let after = null; let title = ''; let sortOrder = null; let ruleSet = null; let total = null; let more = false;
+  const out = []; let after = null; let title = ''; let sortOrder = null; let ruleSet = null; let srcId = null; let total = null; let more = false;
   for (let i = 0; i < 5; i++) {
     const d = await gql(ctx, `query($id: ID!, $after: String) { collection(id: $id) { title sortOrder productsCount { count } ${RULES}
         products(first: 100, after: $after, sortKey: COLLECTION_DEFAULT) { nodes { ${FIELDS} } pageInfo { hasNextPage endCursor } } } }`, { id: gid, after });
     const c = d.collection;
     if (!c) throw new ActionError('找不到这个合集(可能已经删了)');
-    title = c.title; sortOrder = c.sortOrder; ruleSet = hasRules(c); total = c.productsCount?.count ?? null;
+    title = c.title; sortOrder = c.sortOrder; ruleSet = hasRules(c); srcId = ownSource(c); total = c.productsCount?.count ?? null;
     out.push(...c.products.nodes);
     if (!c.products.pageInfo.hasNextPage) { after = null; break; }
     after = c.products.pageInfo.endCursor;
@@ -113,7 +114,11 @@ export async function collectionProducts(ctx, id, gql = graphql) {
   // 能真的改店里的顺序 = 排序方式是「手动」(Shopify 2026 新版合集:带条件的合集也可以手动排)
   // 能真的加 / 移出单个产品 = 手动排序 + 没有条件(带条件的合集要改它的条件来源,先交给前台)
   const manualOk = sortOrder === 'MANUAL';
-  return { id: gid, title, sortOrder, automated: !!ruleSet, manualOk, membershipOk: manualOk && !ruleSet, total, products, truncated: more || (total != null && total > products.length) };
+  const membershipOk = manualOk && !ruleSet;
+  const selectionOk = manualOk && !!ruleSet && NEW_COLLECTIONS && !!srcId; // 带条件的合集:改它的「单独加的产品 / 排除」名单
+  return { id: gid, title, sortOrder, automated: !!ruleSet, manualOk, membershipOk, selectionOk,
+    needsNewApi: manualOk && !!ruleSet && !NEW_COLLECTIONS, sharedSource: manualOk && !!ruleSet && NEW_COLLECTIONS && !srcId,
+    total, products, truncated: more || (total != null && total > products.length) };
 }
 // 按 id 取产品的名字和图(历史版本里有的产品现在可能已经不在合集里了)
 export async function productsInfo(ctx, ids, gql = graphql) {

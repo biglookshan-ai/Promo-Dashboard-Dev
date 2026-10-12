@@ -163,7 +163,7 @@ test('带条件的合集,但排序设成了「手动」(Shopify 2026 新版合�
   assert.equal(r.applied.length, 1);
   assert.deepEqual(shop.ids, ['4', '2', '1', '3', '5']);                  // 顺序真的改了;5 还在合集里(前台隐藏)
   assert.ok(!shop.calls.some((c) => c[0] === 'add' || c[0] === 'remove')); // 没去动它的产品
-  assert.deepEqual(r.applied[0].front, { hidden: 1, outside: 1 });
+  assert.deepEqual(r.applied[0].front, { hidden: 1, outside: 1, needsNewApi: true }); // 旧版 API:要升到 2026-07 才能加减
   await alignCollections({}, state, { now: 10_000, gql: shop.gql });       // 结束 → 还原
   assert.deepEqual(shop.ids, ['1', '2', '3', '4', '5']);
 });
