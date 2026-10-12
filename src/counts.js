@@ -106,14 +106,7 @@ export async function collectionProducts(ctx, id, gql = graphql) {
     after = c.products.pageInfo.endCursor;
     if (out.length >= COL_MAX) { more = true; break; }
   }
-  const products = out.slice(0, COL_MAX).map((p, i) => {
-    const best = p.variants.nodes.reduce((acc, v) => {
-      const pr = Number(v.price), cmp = Number(v.compareAtPrice || 0);
-      const off = cmp > pr ? Math.round(((cmp - pr) / cmp) * 100) : 0;
-      return off > acc.off ? { off, price: pr, cmp } : acc;
-    }, { off: 0, price: Number(p.variants.nodes[0]?.price || 0), cmp: 0 });
-    return { id: p.id, title: p.title, handle: p.handle, image: p.featuredMedia?.preview?.image?.url || '', pos: i + 1, price: best.price, off: best.off, draft: p.status !== 'ACTIVE' };
-  });
+  const products = out.slice(0, COL_MAX).map((p, i) => ({ id: p.id, title: p.title, handle: p.handle, image: p.featuredMedia?.preview?.image?.url || '', pos: i + 1, ...priceOf(p), draft: p.status !== 'ACTIVE' }));
   // 能真的改店里的顺序 = 排序方式是「手动」(Shopify 2026 新版合集:带条件的合集也可以手动排)
   // 能真的加 / 移出单个产品 = 手动排序 + 没有条件(带条件的合集要改它的条件来源,先交给前台)
   const manualOk = sortOrder === 'MANUAL';
@@ -128,8 +121,24 @@ export async function productsInfo(ctx, ids, gql = graphql) {
   const out = [];
   const gids = [...new Set(ids.map((id) => toGid('Product', id)).filter(Boolean))];
   for (let i = 0; i < gids.length; i += 200) {
-    const d = await gql(ctx, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id title handle status featuredMedia { preview { image { url } } } } } }`, { ids: gids.slice(i, i + 200) });
-    for (const p of d.nodes.filter(Boolean)) out.push({ id: p.id, title: p.title, handle: p.handle, image: p.featuredMedia?.preview?.image?.url || '', draft: p.status !== 'ACTIVE' });
+    const d = await gql(ctx, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id title handle status featuredMedia { preview { image { url } } } variants(first: 20) { nodes { price compareAtPrice } } } } }`, { ids: gids.slice(i, i + 200) });
+    for (const p of d.nodes.filter(Boolean)) out.push({ id: p.id, title: p.title, handle: p.handle, image: p.featuredMedia?.preview?.image?.url || '', ...priceOf(p), draft: p.status !== 'ACTIVE' });
   }
   return out;
+}
+
+// 产品卡上显示的价格:有打折的 → 折扣最大的那个变体的「原价(划线价)/ 现价」;没打折 → 最低价,变体价格不一样时标「起」
+function priceOf(p) {
+  const vs = p.variants?.nodes || [];
+  if (!vs.length) return { price: null, compareAt: null, off: 0, from: false };
+  let best = null;
+  for (const v of vs) {
+    const pr = Number(v.price), cmp = Number(v.compareAtPrice || 0);
+    const off = cmp > pr ? Math.round(((cmp - pr) / cmp) * 100) : 0;
+    if (off && (!best || off > best.off)) best = { off, price: pr, compareAt: cmp };
+  }
+  const prices = vs.map((v) => Number(v.price));
+  const min = Math.min(...prices);
+  if (best) return { ...best, from: false };
+  return { price: min, compareAt: null, off: 0, from: Math.max(...prices) !== min };
 }

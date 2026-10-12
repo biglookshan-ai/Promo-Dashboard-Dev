@@ -1722,7 +1722,10 @@
   let wxAll = null; let wxBusy = false; let wxBase = []; let wxQ = ''; let wxPosEdit = null; let wxDrag = null;
   const SORT_CN = { BEST_SELLING: '最畅销', ALPHA_ASC: '字母 A–Z', ALPHA_DESC: '字母 Z–A', CREATED: '最早上架', CREATED_DESC: '最新上架', PRICE_ASC: '价格从低到高', PRICE_DESC: '价格从高到低', MANUAL: '手动' };
   const pidOf = (p) => numId(p.id);
-  const keepP = (p) => ({ id: p.id, handle: p.handle, title: p.title, image: p.image || '', off: p.off, draft: p.draft });
+  const keepP = (p) => ({ id: p.id, handle: p.handle, title: p.title, image: p.image || '', off: p.off, draft: p.draft, price: p.price, compareAt: p.compareAt, from: p.from });
+  // 卡片上的价格:划线原价 + 现价(变体价格不一样时标「起」)
+  const gbp = (x) => `£${Number(x).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const priceRow = (p) => (p.price == null ? '' : `<span class="pg__pr">${p.compareAt ? `<s>${gbp(p.compareAt)}</s>` : ''}<b class="${p.compareAt ? 'is-sale' : ''}">${gbp(p.price)}</b>${p.from ? '<em>起</em>' : ''}</span>`);
   async function loadWxAll(redraw) {
     const c = wx.collection; wxAll = null; wxBase = []; wxQ = ''; wxPosEdit = null;
     if (!c) return redraw && redraw();
@@ -1775,6 +1778,7 @@
         : `<button type="button" class="pg__pos" data-wx="pos" data-i="${i}" title="点一下,输入要移到第几位">${i + 1}</button>`}
       <span class="pg__img">${p.image ? `<img src="${esc(thumb(p.image, 240))}" alt="" loading="lazy" draggable="false">` : ''}</span>
       <span class="pg__t">${esc(p.title)}</span>
+      ${priceRow(p)}
       <span class="pg__m">${cut ? '<span class="pg__b pg__b--cut">这段时间不显示</span>'
         : isNew ? '<span class="pg__b pg__b--new">新加</span>'
           : isMoved ? `<span class="pg__b pg__b--moved">原 #${orig + 1}</span>` : ''}${p.off ? `<span class="pg__off">${p.off}% OFF</span>` : ''}${p.draft ? '<span class="pg__b">草稿</span>' : ''}</span>
@@ -1848,6 +1852,7 @@
         <div class="pg pg--hidden">${wx.hidden.map((p, i) => `<div class="pg__card is-cut">
           <span class="pg__img">${p.image ? `<img src="${esc(thumb(p.image, 240))}" alt="" loading="lazy">` : ''}</span>
           <span class="pg__t">${esc(p.title)}</span>
+          ${priceRow(p)}
           <span class="pg__m"><span class="pg__b pg__b--cut">不显示</span>${d.origPos.has(pidOf(p)) ? `<span class="muted">原 #${d.origPos.get(pidOf(p)) + 1}</span>` : ''}</span>
           <span class="pg__acts pg__acts--on"><button type="button" data-wx="unhide" data-i="${i}">恢复显示</button></span></div>`).join('')}</div>` : ''}`}`;
   }
@@ -2525,6 +2530,7 @@
         return `<div class="pg__card ${cls}"><span class="pg__pos">${i + 1}</span>
           <span class="pg__img">${p.image ? `<img src="${esc(thumb(p.image, 240))}" alt="" loading="lazy">` : ''}</span>
           <span class="pg__t">${esc(p.title)}</span>
+          ${priceRow(p)}
           <span class="pg__m">${extra.has(id) ? '<span class="pg__b pg__b--cut">后来才加的,排到最后</span>' : d.added.has(id) ? '<span class="pg__b pg__b--new">会加回合集</span>' : d.moved.has(id) ? `<span class="pg__b pg__b--moved">现在 #${cur.indexOf(id) + 1}</span>` : ''}</span></div>`; };
       const same = !d.added.size && !d.moved.size;
       $('#hist-pv').innerHTML = `<div class="hist__h"><b>${esc(fmtAt(r.version.at))} 那一版</b> <span class="muted">${esc(r.version.why || '')}</span></div>
