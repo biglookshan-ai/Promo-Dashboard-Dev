@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { expandOrder, minimalPrefix, diffOrder, diffSummary } from '../src/order-diff.js';
+import { pushVersion, backfillBase } from '../src/col-history.js';
 
 const N = (n) => Array.from({ length: n }, (_, i) => String(i + 1));
 const move = (arr, from, to) => { const a = [...arr]; const [x] = a.splice(from, 1); a.splice(to, 0, x); return a; };
@@ -68,4 +69,14 @@ test('对比:新加、拿掉、换位置一起', () => {
 
 test('只显示前面的:展开只要前缀', () => {
   assert.deepEqual(expandOrder(N(10), ['7', '3'], { onlyListed: true }), ['7', '3']);
+});
+
+test('历史:一样的不重复记;接管前的原样可以补成最早一版', () => {
+  const h = {};
+  assert.equal(pushVersion(h, 'gid://shopify/Collection/9', ['1', '2'], { why: 'a' }, 100), true);
+  assert.equal(pushVersion(h, '9', ['1', '2'], { why: 'b' }, 200), false);
+  assert.equal(pushVersion(h, '9', ['2', '1'], { why: 'c' }, 300), true);
+  assert.equal(backfillBase(h, '9', ['3', '1', '2'], 500), true);
+  assert.deepEqual(h['9'].map((v) => v.at), [99, 100, 300]);    // 补的那版排最前
+  assert.equal(backfillBase(h, '9', ['3', '1', '2'], 500), false); // 已经有了不重复补
 });

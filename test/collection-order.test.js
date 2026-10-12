@@ -63,6 +63,9 @@ test('同一个合集几份清单同时生效:开始最晚的赢', () => {
   const m = livePins([a, b], [], 6000);
   assert.equal(m.get('99').id, 'b');
   assert.equal(livePins([{ ...a, paused: true }], [], 6000).size, 0);
+  // 开始时间一样(比如都是长期显示):先建的那份赢
+  const x = pin({ id: 'x' }); const y = pin({ id: 'y' });
+  assert.equal(livePins([x, y], [], 6000).get('99').id, 'x');
   assert.equal(livePins([{ ...a, state: 'draft' }], [], 6000).size, 0);
 });
 

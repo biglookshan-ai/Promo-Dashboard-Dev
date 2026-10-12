@@ -969,7 +969,7 @@
         const used = [...new Set(modTabsUsing(g.cid).map((u) => `${MODULE_CN[u.v.module]}·${tabLabel(u.t)}`))];
         const cs = (S.colState || {})[String(g.cid)];
         return `<section class="panel pngroup">
-          <div class="panel__h"><h3>${esc(g.title)}${MODE === 'live' && g.cid !== '?' ? ` <button class="btn btn-sm btn-ghost" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">历史版本 / 回滚</button>` : ''}</h3>
+          <div class="panel__h"><h3>${esc(g.title)}${MODE === 'live' && g.cid !== '?' ? ` <button class="btn btn-sm pn-hist" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本 / 回滚</button>` : ''}</h3>
             <span class="muted">${act ? `这一刻按「${esc(titleOf(act))}」排${act.onlyListed ? ',而且只显示清单里的产品' : ''}` : '这一刻没有清单生效,按合集原来的顺序'}
               ${used.length ? ` · 首页${used.slice(0, 3).map((u) => `「${esc(u)}」`).join('')}${used.length > 3 ? '等' : ''}页签也用这个合集` : ''}</span></div>
           ${cs ? (cs.hold
@@ -977,6 +977,15 @@
         <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按清单重新排</button>
         <button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">就用现在的,别管了</button></div>`
     : `<div class="note note--ok">店里这个合集现在<b>真的</b>按「${esc(cs.pinName || '')}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了合集` : ''} · 结束会自动还原成接管前的顺序。</div>`) : ''}
+          ${(() => { // 同一个合集这一刻有几份清单同时生效:只有开始时间最晚的那份会用上
+            const live = g.list.filter((p) => status(p, T) === 'live');
+            if (live.length < 2) return '';
+            const st0 = (p) => win(p).start ?? 0;
+            const tie = live.filter((p) => st0(p) === st0(act)).length > 1;
+            return `<div class="note note--warn">这一刻有 ${live.length} 份清单同时生效:${live.map((p) => `「${esc(titleOf(p))}」`).join('、')}。
+              ${tie ? '它们的开始时间一样(比如都是「长期显示」),<b>前台和店里可能各用一份,顺序会打架</b> —— 请暂停不用的那份,或者给它们设不同的开始时间。'
+                : `只有开始时间最晚的「${esc(titleOf(act))}」会用上,它结束后才轮到别的。不需要的可以暂停或删掉。`}</div>`;
+          })()}
           <div class="pnlist">${g.list.map(card).join('')}</div>
         </section>`;
       }).join('') : (need ? '' : empty('还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
@@ -1793,7 +1802,8 @@
           : wxAll ? `<em>${!wxAll.manualOk
             ? `${wxAll.automated ? '这是<b>按条件自动归类</b>的合集' : `这个合集现在按<b>${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}</b>排序`} —— Shopify 不让手动排,这份清单<b>用前台排序</b>实现(合集页和首页模块按你排的显示,店里的合集不动)。`
             : !realMode ? '手动合集,但 app 现在<b>没有「改产品 / 合集」的权限</b> —— 先用前台排序;装上权限后就会真的改店里的合集。'
-              : '手动合集 —— 到点会<b>真的</b>按网格里的顺序改店里的合集,结束自动还原。'}共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(太多了,只列出前 ${wxAll.products.length} 个)` : ''}${wxAll.takenBy ? ` · 现在由「${esc(wxAll.takenBy.pinName || '')}」接管着,网格里的对比基准是接管前的原样` : ''}</em>` : '';
+              : '手动合集 —— 到点会<b>真的</b>按网格里的顺序改店里的合集,结束自动还原。'}共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(太多了,只列出前 ${wxAll.products.length} 个)` : ''}${wxAll.takenBy ? ` · 现在由「${esc(wxAll.takenBy.pinName || '')}」接管着,网格里的对比基准是接管前的原样` : ''}
+              ${MODE === 'live' ? ' · <button type="button" class="linkbtn" data-wx="hist">看这个合集的历史版本 / 回滚</button>' : ''}</em>` : '';
     const sum = OD.diffSummary(d);
     const grid = wx.order.map((p, i) => {
       const cut = wx.onlyN != null && i >= wx.onlyN;
@@ -2349,6 +2359,11 @@
         wx.order.unshift(...pl.prods.map((x) => fromGrid.get(numId(x.productId)) || { id: x.productId, title: x.product || x.title, image: x.image || '' }));
         toast(`${pl.prods.length} 个产品放到了最前面(按改价计划里的顺序)`);
         redrawWx(); return;
+      }
+      if (a === 'hist') { // 打开历史会关掉编辑窗口:有没保存的调整就先提醒一次
+        const key = (o) => JSON.stringify([(o.products || []).map((p) => numId(p.id)), (o.hidden || []).map((p) => numId(p.id)), !!o.onlyListed]);
+        if (key(readForm(base)) !== key(base) && !w.dataset.sure) { w.dataset.sure = '1'; w.textContent = '有还没保存的调整,再点一次会丢掉并打开历史'; return; }
+        const c = wx.collection; closeDrawer(); openColHistory(numId(c.id), c.title); return;
       }
       if (a === 'pos') { wxPosEdit = i; redrawWx(); const inpEl = $('#pg-posin'); if (inpEl) { inpEl.focus(); inpEl.select(); } return; }
       if (a === 'totop') { wxMove(i, 0); return redrawWx(); }

@@ -13,7 +13,7 @@ import { graphql } from './shopify.js';
 import { actorOf } from './members.js';
 import { larkEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
-import { loadHistory, historyRecorder, recordVersion } from './col-history.js';
+import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
 import { diffOrder, diffSummary } from './order-diff.js';
 
 // 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
@@ -273,7 +273,11 @@ export function scheduleRouter() {
 
   // ---- 合集顺序的历史版本 / 回滚 ----
   r.get('/col-history', wrap((req) => {
-    const list = loadHistory(req.ctx.shop)[colNid(req.query.id)] || [];
+    const cid = colNid(req.query.id);
+    const h = loadHistory(req.ctx.shop);
+    const st = (load(req.ctx.shop).colState || {})[cid];
+    if (st?.snapshot && backfillBase(h, cid, st.snapshot, st.snapAt || st.at)) saveHistory(req.ctx.shop, h);
+    const list = h[cid] || [];
     // 每一版和它前一版比:新加 / 换位置 / 拿掉几个
     return { versions: list.map((v, i) => ({ at: v.at, why: v.why, by: v.by, pin: v.pin, n: v.ids.length,
       change: i ? diffSummary(diffOrder(list[i - 1].ids, v.ids)) : '最早的一版' })).reverse() };

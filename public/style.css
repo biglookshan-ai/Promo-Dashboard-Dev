@@ -1134,3 +1134,5 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .hist__h { margin-bottom: 6px; font-size: 13.5px; }
 .pg--ro .pg__card { cursor: default; }
 .kchip { font-size: 11.5px; background: var(--ok-soft); color: var(--ok); border-radius: 6px; padding: 2px 7px; }
+.pn-hist { margin-left: 10px; vertical-align: middle; font-weight: 500; }
+.pn-hist .ico { width: 13px; height: 13px; }

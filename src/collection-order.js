@@ -11,7 +11,7 @@
 //   · 有人在 Shopify 后台手动改过顺序(我们排在最前的那几个不在最前了)→ **暂停接管**,
 //     不覆盖别人的改动,记日志 + 通知,等人处理。
 //   · 清单结束 / 暂停 / 删除 / 退回 → 下一轮自动还原,还原完清掉记录。
-import { itemStatus, campaignIndex } from './schedule-core.js';
+import { itemStatus, campaignIndex, effectiveWindow } from './schedule-core.js';
 import { diffOrder } from './order-diff.js';
 
 export const nid = (x) => String(x ?? '').split('/').pop();
@@ -28,11 +28,12 @@ export function livePins(pins, campaigns, now) {
     if (p.state !== 'approved' || p.paused || !p.collection) continue;
     if (itemStatus(p, camps, now) !== 'live') continue;
     const c = nid(p.collection.id);
+    // 开始时间晚的赢;一样的话先建的那份赢(和页面上显示的「这一刻按哪份排」一致;跟随活动的按活动的开始时间算)
+    const at = effectiveWindow(p, camps).start ?? 0;
     const cur = by.get(c);
-    const at = (p.start ?? 0);
-    if (!cur || at >= (cur.start ?? 0)) by.set(c, p);
+    if (!cur || at > cur.at) by.set(c, { pin: p, at });
   }
-  return by; // Map<collectionId(数字), pin>
+  return new Map([...by].map(([c, x]) => [c, x.pin])); // Map<collectionId(数字), pin>
 }
 
 // 想要的样子:清单里的排最前(只算现在还在合集里的),其余照原顺序;勾了隐藏的要移出合集。
@@ -205,7 +206,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
         const mv = movesFor(after, d.order);
         await reorder(ctx, cid, mv, gql);
         state.colState[cid] = { collection: cid, title: col.title, pinId: pin.id, pinName: pin.name, signature: sig(pin),
-          snapshot, removed: d.remove, added: [...new Set([...(st?.added || []).filter((id) => pinned.has(id)), ...probe.add])],
+          snapshot, snapAt: st?.snapAt || now, removed: d.remove, added: [...new Set([...(st?.added || []).filter((id) => pinned.has(id)), ...probe.add])],
           wrote: d.pinned, at: now };
         record(cid, d.order, { why: `按「${pin.name}」排`, title: col.title, pin: pin.name });
         // 「换位置」只算原来就在合集里、被挪动的(新加进来的那几个单独算)

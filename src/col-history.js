@@ -15,7 +15,7 @@ export const KEEP_DAYS = 90;
 export function loadHistory(shop) {
   try { return JSON.parse(fs.readFileSync(fileOf(shop), 'utf8')); } catch { return {}; }
 }
-function saveHistory(shop, h) {
+export function saveHistory(shop, h) {
   fs.mkdirSync(DIR, { recursive: true });
   const f = fileOf(shop); const tmp = `${f}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(h)); fs.renameSync(tmp, f);
@@ -45,4 +45,14 @@ export function historyRecorder(shop) {
   const rec = (cid, ids, meta) => { h ||= loadHistory(shop); if (pushVersion(h, cid, ids, meta)) dirty = true; };
   rec.flush = () => { if (dirty) saveHistory(shop, h); dirty = false; };
   return rec;
+}
+
+// 历史功能上线之前 app 就已经接管了的合集:把接管前的快照补成最早的一版,回滚才回得去
+export function backfillBase(h, cid, ids, at = Date.now()) {
+  const key = nid(cid); const list = (h[key] ||= []);
+  const clean = ids.map(nid);
+  if (list.some((v) => v.ids.join(',') === clean.join(','))) return false;
+  const first = list[0]?.at;
+  list.unshift({ at: first ? Math.min(at, first - 1) : at, ids: clean, why: 'app 接管前的原样', by: '', pin: '', title: '' });
+  return true;
 }
