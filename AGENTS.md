@@ -60,7 +60,7 @@
 ### 关键
 
 - **规则只有一份**:`src/schedule-core.js`(上下线判断)+ `src/schedule-actions.js`(存草稿 / 提交 / 发布 / 批准 / 退回 / 暂停 / 删除 / 排序,含权限检查)是纯函数,**服务器和浏览器共用**(服务器以 `/lib/*.js` 只放行这两个文件给页面 import)。演示模式在浏览器里跑它,正式模式由服务器跑。**别在 `public/schedule.js` 里再写一套规则。**
-- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(7 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签 + 合集置顶清单,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(125 个,含改价的 41 个、合集排序的 17 个)。
+- 服务端文件:`schedule-store.js`(数据存 `DATA_DIR/schedule/<shop>.json`,暂不用 Postgres)、`schedule-api.js`(`/api/schedule/*` 接口)、`sync.js`(动作的副作用:写 Shopify 条目 / 位置 / 删除 / 发飞书;**每个店铺一把锁**,动作和定时器排队执行)、`metaobjects.js`(7 个定义 + 字段映射;核心 4 个 + 首页商品模块的版本 / 页签 + 合集置顶清单,后加的缺了只提示补建)、`files.js`(图片上传 / 按文件名找图)、`theme-content.js` + `theme-import.js`(读主题、导入)、`counts.js`(Admin API 计数,含「静默忽略」防护)、`lark.js` + `notifier.js`(飞书)、`scheduler.js`(每分钟对齐 + 每天 10:00 汇总,`SCHEDULER_DISABLED=1` 可关)。改完先跑 `npm test`(136 个,含改价的 41 个、合集排序 / 顺序对比的 28 个)。
 - **本地测正式数据**:`node scripts/live-harness.mjs --fresh` → http://localhost:4793(`?user=1002` 是第二个人;`--core-only` 模拟只建了核心 4 个类型的老店)。真的 app 服务器 + 假 Shopify(内存,主题文件读本地 worktree,产品数读 `scripts/demo-catalog.json`),`http://localhost:4794/__state` 看写进「店铺」的东西。只靠 `SHOPIFY_GRAPHQL_ORIGIN` 环境变量指过去,线上别设。
 - **建内容类型、从主题导入**都只能由用户在「设置 → 店铺连接」点按钮触发,别在部署 / 启动时自动做。
 - 认人:**v3 起改为飞书登录**(店里多人共用 Shopify 账号);Shopify session token 只证明「从本店后台打开」。第一次登录的人默认「待分配」,管理员分配角色后才能用;第一个管理员 = 第一个从 Shopify 后台里用飞书登录的人。(v2 旧做法:session token 的 `sub` = 员工 id、第一个打开的人是审核人。)
@@ -83,8 +83,17 @@
   页面 `public/price.js`(点开「改价」才加载),样式在 style.css 末尾、**全部限定在 `#section-price` 里**,和排期页同名的样式加了 `pr-` 前缀 —— 别去掉,否则两边互相干扰。
   飞书私信:`src/lark-bot.js`(同一个飞书应用的机器人,需要 `im:message:send_as_bot`)。本地测:harness 的 `/__price`(改过价的变体)、`/__price/set`(模拟手动改价)、`/__dms`(发出的私信),产品数据 `node scripts/fetch-price-catalog.mjs`。
 - **合集排序(置顶清单)**:自己一个导航页(`renderPins`,`#section-pins`),按合集分组 + 共用时间线 + 「复制成下一天」;写进 `cgp_collection_pin`。
-  编辑器照 Shopify 后台的做法:`GET /api/schedule/collection-products`(`src/counts.js` 的 `collectionProducts`)把合集**现在在店里的全部产品按真实顺序**取回来,
-  上半截是你排的、下半截是「照店里原来的顺序」,可以互相拖、可以勾「这次不显示」。存的是**排过的前缀 + 隐藏名单**,没动过的照旧跟在后面(所以不是「整份覆盖」)。
+  编辑器照 Shopify 新版合集的**网格**做法(2026-10-12 用户要求):`GET /api/schedule/collection-products` 把合集现在的全部产品按真实顺序取回来(app 正在接管时还会带上**接管前的快照** `baseline`),
+  网格里任意拖动(指针事件自己实现,不用浏览器原生拖放 —— 原生拖放在 iframe / 自动化里不稳)、点序号直接输入要移到第几位、悬停「置顶 / 不显示」、「只显示前 N 个」。
+  **对比标记**都相对「原来的顺序」(接管前快照或现在的顺序):红实框 = 新加(原来不在合集里)、红虚框 + 「原 #N」= 被拖动过、灰 = 这段时间不显示、普通 = 没动。
+  「被拖动过」用最长递增子序列判断(`src/order-diff.js` 的 `diffOrder`)—— 把第 50 拖到第 20,只有它一个算换位置,中间被挤下去的不算。
+  **只存最短前缀**(`minimalPrefix`):前缀按顺序排最前、其余照原顺序,展开(`expandOrder`)和网格一模一样;把第 50 拖到第 20 只存 20 个。数据模型还是 `products`(前缀)+ `hidden` + `onlyListed`,没变。
+  `order-diff.js` 服务器和浏览器共用(`/lib/order-diff.js`,server.js 和 demo-preview.mjs 都要放行)。
+  ⛔ Liquid 循环引用列表**一次只读前 50 个**(Shopify 列表字段最多 128 个),所以写进 metaobject 的 `products` / `hidden_products` 只写前 50 —— 前台排序模式下超过 50 编辑器会提醒;真的改合集模式用 app 自己存的完整前缀,不受影响。
+  **历史版本 / 回滚**(`src/col-history.js`,存 `DATA_DIR/schedule/<店>.colhist.json`,和排期数据分开):接管前原样、每次改完、结束还原、发现有人手改、回滚前后各记一版;
+  每版只存产品 id 顺序(11 个产品约 0.2KB、500 个约 7KB),和上一版一样不记,每个合集最多 100 版 / 90 天。
+  回滚(`POST /api/schedule/col-rollback`,管理员,再点一次确认):那一版有、现在没有的加回来;后来才加进合集的**不删**,排到最后;正被清单接管的合集会设 `hold='rollback'`,免得下一分钟又排回去。
+  `movesFor` 只给最长递增子序列以外的产品发 move(插到目标里前一个产品后面),再模拟验证一遍,不对就退回逐个排 —— 300 次随机打乱的测试在 `test/collection-order.test.js`。
   **两种执行方式**(`src/collection-order.js`,每分钟由 `scheduler.js` 对齐):
     · 手动排序的合集(`!ruleSet && sortOrder === 'MANUAL'`)→ **真的改店里的合集**:`collectionReorderProducts` 把排好的移到最前,
       隐藏的用 `collectionRemoveProducts` 临时移出;接管前存**原始顺序快照**(`state.colState[合集id].snapshot`),结束 / 暂停 / 删除自动还原、移出的加回来。

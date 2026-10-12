@@ -112,3 +112,13 @@ export async function collectionProducts(ctx, id, gql = graphql) {
   // 真的能改店里的顺序 = 不是按条件自动归类 + 现在就是「手动」排序(Shopify 只让手动排序的合集调顺序)
   return { id: gid, title, sortOrder, automated: !!ruleSet, manualOk: !ruleSet && sortOrder === 'MANUAL', total, products, truncated: more || (total != null && total > products.length) };
 }
+// 按 id 取产品的名字和图(历史版本里有的产品现在可能已经不在合集里了)
+export async function productsInfo(ctx, ids, gql = graphql) {
+  const out = [];
+  const gids = [...new Set(ids.map((id) => toGid('Product', id)).filter(Boolean))];
+  for (let i = 0; i < gids.length; i += 200) {
+    const d = await gql(ctx, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id title handle status featuredMedia { preview { image { url } } } } } }`, { ids: gids.slice(i, i + 200) });
+    for (const p of d.nodes.filter(Boolean)) out.push({ id: p.id, title: p.title, handle: p.handle, image: p.featuredMedia?.preview?.image?.url || '', draft: p.status !== 'ACTIVE' });
+  }
+  return out;
+}

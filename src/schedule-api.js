@@ -7,12 +7,14 @@ import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQU
 import { schedulerInfo } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { uploadImage } from './files.js';
-import { scopeCounts, productCampaigns, tabProducts, collectionProducts } from './counts.js';
+import { scopeCounts, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 import { actorOf } from './members.js';
 import { larkEnabled } from './lark-login.js';
-import { alignCollections } from './collection-order.js';
+import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
+import { loadHistory, historyRecorder, recordVersion } from './col-history.js';
+import { diffOrder, diffSummary } from './order-diff.js';
 
 // 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
 const APP_VERSION = { commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local', startedAt: Date.now() };
@@ -232,7 +234,12 @@ export function scheduleRouter() {
   r.post('/tab-products', wrap(async (req) => tabProducts(req.ctx, req.body || {})));
 
   // ---- 合集排序:这个合集现在在店里的真实顺序 ----
-  r.get('/collection-products', wrap(async (req) => cached(req.ctx.shop, `col:${req.query.id}`, 60_000, () => collectionProducts(req.ctx, String(req.query.id || '')))));
+  // 编辑器要的「原来的顺序」:app 正在接管这个合集时,是接管前的快照(合集现在的顺序已经被改过了);没接管就是现在的顺序
+  r.get('/collection-products', wrap(async (req) => {
+    const out = await collectionProducts(req.ctx, String(req.query.id || ''));
+    const st = (load(req.ctx.shop).colState || {})[colNid(out.id)];
+    return { ...out, baseline: st?.snapshot || null, takenBy: st ? { pinId: st.pinId, pinName: st.pinName, hold: st.hold || null } : null };
+  }));
 
   // ---- 合集排序:有人在后台手改过被暂停接管了,点「重新接管」清掉 ----
   r.post('/col-hold', wrap((req) => withLock(req.ctx.shop, async () => {
@@ -254,12 +261,67 @@ export function scheduleRouter() {
     const a = actorFor(s, req.ctx.user);
     if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能手动执行');
     delete s.colNoScope; // 手动点就重试一次,不受「今天别再试」限制
-    const rep = await alignCollections(req.ctx, s, { now: Date.now(), gql: graphql });
+    const record = historyRecorder(req.ctx.shop);
+    const rep = await alignCollections(req.ctx, s, { now: Date.now(), gql: graphql, record });
+    record.flush();
     for (const x of rep.applied) appendLog(s, { action: 'up', kind: 'pin', title: x.title, by: a.name,
       note: `手动执行:按「${x.pin}」排了店里的合集(${x.moved} 个换位置${x.added ? `、${x.added} 个加进合集` : ''}${x.removed ? `、${x.removed} 个临时移出` : ''})` });
     for (const x of rep.restored) appendLog(s, { action: 'down', kind: 'pin', title: x.title, note: '手动执行:合集顺序已还原', by: a.name });
     replace(req.ctx.shop, s);
     return { rep };
+  })));
+
+  // ---- 合集顺序的历史版本 / 回滚 ----
+  r.get('/col-history', wrap((req) => {
+    const list = loadHistory(req.ctx.shop)[colNid(req.query.id)] || [];
+    // 每一版和它前一版比:新加 / 换位置 / 拿掉几个
+    return { versions: list.map((v, i) => ({ at: v.at, why: v.why, by: v.by, pin: v.pin, n: v.ids.length,
+      change: i ? diffSummary(diffOrder(list[i - 1].ids, v.ids)) : '最早的一版' })).reverse() };
+  }));
+  r.get('/col-history/version', wrap(async (req) => {
+    const v = (loadHistory(req.ctx.shop)[colNid(req.query.id)] || []).find((x) => String(x.at) === String(req.query.at));
+    if (!v) throw new ActionError('找不到这个版本(可能已经超过 90 天被清掉了)');
+    const col = await readCollection(req.ctx, req.query.id, graphql);
+    const info = await productsInfo(req.ctx, [...new Set([...v.ids, ...(col?.ids || [])])]);
+    return { version: v, current: col?.ids || [], products: info };
+  }));
+  // 回滚:把合集的顺序改回某一版(那一版有、现在没有的加回来;后来新加进合集的不删,排到最后)
+  r.post('/col-rollback', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const a = actorFor(s, req.ctx.user);
+    if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能回滚');
+    const cid = colNid(req.body?.id);
+    const v = (loadHistory(req.ctx.shop)[cid] || []).find((x) => String(x.at) === String(req.body?.at));
+    if (!v) throw new ActionError('找不到这个版本');
+    const col = await readCollection(req.ctx, cid, graphql);
+    if (!col) throw new ActionError('找不到这个合集');
+    if (!col.manualOk) throw new ActionError('这是按条件自动归类(或不是手动排序)的合集,Shopify 不让手动调顺序,回滚不了');
+    const when = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Europe/London', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(v.at));
+    recordVersion(req.ctx.shop, cid, col.ids, { why: `回滚前(准备回到 ${when} 那一版)`, by: a.name, title: col.title });
+    const missing = v.ids.filter((id) => !col.ids.includes(id));
+    if (missing.length) {
+      const d = await graphql(req.ctx, `mutation($id: ID!, $p: [ID!]!) { collectionAddProducts(id: $id, productIds: $p) { userErrors { message } } }`,
+        { id: `gid://shopify/Collection/${cid}`, p: missing.map((id) => `gid://shopify/Product/${id}`) });
+      const e = d.collectionAddProducts?.userErrors?.[0]; if (e) throw new ActionError('加回产品失败:' + e.message);
+    }
+    const now2 = missing.length ? (await readCollection(req.ctx, cid, graphql)).ids : col.ids;
+    const target = [...v.ids.filter((id) => now2.includes(id)), ...now2.filter((id) => !v.ids.includes(id))];
+    const mv = movesFor(now2, target);
+    for (let i = 0; i < mv.length; i += 200) {
+      const d = await graphql(req.ctx, `mutation($id: ID!, $moves: [MoveInput!]!) { collectionReorderProducts(id: $id, moves: $moves) { job { id } userErrors { message } } }`,
+        { id: `gid://shopify/Collection/${cid}`, moves: mv.slice(i, i + 200) });
+      const e = d.collectionReorderProducts?.userErrors?.[0]; if (e) throw new ActionError('调整顺序失败:' + e.message);
+    }
+    recordVersion(req.ctx.shop, cid, target, { why: `回滚到 ${when} 那一版`, by: a.name, title: col.title });
+    // 这个合集正被某份清单接管着 → app 停手,免得下一分钟又排回去
+    const st = (s.colState || {})[cid];
+    if (st) { st.hold = 'rollback'; st.holdAt = Date.now(); }
+    const extra = now2.filter((id) => !v.ids.includes(id)).length;
+    const movedN = diffOrder(now2, target).moved.size;
+    appendLog(s, { action: 'edit', kind: 'pin', title: col.title, by: a.name,
+      note: `回滚到 ${when} 那一版:${movedN} 个换位置${missing.length ? `、${missing.length} 个加回合集` : ''}${extra ? `;${extra} 个后来才加进合集的排到最后(没删)` : ''}${st ? ';这个合集的清单接管已暂停' : ''}` });
+    replace(req.ctx.shop, s);
+    return { ok: true, moved: movedN, added: missing.length, extra, paused: !!st };
   })));
 
   // ---- 产品数 / 查产品 ----

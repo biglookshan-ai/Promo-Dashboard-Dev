@@ -11,6 +11,7 @@ import { getToken } from './token-store.js';
 import { withLock } from './sync.js';
 import { schedulerMessages, digestMessages, deliver } from './notifier.js';
 import { alignCollections } from './collection-order.js';
+import { historyRecorder } from './col-history.js';
 import { graphql } from './shopify.js';
 
 export const INTERVAL_MS = 60_000;
@@ -46,8 +47,10 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     // 合集排序:把手动合集真的对齐到「这一刻该有的顺序」(自动归类的合集跳过,由主题前台排)
     let col = { applied: [], restored: [], holds: [], failures: [], skipped: [] };
     if (token && collections) {
-      try { col = await collections({ shop, token }, state, { now, gql }); }
+      const record = historyRecorder(shop);
+      try { col = await collections({ shop, token }, state, { now, gql, record }); }
       catch (e) { col.failures.push({ message: String(e.message || e) }); }
+      record.flush();
       for (const a of col.applied) appendLog(state, { at: now, action: 'up', kind: 'pin', title: a.title, by: '定时器',
         note: `按「${a.pin}」排了店里的合集:${a.moved} 个产品换位置${a.removed ? `、${a.removed} 个临时移出` : ''}${a.added ? `、${a.added} 个加回来` : ''}` });
       for (const r of col.restored) appendLog(state, { at: now, action: 'down', kind: 'pin', title: r.title, by: '定时器',

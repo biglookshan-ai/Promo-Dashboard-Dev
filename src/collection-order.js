@@ -12,6 +12,7 @@
 //     不覆盖别人的改动,记日志 + 通知,等人处理。
 //   · 清单结束 / 暂停 / 删除 / 退回 → 下一轮自动还原,还原完清掉记录。
 import { itemStatus, campaignIndex } from './schedule-core.js';
+import { diffOrder } from './order-diff.js';
 
 export const nid = (x) => String(x ?? '').split('/').pop();
 const gid = (id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/Collection/${id}`);
@@ -65,13 +66,29 @@ export function restoreOrder(snapshotIds, currentIds) {
   return out;
 }
 
-// 只给「位置不对」的产品发 move(Shopify 的 move 是依次插入,所以边模拟边算)
+// 要发给 Shopify 的 move(依次插入):只动「最长递增子序列」以外的产品,每个插到它在目标里前一个产品的后面。
+// 这样把第 50 拖到第 20 只发 1 个 move;还原时把 3 个挪回原位也只发 3 个(不会因为前面挤了几个就把后面全部重排一遍)。
 export function movesFor(currentIds, wantIds) {
-  const want = wantIds.map(nid);
-  const inWant = new Set(want);
+  const inWant = new Set(wantIds.map(nid));
   const arr = currentIds.map(nid).filter((id) => inWant.has(id));
+  const inArr = new Set(arr);
+  const W = wantIds.map(nid).filter((id) => inArr.has(id)); // 只排两边都有的
+  const moving = diffOrder(arr, W).moved;
   const out = [];
-  want.forEach((id, pos) => {
+  W.forEach((id, t) => {
+    if (!moving.has(id)) return;
+    arr.splice(arr.indexOf(id), 1);
+    const pos = t === 0 ? 0 : arr.indexOf(W[t - 1]) + 1;
+    arr.splice(pos, 0, id);
+    out.push({ id: pgid(id), newPosition: String(pos) });
+  });
+  return arr.join() === W.join() ? out : greedyMoves(currentIds, W); // 保险:模拟出来不对就用逐个排的老办法
+}
+function greedyMoves(currentIds, W) {
+  const inW = new Set(W);
+  const arr = currentIds.map(nid).filter((id) => inW.has(id));
+  const out = [];
+  W.forEach((id, pos) => {
     const at = arr.indexOf(id);
     if (at === -1 || at === pos) return;
     arr.splice(at, 1); arr.splice(pos, 0, id);
@@ -136,7 +153,7 @@ async function addTo(ctx, id, products, gql) {
 // 跑一轮:把每个合集对齐到「这一刻该有的样子」。state.colState 记每个合集的接管情况。
 //   返回 { applied:[], restored:[], holds:[], failures:[], skipped:[] }
 const DAY = 86400_000;
-export async function alignCollections(ctx, state, { now = Date.now(), gql } = {}) {
+export async function alignCollections(ctx, state, { now = Date.now(), gql, record = () => {} } = {}) {
   const rep = { applied: [], restored: [], holds: [], failures: [], skipped: [] };
   state.colState ||= {};
   // 上次因为「没有改产品的权限」失败过 → 一天之内不再试(装了权限重新打开 app 会清掉)
@@ -163,6 +180,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql } = {
         if (same && !driftedFrom(st.wrote, col.ids)) continue; // 已经是想要的样子,什么都不用做
         if (same && driftedFrom(st.wrote, col.ids)) {          // 有人在后台改过 → 暂停接管,不覆盖
           st.hold = 'manual'; st.holdAt = now;
+          record(cid, col.ids, { why: '有人在 Shopify 后台改过顺序', title: col.title, pin: pin.name });
           rep.holds.push({ collection: cid, title: col.title, reason: 'manual', pin: pin.name });
           continue;
         }
@@ -172,6 +190,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql } = {
           rep.skipped.push({ collection: cid, title: col.title, pin: pin.name, why: 'too-many', n: probe.remove.length });
           continue;
         }
+        if (!st) record(cid, col.ids, { why: 'app 接管前的原样', title: col.title, pin: pin.name });
         const pinned = new Set((pin.products || []).map((p) => nid(p.id)));
         const stillOut = new Set(probe.remove);
         const back = (st?.removed || []).filter((id) => !stillOut.has(id));   // 上轮移出去、这轮该回来的
@@ -188,14 +207,18 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql } = {
         state.colState[cid] = { collection: cid, title: col.title, pinId: pin.id, pinName: pin.name, signature: sig(pin),
           snapshot, removed: d.remove, added: [...new Set([...(st?.added || []).filter((id) => pinned.has(id)), ...probe.add])],
           wrote: d.pinned, at: now };
-        rep.applied.push({ collection: cid, title: col.title, pin: pin.name, moved: mv.length, removed: d.remove.length, added: probe.add.length, back: back.length });
+        record(cid, d.order, { why: `按「${pin.name}」排`, title: col.title, pin: pin.name });
+        // 「换位置」只算原来就在合集里、被挪动的(新加进来的那几个单独算)
+        rep.applied.push({ collection: cid, title: col.title, pin: pin.name, moved: mv.filter((m) => !probe.add.includes(nid(m.id))).length, removed: d.remove.length, added: probe.add.length, back: back.length });
       } else {
         // 没有清单生效了 → 还原:移出去的加回来、我们加进去的移出去、顺序照快照
         await addTo(ctx, cid, st.removed || [], gql);
         await removeFrom(ctx, cid, st.added || [], gql);
         const col2 = (st.removed || []).length || (st.added || []).length ? await readCollection(ctx, cid, gql) : col;
-        const mv = movesFor(col2.ids, restoreOrder(st.snapshot, col2.ids));
+        const back = restoreOrder(st.snapshot, col2.ids);
+        const mv = movesFor(col2.ids, back);
         await reorder(ctx, cid, mv, gql);
+        record(cid, back, { why: `「${st.pinName}」结束,还原`, title: col.title, pin: st.pinName });
         rep.restored.push({ collection: cid, title: col.title, pin: st.pinName, moved: mv.length, added: (st.removed || []).length, removed: (st.added || []).length });
         delete state.colState[cid];
       }

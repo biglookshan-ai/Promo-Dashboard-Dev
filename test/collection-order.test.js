@@ -44,7 +44,7 @@ test('还原:照快照的顺序,后来加的排最后', () => {
 
 test('只给位置不对的产品发 move', () => {
   const mv = movesFor(['1', '2', '3', '4', '5'], ['4', '2', '1', '3', '5']);
-  assert.deepEqual(mv.map((m) => [m.id.split('/').pop(), m.newPosition]), [['4', '0'], ['2', '1']]);
+  assert.equal(mv.length, 2);
   // 照着发一遍应该真的变成想要的顺序
   const arr = ['1', '2', '3', '4', '5'];
   for (const m of mv) { const id = m.id.split('/').pop(); arr.splice(arr.indexOf(id), 1); arr.splice(+m.newPosition, 0, id); }
@@ -193,4 +193,23 @@ test('中途把合集外的产品从清单里删掉 → 下一轮从合集里移
   assert.equal(shop.ids.includes('99'), false);
   assert.deepEqual(shop.ids, ['3', '1', '2', '4', '5']);
   assert.deepEqual(state.colState['99'].added, []);
+});
+
+test('move 数量最少:把第 50 拖到第 20 只发 1 个;把挤到前面的 3 个挪回去只发 3 个', () => {
+  const B = Array.from({ length: 150 }, (_, i) => String(i + 1));
+  const apply = (cur, mv) => { const a = [...cur]; for (const m of mv) { const id = m.id.split('/').pop(); a.splice(a.indexOf(id), 1); a.splice(+m.newPosition, 0, id); } return a; };
+  const D = [...B]; const [x] = D.splice(49, 1); D.splice(19, 0, x);
+  const m1 = movesFor(B, D); assert.equal(m1.length, 1); assert.deepEqual(apply(B, m1), D);
+  const C = ['26', '27', 'x1', ...B.filter((id) => !['26', '27'].includes(id))]; // 前面插了 3 个
+  const m2 = movesFor(C, [...B, 'x1']); assert.equal(m2.length, 3); assert.deepEqual(apply(C, m2), [...B, 'x1']);
+});
+
+test('move 随机打乱也都能排对', () => {
+  let seed = 3; const rnd = (n) => (seed = (seed * 1103515245 + 12345) % 2147483648) % n;
+  const apply = (cur, mv) => { const a = [...cur]; for (const m of mv) { const id = m.id.split('/').pop(); a.splice(a.indexOf(id), 1); a.splice(+m.newPosition, 0, id); } return a; };
+  for (let t = 0; t < 300; t++) {
+    const cur = Array.from({ length: 25 }, (_, i) => String(i + 1)); const want = [...cur];
+    for (let k = 0; k < 1 + rnd(6); k++) { const [y] = want.splice(rnd(want.length), 1); want.splice(rnd(want.length + 1), 0, y); }
+    assert.deepEqual(apply(cur, movesFor(cur, want)), want);
+  }
 });

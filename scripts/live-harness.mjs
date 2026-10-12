@@ -255,7 +255,8 @@ function sessionToken(sub) {
   return `${h}.${p}.${crypto.createHmac('sha256', SECRET).update(`${h}.${p}`).digest('base64url')}`;
 }
 const pickC = cat.collections.filter((c) => ['dzofilm-vespid-prime-cine-lens', 'cinediskpro-sale', 'clearance'].includes(c.handle));
-const pickP = cat.products.filter((p) => p.tags.includes('New Gear')).slice(0, 2);
+// 选产品:两个合集里已有的 + 一个肯定不在 DZOFILM 合集里的(试「合集外的产品」)
+const pickP = [...cat.products.filter((p) => p.tags.includes('New Gear')).slice(0, 2), cat.products.find((p) => /blackmagic/i.test(p.handle))].filter(Boolean);
 const PICK = {
   collection: pickC.map((c) => ({ id: `gid://shopify/Collection/${c.id}`, handle: c.handle, title: c.title })),
   product: pickP.map((p) => ({ id: `gid://shopify/Product/${p.id}`, handle: p.handle, title: p.title, images: p.image ? [{ originalSrc: p.image }] : [] })),

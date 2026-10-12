@@ -261,8 +261,10 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
   } else if (it.kind === 'pin') {
     Object.assign(f, {
       name: str(it.name || it.collection?.title), collection: toGid('Collection', it.collection?.id) || '',
-      products: list((it.products || []).map((p) => toGid('Product', p.id)).filter(Boolean)),
-      hidden_products: list((it.hidden || []).map((p) => toGid('Product', p.id)).filter(Boolean)), only_listed: it.onlyListed ? 'true' : 'false',
+      // 主题的 Liquid 一次只读得到列表前 50 个(Shopify 列表字段最多 128 个),所以只写前 50;
+      // 真的改店里合集时 app 用的是自己存的完整清单,不受这个限制
+      products: list((it.products || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)),
+      hidden_products: list((it.hidden || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)), only_listed: it.onlyListed ? 'true' : 'false',
       show_countdown: it.countdown ? 'true' : 'false', badge_text: str(it.badge),
     });
   }
