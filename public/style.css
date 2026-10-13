@@ -1142,3 +1142,9 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .pg__pr b { font-weight: 600; color: var(--text); }
 .pg__pr b.is-sale { color: #d10000; }
 .pg__pr em { font-style: normal; font-size: 11px; color: var(--text-3); }
+.pg__card--ph { cursor: default; }
+.pg__card--ph .pg__img, .pg__card--ph .pg__t, .pg__card--ph .pg__pr { background: #eeeef1; border-radius: 6px; }
+.pg__card--ph .pg__t { height: 2.6em; }
+.pg__card--ph .pg__pr { height: 14px; width: 60%; }
+@media (prefers-reduced-motion: no-preference) { .pg__card--ph { animation: pgph 1.2s ease-in-out infinite alternate; } }
+@keyframes pgph { from { opacity: 1; } to { opacity: .55; } }

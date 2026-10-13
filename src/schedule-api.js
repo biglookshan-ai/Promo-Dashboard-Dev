@@ -286,6 +286,9 @@ export function scheduleRouter() {
     return { rep };
   })));
 
+  // ---- 按 id 取产品的名字、图、价格(合集排序网格里不在合集中的产品用)----
+  r.get('/products-info', wrap(async (req) => ({ products: await productsInfo(req.ctx, String(req.query.ids || '').split(',').filter(Boolean).slice(0, 250)) })));
+
   // ---- 合集顺序的历史版本 / 回滚 ----
   r.get('/col-history', wrap((req) => {
     const cid = colNid(req.query.id);

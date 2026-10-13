@@ -1735,10 +1735,21 @@
       wxAll = { title: c.title, demo: true, truncated: false, total: n,
         products: Array.from({ length: n }, (_, i) => { const p = pool[(seed + i * 11) % pool.length]; return { id: p.id, title: p.title, handle: p.handle, image: p.image }; }) };
     } else {
+      // 读完之前只画占位卡片,读完(连价格)一次画出来 —— 不要先画一遍没价格的卡片再跳
       wxBusy = true; redraw && redraw();
       try { wxAll = await api('GET', `/api/schedule/collection-products?id=${encodeURIComponent(c.id)}`); }
       catch (e) { wxAll = { error: e.message, products: [] }; }
+      buildWx();
+      // 网格里有、但现在不在这个合集里的产品(设成不显示后真的移出去了 / 合集外加进来的),合集的产品列表里没有它们的价格 → 单独补
+      const missing = [...new Set([...wx.order, ...wx.hidden].filter((p) => p.price == null).map(pidOf))];
+      if (missing.length && !wxAll.error) {
+        try {
+          const { products } = await api('GET', `/api/schedule/products-info?ids=${missing.slice(0, 250).join(',')}`);
+          for (const x of products) { const p = wx.info.get(pidOf(x)); if (p) Object.assign(p, { price: x.price, compareAt: x.compareAt, off: x.off, from: x.from, image: p.image || x.image, draft: x.draft }); }
+        } catch { /* 补不到价格不影响排序 */ }
+      }
       wxBusy = false;
+      return redraw && redraw();
     }
     buildWx();
     redraw && redraw();
@@ -1827,7 +1838,8 @@
         <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button></div>${colNote}</div>
       ${window.cgpCanSee && window.cgpCanSee('price') && MODE === 'live' ? `<div class="fld"><span>从改价计划导入 <em>Flash 当天改价的那批产品,一键放到最前面</em></span>
         <div id="wx-plans">${wxPlansHtml()}</div></div>` : ''}
-      ${!wx.collection ? '<p class="muted">选了合集之后,这里会用网格列出合集里现在的全部产品,可以随便拖到任意位置。</p>' : `
+      ${!wx.collection ? '<p class="muted">选了合集之后,这里会用网格列出合集里现在的全部产品,可以随便拖到任意位置。</p>'
+        : wxBusy ? `<div class="pg">${Array.from({ length: 10 }, () => '<div class="pg__card pg__card--ph"><span class="pg__img"></span><span class="pg__t"></span><span class="pg__pr"></span></div>').join('')}</div>` : `
       <div class="pg__bar">
         <div class="pg__legend"><span class="lg lg--new"></span>新加 <span class="lg lg--moved"></span>换了位置 <span class="lg lg--cut"></span>这段时间不显示 <span class="lg"></span>没动
           <b class="pg__sum">${esc(sum)}</b></div>
