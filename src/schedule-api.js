@@ -10,7 +10,7 @@ import { uploadImage } from './files.js';
 import { scopeCounts, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
-import { actorOf } from './members.js';
+import { actorOf, pagesOf, isAdmin } from './members.js';
 import { larkEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
@@ -74,7 +74,8 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
   return {
     mode: 'live', me, setup, store, site, themePin, // themePin:正在用的主题能不能在前台按清单排(null = 不知道)
     // 飞书模式下「成员」代替旧的 Shopify 员工名单(名字 / 角色给页面显示用)
-    staff: larkEnabled() ? (state.members || []).filter((m) => m.status === 'active').map(actorOf) : state.staff,
+    // pages:每人能看哪些页面(分工里选审批人 / 负责人时,只列看得到这类内容的人)
+    staff: larkEnabled() ? (state.members || []).filter((m) => m.status === 'active').map((m) => ({ ...actorOf(m), avatar: m.avatar || '', admin: isAdmin(m), pages: pagesOf(state, m) })) : state.staff,
     lark: larkEnabled(),
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
     pins: state.pins || [],
@@ -83,7 +84,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
       { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, at: c.at }])),
     sortFlags: Object.fromEntries(Object.entries(state.sortFlags || {}).map(([k, f]) => [k, { pinName: f.pinName, title: f.title }])),
     pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
-    settings: { notify: state.settings.notify, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
+    settings: { notify: state.settings.notify, approvers: state.settings.approvers || {}, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
     collections: [], products: [], tagCounts: {},
   };
 }
@@ -161,14 +162,26 @@ export function scheduleRouter() {
   // ---- 设置 / 成员 ----
   r.post('/settings', wrap(async (req) => withLock(req.ctx.shop, async () => {
     const s = load(req.ctx.shop); const a = needApprover(s, req);
-    const { larkWebhook, larkSecret, notify } = req.body || {};
+    const { larkWebhook, larkSecret, notify, approvers } = req.body || {};
+    // 各类内容的默认审批人:只能选启用中的成员;空 = 管理员审批
+    if (approvers) {
+      const ok = new Set((s.members || []).filter((m) => m.status === 'active').map((m) => m.id));
+      const next = {};
+      for (const k of Object.keys(LIST)) {
+        const id = approvers[k];
+        if (id && !ok.has(id)) throw new ActionError('默认审批人只能选启用中的成员');
+        if (id) next[k] = id;
+      }
+      s.settings.approvers = next;
+      appendLog(s, { action: 'edit', kind: 'system', title: '设置', note: '修改了各类内容的默认审批人', by: a.name });
+    }
     if (larkWebhook !== undefined) {
       if (larkWebhook && !isLarkWebhook(larkWebhook)) throw new ActionError('飞书 webhook 地址格式不对,应该是 https://open.larksuite.com/open-apis/bot/v2/hook/… 或 open.feishu.cn 的');
       s.settings.larkWebhook = String(larkWebhook || '').trim();
     }
     if (larkSecret !== undefined) s.settings.larkSecret = String(larkSecret || '').trim();
     if (notify) s.settings.notify = { ...s.settings.notify, ...Object.fromEntries(Object.entries(notify).map(([k, v]) => [k, !!v])) };
-    appendLog(s, { action: 'edit', kind: 'system', title: '设置', note: '修改了飞书通知设置', by: a.name });
+    if (larkWebhook !== undefined || larkSecret !== undefined || notify) appendLog(s, { action: 'edit', kind: 'system', title: '设置', note: '修改了飞书通知设置', by: a.name });
     replace(req.ctx.shop, s); return view(req, s);
   })));
   r.post('/staff', wrap(async (req) => withLock(req.ctx.shop, async () => {

@@ -4,7 +4,7 @@
 // 用到 app.js / registry.js 的全局:$ $$ esc toast showSection。整个文件包在 IIFE 里,
 // 避免和 registry.js 的顶层 const(svg / ICONS …)重名。
 (() => {
-  const DEMO_KEY = 'cgp-schedule-demo-v4'; // 数据结构变了就升版本,旧的演示数据自动作废
+  const DEMO_KEY = 'cgp-schedule-demo-v5'; // 数据结构变了就升版本,旧的演示数据自动作废
   const DAY = 86400000;
   const TZ = 'Europe/London';
   const ENDING_DAYS = 3; // 下架前几天开始提醒
@@ -134,8 +134,17 @@
   const byId = (id) => all().find((x) => x.id === id);
   const camp = (id) => S.campaigns.find((c) => c.id === id);
   const me = () => S.staff.find((u) => u.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' };
-  const isApprover = () => me().role === 'approver';
+  const isApprover = () => me().role === 'approver'; // 管理员
   const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
+  // ---- v3 分工:每条内容的负责人 / 审批人 / 抄送 / 截止(规则在 /lib/schedule-actions.js)----
+  const appr = () => ((S.settings ||= {}).approvers ||= {});
+  const effAppr = (it) => A.effApprover(S, it);
+  const canAppr = (it) => A.canApprove(me(), S, it);
+  const canOrd = (kind) => A.canOrder(me(), S, kind);
+  const apprName = (it) => { const a = effAppr(it); return a ? who(a) : '管理员'; };
+  // 能被选进分工的人:正式数据 = 看得到这类内容所在页面的成员;演示 = 名单里所有人
+  const PAGE_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pmodules', campaign: 'campaigns' };
+  const peopleFor = (kind) => S.staff.filter((u) => !u.pages || u.admin || u.pages.includes(PAGE_OF[kind]));
   const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', price: '改价' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
@@ -686,7 +695,7 @@
         <h3>${editing ? '调整轮播顺序' : '首页轮播顺序'}</h3>
         <span class="muted">${editing ? '拖动卡片换位置,点「保存顺序」才生效'
           : `看哪一刻:<b>${bnF.at == null ? '现在' : `${fDT(T)} · ${relDay(T)}`}</b>`}
-          ${editing ? `<button class="btn btn-sm" data-ordact="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-ordact="save" type="button">${isApprover() ? '保存顺序' : '提交顺序审核'}</button>`
+          ${editing ? `<button class="btn btn-sm" data-ordact="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-ordact="save" type="button">${canOrd('banner') ? '保存顺序' : '提交顺序审核'}</button>`
             : `<button class="btn btn-sm" data-ordact="edit" type="button" ${pend ? 'disabled' : ''}>${I.sort}调整顺序</button>`}</span>
       </div>
       ${editing ? '' : tlHtml('bn', points, bnF.at) + tlChanges(points, bnF.at)}
@@ -768,7 +777,7 @@
         </button>`).join('')}</div>
       </section>
       <div class="fbar"><div class="ftabs">${editing ? '<b class="fbar__t">调整轮播顺序</b>' : tabsHtml(S.topbar, tbF.st)}</div>
-        <span class="muted">${editing ? `拖动左侧把手换位置,点「保存顺序」才生效 <button class="btn btn-sm" data-tbord="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-tbord="save" type="button">${isApprover() ? '保存顺序' : '提交顺序审核'}</button>`
+        <span class="muted">${editing ? `拖动左侧把手换位置,点「保存顺序」才生效 <button class="btn btn-sm" data-tbord="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-tbord="save" type="button">${canOrd('topbar') ? '保存顺序' : '提交顺序审核'}</button>`
           : `<button class="btn btn-sm" data-tbord="edit" type="button" ${pend ? 'disabled' : ''}>${I.sort}调整顺序</button>`}</span></div>
       ${pend ? `<div class="note note--warn">${esc(who(S.pendingOrder.by))} 提交了新的顶栏顺序,等审核中。</div>` : ''}
       <section class="panel">
@@ -1195,10 +1204,13 @@
     module: '模块', title2: '标题第二段', titleColor: '第一段颜色', title2Color: '第二段颜色', tabActiveBg: '页签高亮底色', tabActiveText: '页签高亮文字', tabs: '页签', isDefault: '平时版本',
     start: '开始', end: '结束', campaign: '所属活动',
     collection: '合集', onlyListed: '只显示前 N 个', hidden: '不显示的产品', fullOrder: '完全按清单顺序', larkLinks: '关联的飞书任务',
+    owner: '负责人', approver: '审批人', cc: '抄送', due: '截止时间',
   };
   const showVal = (k, v) => {
     if (v == null || v === '') return '<span class="muted">(空)</span>';
-    if (k === 'start' || k === 'end') return esc(fDT(v));
+    if (k === 'start' || k === 'end' || k === 'due') return esc(fDT(v));
+    if (k === 'owner' || k === 'approver') return esc(who(v));
+    if (k === 'cc') return (v || []).length ? esc(v.map(who).join('、')) : '<span class="muted">(空)</span>';
     if (k === 'campaign') return esc((camp(v) || {}).name || v);
     if (['countdown', 'onlyListed', 'fullOrder', 'isDefault'].includes(k)) return v ? '开' : '关';
     if (k === 'collection') return esc(v.title || v.id || '');
@@ -1304,7 +1316,7 @@
           <table class="rvdiff ihdiff"><tbody>${Object.entries(v.pending).filter(([k]) => FIELD[k]).map(([k, x]) => `<tr><td>${FIELD[k]}</td><td>${showVal(k, x)}</td></tr>`).join('')}</tbody></table>` : ''}`;
       // 按钮
       const canRollback = cur && diffKeys.length;
-      const mode = !cur ? null : cur.state === 'approved' ? (isApprover() ? 'publish' : 'submit') : cur.state === 'pending' ? 'submit' : 'draft';
+      const mode = !cur ? null : cur.state === 'approved' ? (canAppr(cur) ? 'publish' : 'submit') : cur.state === 'pending' ? 'submit' : 'draft';
       $('#ih-tip').textContent = !cur ? '这条内容已经删掉了,可以复制成一条新的(恢复)' : canRollback
         ? (mode === 'publish' ? '你是审批人:回滚马上生效' : mode === 'submit' ? '回滚会提交给审批人,批准前线上保持现在的内容' : '回滚后存为草稿') : '';
       $('#ih-acts').innerHTML = `<button class="btn" type="button" id="ih-copy">${cur ? '复制成新的' : '复制成新的(恢复)'}</button>
@@ -1418,8 +1430,79 @@
   }
   window.cgpPlanHistory = (id) => openPlanHistory(id);
 
+  // ================= 我的工作 =================
+  // 等我审批 / 要我处理(被退回、快到截止)/ 我负责的 / 我提交的 / 抄送我的;改价计划也算(能看改价页的人)
+  let mwPrice = null; // { at, plans, me }
+  async function loadMwPrice(force) {
+    if (MODE !== 'live' || !window.cgpCanSee?.('price')) return;
+    if (!force && mwPrice && now() - mwPrice.at < 60000) return;
+    try { const r = await api('GET', '/api/price/state'); mwPrice = { at: now(), plans: r.plans || [], me: r.me || {} }; }
+    catch { mwPrice = { at: now(), plans: [], me: {} }; }
+    renderMyWork();
+  }
+  const planEnded = (p) => p.stopped || p.done || (p.state === 'approved' && p.kind === 'window' && (p.slots || []).every((x) => x.end != null && x.end <= now()));
+  function myWork() {
+    const mid = me().id; const admin = isApprover();
+    const out = { approve: [], fix: [], own: [], submitted: [], cc: [] };
+    for (const it of all()) {
+      if (it.isDefault) continue;
+      const ended = status(it) === 'ended';
+      const waiting = it.state === 'pending' || !!it.pendingChange;
+      const subBy = it.pendingChange ? it.pendingChange.by : it.by;
+      const ea = effAppr(it);
+      const row = { kind: it.kind, id: it.id, title: titleOf(it), it };
+      if (waiting && subBy !== mid && (ea ? ea === mid : admin)) out.approve.push({ ...row, why: `${who(subBy)} ${fAgo(it.pendingChange?.at || it.submittedAt || now())}提交${it.pendingChange ? '了修改' : ''}` });
+      const mine = it.owner === mid || (!it.owner && it.by === mid);
+      const dueSoon = it.due != null && ['new', 'draft', 'rejected'].includes(it.state) && it.due - now() <= DAY;
+      if (mine && (it.state === 'rejected' || (it.lastReject && !it.pendingChange) || dueSoon)) {
+        out.fix.push({ ...row, why: it.state === 'rejected' ? `被退回:${it.rejectNote || '(没写原因)'}` : it.lastReject && !it.pendingChange ? `修改被退回:${it.lastReject.note || ''}` : '', due: it.due, warn: true });
+      } else if (it.owner === mid && !ended) out.own.push({ ...row, due: ['new', 'draft', 'rejected'].includes(it.state) ? it.due : null }); // 交了就不再提截止
+      if (waiting && subBy === mid) out.submitted.push({ ...row, why: `等「${apprName(it)}」审批` });
+      if ((it.cc || []).includes(mid) && !ended) out.cc.push({ ...row, why: it.owner ? `负责人 ${who(it.owner)}` : '' });
+    }
+    for (const p of mwPrice?.plans || []) {
+      const ended = planEnded(p); const waiting = p.state === 'pending' || !!p.pendingChange;
+      const subBy = p.pendingChange?.by || p.submittedBy;
+      const row = { kind: 'price', id: p.id, title: p.name || '未命名改价计划', plan: p };
+      if (waiting && subBy !== mid && (p.approver ? p.approver === mid : mwPrice.me.admin)) out.approve.push({ ...row, why: `${who(subBy)} 提交${p.pendingChange ? '了修改' : ''}` });
+      const mine = p.owner === mid || (!p.owner && (p.submittedBy || p.createdBy) === mid);
+      if (mine && p.state === 'rejected') out.fix.push({ ...row, why: `被退回:${p.rejectNote || '(没写原因)'}`, warn: true });
+      else if (p.owner === mid && !ended) out.own.push(row);
+      if (waiting && subBy === mid) out.submitted.push({ ...row, why: `等「${p.approver ? who(p.approver) : '管理员'}」审批` });
+      if ((p.cc || []).includes(mid) && !ended) out.cc.push({ ...row, why: p.owner ? `负责人 ${who(p.owner)}` : '' });
+    }
+    return out;
+  }
+  const PSTAT = { pending: '待审核', rejected: '已退回', draft: '草稿' };
+  function mwRow(r) {
+    const due = r.due != null ? `<span class="tag ${r.due < now() ? 'tag--danger' : r.due - now() <= DAY ? 'tag--warn' : ''}">截止 ${esc(relDay(r.due))} ${esc(fmt(r.due, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }))}${r.due < now() ? ' · 已过' : ''}</span>` : '';
+    const st = r.it ? badge(r.it) : `<span class="stb stb--${r.plan.state === 'approved' ? (planEnded(r.plan) ? 'ended' : 'live') : r.plan.state}"><span class="dot"></span>${PSTAT[r.plan.state] || (planEnded(r.plan) ? '已结束' : '已批准')}</span>`;
+    const when = r.it ? winText(r.it) : (r.plan.slots || []).length ? `${fDT(Math.min(...r.plan.slots.map((x) => x.start)))} 起` : '';
+    return `<button type="button" class="mwrow ${r.warn ? 'is-warn' : ''}" ${r.it ? `data-open="${esc(r.id)}"` : `data-price="${esc(r.id)}"`}>
+      <span class="mwrow__h">${kindChip(r.kind)}<b>${esc(r.title)}</b>${st}${due}</span>
+      <span class="mwrow__s muted">${r.why ? `${esc(r.why)} · ` : ''}${when}</span></button>`;
+  }
+  function renderMyWork() {
+    const root = $('#mw-root'); if (!root || !S) return;
+    const w = myWork();
+    const n = w.approve.length + w.fix.length;
+    const b = $('#n-mw'); if (b) { b.hidden = !n; b.textContent = n; }
+    if (!isActive('mywork')) return;
+    const box = (title, hint, rows, emptyMsg) => `<section class="panel mwbox"><div class="panel__h"><h3>${title} <span class="muted">${rows.length}</span></h3><span class="muted">${hint}</span></div>
+      ${rows.length ? `<div class="mwlist">${rows.map(mwRow).join('')}</div>` : `<p class="muted">${emptyMsg}</p>`}</section>`;
+    root.innerHTML = `${pageHead('我的工作', `${esc(me().name)} 的待办:要你批的、要你改的、你负责和关注的。点一条直接打开。`)}
+      <div class="mwgrid">
+        ${box('✅ 等我审批', '你是审批人(没指定审批人的由管理员批)', w.approve, '没有等你批的 👍')}
+        ${box('🛠 要我处理', '被退回的、明天截止或已过截止还没提交的', w.fix, '没有要处理的')}
+        ${box('📌 我负责的', '负责人是你、还没结束的', w.own, '还没有你负责的内容')}
+        ${box('⏳ 我提交的', '等别人审批', w.submitted, '没有在等审批的')}
+        ${box('👀 抄送我的', '只通知,不用你操作', w.cc, '没有抄送给你的')}
+      </div>
+      ${MODE === 'live' && window.cgpCanSee?.('price') && !mwPrice ? '<p class="muted">改价计划读取中…</p>' : ''}`;
+  }
+
   function renderReviews() {
-    const list = pendingList();
+    const list = pendingList().sort((a, b) => canAppr(b) - canAppr(a)); // 轮到我批的排前面
     const recent = S.log.filter((l) => ['approve', 'reject'].includes(l.action)).slice(0, 8);
     const card = (it) => {
       const isChange = !!it.pendingChange;
@@ -1447,12 +1530,12 @@
       }
       return `<div class="rvcard">
         <div class="rvcard__h">${kindChip(it.kind)}<b>${isChange ? '修改' : '新建'}:${esc(titleOf(it))}</b>
-          <span class="muted">${esc(who(by))} · ${at ? fAgo(at) : ''}提交</span></div>
+          <span class="muted">${esc(who(by))} · ${at ? fAgo(at) : ''}提交 · 审批人 ${esc(apprName(it))}${it.owner ? ` · 负责人 ${esc(who(it.owner))}` : ''}</span></div>
         ${body}
         <div class="rvcard__act">
           <button class="btn btn-sm" data-open="${it.id}" type="button">查看详情</button>
-          ${isApprover() ? `<button class="btn btn-sm btn-danger" data-reject="${it.id}" type="button">退回</button>
-            <button class="btn btn-sm btn-primary" data-approve="${it.id}" type="button">批准</button>` : '<span class="muted">等待审核人处理</span>'}
+          ${canAppr(it) ? `<button class="btn btn-sm btn-danger" data-reject="${it.id}" type="button">退回</button>
+            <button class="btn btn-sm btn-primary" data-approve="${it.id}" type="button">批准</button>` : `<span class="muted">等「${esc(apprName(it))}」审批</span>`}
         </div>
       </div>`;
     };
@@ -1465,11 +1548,11 @@
       return `<div class="rvcard">
         <div class="rvcard__h">${kindChip(o.kind)}<b>修改:${o.kind === 'banner' ? '首页轮播顺序' : '顶栏轮播顺序'}</b><span class="muted">${esc(who(o.by))} · ${fAgo(o.at)}提交</span></div>
         <div class="muted">现在</div>${strip(o.before)}<div class="muted">改成</div>${strip(o.ids)}
-        <div class="rvcard__act">${isApprover() ? `<button class="btn btn-sm btn-danger" data-reject="__order" type="button">退回</button><button class="btn btn-sm btn-primary" data-approve="__order" type="button">批准</button>` : '<span class="muted">等待审核人处理</span>'}</div>
+        <div class="rvcard__act">${canOrd(o.kind) ? `<button class="btn btn-sm btn-danger" data-reject="__order" type="button">退回</button><button class="btn btn-sm btn-primary" data-approve="__order" type="button">批准</button>` : `<span class="muted">等「${esc(appr()[o.kind] ? who(appr()[o.kind]) : '管理员')}」审批</span>`}</div>
       </div>`;
     };
     $('#rv-root').innerHTML = `
-      ${pageHead('审核', isApprover() ? '同事提交的新内容和修改。批准后按时间自动上线;退回会附上你的意见。' : '你提交的内容在这里等审核人处理。')}
+      ${pageHead('审核', '所有等审批的新内容和修改。轮到你批的排在前面,有「批准 / 退回」按钮;批准后按时间自动上线,退回会附上你的意见。')}
       ${orderCardRv()}
       ${list.length ? list.map(card).join('') : S.pendingOrder ? '' : empty('没有待审核的内容 👍')}
       <section class="panel"><div class="panel__h"><h3>最近的审核记录</h3></div>
@@ -1596,7 +1679,7 @@
   }
 
   function renderSettings() {
-    const N = S.settings.notify;
+    const N = S.settings.notify; if (N.due === undefined) N.due = true;
     const live = MODE === 'live';
     const larkOn = !!window.CGP_ME?.larkEnabled; // 开了飞书登录:成员管理和数据模式无关,一直显示
     const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''} ${live && !isApprover() ? 'disabled' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
@@ -1623,6 +1706,12 @@
             <select class="sel sel--sm" data-role="${u.id}" ${live && !isApprover() ? 'disabled' : ''}><option value="approver" ${u.role === 'approver' ? 'selected' : ''}>审核人</option><option value="editor" ${u.role === 'editor' ? 'selected' : ''}>编辑</option></select></div>`).join('')}
         </section>`}
         <section class="panel">
+          <div class="panel__h"><h3>默认审批人</h3><span class="muted">每类内容由谁审批</span></div>
+          <p class="muted">一条内容没单独选审批人时,就由这里设的人审批;这里也没设 = 管理员审批。审批人自己提交的直接生效,轮播顺序也由他批。</p>
+          ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: '合集排序', campaign: '活动' })[k]}</span>
+            <select class="sel sel--sm" data-defappr="${k}" ${live && !isApprover() ? 'disabled' : ''}><option value="">管理员审批</option>${peopleFor(k).map((u) => `<option value="${esc(u.id)}" ${appr()[k] === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>`).join('')}
+        </section>
+        <section class="panel">
           <div class="panel__h"><h3>飞书通知</h3>${live ? (S.settings.larkWebhookSet ? '<span class="tag tag--ok">已连接</span>' : '<span class="tag tag--warn">未设置</span>') : ''}</div>
           <p class="muted">在飞书群里:设置 → 群机器人 → 添加机器人 → 自定义机器人,复制它的 webhook 地址粘贴到这里。建议同时开「签名校验」,把密钥也填上。</p>
           <label class="fld"><span>群机器人 Webhook 地址</span>
@@ -1631,12 +1720,13 @@
             <input class="inp" id="st-secret" type="password" placeholder="${live && S.settings.larkSecretSet ? '已设置,要换就粘贴新的' : '没开签名校验就留空'}" ${live && !isApprover() ? 'disabled' : ''}/></label>
           ${live && isApprover() ? '<button class="btn btn-sm" id="st-hook-save" type="button">保存飞书设置</button>' : ''}
           <div class="tgls">
-            ${tg('submit', '有人提交审核', '通知审核人')}
-            ${tg('decision', '批准 / 退回', '通知提交人,附退回意见')}
+            ${tg('submit', '有人提交审核', '私信这条内容的审批人;群里也发')}
+            ${tg('decision', '批准 / 退回', '私信提交人、负责人和抄送的人,附退回意见')}
             ${tg('dayBefore', '上线前一天提醒', '每天 10:00 汇总明天要上线的,没批准的会标出来')}
             ${tg('endingSoon', `下架前 ${ENDING_DAYS} 天提醒`, '每天 10:00 汇总快到期的 Banner / 公告 / 活动,方便决定延长还是准备替换')}
-            ${tg('upDown', '上线 / 下线', '定时器每次自动切换都通知')}
-            ${tg('unapproved', '到点还没批准', '内容没按时上线时提醒审核人')}
+            ${tg('upDown', '上线 / 下线', '定时器每次自动切换都通知;负责人和抄送的人收到私信')}
+            ${tg('unapproved', '到点还没批准', '快到上线时间还没批时私信审批人')}
+            ${tg('due', '截止提醒', '截止前一天、过了截止还没提交,私信负责人(过期也告诉审批人)')}
             ${tg('failure', '定时切换失败', '附错误原因;同一小时只报一次')}
           </div>
           <button class="btn btn-sm" id="st-test" type="button" ${live && !isApprover() ? 'disabled' : ''}>发送测试消息</button>
@@ -1664,6 +1754,7 @@
       $('#st-myname-save')?.addEventListener('click', () => post('/api/schedule/staff', { id: S.me, name: $('#st-myname').value }, '名字已保存'));
       $$('[data-role]').forEach((el) => el.addEventListener('change', () => post('/api/schedule/staff', { id: el.dataset.role, role: el.value }, '角色已更新')));
       $$('[data-notify]').forEach((c) => c.addEventListener('change', () => post('/api/schedule/settings', { notify: { [c.dataset.notify]: c.checked } })));
+      $$('[data-defappr]').forEach((el) => el.addEventListener('change', () => post('/api/schedule/settings', { approvers: { ...appr(), [el.dataset.defappr]: el.value || null } }, '默认审批人已保存')));
       $('#st-hook-save')?.addEventListener('click', () => {
         const body = {}; const h = $('#st-hook').value.trim(), k = $('#st-secret').value.trim();
         if (h) body.larkWebhook = h; if (k) body.larkSecret = k;
@@ -1675,6 +1766,7 @@
       $('#st-me')?.addEventListener('change', (e) => { S.me = e.target.value; ord.banner = null; ord.topbar = null; save(); renderAll(); toast(`现在的身份:${me().name} · ${isApprover() ? '审核人' : '编辑'}`); });
       $$('[data-role]').forEach((el) => el.addEventListener('change', () => { S.staff.find((u) => u.id === el.dataset.role).role = el.value; save(); renderAll(); }));
       $$('[data-notify]').forEach((c) => c.addEventListener('change', () => { N[c.dataset.notify] = c.checked; save(); }));
+      $$('[data-defappr]').forEach((el) => el.addEventListener('change', () => { appr()[el.dataset.defappr] = el.value || null; save(); renderAll(); toast('默认审批人已保存(演示)'); }));
       $('#st-hook').addEventListener('change', (e) => { S.settings.larkWebhook = e.target.value.trim(); save(); toast('已保存 Webhook 地址(演示)'); });
       $('#st-test').addEventListener('click', () => toast('演示模式:不会真的发送。正式版会往飞书群发一条测试消息。'));
     }
@@ -1855,7 +1947,7 @@
   }
 
   function newItem(kind, preset = {}) {
-    const baseIt = { kind, state: 'new', by: S.me, campaign: preset.campaign || null, paused: false, pendingChange: null };
+    const baseIt = { kind, state: 'new', by: S.me, owner: S.me, campaign: preset.campaign || null, paused: false, pendingChange: null };
     if (kind === 'banner') return { ...baseIt, id: rid('b-'), image: '', title: '', subtitle: '', description: '', button1_text: 'Shop Now', button1_url: '', button2_text: '', button2_url: '', tag: 'new', order: S.banners.length, start: preset.campaign ? null : dayStart(1), end: null };
     if (kind === 'topbar') return { ...baseIt, id: rid('t-'), emoji: '📣', text: '', link: '', category: '公告', order: S.topbar.length, start: null, end: null };
     if (kind === 'tbstyle') return { ...baseIt, id: rid('s-'), name: '', bg: '#9b1c1c', color: '#ffffff', accent: '#f5d06f', effect: 'snow', decoLeft: '🎄', decoRight: '', priority: 10, start: preset.campaign ? null : dayStart(7), end: preset.campaign ? null : dayStart(14) };
@@ -2139,6 +2231,23 @@
   }
 
   const larkEdHtml = () => (ed.larkLinks.length ? `<div class="chips">${ed.larkLinks.map((l, i) => `<span class="chip"><span class="chip__t">${esc(l.label || '飞书任务')}</span><a class="lk" href="${esc(l.url)}" target="_blank" rel="noopener">打开↗</a><button type="button" class="chip__x" data-lk="rm" data-i="${i}" aria-label="移除">${I.x}</button></span>`).join('')}</div>` : '<span class="muted">还没关联</span>');
+  // 分工:负责人 / 审批人 / 截止 / 抄送(所有内容都有,放在表单最后)
+  function assignHtml(it) {
+    if (it.isDefault) return '';
+    const P = peopleFor(it.kind); const mine = me().id;
+    const def = appr()[it.kind];
+    const opt = (u, sel) => `<option value="${esc(u.id)}" ${sel === u.id ? 'selected' : ''}>${esc(u.name)}${u.admin || u.role === 'approver' ? '(管理员)' : ''}</option>`;
+    // 不是管理员的人不能把自己设成审批人(除非他本来就是这类内容的默认审批人,或已经是这条的审批人)
+    const apprList = P.filter((u) => isApprover() || u.id !== mine || def === mine || it.approver === mine);
+    return `<div class="fld asg"><span>分工 <em>审批人不选 = ${def ? `这类内容的默认审批人「${esc(who(def))}」` : '管理员审批'};审批人自己提交直接生效</em></span>
+      <div class="asg__row">
+        <label class="asg__f">负责人<select class="sel" id="asg-owner"><option value="">不指定</option>${P.map((u) => opt(u, it.owner)).join('')}</select></label>
+        <label class="asg__f">审批人<select class="sel" id="asg-approver"><option value="">${def ? `默认:${esc(who(def))}` : '管理员审批'}</option>${apprList.map((u) => opt(u, it.approver)).join('')}</select></label>
+        <label class="asg__f" title="做好并提交的时间;快到了 / 过了还没提交会私信负责人">截止(可不填)<input class="inp" type="datetime-local" id="asg-due" value="${toInput(it.due)}"/></label>
+      </div>
+      <div class="asg__cc"><span class="muted">抄送(只通知,不能批准):</span>${P.filter((u) => u.id !== it.owner).map((u) => `<label class="asg__ck"><input type="checkbox" data-asg-cc value="${esc(u.id)}" ${(it.cc || []).includes(u.id) ? 'checked' : ''}/>${esc(u.name)}</label>`).join('') || '<span class="muted">没有别的成员</span>'}</div>
+    </div>`;
+  }
   function formHtml(it) {
     if (it.kind === 'pin') return wxFormHtml(it);
     if (it.kind === 'banner') {
@@ -2369,6 +2478,13 @@
       v.hidden = wx.hidden.map(slim);
       v.onlyListed = wx.onlyN != null; v.fullOrder = !!wx.fullOrder; v.countdown = !!g('countdown')?.checked;
     }
+    // 分工(没有 name 属性,不走上面的通用读取)。空的抄送 / 截止不写成 [] / null,免得没改也算「改了」
+    if ($('#asg-owner')) {
+      v.owner = $('#asg-owner').value || null; v.approver = $('#asg-approver').value || null;
+      const cc = $$('#ed-form [data-asg-cc]:checked').map((x) => x.value);
+      v.cc = cc.length ? cc : base.cc ? [] : undefined;
+      v.due = fromInput($('#asg-due').value) ?? (base.due != null ? null : undefined);
+    }
     if (base.kind === 'campaign') {
       v.larkLinks = ed.larkLinks.map((l) => ({ url: l.url, label: l.label }));
       v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
@@ -2394,7 +2510,7 @@
     if (!it) return;
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
     // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
-    const base = { ...it, ...(it.pendingChange && !isApprover() ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
+    const base = { ...it, ...(it.pendingChange && !canAppr(it) ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])] };
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
     wx = base.kind === 'pin' ? { collection: base.collection || null, order: [...(base.products || [])], hidden: [...(base.hidden || [])],
@@ -2402,22 +2518,29 @@
     wxAll = null; wxBase = []; wxQ = ''; wxPosEdit = null; wxBusy = false;
     wxPlans = null; // 每次打开抽屉重新按需加载
     const s = status(it);
-    const approver = isApprover();
     const live = it.state === 'approved';
-    let acts = '';
-    if (approver) {
-      if (!isNew && live && !it.isDefault) acts += `<button class="btn" data-act="pause" type="button">${it.paused ? '恢复显示' : s === 'live' ? '暂停(立即下线)' : '暂停'}</button>`;
-      if (isNew || it.state !== 'approved') acts += '<button class="btn" data-act="draft" type="button">存草稿</button>';
-      acts += `<button class="btn btn-primary" data-act="publish" type="button">${live ? '保存修改' : '保存并排期'}</button>`;
-    } else {
-      if (isNew || ['draft', 'new', 'rejected'].includes(it.state)) acts += '<button class="btn" data-act="draft" type="button">存草稿</button>';
-      acts += `<button class="btn btn-primary" data-act="submit" type="button">${live ? '提交修改审核' : '提交审核'}</button>`;
-    }
+    // 能不能直接生效:已批准的看现在的审批人;还没批准的看表单里选的审批人(换了审批人按钮跟着变)
+    const mayAppr = (formApprover) => canAppr(live ? it : { ...it, approver: formApprover === undefined ? base.approver : formApprover || null });
+    const approver = mayAppr();
+    const actsHtml = (ok) => {
+      let h = '';
+      if (ok) {
+        if (!isNew && live && !it.isDefault && canAppr(it)) h += `<button class="btn" data-act="pause" type="button">${it.paused ? '恢复显示' : s === 'live' ? '暂停(立即下线)' : '暂停'}</button>`;
+        if (isNew || it.state !== 'approved') h += '<button class="btn" data-act="draft" type="button">存草稿</button>';
+        h += `<button class="btn btn-primary" data-act="publish" type="button">${live ? '保存修改' : '保存并排期'}</button>`;
+      } else {
+        if (isNew || ['draft', 'new', 'rejected'].includes(it.state)) h += '<button class="btn" data-act="draft" type="button">存草稿</button>';
+        h += `<button class="btn btn-primary" data-act="submit" type="button">${live ? '提交修改审核' : '提交审核'}</button>`;
+      }
+      return h;
+    };
+    const acts = actsHtml(approver);
     const canDelete = !isNew && !it.isDefault && ['draft', 'rejected', 'ended'].includes(s);
     const notes = [];
     if (endingSoon(it)) notes.push(`<div class="note note--warn">⚠️ ${relDay(win(it).end)}(${fDT(win(it).end)})自动下架。要继续显示就把结束时间往后改${win(it).via ? '(它跟随活动,要改活动的结束时间)' : ''}。</div>`);
-    if (it.pendingChange) notes.push(`<div class="note note--warn">${esc(who(it.pendingChange.by))} 提交了修改,正在等审核。${approver ? '去「审核」页批准后才会替换线上版本。' : '批准前线上保持原来的版本。'}</div>`);
-    if (!approver && live && !it.pendingChange) notes.push('<div class="note">这条已经批准。你的修改会先提交审核,<b>批准前线上保持原来的版本</b>。</div>');
+    if (it.pendingChange) notes.push(`<div class="note note--warn">${esc(who(it.pendingChange.by))} 提交了修改,正在等「${esc(apprName(it))}」审批。${approver ? '去「审核」页批准后才会替换线上版本。' : '批准前线上保持原来的版本。'}</div>`);
+    if (it.state === 'pending') notes.push(`<div class="note note--warn">${esc(who(it.by))} 已提交,正在等「${esc(apprName(it))}」审批。</div>`);
+    if (!approver && live && !it.pendingChange) notes.push(`<div class="note">这条已经批准。你的修改会先提交给「${esc(apprName(it))}」审批,<b>批准前线上保持原来的版本</b>。</div>`);
     if (it.state === 'rejected') notes.push(`<div class="note note--danger">被退回:${esc(it.rejectNote || '')}。修改后可以重新提交。</div>`);
     if (it.lastReject) notes.push(`<div class="note note--danger">上次的修改被退回:${esc(it.lastReject.note)}</div>`);
     if (it.note) notes.push(`<div class="note">${esc(it.note)}</div>`);
@@ -2430,7 +2553,7 @@
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button>
       </div>
       <div class="drawer__b drawer__b--${kind}">
-        <form class="drawer__form" id="ed-form" onsubmit="return false">${notes.join('')}${formHtml(base)}</form>
+        <form class="drawer__form" id="ed-form" onsubmit="return false">${notes.join('')}${formHtml(base)}${assignHtml(base)}</form>
         <div class="drawer__pv" id="ed-pv">${previewHtml(base)}</div>
       </div>
       <div class="drawer__f">
@@ -2560,6 +2683,7 @@
     });
     f.addEventListener('change', (e) => {
       if (e.target.dataset?.tck) edTabs[+e.target.dataset.i][e.target.dataset.tck] = e.target.checked;
+      if (e.target.id === 'asg-approver' && !live) $('#drawer .drawer__acts').innerHTML = actsHtml(mayAppr(e.target.value)); // 换了审批人:能不能直接生效跟着变
       refreshPv();
     });
     // ---- 合集置顶清单 / 设计需求 / 宣传物料 ----
@@ -2708,7 +2832,7 @@
         const saved = byId(it.id); const st2 = saved ? status(saved) : '';
         const col = colSay(r.colRep, saved?.collection?.id);
         toast([st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`, ...col].join(' · '), !(r.colRep?.failures?.length));
-      } else toast(mode === 'submit' ? `已提交审核${MODE === 'live' ? ' · 已通知审核人' : ' · 已在飞书 @审核人(演示)'}` : '已存草稿');
+      } else toast(mode === 'submit' ? `已提交给「${apprName({ ...it, ...v })}」审批${MODE === 'live' ? ' · 已私信通知' : '(演示)'}` : '已存草稿');
     }
   }
   // 合集排序执行结果 → 人话(立即执行一次、保存后自动执行共用)
@@ -2797,7 +2921,7 @@
   // ================= 全局 =================
   function renderAll() {
     applySiteStyle(); hidePop();
-    renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderCampaigns(); renderReviews(); renderSettings();
+    renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
     if (isActive('history')) renderHistory();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     const L = window.CGP_ME; // 飞书登录了就显示登录的人和他的角色
@@ -2839,6 +2963,8 @@
   $('#drawer-mask').addEventListener('click', closeDrawer);
   // 历史记录页:点开才去读(不跟着每次刷新一起读)
   document.querySelector('#modnav [data-section="history"]')?.addEventListener('click', () => loadHistoryPage());
+  // 我的工作:点开时画一遍,顺便读改价计划(一分钟内不重复读)
+  document.querySelector('#modnav [data-section="mywork"]')?.addEventListener('click', () => { renderMyWork(); loadMwPrice(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#drawer').hidden) closeDrawer(); });
 
 
@@ -2877,6 +3003,7 @@
       MODE = await detectMode();
       if (MODE === 'demo') await load();
       renderModeBar(); renderAll();
+      loadMwPrice(); // 「我的工作」的数字也算上等你批的改价计划
     } catch (e) {
       $('#ov-root').innerHTML = `<p class="muted">加载失败:${esc(e.message)}</p>`; console.error(e);
     }

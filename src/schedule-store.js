@@ -9,7 +9,7 @@ const DIR = path.join(process.env.DATA_DIR || path.join(process.cwd(), '.data'),
 export const HISTORY_FILE = /\.(colhist|itemhist|planhist)\.json$/;
 const fileOf = (shop) => path.join(DIR, `${shop.replace(/[^a-z0-9.-]/gi, '_')}.json`);
 
-export const DEFAULT_NOTIFY = { submit: true, decision: true, dayBefore: true, endingSoon: true, upDown: true, unapproved: true, failure: true };
+export const DEFAULT_NOTIFY = { submit: true, decision: true, dayBefore: true, endingSoon: true, upDown: true, unapproved: true, failure: true, due: true };
 
 export function emptyState() {
   return {

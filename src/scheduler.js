@@ -9,7 +9,7 @@ import { titleOf } from './schedule-actions.js';
 import { setPublishStatus as realSetStatus } from './metaobjects.js';
 import { getToken } from './token-store.js';
 import { withLock } from './sync.js';
-import { schedulerMessages, digestMessages, deliver } from './notifier.js';
+import { schedulerMessages, digestMessages, deliver, schedulerDMs, deliverDMs } from './notifier.js';
 import { alignCollections } from './collection-order.js';
 import { historyRecorder } from './col-history.js';
 import { graphql } from './shopify.js';
@@ -32,7 +32,7 @@ export function logColReport(state, col, by, now = Date.now()) {
 }
 
 // 跑一个店铺一轮。依赖都可以注入,方便测试。
-export function runOnce(shop, { now = Date.now(), token = getToken(shop), setStatus = realSetStatus, send, gql = graphql, collections = alignCollections } = {}) {
+export function runOnce(shop, { now = Date.now(), token = getToken(shop), setStatus = realSetStatus, send, sendDm, gql = graphql, collections = alignCollections } = {}) {
   return withLock(shop, async () => {
     const state = load(shop);
     const camps = campaignIndex(state.campaigns);
@@ -72,6 +72,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     const opts = { appUrl: state.appUrl || '', now };
     const msgs = [...schedulerMessages(state, { changes, failures }, opts), ...digestMessages(state, opts)];
     await deliver(state, msgs, { send, now });
+    await deliverDMs(state, schedulerDMs(state, { changes }, opts), { send: sendDm, now }); // 私信:负责人 / 审批人
     replace(shop, state);
     return { changes, failures, collections: col };
   });

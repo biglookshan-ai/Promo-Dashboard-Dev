@@ -18,7 +18,9 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   'bg', 'color', 'accent', 'effect', 'decoLeft', 'decoRight', 'start', 'end', 'campaign',
   'module', 'title2', 'titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText', 'tabs', 'isDefault',
   // v3:合集置顶清单;活动关联的飞书任务链接
-  'collection', 'onlyListed', 'larkLinks', 'hidden', 'fullOrder'];
+  'collection', 'onlyListed', 'larkLinks', 'hidden', 'fullOrder',
+  // v3 分工:负责人 / 审批人 / 抄送(成员 id)、截止时间(ms)
+  'owner', 'approver', 'cc', 'due'];
 
 export class ActionError extends Error {}
 const fail = (msg) => { throw new ActionError(msg); };
@@ -27,7 +29,14 @@ export const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 B
   : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
 export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || [])];
 export const findItem = (doc, id) => allOf(doc).find((x) => x.id === id);
-const isApprover = (actor) => actor?.role === 'approver';
+const isApprover = (actor) => actor?.role === 'approver'; // 管理员(旧名单里的「审核人」)
+
+// 谁审批这条内容:内容自己指定的 → 这类内容的默认审批人(设置里配)→ 都没有就是管理员(返回 null)
+export const effApprover = (doc, it) => it?.approver || doc?.settings?.approvers?.[it?.kind] || null;
+// 能不能批准 / 退回 / 暂停 / 直接保存这条:管理员,或者它的审批人
+export const canApprove = (actor, doc, it) => !!actor && (isApprover(actor) || (!!it && effApprover(doc, it) === actor.id));
+// 轮播顺序:管理员,或者这类内容的默认审批人
+export const canOrder = (actor, doc, kind) => !!actor && (isApprover(actor) || (!!doc?.settings?.approvers?.[kind] && doc.settings.approvers[kind] === actor.id));
 
 export function addLog(doc, now, action, it, note, actor) {
   doc.log.unshift({ at: now, action, kind: it.kind, title: it.title && it.kind !== 'banner' ? it.title : titleOf(it), note: note || '', by: actor?.name || '' });
@@ -79,7 +88,14 @@ export function applyOrder(doc, kind, ids) {
   [...ids.map((id) => L.find((x) => x.id === id)).filter(Boolean), ...rest].forEach((x, i) => { x.order = i; });
 }
 
+// 每个通知都带上是谁做的(私信时不发给做这件事的人自己)
 export function applyAction(input, action, actor, now = Date.now()) {
+  const r = run(input, action, actor, now);
+  r.effects.forEach((e) => { if (e.type === 'notify') e.actor = actor?.id || null; });
+  return r;
+}
+
+function run(input, action, actor, now) {
   const doc = clone(input);
   const effects = [];
   let message = '';
@@ -104,6 +120,10 @@ export function applyAction(input, action, actor, now = Date.now()) {
       if (mode !== 'draft') { const err = validate(merged); if (err) fail(err); }
       if (kind === 'pmodule' && merged.isDefault && list.some((x) => x !== it && x.isDefault && x.module === merged.module)) fail('这个模块已经有平时版本了');
       const approved = it.state === 'approved';
+      // 不是管理员的人不能把自己设成审批人(否则等于自己批自己);这类内容的默认审批人本来就是他的除外
+      if (v.approver && v.approver === actor.id && it.approver !== actor.id && !isApprover(actor) && doc.settings?.approvers?.[kind] !== actor.id) fail('审批人不能选你自己;要直接生效,请管理员在「设置」里把你设成这类内容的默认审批人');
+      // 已批准的:由现在的审批人决定(改审批人本身也要他批);还没批准的:按这次填的审批人
+      const mayApprove = canApprove(actor, doc, approved ? it : merged);
 
       if (mode === 'draft') {
         if (approved) fail('已批准的内容不能存草稿;要改就提交修改审核');
@@ -111,7 +131,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
         if (isNew) list.push(it);
         addLog(doc, now, 'draft', it, '', actor);
         message = '已存草稿';
-      } else if (mode === 'submit') {
+      } else if (mode === 'submit' && !mayApprove) {
         if (approved) {
           const d = diff(it, v);
           if (!Object.keys(d).length) fail('没有改动');
@@ -124,12 +144,16 @@ export function applyAction(input, action, actor, now = Date.now()) {
         }
         effects.push({ type: 'notify', event: 'submit', id: it.id, change: approved });
         message = '已提交审核';
-      } else if (mode === 'publish') {
-        if (!isApprover(actor)) fail('只有审核人能直接发布,请提交审核');
+      } else if (mode === 'publish' || mode === 'submit') {
+        // 审批人自己提交 = 直接生效
+        if (!mayApprove) fail('只有这条内容的审批人(或管理员)能直接保存,请提交审核');
         const wasNew = !approved;
-        Object.assign(it, v, { state: 'approved', pendingChange: null, rejectNote: null, lastReject: null });
+        // 别人提交、等我批的,我改了直接保存 = 批准:告诉提交人
+        const other = it.state === 'pending' ? it.by : it.pendingChange?.by;
+        if (other && other !== actor.id) effects.push({ type: 'notify', event: 'decision', id: it.id, approved: true, to: other, change: approved, edited: true });
+        Object.assign(it, v, { state: 'approved', pendingChange: null, rejectNote: null, lastReject: null, approvedBy: actor.id, approvedAt: now });
         if (isNew) list.push(it);
-        addLog(doc, now, wasNew ? 'approve' : 'edit', it, wasNew ? '审核人自己排期(自动批准)' : '审核人直接修改', actor);
+        addLog(doc, now, wasNew ? 'approve' : 'edit', it, wasNew ? '审批人自己排期(自动批准)' : '审批人直接修改', actor);
         effects.push({ type: 'sync', id: it.id });
         if (kind === 'campaign') followersOf(doc, it.id).forEach((f) => effects.push({ type: 'sync', id: f.id }));
         message = '已保存';
@@ -138,15 +162,16 @@ export function applyAction(input, action, actor, now = Date.now()) {
     }
 
     case 'approve': {
-      if (!isApprover(actor)) fail('只有审核人能批准');
       if (action.id === '__order') {
         const o = doc.pendingOrder || fail('没有待审核的顺序');
+        if (!canOrder(actor, doc, o.kind)) fail('只有管理员(或这类内容的默认审批人)能批准顺序');
         applyOrder(doc, o.kind, o.ids); doc.pendingOrder = null;
         addLog(doc, now, 'approve', { kind: o.kind, title: orderTitle(o.kind) }, '批准新顺序', actor);
         effects.push({ type: 'syncOrder', kind: o.kind }, { type: 'notify', event: 'decision', order: o, approved: true });
         return { doc, effects, message: '已批准新顺序' };
       }
       const it = findItem(doc, action.id) || fail('找不到这条内容');
+      if (!canApprove(actor, doc, it)) fail('只有这条内容的审批人(或管理员)能批准');
       if (it.pendingChange) {
         const { by, at, ...ch } = it.pendingChange; // eslint-disable-line no-unused-vars
         effects.push({ type: 'notify', event: 'decision', id: it.id, approved: true, to: by, change: true });
@@ -157,22 +182,24 @@ export function applyAction(input, action, actor, now = Date.now()) {
         addLog(doc, now, 'approve', it, '批准', actor);
         effects.push({ type: 'notify', event: 'decision', id: it.id, approved: true, to: it.by });
       } else fail('这条内容不在待审核状态');
+      it.approvedBy = actor.id; it.approvedAt = now;
       effects.push({ type: 'sync', id: it.id });
       if (it.kind === 'campaign') followersOf(doc, it.id).forEach((f) => effects.push({ type: 'sync', id: f.id }));
       return { doc, effects, message: '已批准', id: it.id };
     }
 
     case 'reject': {
-      if (!isApprover(actor)) fail('只有审核人能退回');
       const note = String(action.note || '').trim();
       if (action.id === '__order') {
         const o = doc.pendingOrder || fail('没有待审核的顺序');
+        if (!canOrder(actor, doc, o.kind)) fail('只有管理员(或这类内容的默认审批人)能退回顺序');
         doc.pendingOrder = null;
         addLog(doc, now, 'reject', { kind: o.kind, title: orderTitle(o.kind) }, '退回新顺序:' + note, actor);
         effects.push({ type: 'notify', event: 'decision', order: o, approved: false, note });
         return { doc, effects, message: '已退回' };
       }
       const it = findItem(doc, action.id) || fail('找不到这条内容');
+      if (!canApprove(actor, doc, it)) fail('只有这条内容的审批人(或管理员)能退回');
       if (it.pendingChange) {
         effects.push({ type: 'notify', event: 'decision', id: it.id, approved: false, note, to: it.pendingChange.by, change: true });
         it.lastReject = { note, at: now }; it.pendingChange = null;
@@ -186,8 +213,8 @@ export function applyAction(input, action, actor, now = Date.now()) {
     }
 
     case 'pause': {
-      if (!isApprover(actor)) fail('只有审核人能暂停 / 恢复');
       const it = findItem(doc, action.id) || fail('找不到这条内容');
+      if (!canApprove(actor, doc, it)) fail('只有这条内容的审批人(或管理员)能暂停 / 恢复');
       if (it.isDefault) fail('默认样式不能暂停');
       if (it.state !== 'approved') fail('只有已批准的内容能暂停');
       it.paused = !it.paused;
@@ -202,7 +229,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
       if (it.isDefault) fail('默认样式不能删除');
       const s = itemStatus(it, campaignIndex(doc.campaigns), now);
       if (!['draft', 'rejected', 'ended'].includes(s)) fail('只能删除草稿、被退回或已结束的内容');
-      if (!isApprover(actor) && it.by !== actor.id) fail('只能删除自己建的内容');
+      if (!canApprove(actor, doc, it) && it.by !== actor.id && it.owner !== actor.id) fail('只能删除自己建的 / 自己负责的内容');
       if (it.kind === 'campaign' && followersOf(doc, it.id).length) fail('还有 Banner / 顶栏挂在这个活动下,先把它们改成别的时间方式');
       const list = L(it.kind); list.splice(list.indexOf(it), 1);
       addLog(doc, now, 'delete', it, '', actor);
@@ -217,7 +244,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
       const before = orderPipeline(doc, kind, now).map((x) => x.id);
       if (!Array.isArray(ids) || ids.length !== before.length || !before.every((id) => ids.includes(id))) fail('顺序里的内容和现在对不上(可能刚有变化),请刷新后再排');
       if (JSON.stringify(before) === JSON.stringify(ids)) return { doc, effects, message: '顺序没有变化' };
-      if (isApprover(actor)) {
+      if (canOrder(actor, doc, kind)) {
         applyOrder(doc, kind, ids);
         addLog(doc, now, 'reorder', { kind, title: orderTitle(kind) }, '保存新顺序', actor);
         effects.push({ type: 'syncOrder', kind });

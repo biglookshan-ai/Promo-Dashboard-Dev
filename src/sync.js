@@ -6,7 +6,7 @@ import { findItem, LIST, titleOf } from './schedule-actions.js';
 import { upsertItem, upsertTab, setPosition, removeEntry, TYPE_OF } from './metaobjects.js';
 import { createImageFromUrl } from './files.js';
 import { graphql } from './shopify.js';
-import { eventMessages, deliver } from './notifier.js';
+import { eventMessages, deliver, dmMessages, deliverDMs } from './notifier.js';
 
 const locks = new Map();
 export function withLock(shop, fn) {
@@ -47,7 +47,7 @@ export async function syncItem(ctx, state, it, { gql = graphql, now = Date.now()
 const KIND_ORDER = { campaign: 0, tbstyle: 1, banner: 2, topbar: 3, pmodule: 4, pin: 5 };
 
 // 在锁内调用。state 会被修改,调用方负责保存。
-export async function runEffects(ctx, state, effects, { gql = graphql, now = Date.now(), appUrl = '', send } = {}) {
+export async function runEffects(ctx, state, effects, { gql = graphql, now = Date.now(), appUrl = '', send, sendDm } = {}) {
   const errors = [];
   const ids = [...new Set(effects.filter((e) => e.type === 'sync').map((e) => e.id))]
     .map((id) => findItem(state, id)).filter((it) => it && it.state === 'approved' && TYPE_OF[it.kind])
@@ -67,9 +67,10 @@ export async function runEffects(ctx, state, effects, { gql = graphql, now = Dat
     try { await removeEntry(ctx, e.shopifyId, gql); }
     catch (err) { errors.push(`删除 Shopify 条目失败:${err.message}`); }
   }
-  const msgs = effects.filter((x) => x.type === 'notify').flatMap((x) => eventMessages(state, x, { appUrl, now }));
-  const lark = await deliver(state, msgs, { send, now });
-  return { errors, larkErrors: lark.errors };
+  const notes = effects.filter((x) => x.type === 'notify');
+  const lark = await deliver(state, notes.flatMap((x) => eventMessages(state, x, { appUrl, now })), { send, now });
+  const dm = await deliverDMs(state, notes.flatMap((x) => dmMessages(state, x, { appUrl, now })), { send: sendDm, now }); // 私信给具体的人
+  return { errors, larkErrors: [...lark.errors, ...dm.errors] };
 }
 
 // 一个完整的「动作」:锁 → 读 → 改 → 先存(本地立即生效)→ 写 Shopify → 再存(记下 Shopify id / 错误)

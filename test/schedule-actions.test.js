@@ -18,7 +18,7 @@ test('编辑新建 → 提交审核 → 待审核,并要通知审核人', () => 
 test('编辑不能直接发布,也不能批准', () => {
   assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'banner', isNew: true, values: { id: 'x', image: 'a' } }, editor, T), ActionError);
   const d = doc({ banners: [banner({ state: 'pending' })] });
-  assert.throws(() => applyAction(d, { type: 'approve', id: 'b1' }, editor, T), /只有审核人/);
+  assert.throws(() => applyAction(d, { type: 'approve', id: 'b1' }, editor, T), /审批人\(或管理员\)/);
 });
 
 test('编辑改已上线的内容 → 只生成「修改待审核」,线上版本不变', () => {
@@ -93,7 +93,7 @@ test('暂停只能审核人做;默认样式不能暂停 / 删除', () => {
   const d = doc({ tbstyles: [{ id: 's0', kind: 'tbstyle', isDefault: true, state: 'approved', name: '默认' }] });
   assert.throws(() => applyAction(d, { type: 'pause', id: 's0' }, approver, T), /默认样式/);
   assert.throws(() => applyAction(d, { type: 'delete', id: 's0' }, approver, T), /默认样式/);
-  assert.throws(() => applyAction(doc({ banners: [banner()] }), { type: 'pause', id: 'b1' }, editor, T), /只有审核人/);
+  assert.throws(() => applyAction(doc({ banners: [banner()] }), { type: 'pause', id: 'b1' }, editor, T), /审批人\(或管理员\)/);
 });
 
 test('不改动传入的数据(纯函数)', () => {

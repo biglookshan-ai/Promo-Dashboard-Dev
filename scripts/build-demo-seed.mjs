@@ -163,6 +163,8 @@ const seed = {
   staff: [
     { id: 'u1', name: 'biglook shan', role: 'approver' },
     { id: 'u2', name: '编辑 A', role: 'editor' },
+    { id: 'u3', name: '运营主管', role: 'editor' },
+    { id: 'u4', name: '设计 C', role: 'editor' },
   ],
   me: 'u1',
   site: { slide: slideStyle, topbar: topbarStyle },
