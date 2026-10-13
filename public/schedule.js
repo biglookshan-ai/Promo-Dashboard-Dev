@@ -1222,14 +1222,21 @@
     if (MODE !== 'live') { hsRows = []; return renderHistory(); }
     hsBusy = true; renderHistory();
     try {
-      const r = await api('GET', `/api/schedule/history?kind=${encodeURIComponent(hsF.kind)}&q=${encodeURIComponent(hsF.q)}&by=${encodeURIComponent(hsF.by)}`);
-      hsRows = r.rows; hsPeople = r.people;
+      const canPrice = window.cgpCanSee && window.cgpCanSee('price');
+      const qs = `q=${encodeURIComponent(hsF.q)}&by=${encodeURIComponent(hsF.by)}`;
+      const [a, b] = await Promise.all([
+        hsF.kind === 'price' ? { rows: [], people: [] } : api('GET', `/api/schedule/history?kind=${encodeURIComponent(hsF.kind)}&${qs}`),
+        canPrice && (!hsF.kind || hsF.kind === 'price') ? api('GET', `/api/price/plan-history?${qs}`).catch(() => ({ rows: [], people: [] })) : { rows: [], people: [] },
+      ]);
+      hsRows = [...a.rows, ...b.rows].sort((x, y) => y.at - x.at).slice(0, 300);
+      hsPeople = [...new Set([...a.people, ...b.people])];
     } catch (e) { hsRows = []; toast(e.message, false); }
     hsBusy = false; renderHistory();
   }
   function renderHistory() {
     const root = $('#hs-root'); if (!root) return;
-    const kinds = [['', '全部类型'], ['banner', 'Banner'], ['topbar', '顶栏'], ['tbstyle', '顶栏样式'], ['pmodule', '商品模块'], ['pin', '合集排序'], ['campaign', '活动']];
+    const kinds = [['', '全部类型'], ['banner', 'Banner'], ['topbar', '顶栏'], ['tbstyle', '顶栏样式'], ['pmodule', '商品模块'], ['pin', '合集排序'], ['campaign', '活动'],
+      ...(window.cgpCanSee && window.cgpCanSee('price') ? [['price', '改价']] : [])];
     const byDay = new Map();
     for (const r of hsRows || []) { const d = fDate(r.at); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(r); }
     root.innerHTML = `${pageHead('历史记录', '每一次保存、提交、批准、退回、暂停、删除、回滚都记一版 —— 点开能看那一版的完整内容、和现在对比、复制成新的、回滚回去(回滚也走审批)。')}
@@ -1249,7 +1256,7 @@
                   ${kindChip(r.kind)}
                   <span class="hsrow__n"><b>${esc(r.title || '(未命名)')}</b>${r.gone ? '<span class="tag tag--danger">已删除</span>' : ''}</span>
                   <span class="hsrow__a">${esc(r.action || '')}</span>
-                  <span class="hsrow__c muted">${esc(changedText(r.changed))}${r.pendingKeys.length ? `${r.changed?.length ? ';' : ''}待审核的修改:${esc(r.pendingKeys.slice(0, 4).map((k) => FIELD[k] || k).join('、'))}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}</span>
+                  <span class="hsrow__c muted">${esc(r.kind === 'price' ? planChangedText(r.changed) : changedText(r.changed))}${r.pendingKeys.length ? `${r.changed?.length ? ';' : ''}待审核的修改:${esc(r.pendingKeys.slice(0, 4).map((k) => FIELD[k] || k).join('、'))}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}</span>
                   <span class="hsrow__by muted">${esc(r.by || '')}</span>
                 </button>`).join('')}</div>`).join('')}
       </section>`;
@@ -1257,7 +1264,7 @@
     $('#hs-by').onchange = (e) => { hsF.by = e.target.value; loadHistoryPage(); };
     $('#hs-q').onkeydown = (e) => { if (e.key === 'Enter') { hsF.q = e.target.value.trim(); loadHistoryPage(); } };
     $('#hs-reload').onclick = () => loadHistoryPage();
-    $$('#hs-root [data-hist]').forEach((b) => b.addEventListener('click', () => openItemHistory(b.dataset.hist)));
+    $$('#hs-root [data-hist]').forEach((b) => b.addEventListener('click', () => (hsRows.find((r) => r.id === b.dataset.hist)?.kind === 'price' ? openPlanHistory(b.dataset.hist) : openItemHistory(b.dataset.hist))));
   }
 
   // 单条内容的全部版本:左边版本列表,右边「这一版 vs 现在」逐项对比;复制成新的 / 回滚(回滚照常走审批)
@@ -1324,6 +1331,91 @@
     $$('#ih-list .hist__i').forEach((b) => b.addEventListener('click', () => show(+b.dataset.i)));
     show(Math.min(1, r.versions.length - 1)); // 默认看上一版(和现在比最有用)
   }
+
+  // ---- 改价计划的历史版本(字段和网站内容不一样,单独一套显示)----
+  const PFIELD = { name: '名称', kind: '类型', layer: '层级', rule: '改价规则', scope: '改哪些产品', slots: '时间段和产品', compare: '划线价', campaign: '所属活动',
+    followCampaign: '跟随活动时间', tagsAdd: '生效时加标签', tagsRemove: '生效时去标签', approver: '审批人', owner: '负责人', cc: '抄送', note: '备注', color: '颜色' };
+  const RULE_CN = { percent_off: (v) => `降价 ${v}%`, amount_off: (v) => `每个减 £${v}`, fixed: (v) => `统一改成 £${v}`, percent_up: (v) => `涨价 ${v}%`, keep: () => '售价不变,只改划线价' };
+  const planChangedText = (keys) => (keys == null ? '第一版' : keys.length ? `改了:${keys.slice(0, 5).map((k) => PFIELD[k] || k).join('、')}${keys.length > 5 ? ` 等 ${keys.length} 项` : ''}` : '');
+  function pShowVal(k, v) {
+    if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '<span class="muted">(空)</span>';
+    if (k === 'kind') return v === 'permanent' ? '永久调价' : '限时(到期恢复原价)';
+    if (k === 'layer') return esc({ flash: '限时抢购', brand: '品牌 / 合集', sitewide: '全场' }[v] || v);
+    if (k === 'compare') return esc({ original: '原价作为划线价', keep: '划线价不变', none: '不显示划线价' }[v] || v);
+    if (k === 'rule') return `${esc((RULE_CN[v.mode] || ((x) => `${v.mode} ${x}`))(v.value))}${v.rounding ? `,尾数 ${esc(v.rounding)}` : ''}`;
+    if (k === 'scope') {
+      const m = { collections: `指定合集:${(v.collections || []).map((c) => c.title || c.id).join('、')}`, products: `指定产品 ${(v.products || []).length} 个`,
+        search: `按品牌 / 标签 / 类型:${[v.vendor, v.tag, v.type].filter(Boolean).join(' / ')}`, all: '全店所有产品' }[v.mode];
+      return esc(m || v.mode || '');
+    }
+    if (k === 'slots') return v.map((x) => {
+      const ps = (x.items || []).map((i) => Number(i.price)).filter((n) => n > 0);
+      const lo = ps.length ? Math.min(...ps) : null; const hi = ps.length ? Math.max(...ps) : null;
+      return `<div>${esc(fDT(x.start))} → ${x.end ? esc(fDT(x.end)) : '不结束'} · ${(x.items || []).length} 个变体${lo != null ? ` · 活动价 ${lo === hi ? gbp(lo) : `${gbp(lo)}–${gbp(hi)}`}` : ''}</div>`;
+    }).join('');
+    if (k === 'campaign') return esc((camp(v) || {}).name || v);
+    if (k === 'followCampaign') return v ? '开' : '关';
+    if (k === 'approver' || k === 'owner') return esc(who(v));
+    if (k === 'cc') return esc((v || []).map(who).join('、'));
+    if (k === 'tagsAdd' || k === 'tagsRemove') return esc(v.join('、'));
+    if (k === 'color') return `<span class="swatch" style="background:${esc(v)}"></span>`;
+    return esc(typeof v === 'object' ? JSON.stringify(v) : v);
+  }
+  const PSTATE = { draft: '草稿', pending: '待审核', approved: '已批准', rejected: '已退回', new: '新建' };
+  async function openPlanHistory(id) {
+    hidePop();
+    $('#drawer').innerHTML = `<div class="drawer__h"><div><b>改价计划 · 历史版本</b> <span class="muted" id="ih-title"></span></div>
+        <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button></div>
+      <div class="drawer__b drawer__b--hist"><div class="hist__list" id="ih-list"><p class="muted">读取中…</p></div><div class="hist__pv" id="ih-pv"></div></div>
+      <div class="drawer__f"><span class="muted" id="ih-tip"></span><div class="drawer__acts" id="ih-acts"></div></div>`;
+    $('#drawer').hidden = false; $('#drawer-mask').hidden = false; document.body.classList.add('no-scroll');
+    $('#drawer').onclick = (e) => { if (e.target.closest('[data-act="close"]')) closeDrawer(); };
+    let r;
+    try { r = await api('GET', `/api/price/plan-history?id=${encodeURIComponent(id)}`); }
+    catch (e) { $('#ih-list').innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+    const cur = r.item;
+    $('#ih-title').innerHTML = `${esc(cur?.name || r.title || '')}${cur ? '' : ' <span class="tag tag--danger">已删除</span>'}`;
+    if (!r.versions.length) { $('#ih-list').innerHTML = '<p class="muted">这个计划还没有历史记录(历史功能上线前的改动没有记)。之后每次改动都会记一版。</p>'; return; }
+    $('#ih-list').innerHTML = r.versions.map((v, i) => `<button type="button" class="hist__i" data-i="${i}">
+        <span class="hist__t"><b>${esc(fDT(v.at))}</b>${i === 0 ? '<span class="tag tag--ok">最新</span>' : ''}</span>
+        <span class="hist__w">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}</span>
+        <span class="hist__c">${esc(PSTATE[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.stopped ? ' · 已提前结束' : ''}${v.deleted ? ' · 已删除' : ''}${v.changed?.length ? ` · ${esc(planChangedText(v.changed))}` : ''}</span></button>`).join('');
+    const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    const show = (i) => {
+      const v = r.versions[i];
+      $$('#ih-list .hist__i').forEach((b) => b.classList.toggle('is-on', +b.dataset.i === i));
+      const keys = Object.keys(PFIELD).filter((k) => k in v.values || (cur && k in cur));
+      const diffKeys = cur ? keys.filter((k) => !same(v.values[k], cur[k])) : [];
+      $('#ih-pv').innerHTML = `<div class="hist__h"><b>${esc(fDT(v.at))} 那一版</b> <span class="muted">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}${v.note ? ` · ${esc(v.note)}` : ''}</span></div>
+        <p class="muted">那时的状态:${esc(PSTATE[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.stopped ? ' · 已提前结束' : ''}${v.deleted ? ' · 这一版之后被删除了' : ''}${cur ? ` · <b>${diffKeys.length ? `和现在有 ${diffKeys.length} 处不一样(标黄的行)` : '和现在一模一样'}</b>` : ''}</p>
+        <table class="rvdiff ihdiff"><thead><tr><th>字段</th><th>这一版</th>${cur ? '<th>现在</th>' : ''}</tr></thead><tbody>
+          ${keys.map((k) => `<tr class="${diffKeys.includes(k) ? 'is-diff' : ''}"><td>${PFIELD[k]}</td><td>${pShowVal(k, v.values[k])}</td>${cur ? `<td>${pShowVal(k, cur[k])}</td>` : ''}</tr>`).join('')}</tbody></table>`;
+      const canRollback = cur && diffKeys.length && !['ended', 'done'].includes(cur.state);
+      const mode = !cur ? null : ['approved', 'pending'].includes(cur.state) ? 'submit' : 'draft';
+      $('#ih-tip').textContent = !cur ? '这个计划已经删掉了,可以复制成一个新计划(恢复)'
+        : canRollback ? (mode === 'submit' ? '回滚后:你是这个计划的审批人就马上生效,不是就提交给审批人;已经开始的时段按改价规则锁定,改不了' : '回滚后存为草稿') : '';
+      $('#ih-acts').innerHTML = `<button class="btn" type="button" id="ih-copy">${cur ? '复制成新计划' : '复制成新计划(恢复)'}</button>
+        ${canRollback ? `<button class="btn btn-primary" type="button" id="ih-rb">回滚到这一版</button>` : ''}`;
+      $('#ih-copy').onclick = async () => {
+        closeDrawer(); showSection('price');
+        if (window.cgpPriceCopy) await window.cgpPriceCopy(JSON.parse(JSON.stringify(v.values)), fDT(v.at));
+      };
+      if ($('#ih-rb')) $('#ih-rb').onclick = async (e) => {
+        const b = e.currentTarget;
+        if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认回滚'; b.classList.add('btn-danger'); return; }
+        b.disabled = true;
+        try {
+          const x = await api('POST', '/api/price/act', { action: { type: 'save', mode, id: cur.id, isNew: false, values: JSON.parse(JSON.stringify(v.values)), historyNote: `回滚到 ${fDT(v.at)} 那一版` } });
+          toast(`${x.message || '已回滚'} · 回到 ${fDT(v.at)} 那一版`);
+          if (window.cgpPriceRefresh) window.cgpPriceRefresh();
+          openPlanHistory(cur.id);
+        } catch (err) { toast(err.message, false); b.disabled = false; b.textContent = '回滚到这一版'; delete b.dataset.sure; b.classList.remove('btn-danger'); }
+      };
+    };
+    $$('#ih-list .hist__i').forEach((b) => b.addEventListener('click', () => show(+b.dataset.i)));
+    show(Math.min(1, r.versions.length - 1));
+  }
+  window.cgpPlanHistory = (id) => openPlanHistory(id);
 
   function renderReviews() {
     const list = pendingList();

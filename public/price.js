@@ -521,6 +521,7 @@ function footHtml() {
     b.push('<button class="btn btn-danger" data-a="stop">提前结束</button>');
   }
   b.push('<span class="spacer"></span>');
+  if (!E.isNew) b.push('<button class="btn btn-ghost" data-a="history">历史版本</button>');
   if (!E.isNew) b.push('<button class="btn btn-ghost" data-a="dup">复制成新计划</button>');
   if (!E.isNew && P().kind === 'window' && curSlot().end) b.push('<button class="btn btn-ghost" data-a="dupnext">复制成下一天</button>');
   if (!E.isNew && (!['running', 'paused'].includes(st)) && (o.state !== 'approved' || ap)) b.push('<button class="btn btn-ghost btn-danger" data-a="delete">删除</button>');
@@ -738,6 +739,7 @@ document.addEventListener('click', async (ev) => {
       case 'stop': if (!armed(el, '再点一次:提前结束并恢复原价')) return; await withBusy(el, async () => { await act({ type: 'stop', id: E.orig.id }); await reopen(E.orig.id); }); break;
       case 'delete': if (!armed(el)) return; await withBusy(el, async () => { await act({ type: 'delete', id: E.orig.id }); E = null; renderChrome(); render(); }); break;
       case 'exclude': if (!armed(el, '再点一次:移出并恢复原价')) return; await withBusy(el, async () => { await act({ type: 'exclude', id: E.orig.id, variantIds: [el.dataset.v] }); await reopen(E.orig.id); }); break;
+      case 'history': if (window.cgpPlanHistory) window.cgpPlanHistory(E.orig.id); break;
       case 'dup': case 'dupnext': {
         const src = clone(P());
         const shift = a === 'dupnext' ? DAY : 0;
@@ -840,6 +842,14 @@ async function start() {
   catch (e) { booted = false; $('#pr-root').innerHTML = `<div class="banner banner--danger">${esc(e.message)}</div>`; }
 }
 // 活动总控台里点改价计划 / 「+ 改价计划」时用
+// 历史版本抽屉用:把某一版复制成新计划 / 回滚后刷新
+window.cgpPriceCopy = async (vals, when) => {
+  await start();
+  const slots = (vals.slots || []).map((x) => ({ ...x, id: uid('s_') }));
+  openEditor({ ...vals, id: uid('p_'), name: `${vals.name || ''}(复制)`, state: 'new', slots, excluded: [], applied: {}, pendingChange: null, paused: false, stopped: false }, true);
+  loadCampaigns(); toast(`已复制 ${when || ''} 那一版,改好时间再提交`);
+};
+window.cgpPriceRefresh = async () => { await load(); render(); };
 window.cgpPriceOpen = async (id) => { await start(); const p = planById(id); if (p) { openEditor(p, false); loadCampaigns(); } };
 window.cgpPriceNew = async (campaign) => { await start(); const p = newPlan('window', false); p.campaign = campaign; p.name = campaign.name; openEditor(p, true); loadCampaigns(); };
 const show0 = window.showSection;

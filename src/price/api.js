@@ -7,6 +7,8 @@ import { eventMessages, deliver } from './notifier.js';
 import * as catalog from './catalog.js';
 import { load as loadSchedule } from '../schedule-store.js';
 import { actorOf, isAdmin, canSee } from '../members.js';
+import { loadPlanHistory, recordPlanAction } from './plan-history.js';
+import { changedKeys } from '../item-history.js';
 
 const TZ = 'Europe/London';
 const csvCell = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -52,9 +54,16 @@ export function priceRouter() {
     const out = await withLock(shop, async () => {
       const state = load(shop);
       const part = { plans: state.plans, vault: state.vault, log: state.log, settings: state.settings };
-      const { doc, effects, message, id } = applyAction(part, req.body?.action || {}, actorOfReq(req), Date.now());
+      const action = req.body?.action || {}; const actor = actorOfReq(req);
+      const { doc, effects, message, id } = applyAction(part, action, actor, Date.now());
+      const beforePlans = state.plans;
       Object.assign(state, { plans: doc.plans, vault: doc.vault, log: doc.log });
       save(shop, state);
+      // 历史版本:动过的计划记一版
+      const ACT = { draft: '存草稿', submit: '提交 / 保存', publish: '直接保存', approve: '批准', reject: '退回', pause: '暂停', resume: '继续', stop: '提前结束', delete: '删除', exclude: '排除产品' };
+      try {
+        recordPlanAction(shop, beforePlans, doc.plans, [action.id, id], { action: action.historyNote ? '回滚' : (action.type === 'save' ? ACT[action.mode] : ACT[action.type]) || action.type, by: actor.name, note: action.historyNote || '' });
+      } catch (e) { console.error('[plan-history]', e.message); }
       const members = loadSchedule(shop).members || [];
       const msgs = effects.filter((e) => e.type === 'notify').flatMap((e) => eventMessages(state, e, { appUrl: state.appUrl, members }));
       return { state, effects, message, id, msgs };
@@ -68,6 +77,33 @@ export function priceRouter() {
     needAdmin(req);
     const rep = await runOnce(req.ctx.shop, { token: req.ctx.token });
     return { written: rep.written.length, holds: rep.holds.length, failures: rep.failures.length };
+  }));
+
+  // ---- 计划的历史版本:不带 id = 全部计划最近的改动;带 id = 这个计划的全部版本 + 现在的样子 ----
+  r.get('/plan-history', wrap((req) => {
+    const h = loadPlanHistory(req.ctx.shop);
+    const plans = load(req.ctx.shop).plans;
+    if (req.query.id) {
+      const rec = h[req.query.id];
+      const cur = plans.find((p) => p.id === req.query.id) || null;
+      if (!rec) return { item: cur, versions: [] };
+      const vs = rec.versions.map((v, i) => ({ ...v, changed: i ? changedKeys(rec.versions[i - 1].values, v.values) : null }));
+      return { title: rec.title, item: cur, versions: vs.reverse() };
+    }
+    const q = String(req.query.q || '').toLowerCase(); const by = String(req.query.by || '');
+    const rows = [];
+    for (const [id, rec] of Object.entries(h)) {
+      const cur = plans.find((p) => p.id === id);
+      const title = cur?.name || rec.title;
+      if (q && !String(title).toLowerCase().includes(q)) continue;
+      rec.versions.forEach((v, i) => {
+        if (by && v.by !== by) return;
+        rows.push({ id, kind: 'price', title, at: v.at, action: v.action, by: v.by, note: v.note, state: v.state, paused: v.paused, deleted: !!v.deleted, gone: !cur,
+          changed: i ? changedKeys(rec.versions[i - 1].values, v.values) : null, pendingKeys: v.pending ? Object.keys(v.pending) : [] });
+      });
+    }
+    rows.sort((a, b) => b.at - a.at);
+    return { rows: rows.slice(0, Math.min(Number(req.query.limit) || 200, 1000)), people: [...new Set(rows.map((r) => r.by).filter(Boolean))] };
   }));
 
   // ---- 账本 / 导出 ----
