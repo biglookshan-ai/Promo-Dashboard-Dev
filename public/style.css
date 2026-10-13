@@ -797,7 +797,8 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 
 /* ========== 改价页(样式只作用在 #section-price 里)========== */
 /* ---------- 通用 ---------- */
-#section-price .btn-danger { color: var(--danger); border-color: #f3ccc8; }
+#section-price .btn-danger { background: #fff; color: var(--danger); border-color: #f3ccc8; } /* 全局 .btn-danger 是红底,这里要白底红字,不然字和底一个颜色看不见 */
+#section-price .btn-ghost.btn-danger { background: transparent; border-color: transparent; }
 #section-price .btn-danger.is-arm { background: var(--danger); color: #fff; border-color: var(--danger); }
 #section-price .btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
 #section-price .pr-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 18px; margin-bottom: 14px; }
@@ -1169,3 +1170,17 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .ihdiff td:nth-child(2) { color: var(--text); text-decoration: none; }
 .ihdiff td:nth-child(3) { background: none; color: var(--text-2); }
 .ihdiff tr.is-diff td:nth-child(2) { font-weight: 500; }
+
+/* 改价分组 */
+#section-price .pr-groups { display: flex; flex-direction: column; gap: 8px; }
+#section-price .pr-group { border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+#section-price .pr-group.is-open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#section-price .pr-group__h { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; flex-wrap: wrap; }
+#section-price .pr-group__n { font-weight: 600; font-size: 13px; white-space: nowrap; }
+#section-price .pr-group__s { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-2); }
+#section-price .pr-group__acts { display: flex; gap: 2px; }
+#section-price .pr-group__b { padding: 4px 12px 14px; border-top: 1px solid #f0f0f2; }
+#section-price .pr-group__lab { font-size: 12px; font-weight: 600; color: var(--text-3); margin: 10px 0 6px; }
+#section-price .pr-gtag { font-size: 11px; background: var(--surface-2); border-radius: 4px; padding: 1px 6px; white-space: nowrap; color: var(--text-2); }
+#section-price .pr-mtag { font-size: 10.5px; background: #fff3d6; color: #8a5a00; border-radius: 4px; padding: 0 5px; margin-right: 4px; }
+#section-price .inp.is-todo { border-color: #e8a400; background: #fffaf0; }

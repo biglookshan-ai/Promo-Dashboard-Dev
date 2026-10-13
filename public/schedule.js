@@ -1333,9 +1333,9 @@
   }
 
   // ---- 改价计划的历史版本(字段和网站内容不一样,单独一套显示)----
-  const PFIELD = { name: '名称', kind: '类型', layer: '层级', rule: '改价规则', scope: '改哪些产品', slots: '时间段和产品', compare: '划线价', campaign: '所属活动',
+  const PFIELD = { name: '名称', kind: '类型', layer: '层级', groups: '改价分组', rule: '改价规则', scope: '改哪些产品', slots: '时间段和产品', compare: '划线价', campaign: '所属活动',
     followCampaign: '跟随活动时间', tagsAdd: '生效时加标签', tagsRemove: '生效时去标签', approver: '审批人', owner: '负责人', cc: '抄送', note: '备注', color: '颜色' };
-  const RULE_CN = { percent_off: (v) => `降价 ${v}%`, amount_off: (v) => `每个减 £${v}`, fixed: (v) => `统一改成 £${v}`, percent_up: (v) => `涨价 ${v}%`, keep: () => '售价不变,只改划线价' };
+  const RULE_CN = { percent_off: (v) => `降价 ${v}%`, amount_off: (v) => `每个减 £${v}`, fixed: (v) => `统一改成 £${v}`, percent_up: (v) => `涨价 ${v}%`, keep: () => '售价不变,只改划线价', manual: () => '逐个填价' };
   const planChangedText = (keys) => (keys == null ? '第一版' : keys.length ? `改了:${keys.slice(0, 5).map((k) => PFIELD[k] || k).join('、')}${keys.length > 5 ? ` 等 ${keys.length} 项` : ''}` : '');
   function pShowVal(k, v) {
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '<span class="muted">(空)</span>';
@@ -1348,6 +1348,7 @@
         search: `按品牌 / 标签 / 类型:${[v.vendor, v.tag, v.type].filter(Boolean).join(' / ')}`, all: '全店所有产品' }[v.mode];
       return esc(m || v.mode || '');
     }
+    if (k === 'groups') return v.map((g, i) => `<div>${v.length > 1 ? `第 ${i + 1} 组:` : ''}${pShowVal('scope', g.scope)} · ${pShowVal('rule', g.rule)}</div>`).join('');
     if (k === 'slots') return v.map((x) => {
       const ps = (x.items || []).map((i) => Number(i.price)).filter((n) => n > 0);
       const lo = ps.length ? Math.min(...ps) : null; const hi = ps.length ? Math.max(...ps) : null;

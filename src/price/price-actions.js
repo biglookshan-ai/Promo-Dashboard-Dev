@@ -13,7 +13,7 @@ export const canApprove = (a, plan) => !!a && (isAdminActor(a) || (!!plan?.appro
 
 // 计划里可编辑的字段
 export const EDIT_KEYS = ['name', 'kind', 'layer', 'compare', 'campaign', 'note', 'slots', 'rule', 'approver', 'owner', 'cc',
-  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign'];
+  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups'];
 const pick = (v) => Object.fromEntries(EDIT_KEYS.filter((k) => k in v).map((k) => [k, clone(v[k])]));
 
 export function addLog(doc, now, action, plan, note, actor) {

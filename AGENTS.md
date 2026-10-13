@@ -79,6 +79,9 @@
   **界面按原来那个 Simple Product Price Scheduler 的做法**(2026-10-10 用户给了截图):一个计划 = 一条规则 + 一个时间段(没有多时段 / 每日日程,Flash 每天用「复制成下一天」);
   表单从上往下填(名称 → 改什么价 → 改哪些产品 → 什么时候 → 产品标签 → 负责人审批 → 划线价 → 试算预览),右边常驻一段大白话摘要;逐个变体的价格收在「试算预览」里。
   `plan.scope`(all / collections / products / search)+ `plan.rule` 存下来,点「试算预览」或保存时重新算出 `slots[0].items`;手改过价的变体带 `manual`,重算时保留。
+  **改价分组**(2026-10-13):`plan.groups = [{ id, scope, rule }]`,一个计划可以分几组(比如合集 A 85 折、品牌 B 7 折、几个产品逐个填价);试算时一组一组算,
+  同一个变体在几组里**下面的组覆盖上面的**,每个变体记 `item.group`;规则多了 `manual`(逐个填价,表格里一个个填)。保存时 `scope` / `rule` 仍写第一组(老界面、历史兼容);
+  老计划打开时自动变成一组。分组只是编辑器的配置,执行器照旧只看 `slots[].items`。「层级」挪到「划线价(高级)」里,只有两个限时计划撞到同一产品时才有用。
   `plan.tagsAdd` / `tagsRemove`:生效期间加减产品标签(驱动按标签自动归类的合集),结束还原;只动计划里填的标签,产品本来就有的不碰(`price-core.planTags` + `state.tagState` 记账)。
   页面 `public/price.js`(点开「改价」才加载),样式在 style.css 末尾、**全部限定在 `#section-price` 里**,和排期页同名的样式加了 `pr-` 前缀 —— 别去掉,否则两边互相干扰。
   飞书私信:`src/lark-bot.js`(同一个飞书应用的机器人,需要 `im:message:send_as_bot`)。本地测:harness 的 `/__price`(改过价的变体)、`/__price/set`(模拟手动改价)、`/__dms`(发出的私信),产品数据 `node scripts/fetch-price-catalog.mjs`。

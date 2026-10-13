@@ -149,8 +149,9 @@ const leftTxt = (ms) => {
 function planSay(p) {
   const its = p.slots.flatMap((x) => x.items);
   const n = new Set(its.map((i) => i.productId)).size;
-  const r = p.rule ? RULE_MODES[p.rule.mode] : null;
-  const how = r ? r.say(p.rule.value) : '按逐个产品设定的价格';
+  const gs = groupsOf(p);
+  const r = gs[0]?.rule ? RULE_MODES[gs[0].rule.mode] : null;
+  const how = gs.length > 1 ? `分 ${gs.length} 组改价(${gs.map((g) => RULE_MODES[g.rule.mode]?.label || '').join(' / ')})` : r ? r.say(gs[0].rule.value) : '按逐个产品设定的价格';
   return `把 <b>${n}</b> 个产品${p.kind === 'permanent' ? '永久' : '在活动期间'}:${how}`;
 }
 function planRow(p, s) {
@@ -231,9 +232,15 @@ const RULE_MODES = {
   fixed: { label: '统一改成一个价', unit: '£', say: (v) => `所有产品都改成 £${v}` },
   percent_up: { label: '按百分比涨价', unit: '%', say: (v) => `每个产品的现价上涨 ${v}%` },
   keep: { label: '售价不变(只改划线价)', unit: '', say: () => '售价不动,只调整划线价' },
+  manual: { label: '逐个填价', unit: '', say: () => '每个产品的新价在下面「试算预览」的表格里一个个填' },
 };
 const SCOPE_MODES = { collections: '指定合集', products: '指定产品', search: '按品牌 / 标签 / 类型', all: '全店所有产品' };
 
+// 改价分组:一个计划里可以分几组,每组自己选产品、自己定规则(比如合集 A 打 85 折、品牌 B 打 7 折、几个产品逐个填价)
+function newGroup(kind, rule) {
+  return { id: uid('g_'), scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
+    rule: rule ? { ...rule } : { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' } };
+}
 function newPlan(kind) {
   return {
     id: uid('p_'), name: '', color: COLORS[0], kind, layer: 'sitewide',
@@ -241,6 +248,7 @@ function newPlan(kind) {
     rule: { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' },
     scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
     tagsAdd: [], tagsRemove: [],
+    groups: [newGroup(kind)],
     slots: [{ id: uid('s_'), start: dayAt(1), end: kind === 'permanent' ? null : dayAt(8), items: [], collection: null }],
     followCampaign: false, state: 'new', excluded: [], owner: S.me.id, approver: null, cc: [],
   };
@@ -250,13 +258,24 @@ function openEditor(plan, isNew) {
   p.rule ||= { mode: p.kind === 'permanent' ? 'percent_up' : 'percent_off', value: 15, rounding: '', from: 'price' };
   p.scope ||= { mode: 'products', collections: [], products: [], vendor: '', tag: '', type: '' };
   p.color ||= COLORS[0]; p.tagsAdd ||= []; p.tagsRemove ||= []; p.followCampaign = !!p.followCampaign;
-  E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, resolvedKey: isNew ? '' : scopeKey(p) };
+  if (!p.groups?.length) p.groups = [{ id: uid('g_'), scope: p.scope, rule: p.rule }]; // 老计划只有一组
+  E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0, resolvedKey: isNew ? '' : scopeKey(p) };
   renderChrome(); render(); window.scrollTo(0, 0);
 }
 const P = () => (E.showPending && E.orig?.pendingChange ? { ...E.orig, ...E.orig.pendingChange } : E.plan);
 const curSlot = () => P().slots[0];
 const started = () => !E.isNew && E.orig?.state === 'approved' && E.orig.slots.some((s) => s.start <= now());
-const scopeKey = (p) => JSON.stringify([p.scope, p.rule, p.compare]);
+const scopeKey = (p) => JSON.stringify([p.groups || [{ scope: p.scope, rule: p.rule }], p.compare]);
+const groupsOf = (p) => (p.groups?.length ? p.groups : [{ id: 'g0', scope: p.scope, rule: p.rule }]);
+const G = () => groupsOf(P())[Math.min(E.gi || 0, groupsOf(P()).length - 1)];   // 正在看的那一组
+const EG = () => E.plan.groups[Math.min(E.gi || 0, E.plan.groups.length - 1)]; // 正在改的那一组
+const ruleSay = (r) => `${RULE_MODES[r.mode]?.say(r.value) || ''}${r.rounding ? `,尾数取 ${r.rounding === '99' ? '.99' : '整数'}` : ''}${r.from === 'compare' ? ',按划线价算' : ''}`;
+function scopeSayOf(sc) {
+  return sc.mode === 'all' ? '全店所有产品'
+    : sc.mode === 'collections' ? `合集 ${sc.collections.map((c) => c.title).join('、') || '(还没选)'}`
+      : sc.mode === 'products' ? `手选的 ${sc.products.length} 个产品`
+        : [sc.vendor && `品牌 ${sc.vendor}`, sc.tag && `标签 ${sc.tag}`, sc.type && `类型 ${sc.type}`].filter(Boolean).join(' + ') || '(还没选条件)';
+}
 const stale = () => scopeKey(P()) !== E.resolvedKey;
 function readonly() {
   if (E.showPending) return true;
@@ -278,18 +297,16 @@ function summaryHtml() {
   const maxOff = offs.length ? Math.max(...offs) : 0;
   const nProd = new Set(live.map((i) => i.productId)).size;
   const mins = Math.max(1, Math.ceil(nProd / 60));
-  const scopeSay = p.scope.mode === 'all' ? '全店所有产品'
-    : p.scope.mode === 'collections' ? `合集 ${p.scope.collections.map((c) => c.title).join('、') || '(还没选)'} 里的产品`
-      : p.scope.mode === 'products' ? `手选的 ${p.scope.products.length} 个产品`
-        : [p.scope.vendor && `品牌 ${p.scope.vendor}`, p.scope.tag && `标签 ${p.scope.tag}`, p.scope.type && `类型 ${p.scope.type}`].filter(Boolean).join(' + ') || '(还没选条件)';
+  const gs = groupsOf(p);
   const line = (t) => `<li>${t}</li>`;
   return `<div class="pr-sum">
     <div class="pr-sum__h"><span class="pr-dot" style="background:${esc(p.color)}"></span><b>${esc(p.name || '(还没起名字)')}</b></div>
     <ul>
-      ${line(`${esc(scopeSay)} · <b>${RULE_MODES[p.rule.mode].say(p.rule.value)}</b>${p.rule.rounding ? `,尾数取 ${p.rule.rounding === '99' ? '.99' : '整数'}` : ''}${p.rule.from === 'compare' ? ',按划线价算' : ''}`)}
+      ${gs.map((g, i) => line(`${gs.length > 1 ? `<b>第 ${i + 1} 组</b>:` : ''}${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>`)).join('')}
+      ${gs.length > 1 ? line('<span class="muted">同一个产品在几组里时,以排在下面的那组为准</span>') : ''}
       ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束并<b>自动恢复原价</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
       ${line(core.COMPARE_CN[p.compare] || '划线价不动')}
-      ${p.kind === 'window' ? line(`层级:${core.LAYER_CN[p.layer]}(同一产品被几个限时计划管时,限时抢购 > 品牌/合集 > 全场)`) : ''}
+      ${p.kind === 'window' && p.layer !== 'sitewide' ? line(`层级:${core.LAYER_CN[p.layer]}(和别的限时计划撞到同一个产品时用)`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
       ${p.tagsRemove.length ? line(`生效期间去掉标签 <b>${p.tagsRemove.map(esc).join('、')}</b>,结束自动加回`) : ''}
       ${line(`审批人:<b>${p.approver ? esc(nameOf(p.approver)) : '管理员'}</b>${p.owner ? ` · 负责人 ${esc(nameOf(p.owner))}` : ''}`)}
@@ -303,7 +320,6 @@ function editorHtml() {
   const st = E.isNew ? null : statusOf(E.orig);
   const sl = curSlot();
   const sec = (title, body, hint = '') => `<section class="pr-sec"><div class="pr-sec__h">${title}${hint ? `<span class="muted">${hint}</span>` : ''}</div><div class="pr-sec__b">${body}</div></section>`;
-  const rm = RULE_MODES[p.rule.mode];
   return `
   <div class="edhead">
     <button class="btn btn-ghost" data-a="close">← 返回</button>
@@ -318,20 +334,10 @@ function editorHtml() {
         <span class="pr-colors">${COLORS.map((c) => `<button type="button" class="pr-color ${p.color === c ? 'is-on' : ''}" style="background:${c}" data-a="color" data-v="${c}" ${ro ? 'disabled' : ''}></button>`).join('')}</span>
         <input class="inp" data-f="name" value="${esc(p.name)}" placeholder="比如:Early Black Friday · 全场 85 折" ${ro ? 'disabled' : ''} style="flex:1;min-width:200px"/></div>`, '只有后台看得到,顾客看不到')}
 
-      ${sec('改什么价', `<div class="pr-radios">${Object.entries(RULE_MODES).filter(([k]) => k !== 'percent_up' || p.kind === 'permanent').map(([k, m]) => `
-        <label class="pr-radio ${p.rule.mode === k ? 'is-on' : ''}"><input type="radio" name="rmode" value="${k}" ${p.rule.mode === k ? 'checked' : ''} ${ro ? 'disabled' : ''}/><span>${m.label}</span></label>`).join('')}</div>
-        ${p.rule.mode === 'keep' ? '' : `<div class="row" style="margin-top:10px">
-          <input class="inp" type="number" step="0.01" min="0" data-f="rvalue" value="${esc(p.rule.value)}" style="width:120px" ${ro ? 'disabled' : ''}/><span class="pr-unit">${rm.unit}</span>
-          ${['fixed'].includes(p.rule.mode) ? '' : `<span class="muted">尾数</span><select class="sel" data-f="rrounding" ${ro ? 'disabled' : ''}><option value="" ${!p.rule.rounding ? 'selected' : ''}>不取整</option><option value="99" ${p.rule.rounding === '99' ? 'selected' : ''}>.99</option><option value="00" ${p.rule.rounding === '00' ? 'selected' : ''}>整数</option></select>`}
-          ${['percent_off', 'amount_off'].includes(p.rule.mode) ? `<span class="muted">按</span><select class="sel" data-f="rfrom" ${ro ? 'disabled' : ''}><option value="price" ${p.rule.from !== 'compare' ? 'selected' : ''}>现售价</option><option value="compare" ${p.rule.from === 'compare' ? 'selected' : ''}>划线价(RRP)</option></select><span class="muted">算</span>` : ''}
-        </div>`}
-        <p class="pr-say">${rm.say(p.rule.value)}。</p>`)}
-
-      ${sec('改哪些产品', scopeHtml(ro), '选好范围后点下面的「试算预览」算出每个产品的新价')}
+      ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如合集 A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
 
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期自动恢复原价)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
-        ${p.kind === 'window' ? `<div class="row" style="margin-bottom:10px"><span class="muted">层级</span><span class="pr-seg">${[['sitewide', '全场'], ['brand', '品牌 / 合集'], ['flash', '限时抢购']].map(([k, l]) => `<button type="button" class="${p.layer === k ? 'is-on' : ''}" data-a="layer" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>` : ''}
         ${p.campaign ? `<label class="row" style="margin-bottom:10px;font-size:13px"><input type="checkbox" data-f="followcamp" ${p.followCampaign ? 'checked' : ''} ${ro ? 'disabled' : ''}/> 跟随活动「${esc(p.campaign.name)}」的时间 <span class="muted">活动改时间,这个计划跟着一起改</span></label>` : ''}
         <div class="grid2">
           <label class="pr-fld">开始<input class="inp" type="datetime-local" data-f="start" value="${toInput(sl.start)}" ${ro || started() || p.followCampaign ? 'disabled' : ''}/>${!ro && !started() && !p.followCampaign ? '<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">设成现在(批准后一分钟内执行)</button>' : ''}</label>
@@ -356,7 +362,9 @@ function editorHtml() {
       </div>
       <label class="pr-fld" style="margin-top:10px">备注 <em>给审批人看的说明</em><textarea class="inp" rows="2" data-f="note" ${ro ? 'disabled' : ''} placeholder="比如:配合首页 Banner,Flash 每天 0 点换">${esc(p.note || '')}</textarea></label>`)}
 
-      ${sec('划线价', `<select class="sel" data-f="compare" ${ro ? 'disabled' : ''}>${Object.entries(core.COMPARE_CN).map(([k, l]) => `<option value="${k}" ${(p.compare || (p.kind === 'window' ? 'original' : 'keep')) === k ? 'selected' : ''}>${l}${k === 'original' ? '(前台显示 was / now)' : ''}</option>`).join('')}</select>
+      ${sec('划线价', `${p.kind === 'window' ? `<div class="pr-fld" style="margin-bottom:12px">层级 <em>只有两个限时计划同时改到同一个产品时才有用:层级高的那个说了算(限时抢购 > 品牌 / 合集 > 全场)。一般不用动</em>
+          <span class="pr-seg">${[['sitewide', '全场'], ['brand', '品牌 / 合集'], ['flash', '限时抢购']].map(([k, l]) => `<button type="button" class="${p.layer === k ? 'is-on' : ''}" data-a="layer" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>` : ''}
+        <select class="sel" data-f="compare" ${ro ? 'disabled' : ''}>${Object.entries(core.COMPARE_CN).map(([k, l]) => `<option value="${k}" ${(p.compare || (p.kind === 'window' ? 'original' : 'keep')) === k ? 'selected' : ''}>${l}${k === 'original' ? '(前台显示 was / now)' : ''}</option>`).join('')}</select>
         <p class="muted">主题里「只显示打折」「按折扣排序」「折扣角标」都看划线价,所以限时促销一般选「显示原价」。</p>`, '高级')}
 
       ${sec('试算预览', `<p class="muted">按上面的设置算出每个产品的新价,确认没问题再提交。${stale() && items().length ? '<b class="tx-warn">设置改过了,结果可能不是最新的,请重新试算。</b>' : ''}</p>
@@ -369,6 +377,41 @@ function editorHtml() {
   <div class="footbar">${footHtml()}</div>`;
 }
 
+function ruleHtml(ro) {
+  const p = P(); const r = G().rule; const rm = RULE_MODES[r.mode] || RULE_MODES.percent_off;
+  return `<div class="pr-radios">${Object.entries(RULE_MODES).filter(([k]) => k !== 'percent_up' || p.kind === 'permanent').map(([k, m]) => `
+      <label class="pr-radio ${r.mode === k ? 'is-on' : ''}"><input type="radio" name="rmode" value="${k}" ${r.mode === k ? 'checked' : ''} ${ro ? 'disabled' : ''}/><span>${m.label}</span></label>`).join('')}</div>
+    ${['keep', 'manual'].includes(r.mode) ? '' : `<div class="row" style="margin-top:10px">
+      <input class="inp" type="number" step="0.01" min="0" data-f="rvalue" value="${esc(r.value)}" style="width:120px" ${ro ? 'disabled' : ''}/><span class="pr-unit">${rm.unit}</span>
+      ${r.mode === 'fixed' ? '' : `<span class="muted">尾数</span><select class="sel" data-f="rrounding" ${ro ? 'disabled' : ''}><option value="" ${!r.rounding ? 'selected' : ''}>不取整</option><option value="99" ${r.rounding === '99' ? 'selected' : ''}>.99</option><option value="00" ${r.rounding === '00' ? 'selected' : ''}>整数</option></select>`}
+      ${['percent_off', 'amount_off'].includes(r.mode) ? `<span class="muted">按</span><select class="sel" data-f="rfrom" ${ro ? 'disabled' : ''}><option value="price" ${r.from !== 'compare' ? 'selected' : ''}>现售价</option><option value="compare" ${r.from === 'compare' ? 'selected' : ''}>划线价(RRP)</option></select><span class="muted">算</span>` : ''}
+    </div>`}
+    <p class="pr-say">${rm.say(r.value)}。</p>`;
+}
+function groupsHtml(ro) {
+  const gs = groupsOf(P()); const gi = Math.min(E.gi || 0, gs.length - 1);
+  return `<div class="pr-groups">${gs.map((g, i) => {
+    const open = i === gi;
+    const n = items().filter((it) => it.group === g.id).length;
+    return `<div class="pr-group ${open ? 'is-open' : ''}">
+      <div class="pr-group__h" data-a="gopen" data-i="${i}">
+        <span class="pr-group__n">${gs.length > 1 ? `第 ${i + 1} 组` : '改价规则'}</span>
+        <span class="pr-group__s">${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${n ? ` <span class="muted">· ${n} 个变体</span>` : ''}</span>
+        ${ro || gs.length < 2 ? '' : `<span class="pr-group__acts">
+          <button type="button" class="btn btn-ghost btn-xs" data-a="gup" data-i="${i}" ${i ? '' : 'disabled'} title="上移">↑</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-a="gdown" data-i="${i}" ${i < gs.length - 1 ? '' : 'disabled'} title="下移">↓</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-a="gdel" data-i="${i}" title="删掉这一组">删除</button></span>`}
+      </div>
+      ${open ? `<div class="pr-group__b">
+        <div class="pr-group__lab">改哪些产品</div>${scopeHtml(ro)}
+        <div class="pr-group__lab" style="margin-top:14px">改什么价</div>${ruleHtml(ro)}
+      </div>` : ''}
+    </div>`;
+  }).join('')}</div>
+  ${ro ? '' : '<button class="btn btn-sm" type="button" data-a="gadd" style="margin-top:10px">+ 再加一组</button>'}
+  ${gs.length > 1 ? '<p class="muted" style="margin-top:6px">同一个产品出现在好几组时,以<b>排在下面的那组</b>为准 —— 比如第 1 组全场 9 折,第 2 组某个品牌 8 折,这个品牌就是 8 折。</p>' : ''}`;
+}
+
 function tagChips(key, ro) {
   const list = P()[key] || [];
   return `<div class="row" style="gap:4px;flex-wrap:wrap;margin-top:4px">${list.map((t, i) => `<span class="tag">${esc(t)}${ro ? '' : `<button type="button" class="chip__x" data-a="rmtag" data-k="${key}" data-i="${i}">✕</button>`}</span>`).join('')}
@@ -376,7 +419,7 @@ function tagChips(key, ro) {
 }
 
 function scopeHtml(ro) {
-  const sc = P().scope;
+  const sc = G().scope;
   const tab = (k) => `<button type="button" class="${sc.mode === k ? 'is-on' : ''}" data-a="smode" data-v="${k}" ${ro ? 'disabled' : ''}>${SCOPE_MODES[k]}</button>`;
   let body = '';
   if (sc.mode === 'collections') {
@@ -402,7 +445,9 @@ function scopeHtml(ro) {
 // 试算结果:默认只看前 10 个(和原来那个 app 一样),可以展开全部
 function previewHtml(ro) {
   const p = P(); const its = items(); const ex = new Set(p.excluded || []);
-  const show = E.showAll ? its : its.slice(0, 10);
+  const gs = groupsOf(p); const gno = new Map(gs.map((g, i) => [g.id, i + 1]));
+  const needFill = its.some((i) => i.price == null && !ex.has(i.variantId)) && p.kind === 'window';
+  const show = E.showAll || needFill ? its : its.slice(0, 10);
   const setCompare = (p.compare || '') === 'set';
   let lastPid = null;
   const rows = show.map((it) => {
@@ -415,15 +460,18 @@ function previewHtml(ro) {
       <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div></div></div>` : ''}</td>
       <td>${esc(it.variant || '')}<div class="pcell__s">${esc(it.sku || '')}</div></td>
       <td class="num">${money(it.refPrice)}${it.refCompareAt && Number(it.refCompareAt) > Number(it.refPrice) ? `<div><s>${money(it.refCompareAt)}</s></div>` : ''}${it.cost != null ? `<div class="pcell__s">成本 ${money(it.cost)}</div>` : ''}</td>
-      <td class="num">${ro || gone ? `<b>${it.price != null ? money(it.price) : '不变'}</b>` : `<input class="inp" data-f="iprice" data-v="${it.variantId}" value="${it.price ?? ''}" placeholder="不变"/>`}</td>
+      ${gs.length > 1 ? `<td><span class="pr-gtag">${gno.get(it.group) ? `第 ${gno.get(it.group)} 组` : ''}</span></td>` : ''}
+      <td class="num">${ro || gone ? `<b>${it.price != null ? money(it.price) : '不变'}</b>` : `<input class="inp ${it.price == null && p.kind === 'window' ? 'is-todo' : ''}" data-f="iprice" data-v="${it.variantId}" value="${it.price ?? ''}" placeholder="${p.kind === 'window' ? '填新价' : '不变'}"/>`}
+        ${it.manual && !ro && !gone ? `<div><span class="pr-mtag">手改</span><button class="linkbtn" data-a="unmanual" data-v="${it.variantId}" title="回到这一组规则算出来的价">用规则价</button></div>` : ''}</td>
       <td class="num">${setCompare && !ro && !gone ? `<input class="inp" data-f="icompare" data-v="${it.variantId}" value="${it.compareAt ?? ''}" placeholder="无"/>` : t?.compareAt ? `<s>${money(t.compareAt)}</s>` : '<span class="muted">无</span>'}</td>
       <td class="num">${d == null ? '' : d > 0 ? `<span class="off">-${d}%</span>` : d < 0 ? `<span class="up">+${-d}%</span>` : '0%'}</td>
       <td>${gone ? '<span class="w w--warn">已移出</span>' : ''}${w.map((x) => `<span class="w w--${x.level}">${esc(x.text)}</span>`).join('')}</td>
       <td>${gone || ro ? '' : started() ? `<button class="linkbtn" data-a="exclude" data-v="${it.variantId}" title="移出后下一分钟恢复原价">移出</button>` : `<button class="linkbtn" data-a="rm" data-v="${it.variantId}">✕</button>`}</td>
     </tr>`;
   }).join('');
-  return `<div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${its.length > 10 ? `<button class="btn btn-sm btn-ghost" data-a="showall" style="margin-top:8px">${E.showAll ? '只看前 10 个' : `展开全部 ${its.length} 个变体`}</button>` : ''}`;
+  return `${ro ? '' : '<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,重新试算也会保留;点「用规则价」恢复)。</p>'}
+    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th>${gs.length > 1 ? '<th>分组</th>' : ''}<th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${its.length > 10 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" style="margin-top:8px">${E.showAll ? '只看前 10 个' : `展开全部 ${its.length} 个变体`}</button>` : ''}`;
 }
 
 function bannersHtml() {
@@ -446,9 +494,10 @@ function bannersHtml() {
 }
 function diffLines(a, b) {
   const out = [];
-  const f = (x) => `${RULE_MODES[x.rule?.mode]?.label || ''} ${x.rule?.value ?? ''}`;
-  if (f(a) !== f(b)) out.push(`改价方式改成「${f(b)}」`);
-  if (JSON.stringify(a.scope) !== JSON.stringify(b.scope)) out.push('改了适用产品的范围');
+  const ga = groupsOf(a), gb = groupsOf(b);
+  if (ga.length !== gb.length) out.push(`分组从 ${ga.length} 组改成 ${gb.length} 组`);
+  if (JSON.stringify(ga.map((g) => g.rule)) !== JSON.stringify(gb.map((g) => g.rule))) out.push(`改价方式改成「${gb.map((g) => ruleSay(g.rule)).join(' / ')}」`);
+  if (JSON.stringify(ga.map((g) => g.scope)) !== JSON.stringify(gb.map((g) => g.scope))) out.push('改了适用产品的范围');
   const sa = a.slots[0] || {}, sb = b.slots[0] || {};
   if (sa.start !== sb.start) out.push(`开始时间改成 ${fmtT(sb.start)}`);
   if (sa.end !== sb.end) out.push(`结束时间改成 ${sb.end ? fmtT(sb.end) : '不结束'}`);
@@ -483,16 +532,21 @@ function checkHtml() {
   const err = A.validate(p, opts());
   // 尾数取整会让便宜的产品降得比规则多很多(£1.50 打 8 折 = £1.20,取 .99 就成了 £0.99)
   let roundWarn = '';
-  if (p.rule.mode === 'percent_off' && p.rule.rounding) {
-    const offs = its.filter((i) => i.price != null && !ex.has(i.variantId)).map((i) => ({ off: core.discountPct(i.refPrice, i.price), i }));
+  {
+    const gmap = new Map(groupsOf(p).map((g) => [g.id, g]));
+    const ruleOf = (i) => (gmap.get(i.group) || groupsOf(p)[0]).rule;
+    const offs = its.filter((i) => i.price != null && !i.manual && !ex.has(i.variantId)).map((i) => ({ off: core.discountPct(i.refPrice, i.price), i, r: ruleOf(i) }))
+      .filter((x) => x.r.mode === 'percent_off' && x.r.rounding && x.off > Number(x.r.value) + 5);
     const worst = offs.sort((a, b) => b.off - a.off)[0];
-    if (worst && worst.off > Number(p.rule.value) + 5) roundWarn = `<div class="banner banner--warn" style="margin-bottom:6px">尾数取整让便宜的产品降得更多:规则是降 ${p.rule.value}%,但「${esc(worst.i.product || worst.i.title)}」实际降了 ${worst.off}%(${money(worst.i.refPrice)} → ${money(worst.i.price)})。不想这样就把尾数改成「不取整」。</div>`;
+    if (worst) roundWarn = `<div class="banner banner--warn" style="margin-bottom:6px">尾数取整让便宜的产品降得更多:规则是降 ${worst.r.value}%,但「${esc(worst.i.product || worst.i.title)}」实际降了 ${worst.off}%(${money(worst.i.refPrice)} → ${money(worst.i.price)})。不想这样就把那一组的尾数改成「不取整」。</div>`;
   }
+  const todo = its.filter((i) => i.price == null && !ex.has(i.variantId)).length;
   return `<div class="pr-card"><div class="pr-card__t">检查</div>
     <div class="check">
       <div class="${errs ? 'is-bad' : ''}"><b>${errs}</b>个有错误(不能提交)</div>
       <div class="${warns ? 'is-warn' : ''}"><b>${warns}</b>个要留意</div>
     </div>
+    ${todo && p.kind === 'window' ? `<div class="banner banner--warn" style="margin-bottom:6px">还有 <b>${todo}</b> 个变体没填新价(在「试算预览」表格里填)。</div>` : ''}
     ${roundWarn}
     ${[...byOther.values()].map((o) => `<div class="banner banner--info" style="margin-bottom:6px">${o.n.size} 个变体同时在「${esc(o.name)}」(${core.LAYER_CN[o.layer] || ''})里:重叠期间以「${o.wins ? esc(p.name || '本计划') : esc(o.name)}」的价格为准${o.wins ? `,本计划结束后回到「${esc(o.name)}」的价` : ''}。</div>`).join('')}
     ${err && !readonly() ? `<div class="banner banner--warn" style="margin:0">还不能提交:${esc(err)}</div>` : ''}
@@ -540,13 +594,11 @@ function applyCampaignTime() {
 const toItem = (pr, v, rule) => {
   const it = { variantId: v.id, productId: pr.id, title: `${pr.title}${v.title ? ' - ' + v.title : ''}`, product: pr.title, variant: v.title, sku: v.sku, vendor: pr.vendor, image: pr.image,
     refPrice: v.price, refCompareAt: v.compareAt, cost: v.cost, price: null };
-  try { if (rule.mode !== 'keep') it.price = core.priceByRule({ price: v.price, compareAt: v.compareAt }, rule); } catch { /* 规则没填好就先不设价 */ }
+  try { if (!['keep', 'manual'].includes(rule.mode)) it.price = core.priceByRule({ price: v.price, compareAt: v.compareAt }, rule); } catch { /* 规则没填好就先不设价 */ }
   return it;
 };
 // 按「改哪些产品」+「改什么价」算出每个变体的新价。手改过的价格尽量保留。
-async function resolveScope() {
-  const p = E.plan; const sc = p.scope;
-  const old = new Map(items().map((i) => [i.variantId, i]));
+async function productsOf(sc) {
   let products = [];
   if (sc.mode === 'collections') {
     if (!sc.collections.length) throw new Error('先选至少一个合集');
@@ -569,14 +621,26 @@ async function resolveScope() {
     if (d.truncated) toast('店里产品很多,只取了前 5000 个', false);
     products = d.products;
   }
-  const its = [];
-  for (const pr of products) for (const v of pr.variants) {
-    const it = toItem(pr, v, p.rule);
-    const o = old.get(v.id);
-    if (o && o.manual && o.price != null) { it.price = o.price; it.manual = true; } // 手改过的保留
-    if (o && o.compareAt != null) it.compareAt = o.compareAt;
-    its.push(it);
+  return products;
+}
+// 按分组算出每个变体的新价:一组一组算,同一个变体在好几组里时,下面的组覆盖上面的;手改过的价格保留
+async function resolveScope() {
+  const p = E.plan;
+  const old = new Map(items().map((i) => [i.variantId, i]));
+  const byVariant = new Map();
+  for (const [gi, g] of p.groups.entries()) {
+    let products;
+    try { products = await productsOf(g.scope); }
+    catch (e) { throw new Error(p.groups.length > 1 ? `第 ${gi + 1} 组:${e.message}` : e.message); }
+    for (const pr of products) for (const v of pr.variants) {
+      const it = toItem(pr, v, g.rule); it.group = g.id;
+      const o = old.get(v.id);
+      if (o && o.manual && o.price != null) { it.price = o.price; it.manual = true; } // 手改过的保留
+      if (o && o.compareAt != null) it.compareAt = o.compareAt;
+      byVariant.set(v.id, it);
+    }
   }
+  const its = [...byVariant.values()];
   curSlot().items = its;
   E.resolvedKey = scopeKey(p);
   touch();
@@ -590,7 +654,7 @@ function values() {
   const p = E.plan;
   return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer : null,
     compare: p.compare || (p.kind === 'window' ? 'original' : 'keep'), campaign: p.campaign, note: p.note, slots: p.slots,
-    rule: p.rule, scope: p.scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
+    groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
     owner: p.owner || null, approver: p.approver || null, cc: p.cc || [] };
 }
 
@@ -688,36 +752,60 @@ document.addEventListener('click', async (ev) => {
         if (el.disabled) return;
         const k = el.dataset.v; E.plan.kind = k;
         E.plan.compare = k === 'window' ? 'original' : 'keep';
-        E.plan.rule.mode = k === 'window' ? 'percent_off' : 'percent_up';
+        for (const g of E.plan.groups) if (!['manual', 'keep', 'fixed', 'amount_off'].includes(g.rule.mode)) g.rule.mode = k === 'window' ? 'percent_off' : 'percent_up';
         const s = E.plan.slots[0];
         if (k === 'permanent') { s.end = null; s.collection = null; } else if (!s.end) s.end = s.start + 7 * DAY;
         E.resolvedKey = ''; touch(); render(); break;
       }
       case 'layer': if (el.disabled) return; E.plan.layer = el.dataset.v; touch(); render(); break;
-      case 'smode': if (el.disabled) return; E.plan.scope.mode = el.dataset.v; E.panel = null;
+      case 'smode': if (el.disabled) return; EG().scope.mode = el.dataset.v; E.panel = null;
         if (el.dataset.v === 'search' && !cache.vendors) api('GET', '/api/price/catalog/vendors').then((d) => { cache.vendors = d.vendors; render(); }).catch(() => {});
         touch(); render(); break;
       case 'panel': E.panel = el.dataset.p || null; render(); break;
       case 'pick': {
         if (!window.shopify?.resourcePicker) { toast('选择器只能在 Shopify 后台里用', false); return; }
         const picked = await window.shopify.resourcePicker({ type: 'product', multiple: true, action: 'select',
-          selectionIds: E.plan.scope.products.map((x) => ({ id: x.id })) });
+          selectionIds: EG().scope.products.map((x) => ({ id: x.id })) });
         if (!picked) return;
-        E.plan.scope.products = picked.map((x) => ({ id: x.id, title: x.title, image: x.images?.[0]?.originalSrc || '' }));
+        EG().scope.products = picked.map((x) => ({ id: x.id, title: x.title, image: x.images?.[0]?.originalSrc || '' }));
         touch(); render(); break;
       }
-      case 'clearprod': E.plan.scope.products = []; touch(); render(); break;
+      case 'clearprod': EG().scope.products = []; touch(); render(); break;
       case 'collsearch': cache.collQ = $('#coll-q').value.trim(); await withBusy(el, async () => { cache.collSearch = (await api('GET', `/api/price/catalog/collections?q=${encodeURIComponent(cache.collQ)}`)).collections; render(); }); break;
-      case 'addcoll': { const sc = E.plan.scope; if (!sc.collections.some((c) => c.id === el.dataset.id)) sc.collections.push({ id: el.dataset.id, title: el.dataset.t }); E.panel = null; touch(); render(); break; }
-      case 'rmcoll': E.plan.scope.collections.splice(+el.dataset.i, 1); touch(); render(); break;
+      case 'addcoll': { const sc = EG().scope; if (!sc.collections.some((c) => c.id === el.dataset.id)) sc.collections.push({ id: el.dataset.id, title: el.dataset.t }); E.panel = null; touch(); render(); break; }
+      case 'rmcoll': EG().scope.collections.splice(+el.dataset.i, 1); touch(); render(); break;
       case 'setcoll': curSlot().collection = { id: el.dataset.id, title: el.dataset.t }; E.panel = null; touch(); render(); break;
       case 'unsetcoll': curSlot().collection = null; touch(); render(); break;
       case 'fromcamp': await withBusy(el, async () => {
         const d = await api('GET', `/api/price/catalog/campaign?id=${encodeURIComponent(E.plan.campaign.id)}`);
-        E.plan.scope = { mode: 'products', collections: [], products: d.products.map((x) => ({ id: x.id, title: x.title, image: x.image })), vendor: '', tag: '', type: '' };
+        EG().scope = { mode: 'products', collections: [], products: d.products.map((x) => ({ id: x.id, title: x.title, image: x.image })), vendor: '', tag: '', type: '' };
         E.resolvedKey = ''; touch(); toast(`用了活动圈定的 ${d.products.length} 个产品`); render();
       }); break;
       case 'rmtag': E.plan[el.dataset.k].splice(+el.dataset.i, 1); touch(); render(); break;
+      // ---- 改价分组 ----
+      case 'gopen': if (ev.target.closest('button')) return; E.gi = +el.dataset.i; E.panel = null; render(); break;
+      case 'gadd': {
+        const g = newGroup(E.plan.kind, EG().rule); g.scope.mode = 'products';
+        E.plan.groups.push(g); E.gi = E.plan.groups.length - 1; E.panel = null; E.resolvedKey = ''; touch(); render(); break;
+      }
+      case 'gdel': {
+        if (E.plan.groups.length < 2 || !armed(el, '再点一次删掉这组')) return;
+        const i = +el.dataset.i; const gid = E.plan.groups[i].id;
+        E.plan.groups.splice(i, 1); E.gi = Math.max(0, Math.min(E.gi, E.plan.groups.length - 1));
+        curSlot().items = curSlot().items.filter((it) => it.group !== gid); E.resolvedKey = ''; touch(); render(); break;
+      }
+      case 'gup': case 'gdown': {
+        const i = +el.dataset.i; const j = a === 'gup' ? i - 1 : i + 1; const gs = E.plan.groups;
+        if (j < 0 || j >= gs.length) return;
+        [gs[i], gs[j]] = [gs[j], gs[i]]; E.gi = j; E.resolvedKey = ''; touch(); render(); break;
+      }
+      case 'unmanual': { // 手改过的变体:回到它那组规则算出来的价
+        const it = curSlot().items.find((x) => x.variantId === el.dataset.v); if (!it) return;
+        const g = E.plan.groups.find((x) => x.id === it.group) || E.plan.groups[0];
+        it.manual = false; it.price = null;
+        try { if (!['keep', 'manual'].includes(g.rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, g.rule); } catch { /* 规则没填好 */ }
+        touch(); render(); break;
+      }
       case 'resolve': await withBusy(el, async () => { const n = await resolveScope(); toast(`算好了:${n} 个变体`); render(); }); break;
       case 'showall': E.showAll = !E.showAll; render(); break;
       case 'rm': { const s = curSlot(); s.items = s.items.filter((i) => i.variantId !== el.dataset.v); touch(); render(); break; }
@@ -771,7 +859,7 @@ document.addEventListener('change', async (ev) => {
   if (el.dataset.a === 'notify') { try { await api('PUT', '/api/price/settings', { notify: { [el.dataset.k]: el.checked } }); await load(); } catch (e) { toast(e.message, false); } return; }
   if (el.id === 'lplan') { ledgerQ.plan = el.value; ledgerQ.offset = 0; loadLedger(); return; }
   if (!E) return;
-  if (el.name === 'rmode') { E.plan.rule.mode = el.value; E.resolvedKey = ''; touch(); render(); return; }
+  if (el.name === 'rmode') { EG().rule.mode = el.value; E.resolvedKey = ''; touch(); render(); return; }
   const f = el.dataset.f;
   if (!f) return;
   const s = curSlot();
@@ -780,10 +868,10 @@ document.addEventListener('change', async (ev) => {
     case 'name': E.plan.name = el.value; touch(); break;
     case 'note': E.plan.note = el.value; touch(); break;
     case 'compare': E.plan.compare = el.value; E.resolvedKey = ''; touch(); render(); break;
-    case 'rvalue': E.plan.rule.value = el.value; E.resolvedKey = ''; touch(); render(); break;
-    case 'rrounding': E.plan.rule.rounding = el.value; E.resolvedKey = ''; touch(); render(); break;
-    case 'rfrom': E.plan.rule.from = el.value; E.resolvedKey = ''; touch(); render(); break;
-    case 'svendor': case 'stag': case 'stype': E.plan.scope[{ svendor: 'vendor', stag: 'tag', stype: 'type' }[f]] = el.value.trim(); E.resolvedKey = ''; touch(); break;
+    case 'rvalue': EG().rule.value = el.value; E.resolvedKey = ''; touch(); render(); break;
+    case 'rrounding': EG().rule.rounding = el.value; E.resolvedKey = ''; touch(); render(); break;
+    case 'rfrom': EG().rule.from = el.value; E.resolvedKey = ''; touch(); render(); break;
+    case 'svendor': case 'stag': case 'stype': EG().scope[{ svendor: 'vendor', stag: 'tag', stype: 'type' }[f]] = el.value.trim(); E.resolvedKey = ''; touch(); break;
     case 'campaign': {
       const c = (cache.campaigns || []).find((x) => x.id === el.value);
       E.plan.campaign = c ? { id: c.id, name: c.name } : null;
