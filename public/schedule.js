@@ -946,7 +946,7 @@
       const prods = p.products || [];
       return `<div class="pnrow ${on ? 'is-on' : ''}">
         <button class="pnrow__main" type="button" data-open="${p.id}" data-pop="${p.id}">
-          <span class="pnrow__h"><b>${esc(titleOf(p))}</b>${badgeAt(p, T)}${p.fullOrder ? '<span class="tag tag--accent">完全按清单顺序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">产品页倒计时</span>' : ''}</span>
+          <span class="pnrow__h"><b>${esc(titleOf(p))}</b>${badgeAt(p, T)}${p.fullOrder ? '<span class="tag tag--accent">完全按清单顺序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">倒计时</span>' : ''}</span>
           <span class="pnrow__w">${I.clock}${esc(winText(p))}</span>
           <span class="pnrow__ps">${prods.slice(0, 8).map((x, i) => `<span class="pnrow__p" title="${esc(x.title)}"><span class="pnrow__n">${i + 1}</span>${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 8 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}${prods.length ? '' : '<span class="muted">还没加产品</span>'}</span>
         </button>
@@ -1046,7 +1046,7 @@
         ${endingTag(c)}${syncTag(c)}
         <span class="ccard__row"><span class="muted">产品</span><span class="ccard__v ccard__v--col">${campScope(c, false, '<br>')}<br><span class="muted">合计${st.exact ? '' : '约'} <b>${st.total}${st.unknown ? '+' : ''}</b> 个${st.exact ? '(已去重)' : st.overlap ? '(可能有重叠)' : ''}</span></span></span>
         ${zero.length ? `<span class="tag tag--danger">⚠️ ${esc(zero.join('、'))} 里没有产品</span>` : ''}
-        <span class="ccard__row"><span class="muted">产品页</span><span class="ccard__v">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : '<span class="muted">无徽章</span>'}${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span></span>
+        <span class="ccard__row"><span class="muted">徽章</span><span class="ccard__v">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : '<span class="muted">无徽章</span>'}${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span></span>
         <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}${(c.larkLinks || []).length ? ` · ${c.larkLinks.length} 个飞书任务` : ''}</span></span>
         ${bn.length ? `<span class="ccard__thumbs">${bn.map((b) => `<span class="ccard__t">${slideHtml(b, { w: 200 })}</span>`).join('')}</span>` : ''}
       </button>`;
@@ -1054,7 +1054,7 @@
     const tabs = [['live', '进行中'], ['scheduled', '已排期'], ['draft', '草稿'], ['ended', '已结束'], ['', '全部']]
       .map(([k, l]) => `<button class="ftab ${cpF.st === k ? 'is-active' : ''}" data-st="${k}" type="button">${l}<span>${S.campaigns.filter((c) => inTab(c, k)).length}</span></button>`).join('');
     $('#cp-root').innerHTML = `
-      ${pageHead('活动(促销)', '有时间段的促销:选好参加的产品(合集 / 标签 / 手动指定),产品页自动显示徽章和倒计时;挂在活动下的 Banner / 顶栏 / 顶栏样式和它同时上线、同时结束。',
+      ${pageHead('活动(促销)', '有时间段的促销:选好参加的产品(合集 / 标签 / 手动指定),产品页和搜索 / 合集页的产品卡自动显示徽章和倒计时;挂在活动下的 Banner / 顶栏 / 顶栏样式和它同时上线、同时结束。',
         `<button class="btn btn-primary" data-new="campaign" type="button">${I.plus}新建活动</button>`)}
       ${alertsHtml(['campaign'])}
       <div class="fbar"><div class="ftabs">${tabs}</div>${S.catalogFetchedAt ? `<span class="muted">产品数取自前台,更新于 ${fDT(new Date(S.catalogFetchedAt).getTime())}</span>` : ''}</div>
@@ -2108,8 +2108,8 @@
         ${timeBlock(it, 'pin')}
         <div id="wx-box">${pinBoxHtml()}</div>
         <div class="pg__opts">
-          <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>这些产品的产品页显示倒计时</b><span class="muted">倒数到这份清单结束(Flash 每天那一组用),到期自动消失</span></span></label>
-          ${fld('产品页徽章文字', inp('badge', it.badge, '如:Flash Deal · 今日限时'), '可留空;和倒计时一起显示在产品页')}
+          <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>这些产品显示倒计时</b><span class="muted">产品页和搜索 / 合集页的产品卡上都显示,倒数到这份清单结束(Flash 每天那一组用),到期自动消失</span></span></label>
+          ${fld('徽章文字', inp('badge', it.badge, '如:Flash Deal · 今日限时'), '可留空;和倒计时一起显示在产品页和产品卡上')}
         </div>`;
     }
     return '';
@@ -2199,8 +2199,8 @@
       <div class="fld"><span>参加活动的产品 <em>满足任一条件就参加</em></span>
         <div class="scope" id="ed-scope">${scopeHtml()}</div>
         <em>在任一合集里、带任一标签、或被单独指定的产品,都会显示本活动的徽章和倒计时。点「后台↗ / 前台↗」可以核对具体是哪些产品。</em></div>
-      <div class="fld2">${fld('产品页徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'))}${fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在多个活动里时,数字大的优先')}</div>
-      <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>产品页显示倒计时</b><span class="muted">全站统一样式,倒数到活动结束,到期自动消失</span></span></label>
+      <div class="fld2">${fld('徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'), '产品页和搜索 / 合集页的产品卡上都会显示')}${fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在多个活动里时,数字大的优先')}</div>
+      <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">产品页和产品卡上都显示,倒数到活动结束,到期自动消失</span></span></label>
       <div class="fld"><span>关联的飞书任务 <em>具体要求、设计、文案、分工放在飞书任务里;贴任务或任务清单的链接,可以起个名字(如「设计」「文案」「定价」)</em></span>
         <div id="ed-lark">${larkEdHtml()}</div>
         <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div></div>
@@ -2254,7 +2254,14 @@
           <div class="pv-pdp__btn">Add to cart</div>
         </div>
       </div>
-      <p class="muted pv-scope">${hasScope ? `活动期间,${campScope(v)} 的产品在产品页显示${v.badge ? '这个徽章' : ''}${v.countdown ? (v.badge ? '和' : '') + '倒计时' : ''};活动结束自动消失。` : '还没选产品:产品页不会显示任何东西,这个活动只用来让挂在它下面的 Banner / 顶栏同时上下线。'}</p>
+      ${v.badge || (v.countdown && v.end) ? `<div class="pv-label">搜索 / 合集页的产品卡</div>
+      <div class="pv-card">
+        <div class="pv-card__img" ${prod ? `style="background-image:url('${esc(prod.image)}')"` : ''}></div>
+        <div class="pv-cmp">${v.badge ? `<span class="pv-cmp__badge">${esc(v.badge)}</span>` : ''}${v.countdown && v.end ? '<span class="pv-cmp__cd" id="pv-cd2"></span>' : ''}</div>
+        <div class="pv-card__title">${esc(prod?.title || v.products?.[0]?.title || 'DZOFILM VESPID 2 Prime 4 Lens Set')}</div>
+        <div class="pv-card__price"><s>£5,899.00</s> £4,999.00</div>
+      </div>` : ''}
+      <p class="muted pv-scope">${hasScope ? `活动期间,${campScope(v)} 的产品在产品页和产品卡上显示${v.badge ? '这个徽章' : ''}${v.countdown ? (v.badge ? '和' : '') + '倒计时' : ''};活动结束自动消失。` : '还没选产品:产品页不会显示任何东西,这个活动只用来让挂在它下面的 Banner / 顶栏同时上下线。'}</p>
       ${bn.length ? `<div class="pv-label">挂在活动下的 Banner</div><div class="pv-bns">${bn.map((b) => `<span class="pv-bn" data-pop="${b.id}">${slideHtml(b, { w: 300 })}</span>`).join('')}</div>` : ''}
       ${tb.length ? `<div class="pv-label">挂在活动下的顶栏</div>${tb.map((t) => topbarHtml(tbMsg(t, cst), { style: cst })).join('<div style="height:6px"></div>')}` : ''}`;
   }
@@ -2441,8 +2448,12 @@
       clearInterval(pvTimer);
       if (v.kind === 'campaign' && v.countdown && v.end) {
         const tick = () => {
+          const left = Math.max(0, Math.floor((v.end - now()) / 1000));
+          const c2 = $('#pv-cd2'); // 产品卡上的写法和主题一致:一天以上「Ends in 5d 21h」,一天以内走秒
+          if (c2) c2.textContent = left >= 86400 ? `Ends in ${Math.floor(left / 86400)}d ${Math.floor(left % 86400 / 3600)}h`
+            : `Ends in ${[left / 3600, left % 3600 / 60, left % 60].map((x) => String(Math.floor(x)).padStart(2, '0')).join(':')}`;
           const el = $('#pv-cd'); if (!el) return;
-          let d = Math.max(0, Math.floor((v.end - now()) / 1000));
+          let d = left;
           const dd = Math.floor(d / 86400); d %= 86400; const hh = Math.floor(d / 3600); d %= 3600;
           el.textContent = `${dd}d ${hh}h ${Math.floor(d / 60)}m ${d % 60}s`;
         };

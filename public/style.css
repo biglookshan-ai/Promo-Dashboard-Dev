@@ -587,6 +587,14 @@ textarea.inp { resize: vertical; }
 .pv-pdp__price s { font-size: 12px; font-weight: 400; color: var(--text-3); margin-left: 4px; }
 .pv-cd { font-size: 12px; font-weight: 600; color: #d10000; background: #ffefef; border-radius: 4px; padding: 4px 9px; font-variant-numeric: tabular-nums; }
 .pv-pdp__btn { font-size: 12px; font-weight: 600; background: #111; color: #fff; border-radius: 4px; padding: 6px 14px; }
+.pv-card { width: 200px; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.pv-card__img { aspect-ratio: 1; border-radius: 6px; background: linear-gradient(135deg, #ececf0, #dcdce2) center / cover; }
+.pv-card__title { font-size: 12px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pv-card__price { font-size: 13px; font-weight: 700; color: #d10000; }
+.pv-card__price s { font-size: 11px; font-weight: 400; color: var(--text-3); margin-right: 4px; }
+.pv-cmp { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11px; line-height: 1.3; }
+.pv-cmp__badge { padding: 3px 8px; border-radius: 4px; background: #ffefef; color: #d10000; font-weight: 700; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-cmp__cd { color: #d10000; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ===== 第三轮:缩略图、悬停卡片、排序编辑、下架提醒、顶栏样式、活动产品数 ===== */
 .stat--warn .stat__n { color: var(--warn); }
