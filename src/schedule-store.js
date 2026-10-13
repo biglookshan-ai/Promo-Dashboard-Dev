@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const DIR = path.join(process.env.DATA_DIR || path.join(process.cwd(), '.data'), 'schedule');
+export const HISTORY_FILE = /\.(colhist|itemhist|planhist)\.json$/;
 const fileOf = (shop) => path.join(DIR, `${shop.replace(/[^a-z0-9.-]/gi, '_')}.json`);
 
 export const DEFAULT_NOTIFY = { submit: true, decision: true, dayBefore: true, endingSoon: true, upDown: true, unapproved: true, failure: true };
@@ -66,7 +67,8 @@ export function appendLog(state, entry) {
 
 export function listShops() {
   try {
-    return fs.readdirSync(DIR).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5));
+    // 只认店铺数据文件;同一个目录里还有合集顺序历史(.colhist.json)、内容历史(.itemhist.json),别把它们当成店铺
+    return fs.readdirSync(DIR).filter((f) => f.endsWith('.json') && !HISTORY_FILE.test(f)).map((f) => f.slice(0, -5));
   } catch {
     return [];
   }

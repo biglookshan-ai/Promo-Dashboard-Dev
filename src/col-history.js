@@ -13,7 +13,11 @@ export const MAX_VERSIONS = 100;
 export const KEEP_DAYS = 90;
 
 export function loadHistory(shop) {
-  try { return JSON.parse(fs.readFileSync(fileOf(shop), 'utf8')); } catch { return {}; }
+  try { return cleanColHistory(JSON.parse(fs.readFileSync(fileOf(shop), 'utf8'))); } catch { return {}; }
+}
+// 只留「合集 id(数字)→ 版本列表」;别的东西(之前定时器误写进来的排期数据)丢掉
+export function cleanColHistory(h) {
+  return Object.fromEntries(Object.entries(h || {}).filter(([k, v]) => /^\d+$/.test(k) && Array.isArray(v) && v.every((x) => x && Array.isArray(x.ids))));
 }
 export function saveHistory(shop, h) {
   fs.mkdirSync(DIR, { recursive: true });

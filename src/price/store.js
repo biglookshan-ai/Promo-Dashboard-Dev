@@ -44,7 +44,7 @@ export function save(shop, state) {
 }
 
 export function listShops() {
-  try { return fs.readdirSync(dir()).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)); } catch { return []; }
+  try { return fs.readdirSync(dir()).filter((f) => f.endsWith('.json') && !/\.(colhist|itemhist|planhist)\.json$/.test(f)).map((f) => f.slice(0, -5)); } catch { return []; }
 }
 
 export function appendLedger(state, entries) {
