@@ -1194,12 +1194,16 @@
     bg: '底色', color: '文字颜色', accent: '点缀色', effect: '特效', decoLeft: '左侧装饰', decoRight: '右侧装饰',
     module: '模块', title2: '标题第二段', titleColor: '第一段颜色', title2Color: '第二段颜色', tabActiveBg: '页签高亮底色', tabActiveText: '页签高亮文字', tabs: '页签', isDefault: '平时版本',
     start: '开始', end: '结束', campaign: '所属活动',
+    collection: '合集', onlyListed: '只显示前 N 个', hidden: '不显示的产品', fullOrder: '完全按清单顺序', larkLinks: '关联的飞书任务',
   };
   const showVal = (k, v) => {
     if (v == null || v === '') return '<span class="muted">(空)</span>';
     if (k === 'start' || k === 'end') return esc(fDT(v));
     if (k === 'campaign') return esc((camp(v) || {}).name || v);
-    if (k === 'countdown') return v ? '开' : '关';
+    if (['countdown', 'onlyListed', 'fullOrder', 'isDefault'].includes(k)) return v ? '开' : '关';
+    if (k === 'collection') return esc(v.title || v.id || '');
+    if (k === 'larkLinks') return (v || []).map((l) => `<div><a class="lk" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || '飞书任务')}↗</a></div>`).join('') || '<span class="muted">(空)</span>';
+    if (k === 'products' || k === 'hidden') return (v || []).length ? `<span class="hs-ps">${v.slice(0, 12).map((x, i) => `<span title="${esc(x.title || '')}">${i + 1}. ${esc((x.title || '').slice(0, 28))}</span>`).join('')}${v.length > 12 ? `<span class="muted">…共 ${v.length} 个</span>` : ''}</span>` : '<span class="muted">(空)</span>';
     if (k === 'tag') return esc(TAGCN[v] || v);
     if (k === 'effect') return esc(EFFECT[v] || v);
     if (k === 'module') return esc(MODULE_CN[v] || v);
@@ -1209,6 +1213,118 @@
     if (Array.isArray(v)) return v.length ? esc(v.map((x) => (typeof x === 'string' ? x : x.title)).join('、')) : '<span class="muted">(空)</span>';
     return esc(v);
   };
+  // ================= 历史记录 =================
+  // 每次保存、提交、批准、退回、暂停、删除、回滚都记一版(服务器 src/item-history.js)。这里能回看、对比、复制、回滚。
+  let hsRows = null; let hsPeople = []; let hsBusy = false; const hsF = { kind: '', q: '', by: '' };
+  const STATE_CN = { draft: '草稿', pending: '待审核', approved: '已批准', rejected: '已退回', new: '新建' };
+  const changedText = (keys) => (keys == null ? '第一版' : keys.length ? `改了:${keys.slice(0, 5).map((k) => FIELD[k] || k).join('、')}${keys.length > 5 ? ` 等 ${keys.length} 项` : ''}` : '');
+  async function loadHistoryPage() {
+    if (MODE !== 'live') { hsRows = []; return renderHistory(); }
+    hsBusy = true; renderHistory();
+    try {
+      const r = await api('GET', `/api/schedule/history?kind=${encodeURIComponent(hsF.kind)}&q=${encodeURIComponent(hsF.q)}&by=${encodeURIComponent(hsF.by)}`);
+      hsRows = r.rows; hsPeople = r.people;
+    } catch (e) { hsRows = []; toast(e.message, false); }
+    hsBusy = false; renderHistory();
+  }
+  function renderHistory() {
+    const root = $('#hs-root'); if (!root) return;
+    const kinds = [['', '全部类型'], ['banner', 'Banner'], ['topbar', '顶栏'], ['tbstyle', '顶栏样式'], ['pmodule', '商品模块'], ['pin', '合集排序'], ['campaign', '活动']];
+    const byDay = new Map();
+    for (const r of hsRows || []) { const d = fDate(r.at); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(r); }
+    root.innerHTML = `${pageHead('历史记录', '每一次保存、提交、批准、退回、暂停、删除、回滚都记一版 —— 点开能看那一版的完整内容、和现在对比、复制成新的、回滚回去(回滚也走审批)。')}
+      <section class="panel">
+        <div class="hs-f">
+          <select class="sel" id="hs-kind">${kinds.map(([k, l]) => `<option value="${k}" ${hsF.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          <input class="inp" id="hs-q" placeholder="按名称找…" value="${esc(hsF.q)}"/>
+          <select class="sel" id="hs-by"><option value="">所有人</option>${hsPeople.map((p) => `<option ${hsF.by === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+          <button class="btn btn-sm" type="button" id="hs-reload">刷新</button>
+        </div>
+        ${MODE !== 'live' ? empty('演示模式不记历史;切到正式数据后,每次改动都会记一版。')
+          : hsBusy && !hsRows ? '<p class="muted">读取中…</p>'
+            : !(hsRows || []).length ? empty('还没有记录。从现在起,每次改动都会记在这里。')
+              : [...byDay].map(([d, rows]) => `<div class="hs-day"><div class="hs-day__h">${esc(d)} · ${relDay(rows[0].at)}</div>
+                ${rows.map((r) => `<button type="button" class="hsrow" data-hist="${esc(r.id)}">
+                  <span class="hsrow__t">${fmt(r.at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>
+                  ${kindChip(r.kind)}
+                  <span class="hsrow__n"><b>${esc(r.title || '(未命名)')}</b>${r.gone ? '<span class="tag tag--danger">已删除</span>' : ''}</span>
+                  <span class="hsrow__a">${esc(r.action || '')}</span>
+                  <span class="hsrow__c muted">${esc(changedText(r.changed))}${r.pendingKeys.length ? `${r.changed?.length ? ';' : ''}待审核的修改:${esc(r.pendingKeys.slice(0, 4).map((k) => FIELD[k] || k).join('、'))}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}</span>
+                  <span class="hsrow__by muted">${esc(r.by || '')}</span>
+                </button>`).join('')}</div>`).join('')}
+      </section>`;
+    $('#hs-kind').onchange = (e) => { hsF.kind = e.target.value; loadHistoryPage(); };
+    $('#hs-by').onchange = (e) => { hsF.by = e.target.value; loadHistoryPage(); };
+    $('#hs-q').onkeydown = (e) => { if (e.key === 'Enter') { hsF.q = e.target.value.trim(); loadHistoryPage(); } };
+    $('#hs-reload').onclick = () => loadHistoryPage();
+    $$('#hs-root [data-hist]').forEach((b) => b.addEventListener('click', () => openItemHistory(b.dataset.hist)));
+  }
+
+  // 单条内容的全部版本:左边版本列表,右边「这一版 vs 现在」逐项对比;复制成新的 / 回滚(回滚照常走审批)
+  async function openItemHistory(id) {
+    hidePop();
+    $('#drawer').innerHTML = `<div class="drawer__h"><div><b>历史版本</b> <span class="muted" id="ih-title"></span></div>
+        <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button></div>
+      <div class="drawer__b drawer__b--hist"><div class="hist__list" id="ih-list"><p class="muted">读取中…</p></div><div class="hist__pv" id="ih-pv"></div></div>
+      <div class="drawer__f"><span class="muted" id="ih-tip"></span><div class="drawer__acts" id="ih-acts"></div></div>`;
+    $('#drawer').hidden = false; $('#drawer-mask').hidden = false; document.body.classList.add('no-scroll');
+    $('#drawer').onclick = (e) => { if (e.target.closest('[data-act="close"]')) closeDrawer(); };
+    let r;
+    try { r = await api('GET', `/api/schedule/history?id=${encodeURIComponent(id)}`); }
+    catch (e) { $('#ih-list').innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+    const cur = r.item; const kind = r.kind || cur?.kind;
+    $('#ih-title').innerHTML = `${kindChip(kind)} ${esc(cur ? titleOf(cur) : r.title || '')}${cur ? '' : ' <span class="tag tag--danger">已删除</span>'}`;
+    if (!r.versions.length) { $('#ih-list').innerHTML = '<p class="muted">这条内容还没有历史记录(历史功能上线前的改动没有记)。之后每次改动都会记一版。</p>'; return; }
+    $('#ih-list').innerHTML = r.versions.map((v, i) => `<button type="button" class="hist__i" data-i="${i}">
+        <span class="hist__t"><b>${esc(fDT(v.at))}</b>${i === 0 ? '<span class="tag tag--ok">最新</span>' : ''}</span>
+        <span class="hist__w">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}</span>
+        <span class="hist__c">${esc(STATE_CN[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.deleted ? ' · 已删除' : ''}${v.changed?.length ? ` · ${esc(changedText(v.changed))}` : ''}</span></button>`).join('');
+    const curVals = cur ? (() => { const o = {}; for (const k of Object.keys(FIELD)) if (k in cur) o[k] = cur[k]; return o; })() : null;
+    const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) || ((a == null || a === '') && (b == null || b === ''));
+    const show = (i) => {
+      const v = r.versions[i];
+      $$('#ih-list .hist__i').forEach((b) => b.classList.toggle('is-on', +b.dataset.i === i));
+      const keys = [...new Set([...Object.keys(v.values), ...(curVals ? Object.keys(curVals) : [])])].filter((k) => FIELD[k]);
+      const diffKeys = curVals ? keys.filter((k) => !same(v.values[k], curVals[k])) : [];
+      const rows = (curVals ? keys : Object.keys(v.values).filter((k) => FIELD[k])).map((k) => {
+        const d = curVals && diffKeys.includes(k);
+        return `<tr class="${d ? 'is-diff' : ''}"><td>${FIELD[k]}</td><td>${showVal(k, v.values[k])}</td>${curVals ? `<td>${showVal(k, curVals[k])}</td>` : ''}</tr>`;
+      }).join('');
+      $('#ih-pv').innerHTML = `<div class="hist__h"><b>${esc(fDT(v.at))} 那一版</b> <span class="muted">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}${v.note ? ` · ${esc(v.note)}` : ''}</span></div>
+        <p class="muted">那时的状态:${esc(STATE_CN[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.deleted ? ' · 这一版之后被删除了' : ''}${curVals ? ` · <b>${diffKeys.length ? `和现在有 ${diffKeys.length} 处不一样(标黄的行)` : '和现在一模一样'}</b>` : ''}</p>
+        <table class="rvdiff ihdiff"><thead><tr><th>字段</th><th>这一版</th>${curVals ? '<th>现在</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
+        ${v.pending ? `<p class="muted" style="margin-top:12px">这一版还有一个<b>等审批的修改</b>(那时线上还是上面的内容):</p>
+          <table class="rvdiff ihdiff"><tbody>${Object.entries(v.pending).filter(([k]) => FIELD[k]).map(([k, x]) => `<tr><td>${FIELD[k]}</td><td>${showVal(k, x)}</td></tr>`).join('')}</tbody></table>` : ''}`;
+      // 按钮
+      const canRollback = cur && diffKeys.length;
+      const mode = !cur ? null : cur.state === 'approved' ? (isApprover() ? 'publish' : 'submit') : cur.state === 'pending' ? 'submit' : 'draft';
+      $('#ih-tip').textContent = !cur ? '这条内容已经删掉了,可以复制成一条新的(恢复)' : canRollback
+        ? (mode === 'publish' ? '你是审批人:回滚马上生效' : mode === 'submit' ? '回滚会提交给审批人,批准前线上保持现在的内容' : '回滚后存为草稿') : '';
+      $('#ih-acts').innerHTML = `<button class="btn" type="button" id="ih-copy">${cur ? '复制成新的' : '复制成新的(恢复)'}</button>
+        ${canRollback ? `<button class="btn btn-primary" type="button" id="ih-rb">${mode === 'publish' ? '回滚到这一版' : mode === 'submit' ? '回滚到这一版(提交审核)' : '回滚到这一版(存草稿)'}</button>` : ''}`;
+      $('#ih-copy').onclick = () => {
+        const vals = JSON.parse(JSON.stringify(v.values));
+        const prefix = { banner: 'b-', topbar: 't-', tbstyle: 's-', pmodule: 'pm-', pin: 'pin-', campaign: 'c-' }[kind] || 'x-';
+        if (kind === 'pmodule') vals.tabs = (vals.tabs || []).map((t) => { const { shopifyId, ...rest } = t; return { ...rest, id: rid('tab-') }; }); // eslint-disable-line no-unused-vars
+        if ('name' in vals) vals.name = `${vals.name || ''}(复制)`;
+        closeDrawer();
+        openEditor(kind, null, { dup: { ...vals, id: rid(prefix), kind, state: 'new', by: S.me, shopifyId: null, syncedStatus: null, syncedTabIds: [], pendingChange: null, paused: false, isDefault: false } });
+        toast(`已复制 ${fDT(v.at)} 那一版,改好再保存`);
+      };
+      if ($('#ih-rb')) $('#ih-rb').onclick = async (e) => {
+        const b = e.currentTarget;
+        if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = mode === 'publish' ? '再点一次确认回滚(马上生效)' : '再点一次确认'; b.classList.add('btn-danger'); return; }
+        b.disabled = true;
+        const res = await act({ type: 'save', mode, kind, id: cur.id, isNew: false, values: JSON.parse(JSON.stringify(v.values)), historyNote: `回滚到 ${fDT(v.at)} 那一版` });
+        if (!res) { b.disabled = false; return; }
+        toast([`已回滚到 ${fDT(v.at)} 那一版${mode === 'submit' ? ',等审批人批准' : mode === 'draft' ? ',存为草稿' : ''}`, ...colSay(res.colRep, cur.collection?.id)].join(' · '));
+        openItemHistory(cur.id);
+      };
+    };
+    $$('#ih-list .hist__i').forEach((b) => b.addEventListener('click', () => show(+b.dataset.i)));
+    show(Math.min(1, r.versions.length - 1)); // 默认看上一版(和现在比最有用)
+  }
+
   function renderReviews() {
     const list = pendingList();
     const recent = S.log.filter((l) => ['approve', 'reject'].includes(l.action)).slice(0, 8);
@@ -2209,7 +2325,8 @@
 
     $('#drawer').innerHTML = `
       <div class="drawer__h">
-        <div>${kindChip(kind)} <b>${isNew ? `新建${KIND[kind]}` : esc(titleOf(it))}</b> ${isNew ? '' : badge(it)}</div>
+        <div>${kindChip(kind)} <b>${isNew ? `新建${KIND[kind]}` : esc(titleOf(it))}</b> ${isNew ? '' : badge(it)}
+          ${!isNew && MODE === 'live' ? `<button class="btn btn-sm btn-ghost" type="button" data-act="history">${I.clock}历史版本</button>` : ''}</div>
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button>
       </div>
       <div class="drawer__b drawer__b--${kind}">
@@ -2460,6 +2577,7 @@
       const a = e.target.closest('[data-act]'); if (!a || a.disabled) return;
       const kindOfAct = a.dataset.act;
       if (kindOfAct === 'close') return closeDrawer();
+      if (kindOfAct === 'history') return openItemHistory(it.id);
       if (kindOfAct === 'delete' && !a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '再点一次确认删除'; a.classList.add('btn-danger'); return; }
       runDrawerAction(kindOfAct, a);
     };
@@ -2576,6 +2694,7 @@
   function renderAll() {
     applySiteStyle(); hidePop();
     renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderCampaigns(); renderReviews(); renderSettings();
+    if (isActive('history')) renderHistory();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     const L = window.CGP_ME; // 飞书登录了就显示登录的人和他的角色
     $('#me-chip').innerHTML = L?.larkEnabled
@@ -2598,7 +2717,7 @@
     const pn = e.target.closest('[data-pricenew]');
     if (pn && window.cgpPriceNew) { const c = camp(pn.dataset.pricenew); showSection('price'); window.cgpPriceNew({ id: c.id, name: c.name }); return; }
     const g = e.target.closest('[data-go]');
-    if (g) { showSection(g.dataset.go); return; }
+    if (g) { showSection(g.dataset.go); if (g.dataset.go === 'history') loadHistoryPage(); return; }
     const ap = e.target.closest('[data-approve]'); if (ap) return approve(ap.dataset.approve);
     const rj = e.target.closest('[data-reject]'); if (rj) return askReject(rj);
     const rk = e.target.closest('[data-rjok]');
@@ -2614,6 +2733,8 @@
   document.addEventListener('mousemove', movePop);
   document.addEventListener('dragstart', hidePop);
   $('#drawer-mask').addEventListener('click', closeDrawer);
+  // 历史记录页:点开才去读(不跟着每次刷新一起读)
+  document.querySelector('#modnav [data-section="history"]')?.addEventListener('click', () => loadHistoryPage());
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#drawer').hidden) closeDrawer(); });
 
 

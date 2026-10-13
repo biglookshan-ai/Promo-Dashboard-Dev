@@ -15,6 +15,8 @@ import { larkEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
 import { diffOrder, diffSummary } from './order-diff.js';
+import { loadItemHistory, recordAction, changedKeys } from './item-history.js';
+import { titleOf } from './schedule-actions.js';
 
 // 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
 const APP_VERSION = { commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local', startedAt: Date.now() };
@@ -123,7 +125,16 @@ export function scheduleRouter() {
     const shop = req.ctx.shop;
     const action = req.body?.action || {};
     const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
-    const out = await performAction(shop, req.ctx, (state) => applyAction(state, action, actorFor(state, req.ctx.user)), { appUrl: info.appUrl });
+    let before = null; let who = '';
+    const out = await performAction(shop, req.ctx, (state) => { before = state; const a = actorFor(state, req.ctx.user); who = a.name; return applyAction(state, action, a); }, { appUrl: info.appUrl });
+    // 历史版本:动过的那条内容记一版(轮播顺序不算)
+    if (action.type !== 'order' && action.id !== '__order') {
+      const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', delete: '删除' };
+      const it = findItem(out.state, action.id || out.id);
+      const name = action.type === 'save' ? ACT[action.mode] : action.type === 'pause' ? (it?.paused ? '暂停' : '恢复显示') : ACT[action.type] || action.type;
+      try { recordAction(shop, before, out.state, [action.id, out.id], { action: action.historyNote ? '回滚' : name, by: who, note: action.historyNote || '' }); }
+      catch (e) { console.error('[item-history]', e.message); }
+    }
     // 活动存完顺手算一下产品数(失败不影响保存)
     if (action.type === 'save' && action.kind === 'campaign' && out.id) {
       await withLock(shop, async () => {
@@ -229,6 +240,7 @@ export function scheduleRouter() {
       appendLog(s, { action: 'import', kind: 'system', title: '从主题导入', note: `${imp.banners.length} 张 Banner、${imp.topbar.length} 条顶栏、${pmCount} 个商品模块平时版本${imp.skipped.length ? `,跳过 ${imp.skipped.length} 个` : ''}`, by: a.name });
       replace(shop, s);
       const effects = [...imp.banners, ...imp.topbar, ...imp.tbstyles, ...(setup.pmReady ? imp.pmodules : [])].map((x) => ({ type: 'sync', id: x.id }));
+      try { recordAction(shop, s, s, effects.map((e) => e.id), { action: '从主题导入', by: a.name }); } catch (e) { console.error('[item-history]', e.message); }
       const r2 = await runEffects(req.ctx, s, effects, { appUrl: info.appUrl });
       replace(shop, s);
       const parts = [imp.banners.length && `${imp.banners.length} 张 Banner`, imp.topbar.length && `${imp.topbar.length} 条顶栏`, pmCount && `${pmCount} 个商品模块平时版本`].filter(Boolean);
@@ -285,6 +297,35 @@ export function scheduleRouter() {
     replace(req.ctx.shop, s);
     return { rep };
   })));
+
+  // ---- 网站内容的历史版本 ----
+  // 不带 id:全部内容最近的改动(每条带「改了哪些字段」);带 id:这一条的全部版本 + 现在的样子
+  r.get('/history', wrap((req) => {
+    const h = loadItemHistory(req.ctx.shop);
+    const s = load(req.ctx.shop);
+    if (req.query.id) {
+      const rec = h[req.query.id];
+      if (!rec) return { item: findItem(s, req.query.id) || null, versions: [] };
+      const vs = rec.versions.map((v, i) => ({ ...v, changed: i ? changedKeys(rec.versions[i - 1].values, v.values) : null }));
+      return { kind: rec.kind, title: rec.title, item: findItem(s, req.query.id) || null, versions: vs.reverse() };
+    }
+    const kind = String(req.query.kind || ''); const q = String(req.query.q || '').toLowerCase(); const by = String(req.query.by || '');
+    const rows = [];
+    for (const [id, rec] of Object.entries(h)) {
+      if (kind && rec.kind !== kind) continue;
+      const cur = findItem(s, id);
+      const title = cur ? titleOf(cur) : rec.title;
+      if (q && !String(title).toLowerCase().includes(q)) continue;
+      rec.versions.forEach((v, i) => {
+        if (by && v.by !== by) return;
+        rows.push({ id, kind: rec.kind, title, at: v.at, action: v.action, by: v.by, note: v.note, state: v.state, paused: v.paused, deleted: !!v.deleted, gone: !cur,
+          changed: i ? changedKeys(rec.versions[i - 1].values, v.values) : null, pendingKeys: v.pending ? Object.keys(v.pending) : [] });
+      });
+    }
+    rows.sort((a, b) => b.at - a.at);
+    const limit = Math.min(Number(req.query.limit) || 200, 1000);
+    return { rows: rows.slice(0, limit), total: rows.length, people: [...new Set(rows.map((r) => r.by).filter(Boolean))] };
+  }));
 
   // ---- 按 id 取产品的名字、图、价格(合集排序网格里不在合集中的产品用)----
   r.get('/products-info', wrap(async (req) => ({ products: await productsInfo(req.ctx, String(req.query.ids || '').split(',').filter(Boolean).slice(0, 250)) })));

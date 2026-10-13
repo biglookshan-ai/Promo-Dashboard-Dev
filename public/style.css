@@ -1148,3 +1148,24 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .pg__card--ph .pg__pr { height: 14px; width: 60%; }
 @media (prefers-reduced-motion: no-preference) { .pg__card--ph { animation: pgph 1.2s ease-in-out infinite alternate; } }
 @keyframes pgph { from { opacity: 1; } to { opacity: .55; } }
+
+/* ---------- 历史记录 ---------- */
+.hs-f { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.hs-f .inp { width: 200px; }
+.hs-day { margin-bottom: 14px; }
+.hs-day__h { font-size: 12px; color: var(--text-3); margin: 6px 0; font-weight: 600; }
+.hsrow { display: grid; grid-template-columns: 46px 76px minmax(140px, 1.2fr) 90px minmax(0, 2fr) 80px; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: none; border-top: 1px solid #f0f0f2; padding: 8px 4px; font: inherit; font-size: 13px; color: inherit; cursor: pointer; }
+.hsrow:hover { background: var(--surface-2); }
+.hsrow__t { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.hsrow__n { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.hsrow__n b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hsrow__a { font-weight: 600; }
+.hsrow__c { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hsrow__by { font-size: 12px; text-align: right; }
+.ihdiff tr.is-diff td, .ihdiff tr.is-diff td:nth-child(3) { background: #fff7d6; }
+.ihdiff td:first-child { white-space: nowrap; color: var(--text-2); width: 110px; }
+.hs-ps { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+@media (max-width: 900px) { .hsrow { grid-template-columns: 46px auto 1fr; } .hsrow__c, .hsrow__by, .hsrow__a { grid-column: 3; } }
+.ihdiff td:nth-child(2) { color: var(--text); text-decoration: none; }
+.ihdiff td:nth-child(3) { background: none; color: var(--text-2); }
+.ihdiff tr.is-diff td:nth-child(2) { font-weight: 500; }

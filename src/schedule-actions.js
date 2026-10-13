@@ -42,6 +42,7 @@ export function diff(it, v) {
   return d;
 }
 const pick = (v) => Object.fromEntries(EDIT_KEYS.filter((k) => k in v).map((k) => [k, v[k]]));
+export const pickEditable = pick; // 历史版本用:一条内容「能编辑的那些字段」
 
 export function validate(it) {
   if (it.kind === 'banner' && !it.image) return '请选一张图片';
