@@ -927,7 +927,29 @@
   // 规则在 /lib/sale-link.js,和主题 cgp-search-app.js 的 SALE 一样。不保存也能用:/collections/<合集>?onsale = 这个合集里所有打折的产品
   let sl = null; // 编辑中的:{ collection, products(置顶)}
   const slPrev = {}; // 合集 handle → 前台数据(两分钟内不重复读)
-  const slUrl = (x) => (x.collection?.handle ? SL.saleUrl(S.store?.domain || 'https://www.cinegearpro.co.uk', x.collection.handle, x.slug) : '');
+  const slUrl = (x) => (x.collection?.handle ? SL.saleUrl(S.store?.domain || 'https://www.cinegearpro.co.uk', x.collection.handle, x.slug, x.view) : '');
+  // 各主题里的合集模板(?view= 能填的名字),编辑器里提示「正式主题有没有」
+  let slTpl = null;
+  async function slLoadTpl() {
+    if (slTpl || MODE !== 'live') return;
+    slTpl = { busy: true };
+    try { slTpl = await api('GET', '/api/schedule/collection-templates'); } catch (e) { slTpl = { error: e.message, themes: [] }; }
+    redrawSlView();
+  }
+  function redrawSlView() {
+    const dl = $('#sl-views'); const info = $('#sl-viewinfo'); if (!dl || !info) return;
+    const themes = slTpl?.themes || [];
+    const main = themes.find((t) => t.role === 'MAIN');
+    const names = [...new Set(themes.flatMap((t) => t.templates))].sort((a, b) => (a === 'sale' ? -1 : b === 'sale' ? 1 : a.localeCompare(b)));
+    dl.innerHTML = names.map((n) => `<option value="${esc(n)}">${main?.templates.includes(n) ? '正式主题有' : '只在未发布的主题里'}</option>`).join('');
+    const v = String($('#ed-form [name="view"]')?.value || '').trim();
+    if (!v) { info.innerHTML = '留空 = 用这个合集原来的版面。促销页模板叫 <b class="mono">sale</b>(在主题编辑器里排版)'; return; }
+    if (MODE !== 'live' || !slTpl || slTpl.busy) { info.textContent = ''; return; }
+    const inMain = main?.templates.includes(v); const others = themes.filter((t) => t.role !== 'MAIN' && t.templates.includes(v)).map((t) => t.name);
+    info.innerHTML = inMain ? `✅ 正式主题「${esc(main.name)}」里有这个模板`
+      : others.length ? `<span class="tag tag--warn">⚠️ 只在「${esc(others.join('、'))}」里,正式主题还没有 —— 顾客打开会看到默认的合集页</span>`
+        : '<span class="tag tag--danger">⚠️ 主题里找不到这个模板,顾客打开会看到默认的合集页</span>';
+  }
   const SORT_LABEL = () => Object.fromEntries(SL.SALE_SORTS);
   function slTags(x) {
     const t = [];
@@ -936,6 +958,7 @@
     if (x.limit) t.push(`最多 ${x.limit} 个`);
     if (x.sort) t.push(SORT_LABEL()[x.sort] || x.sort);
     if ((x.products || []).length) t.push(`置顶 ${x.products.length} 个`);
+    if (x.view) t.push(`模板 ${x.view}`);
     return t.map((s) => `<span class="tag">${esc(s)}</span>`).join('');
   }
   const copyBox = (url, id) => `<span class="slurl"><input class="inp slurl__i mono" id="${id}" readonly value="${esc(url)}"/><button type="button" class="btn btn-sm" data-copy="${id}">复制</button><a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener">打开↗</a></span>`;
@@ -977,6 +1000,9 @@
     return `${fld('名称', inp('name', it.name, '如:DZOFiLM Autumn Deals'), '给自己人看的名字;后缀没改过会跟着它自动生成')}
       <div class="fld"><span>合集</span><div class="rowin" id="sl-coll">${slCollHtml(c)}</div></div>
       ${fld('链接后缀', `<input class="inp mono" name="slug" value="${esc(it.slug || '')}" placeholder="如:autumn" ${it.slug ? 'data-touched="1"' : ''}/>`, '?onsale= 后面那段:小写字母、数字、横线;同一个合集里不能重复')}
+      <div class="fld"><span>页面模板 <em>?view= 后面那段:用主题里单独排版的促销页(比如 sale);留空 = 合集原来的版面</em></span>
+        <input class="inp mono" name="view" list="sl-views" value="${esc(it.view || '')}" placeholder="留空 = 合集原来的版面,或填 sale"/><datalist id="sl-views"></datalist>
+        <em id="sl-viewinfo"></em></div>
       <div class="fld"><span>完整链接 <em>保存并生效后,这个链接才会按下面的设置显示</em></span><div id="sl-url"></div></div>
       <label class="tgl"><input type="checkbox" name="inStock" ${it.inStock ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示有货的</b><span class="muted">预订(Pre Order)和缺货的不显示,和前台卡片上的「In Stock」一致</span></span></label>
       <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
@@ -992,7 +1018,9 @@
   function redrawSlUrl() {
     const box = $('#sl-url'); if (!box) return;
     const slug = String($('#ed-form [name="slug"]')?.value || '').trim().toLowerCase();
-    const u = slUrl({ collection: sl?.collection, slug });
+    const view = String($('#ed-form [name="view"]')?.value || '').trim();
+    const u = slUrl({ collection: sl?.collection, slug, view });
+    redrawSlView();
     box.innerHTML = !sl?.collection ? '<span class="muted">选好合集、填好后缀就会出现</span>'
       : SL.SLUG_RE.test(slug) ? copyBox(u, 'sl-url-i') : '<span class="muted">后缀只能用小写字母、数字和横线</span>';
   }
@@ -2860,7 +2888,7 @@
       refreshPv();
     };
     if (it.kind === 'pin' && wx.collection) loadWxAll(redrawWx); // 打开就去读这个合集现在的顺序
-    if (it.kind === 'salelink') { redrawSl(); slLoad(refreshPv); }
+    if (it.kind === 'salelink') { redrawSl(); slLoad(refreshPv); slLoadTpl(); }
     f.addEventListener('click', async (e) => {
       const lk = e.target.closest('[data-lk]');
       if (lk) {

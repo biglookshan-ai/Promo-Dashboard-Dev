@@ -73,5 +73,8 @@ export function saleView(products, link = {}, opts = {}) {
   return { list, total, pins };
 }
 
-// 完整链接
-export const saleUrl = (domain, handle, slug) => `${String(domain || '').replace(/\/$/, '')}/collections/${handle}?onsale${slug ? `=${slug}` : ''}`;
+// 页面模板:?view= 后面那段(主题里 templates/collection.<名字>.json),留空 = 合集原来的模板
+export const VIEW_RE = /^[\w][\w -]{0,59}$/;
+// 完整链接:/collections/<合集>?view=<模板>&onsale=<后缀>
+export const saleUrl = (domain, handle, slug, view) =>
+  `${String(domain || '').replace(/\/$/, '')}/collections/${handle}?${view ? `view=${encodeURIComponent(view)}&` : ''}onsale${slug ? `=${slug}` : ''}`;

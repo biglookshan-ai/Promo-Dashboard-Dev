@@ -63,3 +63,11 @@ test('写进店铺的字段', () => {
   assert.equal(f.slug, 'autumn'); assert.equal(f.collection, 'gid://shopify/Collection/9'); assert.equal(f.products, '["gid://shopify/Product/5"]');
   assert.equal(f.in_stock, 'true'); assert.equal(f.min_discount, '20'); assert.equal(f.limit, '24'); assert.equal(f.sort, 'discount'); assert.equal(f.title, 'Autumn Deals');
 });
+
+test('带页面模板的链接', async () => {
+  const { saleUrl: u, VIEW_RE } = await import('../src/sale-link.js');
+  assert.equal(u('https://x.co.uk', 'dzofilm', 'bfcm', 'sale'), 'https://x.co.uk/collections/dzofilm?view=sale&onsale=bfcm');
+  assert.equal(u('https://x.co.uk', 'dzofilm', '', 'Brand Collection'), 'https://x.co.uk/collections/dzofilm?view=Brand%20Collection&onsale');
+  assert.ok(VIEW_RE.test('sale-bf')); assert.ok(!VIEW_RE.test('../x'));
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'salelink', isNew: true, values: link({ view: '<x>' }) }, admin, 1), /页面模板/);
+});

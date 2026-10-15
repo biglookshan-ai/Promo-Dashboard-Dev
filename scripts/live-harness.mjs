@@ -161,6 +161,13 @@ function gql(query, v) {
     const k = Object.keys(store.objects).find((x) => store.objects[x].id === v.id); if (k) delete store.objects[k];
     return { metaobjectDelete: { deletedId: v.id, userErrors: [] } };
   }
+  // 促销链接的「页面模板」:正式主题 = 本地主题文件夹;再假装有一个测试主题,多一个 sale-bf 模板
+  if (q.includes('themes(first: 20, roles: [MAIN, UNPUBLISHED])')) return { themes: { nodes: [{ id: 'gid://shopify/OnlineStoreTheme/1', name: 'cinegearpro-2-0-1(本地主题文件)', role: 'MAIN' }, { id: 'gid://shopify/OnlineStoreTheme/2', name: 'Promo Panel Test(假)', role: 'UNPUBLISHED' }] } };
+  if (q.includes('filenames: ["templates/collection.*"]')) {
+    const names = fs.readdirSync(path.join(THEME, 'templates')).filter((f) => f.startsWith('collection.')).map((f) => `templates/${f}`);
+    if (v.id.endsWith('/2')) names.push('templates/collection.sale-bf.json');
+    return { theme: { files: { nodes: names.map((filename) => ({ filename })) } } };
+  }
   if (q.includes('themes(first: 1, roles: [MAIN])')) return { themes: { nodes: [{ id: 'gid://shopify/OnlineStoreTheme/1', name: 'cinegearpro-2-0-1(本地主题文件)' }] } };
   if (q.includes('theme(id: $id) { files')) {
     return { theme: { files: { nodes: v.f.filter((f) => fs.existsSync(path.join(THEME, f))).map((f) => ({ filename: f, body: { content: fs.readFileSync(path.join(THEME, f), 'utf8') } })) } } };

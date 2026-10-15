@@ -372,6 +372,19 @@ export function scheduleRouter() {
     });
   }));
 
+  // ---- 促销链接:各个主题里有哪些合集模板(?view= 后面能填的名字),五分钟内不重复读 ----
+  r.get('/collection-templates', wrap(async (req) => cached(req.ctx.shop, 'coltpl', 300_000, async () => {
+    const t = await graphql(req.ctx, '{ themes(first: 20, roles: [MAIN, UNPUBLISHED]) { nodes { id name role } } }');
+    const themes = [];
+    for (const th of t.themes.nodes) {
+      const d = await graphql(req.ctx, `query($id: ID!) { theme(id: $id) { files(first: 250, filenames: ["templates/collection.*"]) { nodes { filename } } } }`, { id: th.id }).catch(() => null);
+      const names = (d?.theme?.files?.nodes || []).map((f) => f.filename.replace(/^templates\/collection\./, '').replace(/\.(json|liquid)$/, ''))
+        .filter((n) => n && !['json', 'liquid', 'cgp-json', 'ajax'].includes(n));
+      themes.push({ id: th.id, name: th.name, role: th.role, templates: names });
+    }
+    return { themes: themes.sort((a, b) => (b.role === 'MAIN') - (a.role === 'MAIN')) };
+  })));
+
   // ---- 按 id 取产品的名字、图、价格(合集排序网格里不在合集中的产品用)----
   r.get('/products-info', wrap(async (req) => ({ products: await productsInfo(req.ctx, String(req.query.ids || '').split(',').filter(Boolean).slice(0, 250)) })));
 
