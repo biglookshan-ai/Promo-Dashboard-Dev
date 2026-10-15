@@ -23,10 +23,10 @@ function fakeShop(existing = {}) {
   return { gql, defs, created };
 }
 
-test('建全部 7 个类型:被引用的先建,引用字段填的是真实 id', async () => {
+test('建全部 8 个类型:被引用的先建,引用字段填的是真实 id', async () => {
   const s = fakeShop();
   const r = await ensureDefinitions({}, s.gql);
-  assert.deepEqual(r.created, ['cgp_campaign', 'cgp_banner_slide', 'cgp_topbar_message', 'cgp_topbar_style', 'cgp_product_tab', 'cgp_product_module', 'cgp_collection_pin']);
+  assert.deepEqual(r.created, ['cgp_campaign', 'cgp_banner_slide', 'cgp_topbar_message', 'cgp_topbar_style', 'cgp_product_tab', 'cgp_product_module', 'cgp_collection_pin', 'cgp_sale_link']);
   const campId = s.defs.cgp_campaign;
   for (const def of s.created.filter((d) => d.fieldDefinitions.some((f) => f.key === 'campaign'))) {
     assert.equal(def.fieldDefinitions.find((f) => f.key === 'campaign').validations[0].value, campId, def.type);
@@ -43,7 +43,7 @@ test('已存在的不重复建(可以重复点按钮)', async () => {
   const s = fakeShop({ cgp_campaign: 'gid://shopify/MetaobjectDefinition/1', cgp_banner_slide: 'gid://shopify/MetaobjectDefinition/2' });
   const r = await ensureDefinitions({}, s.gql);
   assert.deepEqual(r.existing, ['cgp_campaign', 'cgp_banner_slide']);
-  assert.deepEqual(r.created, ['cgp_topbar_message', 'cgp_topbar_style', 'cgp_product_tab', 'cgp_product_module', 'cgp_collection_pin']);
+  assert.deepEqual(r.created, ['cgp_topbar_message', 'cgp_topbar_style', 'cgp_product_tab', 'cgp_product_module', 'cgp_collection_pin', 'cgp_sale_link']);
   assert.equal(s.created[0].fieldDefinitions.find((f) => f.key === 'campaign').validations[0].value, 'gid://shopify/MetaobjectDefinition/1');
 });
 
@@ -69,7 +69,7 @@ test('后加的类型缺了不影响「核心 4 个」;引用的类型没建好�
   const { definitionStatus } = await import('../src/metaobjects.js');
   const st = await definitionStatus({}, s.gql);
   assert.ok(st.filter((d) => d.core).every((d) => d.exists));
-  assert.deepEqual(st.filter((d) => !d.exists).map((d) => d.type), ['cgp_product_tab', 'cgp_product_module', 'cgp_collection_pin']);
+  assert.deepEqual(st.filter((d) => !d.exists).map((d) => d.type), ['cgp_product_tab', 'cgp_product_module', 'cgp_collection_pin', 'cgp_sale_link']);
 });
 
 test('已建好的类型后来加了字段:补建时只补缺的字段,不重建', async () => {

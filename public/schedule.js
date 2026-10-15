@@ -55,7 +55,7 @@
   //   live —— 在 Shopify 后台里打开且已建好内容类型。数据在服务器,动作走 /api/schedule/act,
   //           服务器按同一份规则(/lib/schedule-actions.js)检查权限并写进店铺。
   let MODE = 'demo';
-  let core = null, A = null, OD = null; // 共用规则模块,启动时加载(OD = 合集顺序对比 / 压缩)
+  let core = null, A = null, OD = null, SL = null; // 共用规则模块,启动时加载(OD = 合集顺序对比 / 压缩;SL = 促销链接)
   let liveSetup = null; // 在后台里打开但还没建好时,记下连接状态
   const FORCE_DEMO = 'cgp-force-demo';
   const save = () => { if (MODE === 'demo') localStorage.setItem(DEMO_KEY, JSON.stringify(S)); };
@@ -74,7 +74,7 @@
       tbstyles: seed.tbstyles.map((t) => conv(t, 'tbstyle')),
       pmodules: (seed.pmodules || []).map((m) => conv(m, 'pmodule')),
       campaigns: seed.campaigns.map((c) => conv(c, 'campaign')),
-      pins: [],
+      pins: [], salelinks: [],
       log: seed.log.map((l) => ({ ...l, at: now() + l.at * DAY })),
       pendingOrder: null,
     };
@@ -89,12 +89,12 @@
       Object.assign(tagCounts, c.counts?.tags || {});
       Object.entries(c.counts?.collections || {}).forEach(([gid, x]) => { liveColCounts[gid] = x.count; });
     });
-    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], colState: v.colState || {}, sortFlags: v.sortFlags || {} };
+    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], salelinks: v.salelinks || [], colState: v.colState || {}, sortFlags: v.sortFlags || {} };
   }
   async function load(force) {
     if (MODE === 'live') { S = await normalizeLive(await api('GET', '/api/schedule/state')); return; }
     const raw = !force && localStorage.getItem(DEMO_KEY);
-    if (raw) { S = JSON.parse(raw); S.pins ||= []; return; }
+    if (raw) { S = JSON.parse(raw); S.pins ||= []; S.salelinks ||= []; return; }
     S = materialize(await getSeed());
     save();
   }
@@ -114,7 +114,7 @@
     try {
       if (MODE === 'demo') {
         const r = A.applyAction(S, action, me(), now());
-        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pins', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k] ?? S[k]; });
+        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pins', 'salelinks', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k] ?? S[k]; });
         save(); renderAll();
         return r;
       }
@@ -129,8 +129,8 @@
     }
   }
 
-  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || []), ...(S.pins || [])];
-  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []), pin: (S.pins ||= []) }[k]);
+  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || []), ...(S.pins || []), ...(S.salelinks || [])];
+  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []), pin: (S.pins ||= []), salelink: (S.salelinks ||= []) }[k]);
   const byId = (id) => all().find((x) => x.id === id);
   const camp = (id) => S.campaigns.find((c) => c.id === id);
   const me = () => S.staff.find((u) => u.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' };
@@ -143,9 +143,9 @@
   const canOrd = (kind) => A.canOrder(me(), S, kind);
   const apprName = (it) => { const a = effAppr(it); return a ? who(a) : '管理员'; };
   // 能被选进分工的人:正式数据 = 看得到这类内容所在页面的成员;演示 = 名单里所有人
-  const PAGE_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pmodules', campaign: 'campaigns' };
+  const PAGE_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pmodules', salelink: 'pmodules', campaign: 'campaigns' };
   const peopleFor = (kind) => S.staff.filter((u) => !u.pages || u.admin || u.pages.includes(PAGE_OF[kind]));
-  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', price: '改价' };
+  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', salelink: '促销链接', price: '改价' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
   const rid = (p) => p + Math.random().toString(36).slice(2, 9);
@@ -921,6 +921,149 @@
           + (MODE === 'live' && S.setup && S.setup.pinReady === false ? '<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">合集置顶清单(要先补建内容类型)</button>' : add('pin', '合集置顶清单')), '还没有内容')}
       ${sec('改价', canPrice ? '定价同事负责;到点自动改、到期自动恢复' : '改价信息保密,只有定价同事和管理员能看', canPrice ? priceRows : '',
         canPrice ? `<button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button>` : '', canPrice ? (hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…') : '你没有改价页的权限')}`;
+  }
+
+  // ================= 促销链接(合集 ?onsale=<后缀>)=================
+  // 规则在 /lib/sale-link.js,和主题 cgp-search-app.js 的 SALE 一样。不保存也能用:/collections/<合集>?onsale = 这个合集里所有打折的产品
+  let sl = null; // 编辑中的:{ collection, products(置顶)}
+  const slPrev = {}; // 合集 handle → 前台数据(两分钟内不重复读)
+  const slUrl = (x) => (x.collection?.handle ? SL.saleUrl(S.store?.domain || 'https://www.cinegearpro.co.uk', x.collection.handle, x.slug) : '');
+  const SORT_LABEL = () => Object.fromEntries(SL.SALE_SORTS);
+  function slTags(x) {
+    const t = [];
+    if (x.inStock) t.push('只显示有货');
+    if (x.minDiscount) t.push(`至少 ${x.minDiscount}% off`);
+    if (x.limit) t.push(`最多 ${x.limit} 个`);
+    if (x.sort) t.push(SORT_LABEL()[x.sort] || x.sort);
+    if ((x.products || []).length) t.push(`置顶 ${x.products.length} 个`);
+    return t.map((s) => `<span class="tag">${esc(s)}</span>`).join('');
+  }
+  const copyBox = (url, id) => `<span class="slurl"><input class="inp slurl__i mono" id="${id}" readonly value="${esc(url)}"/><button type="button" class="btn btn-sm" data-copy="${id}">复制</button><a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener">打开↗</a></span>`;
+  // 后台 iframe 里剪贴板可能被拦,拦了就选中让人自己按 ⌘C
+  async function copyText(inputId) {
+    const el = document.getElementById(inputId); if (!el) return;
+    try { await navigator.clipboard.writeText(el.value); toast('链接已复制'); }
+    catch { el.focus(); el.select(); try { if (!document.execCommand('copy')) throw new Error(); toast('链接已复制'); } catch { toast('已选中链接,按 Ctrl/⌘ + C 复制', false); } }
+  }
+  document.addEventListener('click', (e) => { const c = e.target.closest?.('[data-copy]'); if (c) { e.preventDefault(); e.stopPropagation(); copyText(c.dataset.copy); } }, true);
+
+  function renderSaleLinks() {
+    const root = $('#sl-root'); if (!root) return;
+    const need = MODE === 'live' && S.setup && S.setup.slReady === false;
+    const groups = new Map();
+    for (const x of S.salelinks || []) {
+      const k = x.collection ? numId(x.collection.id) : '?';
+      if (!groups.has(k)) groups.set(k, { title: x.collection?.title || '(没选合集)', handle: x.collection?.handle || '', list: [] });
+      groups.get(k).list.push(x);
+    }
+    const rows = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title));
+    root.innerHTML = `
+      ${pageHead('促销链接', '给合集做一条只显示打折产品的链接,比如 /collections/dzofilm?onsale=autumn。可以只显示有货的、置顶几个产品、限制数量、换排序;放进 Banner、邮件、社媒都行。链接发出去以后还能改设置;没生效时退回「这个合集所有打折的产品」。',
+        need ? '' : `<button class="btn btn-primary" data-new="salelink" type="button">${I.plus}新建促销链接</button>`)}
+      ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
+      <div class="note">💡 不用保存也能用:任何合集链接后面加 <b class="mono">?onsale</b>,就只显示这个合集里打折的产品(顺序和合集平时一样)。<br>
+        ⚠️ 前台认这种链接的代码目前<b>只在测试主题(Promo Panel Test)</b>里,线上要等你发布主题。</div>
+      ${alertsHtml(['salelink'])}
+      ${rows.length ? rows.map((g) => `<section class="panel"><div class="panel__h"><h3>${esc(g.title)}</h3>${g.handle ? `<span class="muted mono">/collections/${esc(g.handle)}</span>` : ''}</div>
+        <div class="sllist">${g.list.sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0)).map((x) => `<div class="slrow">
+          <button class="slrow__main" type="button" data-open="${x.id}"><span class="slrow__h"><b>${esc(titleOf(x))}</b>${badge(x)}${slTags(x)}</span>
+            <span class="muted">${I.clock}${esc(winText(x))}${x.heading ? ` · 标题「${esc(x.heading)}」` : ''}</span></button>
+          ${copyBox(slUrl(x), `slu-${x.id}`)}</div>`).join('')}</div></section>`).join('')
+        : (need ? '' : empty('还没有促销链接。点右上角新建一条:选合集、起个后缀,右边会实时显示这条链接会出现哪些产品。'))}`;
+  }
+  // ---- 编辑器 ----
+  function slFormHtml(it) {
+    const c = sl?.collection || it.collection;
+    return `${fld('名称', inp('name', it.name, '如:DZOFiLM Autumn Deals'), '给自己人看的名字;后缀没改过会跟着它自动生成')}
+      <div class="fld"><span>合集</span><div class="rowin" id="sl-coll">${slCollHtml(c)}</div></div>
+      ${fld('链接后缀', `<input class="inp mono" name="slug" value="${esc(it.slug || '')}" placeholder="如:autumn" ${it.slug ? 'data-touched="1"' : ''}/>`, '?onsale= 后面那段:小写字母、数字、横线;同一个合集里不能重复')}
+      <div class="fld"><span>完整链接 <em>保存并生效后,这个链接才会按下面的设置显示</em></span><div id="sl-url"></div></div>
+      <label class="tgl"><input type="checkbox" name="inStock" ${it.inStock ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示有货的</b><span class="muted">预订(Pre Order)和缺货的不显示,和前台卡片上的「In Stock」一致</span></span></label>
+      <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
+        ${fld('最多显示几个', `<input class="inp" type="number" min="0" name="limit" value="${esc(it.limit ?? '')}" placeholder="不限"/>`, '按下面的排法取前面几个')}</div>
+      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和合集平时一样」= 合集页默认的 Featured 顺序(包括生效中的合集排序清单)。顾客自己选了 Sort by 就按他选的')}
+      <div class="fld"><span>置顶的产品 <em>按顺序排在最前;照样要打折(勾了有货还要有货)才会显示</em></span><div id="sl-pins"></div></div>
+      ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
+      ${timeBlock(it, 'salelink')}
+      <em class="muted">没生效时(还没开始 / 已结束 / 暂停)这个链接照样能打开,显示这个合集所有打折的产品。</em>`;
+  }
+  const slCollHtml = (c) => `${c ? `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}</span>` : '<span class="muted">还没选</span>'}
+    <button type="button" class="btn btn-sm" data-sl="coll">${c ? '换一个合集' : '选择合集'}</button>`;
+  function redrawSlUrl() {
+    const box = $('#sl-url'); if (!box) return;
+    const slug = String($('#ed-form [name="slug"]')?.value || '').trim().toLowerCase();
+    const u = slUrl({ collection: sl?.collection, slug });
+    box.innerHTML = !sl?.collection ? '<span class="muted">选好合集、填好后缀就会出现</span>'
+      : SL.SLUG_RE.test(slug) ? copyBox(u, 'sl-url-i') : '<span class="muted">后缀只能用小写字母、数字和横线</span>';
+  }
+  function redrawSl() {
+    const box = $('#sl-pins'); if (!box) return;
+    box.innerHTML = `<div class="slpins">${sl.products.map((p, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(thumb(p.image, 80))}" alt="">` : ''}<span class="chip__t">${i + 1}. ${esc(p.title)}</span>
+        ${i ? `<button type="button" class="chip__x" data-sl="up" data-i="${i}" title="往前挪">${I.up}</button>` : ''}<button type="button" class="chip__x" data-sl="rm" data-i="${i}" aria-label="移除">${I.x}</button></span>`).join('')}
+      <button type="button" class="chipadd" data-sl="prod">${I.plus}添加产品</button></div>`;
+    const cb = $('#sl-coll'); if (cb) cb.innerHTML = slCollHtml(sl.collection);
+    redrawSlUrl();
+  }
+  // 前台这个合集的产品(服务器读主题的 cgp-json,和顾客看到的一样)
+  async function slLoad(done, force) {
+    const c = sl?.collection; if (!c?.handle || MODE !== 'live') return;
+    const k = c.handle;
+    if (!force && slPrev[k] && (slPrev[k].busy || now() - slPrev[k].at < 120000)) return;
+    slPrev[k] = { busy: true, at: now() }; done?.();
+    try { slPrev[k] = { ...(await api('GET', `/api/schedule/sale-preview?handle=${encodeURIComponent(k)}&id=${encodeURIComponent(c.id)}${force ? `&_=${now()}` : ''}`)), at: now() }; }
+    catch (e) { slPrev[k] = { error: e.message, at: now() }; }
+    if (sl?.collection?.handle === k) done?.();
+  }
+  async function slAct(b, done) {
+    const a = b.dataset.sl; const i = +b.dataset.i;
+    const m = (x) => ({ id: x.id, handle: x.handle, title: x.title, image: x.images?.[0]?.originalSrc || x.image || '' });
+    const shopPick = async (type, multiple) => {
+      if (!(window.shopify && typeof window.shopify.resourcePicker === 'function')) return null;
+      try { return await window.shopify.resourcePicker({ type, multiple, action: 'select' }); } catch { return null; }
+    };
+    if (a === 'coll') {
+      const picked = await shopPick('collection', false);
+      if (picked?.length) sl.collection = m(picked[0]);
+      else if (!picked) { const L = S.collections || []; if (!L.length) return; const at = L.findIndex((x) => String(x.id) === String(sl.collection?.id)); sl.collection = m(L[(at + 1) % L.length]); } // 演示:每点一次换下一个
+      else return;
+      const fh = $('#ed-form'); const nameEl = fh.querySelector('[name="name"]'); const sg = fh.querySelector('[name="slug"]');
+      if (nameEl && !nameEl.value.trim()) { nameEl.value = `${sl.collection.title} Deals`; if (!sg.dataset.touched) sg.value = SL.slugOf(nameEl.value); }
+      redrawSl(); done(); slLoad(done); return;
+    }
+    if (a === 'prod') {
+      const picked = await shopPick('product', true);
+      const add = picked ? picked.map(m) : (S.products || []).slice(0, 2).map(m);
+      const have = new Set(sl.products.map((p) => numId(p.id)));
+      sl.products.push(...add.filter((p) => !have.has(numId(p.id))));
+    }
+    if (a === 'rm') sl.products.splice(i, 1);
+    if (a === 'up' && i > 0) [sl.products[i - 1], sl.products[i]] = [sl.products[i], sl.products[i - 1]];
+    if (a === 'reload') { slLoad(done, true); return; }
+    redrawSl(); done();
+  }
+  function slPreviewHtml(v) {
+    const head = (extra = '') => `<div class="pv-label">顾客打开这条链接会看到${extra}</div>`;
+    const c = sl?.collection || v.collection;
+    if (!c) return `${head()}<p class="muted">先选合集。</p>`;
+    if (MODE !== 'live') return `${head()}<p class="muted">演示模式没有前台的折扣和库存数据;正式数据里这里会按前台实时算出会显示哪些产品。</p>`;
+    const d = slPrev[c.handle];
+    if (!d || d.busy) return `${head()}<p class="muted">正在读前台这个合集的产品…</p>`;
+    if (d.error) return `${head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">重试</button>')}<div class="note note--danger">${esc(d.error)}</div>`;
+    const ap = activePin(numId(c.id));
+    const view = SL.saleView(d.products, { ...v, products: sl.products }, { sortRule: d.sortRule, pinIds: (ap?.products || []).map((p) => p.id) });
+    const onSale = d.products.filter((p) => p.discount > 0).length;
+    const ST2 = { instock: 'In Stock', preorder: 'Pre Order', oos: 'Out of Stock' };
+    const pinned = new Set(sl.products.map((p) => numId(p.id)));
+    const card = (p, i) => `<a class="slcard ${pinned.has(numId(p.id)) ? 'is-pin' : ''}" href="${esc((S.store?.domain || '') + (p.url || ''))}" target="_blank" rel="noopener"><span class="slcard__n">${i + 1}</span>
+      <span class="slcard__img" ${p.image ? `style="background-image:url('${esc(p.image)}')"` : ''}><span class="slcard__off">${p.discount}% OFF</span></span>
+      <span class="slcard__t">${esc(p.title)}</span><span class="slcard__p">${p.compareStr ? `<s>${esc(p.compareStr)}</s> ` : ''}<b>${esc(p.priceStr || '')}</b></span>
+      <span class="slcard__s slcard__s--${esc(p.status)}">${ST2[p.status] || esc(p.status)}</span></a>`;
+    return `${head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button>')}
+      <p class="slsum">显示 <b>${view.list.length}</b> 个产品${view.total > view.list.length ? `(符合条件的有 ${view.total} 个,只取前 ${view.list.length} 个)` : ''} · 这个合集一共 ${d.total} 个产品,打折的 ${onSale} 个${d.truncated ? ' · ⚠️ 合集太大,前台只读前 1000 个' : ''}</p>
+      ${view.pins.some((p) => !p.shown) ? `<div class="note note--warn">${view.pins.filter((p) => !p.shown).map((p) => `置顶的「${esc(p.title)}」不会显示:${esc(p.why)}`).join('<br>')}</div>` : ''}
+      ${ap && !v.sort ? `<p class="muted">「和合集平时一样」包括正在生效的合集排序清单「${esc(titleOf(ap))}」。</p>` : ''}
+      ${view.list.length ? `<div class="slgrid">${view.list.slice(0, 60).map(card).join('')}</div>${view.list.length > 60 ? `<p class="muted">……还有 ${view.list.length - 60} 个</p>` : ''}` : '<p class="muted">按现在的设置一个产品都没有,顾客打开会看到「没有产品」。</p>'}
+      <p class="muted pv-cap">数据来自前台(和顾客看到的一样),两分钟内不重复读;刚改过价格 / 库存就点「刷新」。</p>`;
   }
 
   // ================= 合集排序(置顶清单) =================
@@ -1708,7 +1851,7 @@
         <section class="panel">
           <div class="panel__h"><h3>默认审批人</h3><span class="muted">每类内容由谁审批</span></div>
           <p class="muted">一条内容没单独选审批人时,就由这里设的人审批;这里也没设 = 管理员审批。审批人自己提交的直接生效,轮播顺序也由他批。</p>
-          ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: '合集排序', campaign: '活动' })[k]}</span>
+          ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'salelink', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: '合集排序', salelink: '促销链接', campaign: '活动' })[k]}</span>
             <select class="sel sel--sm" data-defappr="${k}" ${live && !isApprover() ? 'disabled' : ''}><option value="">管理员审批</option>${peopleFor(k).map((u) => `<option value="${esc(u.id)}" ${appr()[k] === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>`).join('')}
         </section>
         <section class="panel">
@@ -1775,7 +1918,7 @@
 
   // ---- 店铺连接(真实接口):权限 / 4 个内容类型 / 定时器 ----
   // 只有在 Shopify 后台里打开才有 session token;本地预览会提示。
-  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: '合集置顶清单' };
+  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: '合集置顶清单', cgp_sale_link: '促销链接' };
   let connCache = null;
   async function renderConn(force) {
     const box = $('#st-conn'); if (!box) return;
@@ -1961,6 +2104,7 @@
         tabs: c && c.collections?.length ? [newTab({ title: 'Top Picks', collection: c.collections[0], onlyDiscounted: true, sortByDiscount: true, countdown: !!c.countdown })] : [newTab()],
         priority: 10, order: (S.pmodules || []).length, start: c ? null : dayStart(7), end: c ? null : dayStart(14) };
     }
+    if (kind === 'salelink') return { ...baseIt, id: rid('sl-'), name: '', slug: '', collection: null, products: [], inStock: false, minDiscount: null, limit: null, sort: '', heading: '', start: null, end: null };
     if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, countdown: false, badge: '', start: preset.campaign ? null : dayStart(1), end: preset.campaign ? null : dayStart(2) };
     return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
   }
@@ -2250,6 +2394,7 @@
   }
   function formHtml(it) {
     if (it.kind === 'pin') return wxFormHtml(it);
+    if (it.kind === 'salelink') return slFormHtml(it);
     if (it.kind === 'banner') {
       const seenImg = new Set();
       const imgs = S.banners.filter((b) => b.image && !seenImg.has(b.image) && seenImg.add(b.image)).slice(0, 40);
@@ -2301,7 +2446,7 @@
         ${it.isDefault ? '' : fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '同一时间有几个版本都生效时,数字大的显示')}
         ${it.isDefault ? '<div class="fld"><span>什么时候显示</span><em>平时版本一直有效:没有别的版本生效时就显示它。</em></div>' : timeBlock(it, 'pmodule')}`;
     }
-    const bn = S.banners.filter((b) => b.campaign === it.id), tb = S.topbar.filter((t) => t.campaign === it.id), sty = S.tbstyles.filter((t) => t.campaign === it.id), pm = (S.pmodules || []).filter((m) => m.campaign === it.id);
+    const bn = S.banners.filter((b) => b.campaign === it.id), tb = S.topbar.filter((t) => t.campaign === it.id), sty = S.tbstyles.filter((t) => t.campaign === it.id), pm = [...(S.pmodules || []), ...(S.salelinks || [])].filter((m) => m.campaign === it.id);
     return `
       ${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}
       ${timeBlock(it, 'campaign')}
@@ -2317,11 +2462,12 @@
         <div class="attach">${[...bn, ...tb, ...sty, ...pm].map((x) => `<button type="button" class="attach__i" data-open="${x.id}" data-pop="${x.id}">
           ${x.kind === 'banner' ? `<span class="attach__slide">${slideHtml(x, { w: 200 })}</span>` : miniThumb(x)}
           <span class="attach__t">${kindChip(x.kind)} ${esc(titleOf(x))}</span>${badge(x)}</button>`).join('') || '<span class="muted">还没有</span>'}</div>
-        <div class="attach__add"><button type="button" class="btn btn-sm" data-new="banner" data-for="${it.id}">${I.plus}Banner</button><button type="button" class="btn btn-sm" data-new="topbar" data-for="${it.id}">${I.plus}顶栏公告</button><button type="button" class="btn btn-sm" data-new="tbstyle" data-for="${it.id}">${I.plus}顶栏样式</button><button type="button" class="btn btn-sm" data-new="pmodule" data-for="${it.id}">${I.plus}首页促销模块版本</button></div></div>` : ''}`;
+        <div class="attach__add"><button type="button" class="btn btn-sm" data-new="banner" data-for="${it.id}">${I.plus}Banner</button><button type="button" class="btn btn-sm" data-new="topbar" data-for="${it.id}">${I.plus}顶栏公告</button><button type="button" class="btn btn-sm" data-new="tbstyle" data-for="${it.id}">${I.plus}顶栏样式</button><button type="button" class="btn btn-sm" data-new="pmodule" data-for="${it.id}">${I.plus}首页促销模块版本</button><button type="button" class="btn btn-sm" data-new="salelink" data-for="${it.id}">${I.plus}促销链接</button></div></div>` : ''}`;
   }
 
   function previewHtml(v) {
     if (v.kind === 'pin') return wxPreviewHtml(v);
+    if (v.kind === 'salelink') return slPreviewHtml(v);
     if (v.kind === 'pmodule') {
       return `<div class="pv-label">首页上的样子</div>${moduleHtml(v, { activeTab: pvTab })}
         <p class="muted pv-cap">点页签切换预览。${MODE === 'live' ? '产品是按这个页签的设置从店里取的前几个。' : '演示数据只画占位;正式数据里会显示这个页签真实会出现的产品。'}到时间后首页这个模块整套换成它,结束回到平时版本。</p>`;
@@ -2485,6 +2631,12 @@
       v.cc = cc.length ? cc : base.cc ? [] : undefined;
       v.due = fromInput($('#asg-due').value) ?? (base.due != null ? null : undefined);
     }
+    if (base.kind === 'salelink') {
+      const num = (n) => { const x = Math.round(Number(g(n)?.value)); return x > 0 ? x : null; };
+      v.collection = sl.collection; v.products = sl.products.map(({ id, handle, title, image }) => ({ id, handle, title, image }));
+      v.slug = String(g('slug').value || '').trim().toLowerCase(); v.inStock = !!g('inStock').checked;
+      v.minDiscount = num('minDiscount'); v.limit = num('limit'); v.sort = g('sort').value || '';
+    }
     if (base.kind === 'campaign') {
       v.larkLinks = ed.larkLinks.map((l) => ({ url: l.url, label: l.label }));
       v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
@@ -2493,6 +2645,11 @@
     return v;
   }
   function validate(v) {
+    if (v.kind === 'salelink') {
+      if (!v.name) return '请填写名称';
+      if (!v.collection) return '请选合集';
+      if (!SL.SLUG_RE.test(v.slug)) return '链接后缀只能用小写字母、数字和横线(不能以横线开头,最多 40 个字)';
+    }
     if (v.kind === 'pin' && !v.collection) return '请选要排序的合集';
     if (v.kind === 'pin' && !v.products.length && !(v.hidden || []).length) return '还没做任何调整:拖动产品换位置,或者把某些产品设为「不显示」';
     if (v.kind === 'pin' && wxAll && !wxAll.error && !wxAll.demo && wx.order.length === 0) return '合集里的产品全部设成了不显示,至少留一个';
@@ -2513,6 +2670,7 @@
     const base = { ...it, ...(it.pendingChange && !canAppr(it) ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])] };
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
+    sl = base.kind === 'salelink' ? { collection: base.collection || null, products: [...(base.products || [])] } : null;
     wx = base.kind === 'pin' ? { collection: base.collection || null, order: [...(base.products || [])], hidden: [...(base.hidden || [])],
       onlyN: base.onlyListed ? (base.products || []).length : null, fullOrder: !!base.fullOrder, init: { products: base.products || [], hidden: base.hidden || [] } } : null;
     wxAll = null; wxBase = []; wxQ = ''; wxPosEdit = null; wxBusy = false;
@@ -2599,6 +2757,12 @@
       if (e.target.id === 'wx-onlyn') { const n = Math.round(+e.target.value); if (n >= 1) { wx.onlyN = Math.min(n, wx.order.length); redrawWx(); const el = $('#wx-onlyn'); if (el) { el.focus(); el.setSelectionRange?.(9, 9); } } return; }
       if (e.target.id === 'pg-posin') return;
       if (e.target.dataset.tf) { edTabs[+e.target.dataset.i][e.target.dataset.tf] = e.target.value; }
+      if (it.kind === 'salelink') { // 后缀:没手动改过就跟着名称自动生成;链接那一行实时更新
+        const sg = f.querySelector('[name="slug"]');
+        if (e.target.name === 'name' && !sg.dataset.touched) sg.value = SL.slugOf(e.target.value);
+        if (e.target.name === 'slug') sg.dataset.touched = '1';
+        redrawSlUrl();
+      }
       if (e.target.name === 'image' && f.querySelector('[name="imageId"]')) f.querySelector('[name="imageId"]').value = '';
       refreshPv();
     });
@@ -2696,6 +2860,7 @@
       refreshPv();
     };
     if (it.kind === 'pin' && wx.collection) loadWxAll(redrawWx); // 打开就去读这个合集现在的顺序
+    if (it.kind === 'salelink') { redrawSl(); slLoad(refreshPv); }
     f.addEventListener('click', async (e) => {
       const lk = e.target.closest('[data-lk]');
       if (lk) {
@@ -2708,6 +2873,8 @@
         }
         $('#ed-lark').innerHTML = larkEdHtml(); return;
       }
+      const sb = e.target.closest('[data-sl]');
+      if (sb) { await slAct(sb, refreshPv); return; }
       const w = e.target.closest('[data-wx]'); if (!w || w.tagName === 'INPUT') return;
       const i = +w.dataset.i; const a = w.dataset.wx;
       if (a === 'pickcoll' || a === 'pickprod') {
@@ -2921,7 +3088,7 @@
   // ================= 全局 =================
   function renderAll() {
     applySiteStyle(); hidePop();
-    renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
+    renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderSaleLinks(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
     if (isActive('history')) renderHistory();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     const L = window.CGP_ME; // 飞书登录了就显示登录的人和他的角色
@@ -2998,7 +3165,7 @@
   // 启动:加载共用规则 → 判断模式 → 加载数据 → 画页面
   (async () => {
     try {
-      [core, A, OD] = await Promise.all([import('./lib/schedule-core.js'), import('./lib/schedule-actions.js'), import('./lib/order-diff.js')]);
+      [core, A, OD, SL] = await Promise.all([import('./lib/schedule-core.js'), import('./lib/schedule-actions.js'), import('./lib/order-diff.js'), import('./lib/sale-link.js')]);
       await window.CGP_AUTH; // 飞书登录门(没开飞书 / 演示预览时直接放行)
       MODE = await detectMode();
       if (MODE === 'demo') await load();

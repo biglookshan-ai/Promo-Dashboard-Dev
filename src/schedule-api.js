@@ -39,6 +39,7 @@ async function setupStatus(ctx) {
     // 后加的类型各自判断:缺哪个只影响用到它的页面
     pmReady: definitions.filter((d) => ['cgp_product_tab', 'cgp_product_module'].includes(d.type)).every((d) => d.exists),
     pinReady: definitions.filter((d) => d.type === 'cgp_collection_pin').every((d) => d.exists),
+    slReady: definitions.filter((d) => d.type === 'cgp_sale_link').every((d) => d.exists),
     upgrade: definitions.filter((d) => !d.core && !d.exists).map((d) => d.type),
     // 已建好的类型后来加了字段:也算要补建(同一个按钮)
     fieldsMissing: definitions.flatMap((d) => (d.exists ? (d.missingFields || []).map((k) => `${d.type}.${k}`) : [])),
@@ -78,7 +79,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
     staff: larkEnabled() ? (state.members || []).filter((m) => m.status === 'active').map((m) => ({ ...actorOf(m), avatar: m.avatar || '', admin: isAdmin(m), pages: pagesOf(state, m) })) : state.staff,
     lark: larkEnabled(),
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
-    pins: state.pins || [],
+    pins: state.pins || [], salelinks: state.salelinks || [],
     // 哪些合集现在被真的改了顺序(含「暂停接管」);原始顺序快照留在服务器,不发给页面
     colState: Object.fromEntries(Object.entries(state.colState || {}).map(([k, c]) => [k,
       { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, at: c.at }])),
@@ -338,6 +339,37 @@ export function scheduleRouter() {
     rows.sort((a, b) => b.at - a.at);
     const limit = Math.min(Number(req.query.limit) || 200, 1000);
     return { rows: rows.slice(0, limit), total: rows.length, people: [...new Set(rows.map((r) => r.by).filter(Boolean))] };
+  }));
+
+  // ---- 促销链接预览:前台这个合集的产品(就是主题 cgp-json 给搜索引擎的那份,折扣 / 有没有货都和顾客看到的一样)+ 合集的排序规则 ----
+  // 页面用 /lib/sale-link.js 的 saleView 按链接的设置算出会显示哪些。两分钟内同一个合集不重复读
+  r.get('/sale-preview', wrap(async (req) => {
+    const shop = req.ctx.shop;
+    const handle = String(req.query.handle || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (!handle) throw new ActionError('还没选合集');
+    const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
+    const origin = (process.env.STOREFRONT_ORIGIN || info.domain).replace(/\/$/, '');
+    return cached(shop, `sale:${handle}`, 120_000, async () => {
+      const page = async (n) => {
+        const res = await fetch(`${origin}/collections/${handle}?view=cgp-json${n > 1 ? `&page=${n}` : ''}&_cgp=${Date.now()}`, { headers: { 'User-Agent': 'CGP-Promo-Dashboard (preview)' } });
+        const txt = await res.text();
+        try { return JSON.parse(txt); } catch { throw new ActionError(`前台没返回这个合集的产品数据(${res.status});合集页可能没在用搜索引擎`); }
+      };
+      const first = await page(1);
+      const pages = Math.min(first.pages || 1, 20); // 和搜索引擎一样最多读 20 页(1000 个)
+      const rest = await Promise.all(Array.from({ length: pages - 1 }, (_, i) => page(i + 2)));
+      const products = [first, ...rest].flatMap((j) => j.products || []).map((p) => ({ id: p.id, title: p.title, image: p.image, url: p.url,
+        discount: p.discount || 0, status: p.status, created: p.created, price: p.price, compare: p.compare, priceStr: p.price_str, compareStr: p.compare_str }));
+      let sortRule = null;
+      if (req.query.id) {
+        const d = await graphql(req.ctx, `query($id: ID!) { collection(id: $id) { sortOff: metafield(namespace: "custom", key: "cgp_sort_off") { value }
+          pinManual: metafield(namespace: "custom", key: "cgp_pin_manual") { value } pinNew: metafield(namespace: "custom", key: "cgp_pin_new") { value } } }`,
+        { id: String(req.query.id).startsWith('gid://') ? String(req.query.id) : `gid://shopify/Collection/${req.query.id}` }).catch(() => null);
+        const c = d?.collection;
+        if (c) sortRule = { off: c.sortOff?.value === 'true', pinManual: c.pinManual?.value != null ? Number(c.pinManual.value) : 12, pinNew: c.pinNew?.value != null ? Number(c.pinNew.value) : 0 };
+      }
+      return { handle, products, total: first.total ?? products.length, truncated: (first.pages || 1) > 20, sortRule, at: Date.now() };
+    });
   }));
 
   // ---- 按 id 取产品的名字、图、价格(合集排序网格里不在合集中的产品用)----

@@ -133,6 +133,24 @@ export const DEFINITIONS = [
       t('ends_at', '结束(仅记录)', 'date_time'),
     ],
   },
+  {
+    type: 'cgp_sale_link', name: 'CGP 促销链接', displayNameKey: 'name',
+    description: '网站更新中心:合集的促销链接 /collections/<合集>?onsale=<后缀>,只显示打折的产品(可只显示有货、置顶、限制数量、换排序)。上线中的才生效。由 app 管理,请勿在这里手改。',
+    fields: [
+      t('name', '名称', 'single_line_text_field', { required: true }),
+      t('slug', '链接后缀', 'single_line_text_field', { description: '?onsale= 后面那段,小写字母 / 数字 / 横线' }),
+      t('collection', '合集', 'collection_reference'),
+      t('products', '置顶的产品(按顺序)', 'list.product_reference'),
+      t('in_stock', '只显示有货', 'boolean'),
+      t('min_discount', '最低折扣 %', 'number_integer'),
+      t('limit', '最多显示几个', 'number_integer', { description: '0 = 不限' }),
+      t('sort', '排序', 'single_line_text_field', { description: '空 = 和合集平时一样;discount / newest / price-asc / price-desc' }),
+      t('title', '页面上的标题', 'single_line_text_field'),
+      t('campaign', '所属活动', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
+      t('starts_at', '开始(仅记录)', 'date_time'),
+      t('ends_at', '结束(仅记录)', 'date_time'),
+    ],
+  },
 ];
 
 // ---- 权限 ----
@@ -219,7 +237,7 @@ export async function setPublishStatus(ctx, id, status, gql = graphql) {
 }
 
 // ---- 把 app 里的一条内容写成 Shopify 条目(只写已批准的版本)----
-export const TYPE_OF = { campaign: 'cgp_campaign', banner: 'cgp_banner_slide', topbar: 'cgp_topbar_message', tbstyle: 'cgp_topbar_style', pmodule: 'cgp_product_module', pin: 'cgp_collection_pin' };
+export const TYPE_OF = { campaign: 'cgp_campaign', banner: 'cgp_banner_slide', topbar: 'cgp_topbar_message', tbstyle: 'cgp_topbar_style', pmodule: 'cgp_product_module', pin: 'cgp_collection_pin', salelink: 'cgp_sale_link' };
 export const handleFor = (it) => `cgp-${String(it.id).toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
 export const toGid = (type, id) => (id == null ? null : String(id).startsWith('gid://') ? String(id) : `gid://shopify/${type}/${id}`);
 const iso = (ms) => (ms == null ? '' : new Date(ms).toISOString());
@@ -266,6 +284,13 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       products: list((it.products || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)),
       hidden_products: list((it.hidden || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)), only_listed: it.onlyListed ? 'true' : 'false',
       show_countdown: it.countdown ? 'true' : 'false', badge_text: str(it.badge),
+    });
+  } else if (it.kind === 'salelink') {
+    Object.assign(f, {
+      name: str(it.name), slug: str(it.slug), collection: toGid('Collection', it.collection?.id) || '',
+      products: list((it.products || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)), // 主题一次只读得到前 50 个
+      in_stock: it.inStock ? 'true' : 'false', min_discount: String(Math.max(0, Math.round(Number(it.minDiscount) || 0))),
+      limit: String(Math.max(0, Math.round(Number(it.limit) || 0))), sort: str(it.sort), title: str(it.heading),
     });
   }
   if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });

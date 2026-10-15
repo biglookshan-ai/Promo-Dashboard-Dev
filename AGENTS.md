@@ -121,6 +121,10 @@
   调试用:合集排序页有「立即执行一次」(`POST /api/schedule/col-run`,管理员),直接把 applied / skipped / holds / failures 翻成人话。
   ⛔ 有人在 Shopify 后台手动改过顺序(我们排最前的那几个不在最前了)→ **暂停接管**,绝不覆盖别人的改动;界面上给「按清单重新排 / 就用现在的」两个按钮(`POST /api/schedule/col-hold`)。
   ⛔ **合集 / 产品 id 有时是数字、有时是 gid**(Shopify 资源选择器给 gid,种子数据和主题导入给数字)—— 比较一律用 `numId()` 取末尾数字,直接 `===` 会静默漏掉(2026-10-12 踩过:置顶清单对不上首页页签)。
+- **促销链接**(2026-10-15,`salelink` / `cgp_sale_link`):`/collections/<合集>?onsale[=<后缀>]`。规则在 `src/sale-link.js`(纯函数,浏览器经 `/lib/sale-link.js` 共用),
+  **和主题 `assets/cgp-search-app.js` 的 `SALE` 必须一致**(只要打折的 → 有货 / 最低折扣 → 「和合集平时一样」或指定排序 → 置顶放最前 → 最多几个),改一边要同步另一边。
+  置顶只决定顺序,不绕过打折 / 有货条件。同一个合集后缀不能重复(不同合集可以同名)。没生效时主题拿不到这条设置,`?onsale=后缀` 自动等于不带后缀。
+  编辑器预览 `GET /api/schedule/sale-preview` 读**前台**主题的 cgp-json(`STOREFRONT_ORIGIN` 或店铺主域名;harness 里是假前台),两分钟缓存。
 - **历史记录**(2026-10-13):网站内容 `src/item-history.js`(`<店>.itemhist.json`,每条 60 版 / 180 天)、改价计划 `src/price/plan-history.js`(`price/<店>.planhist.json`,每个 40 版)、
   合集顺序 `src/col-history.js`(`<店>.colhist.json`)。`/api/schedule/act`、`/api/price/act` 动作前后对比,动过的那条记一版(状态、能编辑的全部字段、待审核的修改);一样的不重复记;删掉的保留。
   页面「历史记录」汇总(能看改价的人也看到改价计划),每条可看那一版 vs 现在逐项对比、复制成新的、回滚(回滚照常走审批:审批人马上生效,其他人提交审核,草稿存回草稿)。

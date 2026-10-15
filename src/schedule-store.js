@@ -16,6 +16,7 @@ export function emptyState() {
     version: 2,
     banners: [], topbar: [], tbstyles: [], campaigns: [], pmodules: [],
     pins: [], // v3:合集置顶清单
+    salelinks: [], // 合集促销链接(?onsale=<后缀>)
     pendingOrder: null,
     log: [],
     staff: [], // v2 旧名单:[{ id: Shopify 员工 id, name, role: 'approver' | 'editor', lastSeen }]
@@ -35,7 +36,7 @@ export function load(shop) {
   try {
     const s = JSON.parse(fs.readFileSync(fileOf(shop), 'utf8'));
     return {
-      ...base, ...s, pmodules: s.pmodules || [], members: s.members || [], pins: s.pins || [],
+      ...base, ...s, pmodules: s.pmodules || [], members: s.members || [], pins: s.pins || [], salelinks: s.salelinks || [],
       settings: { ...base.settings, ...s.settings, notify: { ...DEFAULT_NOTIFY, ...s.settings?.notify } },
       scheduler: { ...base.scheduler, ...s.scheduler },
     };
@@ -74,4 +75,4 @@ export function listShops() {
   }
 }
 
-export const allItems = (state) => [...state.campaigns, ...state.banners, ...state.topbar, ...state.tbstyles, ...(state.pmodules || []), ...(state.pins || [])];
+export const allItems = (state) => [...state.campaigns, ...state.banners, ...state.topbar, ...state.tbstyles, ...(state.pmodules || []), ...(state.pins || []), ...(state.salelinks || [])];

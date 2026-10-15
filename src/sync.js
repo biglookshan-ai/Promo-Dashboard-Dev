@@ -44,7 +44,7 @@ export async function syncItem(ctx, state, it, { gql = graphql, now = Date.now()
   }
 }
 
-const KIND_ORDER = { campaign: 0, tbstyle: 1, banner: 2, topbar: 3, pmodule: 4, pin: 5 };
+const KIND_ORDER = { campaign: 0, tbstyle: 1, banner: 2, topbar: 3, pmodule: 4, pin: 5, salelink: 6 };
 
 // 在锁内调用。state 会被修改,调用方负责保存。
 export async function runEffects(ctx, state, effects, { gql = graphql, now = Date.now(), appUrl = '', send, sendDm } = {}) {

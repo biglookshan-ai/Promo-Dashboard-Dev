@@ -236,6 +236,21 @@ http.createServer((req, res) => {
   req.on('data', (c) => body.push(c));
   req.on('end', () => {
     if (req.url.startsWith('/lark-')) return fakeLark(req, res, Buffer.concat(body).toString());
+    // 假前台:主题的 cgp-json(促销链接预览读它)。折扣 / 价格和 fakeProduct 一样按 id 编;库存:id 尾数 0-1 缺货、2 预订,其余有货
+    const sf = req.url.match(/^\/collections\/([^/?]+)\?view=cgp-json(?:&page=(\d+))?/);
+    if (sf) {
+      const c = cat.collections.find((x) => x.handle === sf[1]);
+      const byId = new Map(cat.products.map((p) => [String(p.id), p]));
+      const all = c ? membersOf(c).map((id) => byId.get(id)).filter(Boolean) : [];
+      const pg = +(sf[2] || 1), per = 50;
+      const products = all.slice((pg - 1) * per, pg * per).map((p) => {
+        const price = 100 + (p.id % 900), off = p.id % 3 === 0 ? 0 : 10 + (p.id % 30), cmp = off ? Math.round(price / (1 - off / 100)) : 0;
+        return { id: p.id, title: p.title, url: `/products/${p.handle}`, image: p.image, created: 1700000000 + (p.id % 100000), discount: off,
+          status: ['oos', 'oos', 'preorder'][p.id % 10] || 'instock', price: price * 100, compare: cmp * 100, price_str: `£${price}.00`, compare_str: cmp ? `£${cmp}.00` : null };
+      });
+      res.writeHead(c ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ page: pg, pages: Math.max(1, Math.ceil(all.length / per)), total: all.length, products }));
+    }
     if (req.url === '/__state') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ defs: Object.keys(store.defs), objects: Object.values(store.objects) }, null, 1)); }
     if (req.url === '/__upload') { res.writeHead(201); return res.end(); }
     // GET /__cols 看现在「店里」各合集的顺序(只列被动过的)
@@ -269,7 +284,7 @@ http.createServer((req, res) => {
 // ---------------- 2. 真的 app 服务器 ----------------
 const app = spawn(process.execPath, ['src/server.js'], {
   cwd: ROOT, stdio: 'inherit',
-  env: { ...process.env, SHOPIFY_API_VERSION: args.has('--old-api') ? '2026-04' : '2026-07', PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_SHOP: SHOP, SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}`,
+  env: { ...process.env, SHOPIFY_API_VERSION: args.has('--old-api') ? '2026-04' : '2026-07', PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_SHOP: SHOP, SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}`, STOREFRONT_ORIGIN: `http://localhost:${P.fake}`,
     // 假飞书只在 --lark 时打开(本地测试用的假凭证,和真飞书无关)
     ...(args.has('--lark') ? { LARK_APP_ID: 'harness-lark-app', LARK_APP_SECRET: 'harness-lark-only', LARK_OPEN_ORIGIN: `http://localhost:${P.fake}/lark-open`, LARK_ACCOUNTS_ORIGIN: `http://localhost:${P.fake}/lark-accounts`, APP_URL: `http://localhost:${P.entry}` } : {}) },
 });

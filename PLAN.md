@@ -369,6 +369,7 @@ lark-ops 是本地工具(用你个人的飞书登录 token,存在本机),没有�
     现在 app 申请的是 `write_metaobject_definitions, write_metaobjects, write_files` —— 要用这个功能,得在 Dev Dashboard 给 app 加上 `write_products`,
     然后从 Shopify 后台重新打开一次 app(重新授权)。没加之前这类清单会自动退回前台排序,编辑器里会写明。
   - v3 合集置顶清单(2026-10-10)又改了搜索引擎的两个共用文件:`snippets/cgp-search-head.liquid`(注入 `CGP_COLLECTION_PIN`)和 `assets/cgp-search-app.js`(`applyCollectionOrder` / `matches`)。这两个文件搜索引擎项目也在改,**上线前一定先拉线上版本对比**,只把这两处补丁合进去,别整文件覆盖。
+  - 合集促销链接 `?onsale`(2026-10-15,主题提交 0eb2fdf)又改了 `snippets/cgp-search-head.liquid`(`CGP_COLLECTION_PIN` 那行后面输出 `CGP_SALE_LINKS`)和 `assets/cgp-search-app.js`(`SALE` / `saleOk` / `applySaleOrder` / `freezeSale` / `saleBarHTML`,以及 `matches` 拆出的 `pinOk`)。同样只合补丁。
   - 产品卡徽章 / 倒计时(2026-10-13,主题提交 12ebe32)又碰了搜索引擎的 4 个共用文件:`assets/cgp-search-app.js`(`cmpHTML` + `appendCards` 里一行 `cgpCmpTick`)、`snippets/cgp-search-head.liquid`(末尾 render assets)、`snippets/cgp-card-product.liquid`(info 开头一行 render)、`templates/collection.cgp-json.liquid` / `search.cgp-json.liquid`(`cgp_cmp_on` + `"cmp"` 字段)。同样只合补丁;`snippets/cgp-campaign-offer.liquid` 整个文件是我们的,直接搬。
 - 放上去前先拉线上这些文件和分支对比,确认线上没人改过这些代码。
 

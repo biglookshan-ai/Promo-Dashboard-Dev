@@ -6,9 +6,10 @@
 // actor:{ id, name, role: 'approver' | 'editor' }
 // 返回 { doc, effects, message }。effects 交给服务器执行(写 Shopify / 发飞书),浏览器演示模式忽略。
 import { itemStatus, campaignIndex } from './schedule-core.js';
+import { SLUG_RE, SALE_SORTS } from './sale-link.js';
 
-export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins' };
-export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: '合集置顶清单' };
+export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins', salelink: 'salelinks' };
+export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: '合集置顶清单', salelink: '促销链接' };
 export const MODULE_CN = { sale: '促销模块', feature: '推荐 / 新品模块' };
 export const ORDERABLE = ['banner', 'topbar'];
 
@@ -20,14 +21,16 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   // v3:合集置顶清单;活动关联的飞书任务链接
   'collection', 'onlyListed', 'larkLinks', 'hidden', 'fullOrder',
   // v3 分工:负责人 / 审批人 / 抄送(成员 id)、截止时间(ms)
-  'owner', 'approver', 'cc', 'due'];
+  'owner', 'approver', 'cc', 'due',
+  // 促销链接(?onsale=<后缀>);置顶的产品用 products,合集用 collection
+  'slug', 'inStock', 'minDiscount', 'limit', 'sort', 'heading'];
 
 export class ActionError extends Error {}
 const fail = (msg) => { throw new ActionError(msg); };
 
 export const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
   : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
-export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || [])];
+export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || []), ...(doc.salelinks || [])];
 export const findItem = (doc, id) => allOf(doc).find((x) => x.id === id);
 const isApprover = (actor) => actor?.role === 'approver'; // 管理员(旧名单里的「审核人」)
 
@@ -68,6 +71,12 @@ export function validate(it) {
   if (it.kind === 'pin') {
     if (!it.collection?.id) return '请选要排序的合集';
     if (!(it.products || []).length) return '至少放一个要排在前面的产品';
+  }
+  if (it.kind === 'salelink') {
+    if (!String(it.name || '').trim()) return '请填写名称';
+    if (!it.collection?.id) return '请选合集';
+    if (!SLUG_RE.test(String(it.slug || ''))) return '链接后缀只能用小写字母、数字和横线(不能以横线开头,最多 40 个字)';
+    if (it.sort && !SALE_SORTS.some(([k]) => k === it.sort)) return '排序方式不对';
   }
   if (it.start != null && it.end != null && it.end <= it.start) return '结束时间要晚于开始时间';
   return '';
@@ -119,6 +128,8 @@ function run(input, action, actor, now) {
       const merged = { ...it, ...v };
       if (mode !== 'draft') { const err = validate(merged); if (err) fail(err); }
       if (kind === 'pmodule' && merged.isDefault && list.some((x) => x !== it && x.isDefault && x.module === merged.module)) fail('这个模块已经有平时版本了');
+      // 同一个合集的促销链接后缀不能重复(不同合集可以同名)
+      if (kind === 'salelink' && merged.slug && merged.collection?.id && list.some((x) => x !== it && x.slug === merged.slug && String(x.collection?.id).split('/').pop() === String(merged.collection.id).split('/').pop())) fail(`这个合集已经有后缀叫「${merged.slug}」的促销链接了,换一个`);
       const approved = it.state === 'approved';
       // 不是管理员的人不能把自己设成审批人(否则等于自己批自己);这类内容的默认审批人本来就是他的除外
       if (v.approver && v.approver === actor.id && it.approver !== actor.id && !isApprover(actor) && doc.settings?.approvers?.[kind] !== actor.id) fail('审批人不能选你自己;要直接生效,请管理员在「设置」里把你设成这类内容的默认审批人');
@@ -265,4 +276,4 @@ function run(input, action, actor, now) {
 
 // 挂在活动下、跟随活动时间的内容
 export const followersOf = (doc, campaignId) =>
-  [...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || [])].filter((x) => x.campaign === campaignId && x.start == null && x.end == null);
+  [...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || []), ...(doc.salelinks || [])].filter((x) => x.campaign === campaignId && x.start == null && x.end == null);

@@ -167,7 +167,7 @@ export function schedulerDMs(state, { changes = [] }, { appUrl, now = Date.now()
     for (const [id, lines] of per) out.push({ to: [id], card: { title: `🔄 你负责 / 关注的内容自动${lines.every((l) => l.startsWith('⬆️')) ? '上线' : lines.every((l) => l.startsWith('⬇️')) ? '下线' : '上下线'}了`, color: 'blue', button: btn, lines } });
   }
   const camps = campaignIndex(state.campaigns);
-  const items = [...state.campaigns, ...state.banners, ...state.topbar, ...state.tbstyles, ...(state.pmodules || []), ...(state.pins || [])];
+  const items = [...state.campaigns, ...state.banners, ...state.topbar, ...state.tbstyles, ...(state.pmodules || []), ...(state.pins || []), ...(state.salelinks || [])];
   if (n.unapproved) {
     for (const it of items) {
       const s = itemStatus(it, camps, now); const w = effectiveWindow(it, camps);
