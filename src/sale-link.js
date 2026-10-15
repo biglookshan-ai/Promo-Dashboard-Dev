@@ -75,6 +75,11 @@ export function saleView(products, link = {}, opts = {}) {
 
 // 页面模板:?view= 后面那段(主题里 templates/collection.<名字>.json),留空 = 合集原来的模板
 export const VIEW_RE = /^[\w][\w -]{0,59}$/;
-// 完整链接:/collections/<合集>?view=<模板>&onsale=<后缀>
-export const saleUrl = (domain, handle, slug, view) =>
-  `${String(domain || '').replace(/\/$/, '')}/collections/${handle}?${view ? `view=${encodeURIComponent(view)}&` : ''}onsale${slug ? `=${slug}` : ''}`;
+// 后缀和模板名一样(不分大小写)→ 只写 ?view=<模板名> 就够了(主题按名字自动套用这条链接)
+export const viewBound = (slug, view) => !!slug && !!view && String(view).trim().toLowerCase() === slug;
+// 完整链接:/collections/<合集>?view=<模板>&onsale=<后缀>;后缀和模板名一样时是短链接 /collections/<合集>?view=<模板>
+export const saleUrl = (domain, handle, slug, view) => {
+  const base = `${String(domain || '').replace(/\/$/, '')}/collections/${handle}?`;
+  if (viewBound(slug, view)) return `${base}view=${encodeURIComponent(view)}`;
+  return `${base}${view ? `view=${encodeURIComponent(view)}&` : ''}onsale${slug ? `=${slug}` : ''}`;
+};

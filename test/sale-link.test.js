@@ -71,3 +71,10 @@ test('带页面模板的链接', async () => {
   assert.ok(VIEW_RE.test('sale-bf')); assert.ok(!VIEW_RE.test('../x'));
   assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'salelink', isNew: true, values: link({ view: '<x>' }) }, admin, 1), /页面模板/);
 });
+
+test('短链接:后缀和模板名一样(不分大小写)就只写 ?view=', async () => {
+  const { saleUrl: u, viewBound } = await import('../src/sale-link.js');
+  assert.equal(u('https://www.cinegearpro.co.uk', 'dzofilm', 'bfcm-dzo', 'BFCM-DZO'), 'https://www.cinegearpro.co.uk/collections/dzofilm?view=BFCM-DZO');
+  assert.equal(u('https://x', 'dzofilm', 'bfcm', 'blackfriday-collection'), 'https://x/collections/dzofilm?view=blackfriday-collection&onsale=bfcm');
+  assert.ok(!viewBound('', 'sale')); assert.ok(!viewBound('sale', ''));
+});

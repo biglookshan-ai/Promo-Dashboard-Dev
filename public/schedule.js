@@ -944,11 +944,13 @@
     dl.innerHTML = names.map((n) => `<option value="${esc(n)}">${main?.templates.includes(n) ? '正式主题有' : '只在未发布的主题里'}</option>`).join('');
     const v = String($('#ed-form [name="view"]')?.value || '').trim();
     if (!v) { info.innerHTML = '留空 = 用这个合集原来的版面。促销页模板叫 <b class="mono">sale</b>(在主题编辑器里排版)'; return; }
-    if (MODE !== 'live' || !slTpl || slTpl.busy) { info.textContent = ''; return; }
+    const slug = String($('#ed-form [name="slug"]')?.value || '').trim().toLowerCase();
+    const bound = SL.viewBound(slug, v) ? '<br>🔗 后缀和模板名一样,链接只要 <b class="mono">?view=' + esc(v) + '</b>' : SL.SLUG_RE.test(SL.slugOf(v)) && SL.slugOf(v) === v.toLowerCase() ? `<br>想要短链接(只写 ?view=${esc(v)}):把后缀改成 <b class="mono">${esc(v.toLowerCase())}</b> <button type="button" class="btn btn-sm" data-sl="slugview">改成一样</button>` : '';
+    if (MODE !== 'live' || !slTpl || slTpl.busy) { info.innerHTML = bound.replace(/^<br>/, ''); return; }
     const inMain = main?.templates.includes(v); const others = themes.filter((t) => t.role !== 'MAIN' && t.templates.includes(v)).map((t) => t.name);
-    info.innerHTML = inMain ? `✅ 正式主题「${esc(main.name)}」里有这个模板`
+    info.innerHTML = (inMain ? `✅ 正式主题「${esc(main.name)}」里有这个模板`
       : others.length ? `<span class="tag tag--warn">⚠️ 只在「${esc(others.join('、'))}」里,正式主题还没有 —— 顾客打开会看到默认的合集页</span>`
-        : '<span class="tag tag--danger">⚠️ 主题里找不到这个模板,顾客打开会看到默认的合集页</span>';
+        : '<span class="tag tag--danger">⚠️ 主题里找不到这个模板,顾客打开会看到默认的合集页</span>') + bound;
   }
   const SORT_LABEL = () => Object.fromEntries(SL.SALE_SORTS);
   function slTags(x) {
@@ -1067,6 +1069,7 @@
     if (a === 'rm') sl.products.splice(i, 1);
     if (a === 'up' && i > 0) [sl.products[i - 1], sl.products[i]] = [sl.products[i], sl.products[i - 1]];
     if (a === 'reload') { slLoad(done, true); return; }
+    if (a === 'slugview') { const fh = $('#ed-form'); const sg = fh.querySelector('[name="slug"]'); sg.value = String(fh.querySelector('[name="view"]').value).trim().toLowerCase(); sg.dataset.touched = '1'; redrawSlUrl(); return; }
     redrawSl(); done();
   }
   function slPreviewHtml(v) {
@@ -2789,6 +2792,8 @@
         const sg = f.querySelector('[name="slug"]');
         if (e.target.name === 'name' && !sg.dataset.touched) sg.value = SL.slugOf(e.target.value);
         if (e.target.name === 'slug') sg.dataset.touched = '1';
+        // 选了页面模板:后缀跟着模板名走(一样才能用短链接 ?view=模板名);手动改过后缀就不动
+        if (e.target.name === 'view' && !sg.dataset.touched && SL.VIEW_RE.test(e.target.value.trim()) && SL.SLUG_RE.test(SL.slugOf(e.target.value))) sg.value = SL.slugOf(e.target.value);
         redrawSlUrl();
       }
       if (e.target.name === 'image' && f.querySelector('[name="imageId"]')) f.querySelector('[name="imageId"]').value = '';
