@@ -248,7 +248,13 @@
     flag: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></svg>',
   };
   const TAGCN = { new: '新品', sale: '促销', event: '活动', none: '无角标' };
-  const EFFECT = { none: '无', snow: '❄️ 飘雪', sparkle: '✨ 闪光', confetti: '🎉 彩带' };
+  const EFFECT = { none: '无', snow: '❄️ 飘雪', sparkle: '✨ 闪光', confetti: '🎉 彩带', leaves: '🍂 落叶', shine: '⚡ 流光' };
+  // 节日模板:一键填好颜色 / 特效 / 装饰(新建样式或在编辑器里套用,填好后还能改)
+  const TB_PRESETS = {
+    autumn: { label: '🍂 Autumn', v: { name: 'Autumn', bg: '#6a2c0e', color: '#fff3e3', accent: '#f6b54a', effect: 'leaves', decoLeft: '🍂', decoRight: '🍁' } },
+    blackfriday: { label: '⚡ Black Friday', v: { name: 'Black Friday', bg: '#0b0b0b', color: '#ffffff', accent: '#f5c518', effect: 'shine', decoLeft: '⚡', decoRight: '' } },
+    christmas: { label: '🎄 圣诞', v: { name: 'Christmas', bg: '#9b1c1c', color: '#ffffff', accent: '#f5d06f', effect: 'snow', decoLeft: '🎄', decoRight: '' } },
+  };
   const thumb = (url, w = 600) => (url ? `${url}${url.includes('?') ? '&' : '?'}width=${w}` : '');
   const kindChip = (k) => `<span class="kchip kchip--${k}">${KIND[k] || (k === 'system' ? '系统' : k || '')}</span>`;
   const empty = (msg) => `<div class="empty"><div>${esc(msg)}</div></div>`;
@@ -301,18 +307,23 @@
       .sort((a, b) => (b.priority || 0) - (a.priority || 0) || (win(b).start ?? 0) - (win(a).start ?? 0));
     return on[0] || S.tbstyles.find((x) => x.isDefault) || { bg: S.site.topbar.bg, color: S.site.topbar.color, effect: 'none' };
   }
-  function fxHtml(effect) {
+  // 和主题 blocks/ai_gen_block_a08faac.liquid 的特效一样(数量 / 位置 / 速度同一套算法),改一边要同步另一边
+  function fxHtml(effect, accent = '#f5d06f') {
     if (!effect || effect === 'none') return '';
-    const n = { snow: 26, sparkle: 16, confetti: 22 }[effect] || 0;
+    const n = { snow: 26, sparkle: 16, confetti: 22, leaves: 14, shine: 8 }[effect] || 0;
     const COL = ['#f5d06f', '#ff6b6b', '#4dabf7', '#69db7c', '#ffffff'];
-    return `<span class="fx fx--${effect}" aria-hidden="true">${Array.from({ length: n }, (_, i) => {
-      const left = (i * 37 + 11) % 100, top = (i * 53 + 7) % 100, dur = 2.4 + (i % 5) * 0.7, delay = -((i * 0.61) % dur);
-      return `<i style="left:${left}%;top:${effect === 'sparkle' ? top + '%' : '-8px'};animation-duration:${dur}s;animation-delay:${delay}s;${effect === 'confetti' ? `background:${COL[i % COL.length]}` : ''}"></i>`;
+    const LEAF = ['#f59e0b', '#ea580c', '#dc2626', '#facc15', '#c2410c'];
+    const ac = /^#[0-9a-f]{6}$/i.test(accent || '') ? accent : '#f5d06f';
+    return `<span class="fx fx--${effect}" style="--fx-ac:${ac}" aria-hidden="true">${effect === 'shine' ? '<i class="fx__sweep"></i>' : ''}${Array.from({ length: n }, (_, i0) => {
+      const i = i0 + 1; // 和主题的 for i in (1..n) 对齐
+      const left = (i * 37 + 11) % 100, top = (i * 53 + 7) % 100, dur = 2.4 + (i % 5) * 0.7, delay = -((i * 0.61) % 2.4);
+      if (effect === 'leaves') { const sz = (i % 3) * 2 + 7; return `<i style="left:${left}%;width:${sz}px;height:${sz}px;background:${LEAF[i % 5]};animation-duration:${4.2 + (i % 4) * 0.9}s;animation-delay:-${(i * 0.83) % 5}s"></i>`; }
+      return `<i style="left:${left}%;top:${effect === 'sparkle' || effect === 'shine' ? top + '%' : '-8px'};animation-duration:${dur}s;animation-delay:${delay}s;${effect === 'confetti' ? `background:${COL[i % COL.length]}` : ''}"></i>`;
     }).join('')}</span>`;
   }
   // 主题里正在用的那套 Top Bar:左边社交图标、中间轮播公告、右边语言货币;底色 / 字色 / 特效跟着当前样式走
   const topbarHtml = (msg, { style = activeStyle(), id = '' } = {}) => `<div class="tbar" style="background:${esc(style.bg)};color:${esc(style.color)}">
-      ${fxHtml(style.effect)}
+      ${fxHtml(style.effect, style.accent)}
       <span class="tbar__side"><i></i><i></i><i></i></span>
       <span class="tbar__msg" ${id ? `id="${id}"` : ''}>${msg}</span>
       <span class="tbar__side tbar__side--r">Language/Currency</span>
@@ -775,8 +786,9 @@
       </section>
       <section class="panel">
         <div class="panel__h"><h3>样式(节日主题)</h3><span class="muted">到了时间自动换装,结束后回到默认样式;同时有多个时,优先级高的生效</span></div>
+        <div class="tbpresets"><span class="muted">用节日模板新建:</span>${Object.entries(TB_PRESETS).map(([k, x]) => `<button class="tbpreset" type="button" data-new="tbstyle" data-tbpreset="${k}"><span class="tbpreset__bar" style="background:${x.v.bg};color:${x.v.color}">${fxHtml(x.v.effect, x.v.accent)}<span>${x.v.decoLeft} Aa ${x.v.decoRight}</span></span><b>${x.label}</b></button>`).join('')}</div>
         <div class="tbstyles">${styles.map((x) => `<button class="tbs" data-open="${x.id}" data-pop="${x.id}" type="button">
-          <span class="tbs__bar" style="background:${esc(x.bg)};color:${esc(x.color)}">${fxHtml(x.effect)}<span>${esc(x.decoLeft || '')} Aa ${esc(x.decoRight || '')}</span></span>
+          <span class="tbs__bar" style="background:${esc(x.bg)};color:${esc(x.color)}">${fxHtml(x.effect, x.accent)}<span>${esc(x.decoLeft || '')} Aa ${esc(x.decoRight || '')}</span></span>
           <span class="tbs__b"><b>${esc(x.name)}</b>${x.isDefault ? '<span class="tag">默认</span>' : badge(x)}</span>
           <span class="tbs__w">${x.isDefault ? '没有其他样式生效时使用' : winText(x)}</span>
         </button>`).join('')}</div>
@@ -2155,8 +2167,8 @@
           ${st.missingScopes.length ? `<div class="note note--warn">还缺 ${st.missingScopes.length} 个权限。在 Partner 后台 → 应用「Promo Dashboard Dev」→ 配置 → 访问权限里加上,发布新版本,再回店铺后台打开这个 app 点同意。
             <button class="btn btn-sm" data-conn="reconnect" type="button">已同意,重新检查</button></div>` : ''}</div>
         <div><div class="conn__k">2. 店里的内容类型</div>
-          ${st.definitions.map((d) => `<div class="conn__r">${ok(d.exists && !(d.missingFields || []).length)}<span>${DEF_CN[d.type] || d.type}</span><span class="mono muted">${d.type}</span>${d.exists ? `<span class="muted">${d.entries} 条${(d.missingFields || []).length ? ` · 缺 ${d.missingFields.length} 个新字段` : ''}</span>` : ''}</div>`).join('')}
-          ${(missingDefs.length || missingFields.length) && st.ready ? `<div class="note note--warn">新功能要${missingDefs.length ? `补建 ${missingDefs.length} 个内容类型` : ''}${missingDefs.length && missingFields.length ? '、' : ''}${missingFields.length ? `给已有类型补 ${missingFields.length} 个新字段` : ''}。点下面的按钮补上;已有的内容不受影响。${missingDefs.some((d) => d.type.startsWith('cgp_product')) ? '首页商品模块补好后,再点「从主题导入」把两个模块现在的配置导进来当平时版本。' : ''}</div>` : ''}
+          ${st.definitions.map((d) => `<div class="conn__r">${ok(d.exists && !(d.missingFields || []).length && !(d.staleFields || []).length)}<span>${DEF_CN[d.type] || d.type}</span><span class="mono muted">${d.type}</span>${d.exists ? `<span class="muted">${d.entries} 条${(d.missingFields || []).length ? ` · 缺 ${d.missingFields.length} 个新字段` : ''}${(d.staleFields || []).length ? ' · 有新选项要更新(如顶栏新特效)' : ''}</span>` : ''}</div>`).join('')}
+          ${(missingDefs.length || missingFields.length) && st.ready ? `<div class="note note--warn">新功能要${missingDefs.length ? `补建 ${missingDefs.length} 个内容类型` : ''}${missingDefs.length && missingFields.length ? '、' : ''}${missingFields.length ? `给已有类型补 / 更新 ${missingFields.length} 个字段` : ''}。点下面的按钮补上;已有的内容不受影响。${missingDefs.some((d) => d.type.startsWith('cgp_product')) ? '首页商品模块补好后,再点「从主题导入」把两个模块现在的配置导进来当平时版本。' : ''}</div>` : ''}
           ${missingDefs.length || missingFields.length ? `<p class="muted">点下面的按钮在店里补齐。只是建好空的类型,<b>顾客看不到任何变化</b>,在 app 里保存内容后才会显示。可以重复点,已建的会跳过。</p>
             <button class="btn btn-sm btn-primary" data-conn="setup" type="button" ${canSetup ? '' : 'disabled'}>在店里创建内容类型</button>${st.missingScopes.length ? '<span class="muted"> 先补齐权限</span>' : ''}` : '<p class="muted">都建好了。</p>'}</div>
         <div><div class="conn__k">3. 定时器</div>
@@ -2305,7 +2317,7 @@
     const baseIt = { kind, state: 'new', by: S.me, owner: S.me, campaign: preset.campaign || null, paused: false, pendingChange: null };
     if (kind === 'banner') return { ...baseIt, id: rid('b-'), image: '', title: '', subtitle: '', description: '', button1_text: 'Shop Now', button1_url: '', button2_text: '', button2_url: '', tag: 'new', order: S.banners.length, start: preset.campaign ? null : dayStart(1), end: null };
     if (kind === 'topbar') return { ...baseIt, id: rid('t-'), emoji: '📣', text: '', link: '', category: '公告', order: S.topbar.length, start: null, end: null };
-    if (kind === 'tbstyle') return { ...baseIt, id: rid('s-'), name: '', bg: '#9b1c1c', color: '#ffffff', accent: '#f5d06f', effect: 'snow', decoLeft: '🎄', decoRight: '', priority: 10, start: preset.campaign ? null : dayStart(7), end: preset.campaign ? null : dayStart(14) };
+    if (kind === 'tbstyle') return { ...baseIt, id: rid('s-'), name: '', bg: '#9b1c1c', color: '#ffffff', accent: '#f5d06f', effect: 'snow', decoLeft: '🎄', decoRight: '', priority: 10, start: preset.campaign ? null : dayStart(7), end: preset.campaign ? null : dayStart(14), ...(TB_PRESETS[preset.tbpreset]?.v || {}) };
     if (kind === 'pmodule') {
       // 从活动里点「+ 促销模块版本」:名字 / 标题用活动名,第一个页签用活动的第一个合集(只显示打折的、按折扣排)
       const c = preset.campaign ? camp(preset.campaign) : null;
@@ -2640,6 +2652,7 @@
     if (it.kind === 'tbstyle') {
       const color = (n, v, l) => `<label class="clr"><input type="color" name="${n}" value="${esc(v)}"/><span>${l}</span><span class="mono">${esc(v)}</span></label>`;
       return `
+        <div class="fld"><span>从节日模板开始 <em>一键填好颜色、特效和装饰,填好后还能再改</em></span><div class="rowin">${Object.entries(TB_PRESETS).map(([k, x]) => `<button type="button" class="btn btn-sm" data-tbfill="${k}">${x.label}</button>`).join('')}</div></div>
         ${fld('样式名称', inp('name', it.name, '如:圣诞节 / Black Friday'))}
         <div class="fld"><span>颜色</span><div class="clrs">${color('bg', it.bg, '底色')}${color('color', it.color, '文字')}${color('accent', it.accent || '#f5d06f', '点缀(链接 / 箭头)')}</div></div>
         ${fld('特效', `<div class="seg" id="ed-effect">${Object.entries(EFFECT).map(([k, l]) => `<button type="button" data-effect="${k}" class="${(it.effect || 'none') === k ? 'is-active' : ''}">${l}</button>`).join('')}</div>`, '轻量的动画,只在顶栏这一条里,不影响页面其他地方')}
@@ -3202,6 +3215,14 @@
         if (ed.cdBg == null && ed.cdFg == null && !base.countdownBg && !base.countdownColor) { const p = CD_STY[cs.dataset.cdsty]; if ($('#cd-bg')) $('#cd-bg').value = p.bg === 'transparent' ? '#ffffff' : p.bg; if ($('#cd-fg')) $('#cd-fg').value = p.fg; }
         refreshPv(); return; }
       if (e.target.closest('[data-cdreset]')) { ed.cdBg = ''; ed.cdFg = ''; e.target.closest('[data-cdreset]').hidden = true; refreshPv(); return; }
+      const tf = e.target.closest('[data-tbfill]');
+      if (tf) {
+        const v = TB_PRESETS[tf.dataset.tbfill].v;
+        for (const k of ['bg', 'color', 'accent', 'decoLeft', 'decoRight']) { const el = f.querySelector(`[name="${k}"]`); if (el) el.value = v[k]; }
+        const nm = f.querySelector('[name="name"]'); if (nm && !nm.value.trim()) nm.value = v.name;
+        $$('#ed-effect button').forEach((b) => b.classList.toggle('is-active', b.dataset.effect === v.effect));
+        refreshPv(); return;
+      }
       const seg = e.target.closest('#ed-tag button, #ed-effect button, #ed-module button');
       if (seg) { $$(`#${seg.parentElement.id} button`).forEach((b) => b.classList.toggle('is-active', b === seg)); refreshPv(); return; }
       const im = e.target.closest('.imgpick__i');
@@ -3363,7 +3384,7 @@
     const o = e.target.closest('[data-open]');
     if (o && o.closest('.section')) { const x = byId(o.dataset.open); if (x) openEditor(x.kind, x.id); return; }
     const n = e.target.closest('[data-new]');
-    if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : undefined); return; }
+    if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : n.dataset.tbpreset ? { tbpreset: n.dataset.tbpreset } : undefined); return; }
     const hb = e.target.closest('[data-hub]');
     if (hb) { openHub(hb.dataset.hub); return; }
     if (e.target.closest('[data-hubback]')) { cpHub = null; renderCampaigns(); return; }

@@ -8,6 +8,9 @@ export const REQUIRED_SCOPES = ['write_metaobject_definitions', 'write_metaobjec
 
 const t = (key, name, type, extra = {}) => ({ key, name, type, ...extra });
 const choices = (arr) => [{ name: 'choices', value: JSON.stringify(arr) }];
+// 顶栏特效(和主题 blocks/ai_gen_block_a08faac.liquid 一致)。2026-10-16 加了 leaves 落叶 / shine 流光;
+// 店里建得早的类型可选值是旧的 → definitionStatus 报「要更新」,点「补建」时改掉
+export const TB_EFFECTS = ['none', 'snow', 'sparkle', 'confetti', 'leaves', 'shine'];
 // 引用别的内容类型时先写占位,创建时替换成那个定义的真实 id
 const REF = (type) => `__DEF:${type}__`;
 const CAMPAIGN_REF = REF('cgp_campaign');
@@ -76,7 +79,7 @@ export const DEFINITIONS = [
       t('background', '底色', 'color'),
       t('text_color', '文字颜色', 'color'),
       t('accent_color', '点缀色', 'color'),
-      t('effect', '特效', 'single_line_text_field', { validations: choices(['none', 'snow', 'sparkle', 'confetti']) }),
+      t('effect', '特效', 'single_line_text_field', { validations: choices(TB_EFFECTS) }),
       t('deco_left', '公告前装饰', 'single_line_text_field'),
       t('deco_right', '公告后装饰', 'single_line_text_field'),
       t('priority', '优先级', 'number_integer'),
@@ -174,12 +177,19 @@ export function missingScopes(granted) {
 export async function definitionStatus(ctx, gql = graphql) {
   const out = [];
   for (const def of DEFINITIONS) {
-    const d = await gql(ctx, `query($type: String!) { metaobjectDefinitionByType(type: $type) { id name metaobjectsCount capabilities { publishable { enabled } } fieldDefinitions { key } } }`, { type: def.type });
+    const d = await gql(ctx, `query($type: String!) { metaobjectDefinitionByType(type: $type) { id name metaobjectsCount capabilities { publishable { enabled } } fieldDefinitions { key validations { name value } } } }`, { type: def.type });
     const x = d.metaobjectDefinitionByType;
     // 后来给这个类型加的字段(店里建得早的话会缺,点「补建」时补上)
     const have = new Set((x?.fieldDefinitions || []).map((f) => f.key));
     const missingFields = x && x.fieldDefinitions ? def.fields.filter((f) => !have.has(f.key)).map((f) => f.key) : [];
-    out.push({ type: def.type, name: def.name, core: !!def.core, exists: !!x, id: x?.id || null, entries: x?.metaobjectsCount ?? 0, publishable: !!x?.capabilities?.publishable?.enabled, missingFields });
+    // 已有字段但「只能选这几个」的可选值过时了(比如顶栏特效后来加了新的)→ 点「补建」时更新
+    const staleFields = x && x.fieldDefinitions ? def.fields.filter((f) => {
+      const want = (f.validations || []).find((v) => v.name === 'choices'); if (!want) return false;
+      const got = (x.fieldDefinitions.find((g) => g.key === f.key)?.validations || []).find((v) => v.name === 'choices');
+      if (!got) return false;
+      try { const a = JSON.parse(got.value), b = JSON.parse(want.value); return b.some((v) => !a.includes(v)); } catch { return false; }
+    }).map((f) => f.key) : [];
+    out.push({ type: def.type, name: def.name, core: !!def.core, exists: !!x, id: x?.id || null, entries: x?.metaobjectsCount ?? 0, publishable: !!x?.capabilities?.publishable?.enabled, missingFields, staleFields });
   }
   return out;
 }
@@ -207,14 +217,19 @@ export async function ensureDefinitions(ctx, gql = graphql) {
   for (const def of DEFINITIONS) {
     if (ids[def.type]) {
       existing.push(def.type);
-      const miss = status.find((x) => x.type === def.type)?.missingFields || [];
-      if (miss.length) {
+      const st = status.find((x) => x.type === def.type) || {};
+      const miss = st.missingFields || [], stale = st.staleFields || [];
+      if (miss.length || stale.length) {
+        const ops = [
+          ...def.fields.filter((f) => miss.includes(f.key)).map((f) => ({ create: fieldInput(f, ids) })),
+          ...def.fields.filter((f) => stale.includes(f.key)).map((f) => ({ update: { key: f.key, validations: fieldInput(f, ids).validations } })),
+        ];
         const d = await gql(ctx, `mutation($id: ID!, $definition: MetaobjectDefinitionUpdateInput!) {
           metaobjectDefinitionUpdate(id: $id, definition: $definition) { metaobjectDefinition { id } userErrors { field message code } } }`,
-        { id: ids[def.type], definition: { fieldDefinitions: def.fields.filter((f) => miss.includes(f.key)).map((f) => ({ create: fieldInput(f, ids) })) } });
+        { id: ids[def.type], definition: { fieldDefinitions: ops } });
         const r = d.metaobjectDefinitionUpdate;
         if (r?.userErrors?.length) errors.push({ type: def.type, message: '补字段失败:' + r.userErrors.map((e) => e.message).join('; ') });
-        else updated.push({ type: def.type, fields: miss });
+        else updated.push({ type: def.type, fields: [...miss, ...stale] });
       }
       continue;
     }
@@ -275,7 +290,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
   } else if (it.kind === 'tbstyle') {
     Object.assign(f, {
       name: str(it.name), background: hex(it.bg), text_color: hex(it.color), accent_color: hex(it.accent),
-      effect: ['none', 'snow', 'sparkle', 'confetti'].includes(it.effect) ? it.effect : 'none',
+      effect: TB_EFFECTS.includes(it.effect) ? it.effect : 'none',
       deco_left: str(it.decoLeft), deco_right: str(it.decoRight), priority: str(it.priority ?? 0), is_default: it.isDefault ? 'true' : 'false',
     });
   } else if (it.kind === 'pmodule') {

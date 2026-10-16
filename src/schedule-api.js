@@ -43,7 +43,7 @@ async function setupStatus(ctx) {
     slReady: definitions.filter((d) => d.type === 'cgp_sale_link').every((d) => d.exists),
     upgrade: definitions.filter((d) => !d.core && !d.exists).map((d) => d.type),
     // 已建好的类型后来加了字段:也算要补建(同一个按钮)
-    fieldsMissing: definitions.flatMap((d) => (d.exists ? (d.missingFields || []).map((k) => `${d.type}.${k}`) : [])),
+    fieldsMissing: definitions.flatMap((d) => (d.exists ? [...(d.missingFields || []), ...(d.staleFields || [])].map((k) => `${d.type}.${k}`) : [])),
     // 「真的改店里的合集」要这个权限;没有也不影响别的功能,只是那种清单退回前台排序
     canWriteProducts: (await grantedScopes(ctx)).includes('write_products') };
 }
