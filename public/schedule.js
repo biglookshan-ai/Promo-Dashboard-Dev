@@ -310,13 +310,14 @@
   // 和主题 blocks/ai_gen_block_a08faac.liquid 的特效一样(数量 / 位置 / 速度同一套算法),改一边要同步另一边
   function fxHtml(effect, accent = '#f5d06f') {
     if (!effect || effect === 'none') return '';
-    const n = { snow: 26, sparkle: 16, confetti: 22, leaves: 14, shine: 8 }[effect] || 0;
+    const n = { snow: 18, sparkle: 10, confetti: 14, leaves: 10, shine: 6 }[effect] || 0;
     const COL = ['#f5d06f', '#ff6b6b', '#4dabf7', '#69db7c', '#ffffff'];
     const LEAF = ['#f59e0b', '#ea580c', '#dc2626', '#facc15', '#c2410c'];
     const ac = /^#[0-9a-f]{6}$/i.test(accent || '') ? accent : '#f5d06f';
     return `<span class="fx fx--${effect}" style="--fx-ac:${ac}" aria-hidden="true">${effect === 'shine' ? '<i class="fx__sweep"></i>' : ''}${Array.from({ length: n }, (_, i0) => {
       const i = i0 + 1; // 和主题的 for i in (1..n) 对齐
-      const left = (i * 37 + 11) % 100, top = (i * 53 + 7) % 100, dur = 2.4 + (i % 5) * 0.7, delay = -((i * 0.61) % 2.4);
+      // 单数放左边 0–28%,双数放右边 70–98%:中间文字那块被遮住(不挡字)
+      const left = i % 2 ? (i * 11) % 29 : 70 + (i * 17) % 29, top = (i * 53 + 7) % 100, dur = 2.4 + (i % 5) * 0.7, delay = -((i * 0.61) % 2.4);
       if (effect === 'leaves') { const sz = (i % 3) * 2 + 7; return `<i style="left:${left}%;width:${sz}px;height:${sz}px;background:${LEAF[i % 5]};animation-duration:${4.2 + (i % 4) * 0.9}s;animation-delay:-${(i * 0.83) % 5}s"></i>`; }
       return `<i style="left:${left}%;top:${effect === 'sparkle' || effect === 'shine' ? top + '%' : '-8px'};animation-duration:${dur}s;animation-delay:${delay}s;${effect === 'confetti' ? `background:${COL[i % COL.length]}` : ''}"></i>`;
     }).join('')}</span>`;

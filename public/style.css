@@ -661,20 +661,22 @@ textarea.inp { resize: vertical; }
 .tbar { position: relative; }
 .tbar__deco { margin: 0 6px; }
 .tbar__side, .tbar__msg { position: relative; z-index: 1; }
-.fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 22%, transparent 34%, transparent 66%, #000 78%, #000 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 22%, transparent 34%, transparent 66%, #000 78%, #000 100%); } /* 和主题一样:特效只在两侧,不挡字 */
 .fx i { position: absolute; display: block; }
-.fx--snow i { width: 4px; height: 4px; border-radius: 50%; background: #fff; opacity: .85; animation: fxfall linear infinite; }
-.fx--confetti i { width: 4px; height: 7px; border-radius: 1px; animation: fxfall linear infinite; }
+.fx--snow i { width: 4px; height: 4px; border-radius: 50%; background: #fff; opacity: .6; animation: fxfall linear infinite; }
+.fx--confetti i { width: 4px; height: 7px; border-radius: 1px; opacity: .75; animation: fxfall linear infinite; }
 .fx--sparkle i { width: 3px; height: 3px; border-radius: 50%; background: #ffd400; box-shadow: 0 0 6px 2px rgba(255,212,0,.6); animation: fxtw ease-in-out infinite; }
 /* 2026-10-16:落叶(Autumn)/ 流光(Black Friday),和主题顶栏一样 */
-.fx--leaves i { top: -14px; border-radius: 0 100% 0 100%; opacity: .9; animation: fxleaf linear infinite; }
+.fx--leaves i { top: -14px; border-radius: 0 100% 0 100%; opacity: .7; animation: fxleaf linear infinite; }
 .fx--leaves i::after { content: ''; position: absolute; left: 50%; top: 12%; width: 1px; height: 76%; background: rgba(0,0,0,.22); transform: rotate(45deg); }
 .fx--shine i { width: 2px; height: 2px; border-radius: 50%; background: var(--fx-ac); box-shadow: 0 0 5px 1px var(--fx-ac); animation: fxtw ease-in-out infinite; }
-.fx--shine i.fx__sweep { top: 0; bottom: 0; left: -35%; width: 30%; height: auto; border-radius: 0; box-shadow: none; background: linear-gradient(105deg, transparent 15%, color-mix(in srgb, var(--fx-ac) 32%, transparent) 50%, transparent 85%); animation: fxshine 5s ease-in-out infinite; }
+.fx--shine i.fx__sweep { top: 0; bottom: 0; left: -35%; width: 30%; height: auto; border-radius: 0; box-shadow: none; background: linear-gradient(105deg, transparent 15%, color-mix(in srgb, var(--fx-ac) 24%, transparent) 50%, transparent 85%); animation: fxshine 5s ease-in-out infinite; }
 @keyframes fxleaf { 0% { transform: translate(0, 0) rotate(0deg); } 25% { transform: translate(10px, 16px) rotate(70deg); } 50% { transform: translate(-6px, 34px) rotate(150deg); } 75% { transform: translate(12px, 52px) rotate(230deg); } 100% { transform: translate(2px, 72px) rotate(320deg); } }
 @keyframes fxshine { 0% { transform: translateX(0); } 55%, 100% { transform: translateX(560%); } }
 @keyframes fxfall { from { transform: translateY(0) rotate(0); } to { transform: translateY(70px) translateX(12px) rotate(200deg); } }
-@keyframes fxtw { 0%, 100% { opacity: 0; transform: scale(.3); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes fxtw { 0%, 100% { opacity: 0; transform: scale(.3); } 50% { opacity: .8; transform: scale(1); } }
 .tbrow__n { width: 22px; height: 22px; border-radius: 11px; background: var(--text); color: #fff; font-size: 11.5px; font-weight: 700; display: grid; place-items: center; flex: none; }
 .tbrow[draggable="true"] { cursor: grab; background: var(--surface-2); }
 .fbar__t { font-size: 14px; }
