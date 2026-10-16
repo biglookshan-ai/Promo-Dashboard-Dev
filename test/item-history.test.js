@@ -44,3 +44,10 @@ test('一模一样的不重复记;改了什么看得出来', () => {
   assert.deepEqual(changedKeys(h['b-1'].versions[0].values, h['b-1'].versions[1].values).sort(), ['end', 'title']);
   assert.deepEqual(changedKeys({ subtitle: '' }, { subtitle: null }), []); // 空字符串和没填算一样
 });
+
+test('清理:只删已经不存在的内容的历史', async () => {
+  const { pruneDeletedHistory } = await import('../src/item-history.js');
+  const h = { a: { kind: 'banner', versions: [] }, b: { kind: 'banner', versions: [] }, c: { kind: 'pin', versions: [] } };
+  assert.equal(pruneDeletedHistory(h, ['a', 'c']), 1);
+  assert.deepEqual(Object.keys(h), ['a', 'c']);
+});

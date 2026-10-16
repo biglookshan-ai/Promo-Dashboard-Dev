@@ -61,6 +61,19 @@ export function recordAction(shop, before, after, ids, meta, now = Date.now()) {
   if (recordChanges(h, before, after, ids, meta, now)) saveItemHistory(shop, h);
 }
 
+// 清理:删掉「已经不存在的内容」的历史(设置 →「清理内容」);还在的内容历史不动。返回删掉了几条内容的历史
+export function pruneDeletedHistory(h, keepIds) {
+  const keep = new Set(keepIds); let n = 0;
+  for (const id of Object.keys(h)) if (!keep.has(id)) { delete h[id]; n++; }
+  return n;
+}
+export function pruneItemHistory(shop, keepIds) {
+  const h = loadItemHistory(shop);
+  const n = pruneDeletedHistory(h, keepIds);
+  if (n) saveItemHistory(shop, h);
+  return n;
+}
+
 // 两版之间改了哪些字段(null / 缺省 / 空字符串算一样)
 const norm = (v) => (v == null || v === '' ? null : JSON.stringify(v));
 export function changedKeys(a = {}, b = {}) {

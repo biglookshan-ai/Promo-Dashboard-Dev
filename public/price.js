@@ -91,7 +91,7 @@ function headHtml() {
   const e = S.engine;
   const pend = S.plans.filter((p) => (p.state === 'pending' || p.pendingChange) && canApprove(p.pendingChange ? { ...p, ...p.pendingChange } : p)).length;
   const holds = holdsOf().length;
-  return `<div class="pr-head"><div><h2>改价</h2><p class="muted">限时 / 永久改价 · 指定审批人 · 到点自动改 · 到期自动恢复 · 通知只私信相关的人</p></div>
+  return `<div class="pr-head"><div><h2>改价</h2><p class="muted">${S.team ? '限时 / 永久改价 · 指定审批人 · 到点自动改 · 到期自动恢复 · 通知只私信相关的人' : '限时 / 永久改价 · 到点自动改 · 到期自动恢复'}</p></div>
     ${e.lastError ? `<span class="pr-chip pr-chip--warn" title="${esc(e.lastError)}">执行器出错:${esc(e.lastError.slice(0, 40))}</span>` : `<span class="pr-chip">执行器 · ${e.lastRun ? ago(e.lastRun) + '对齐' : '还没运行'}</span>`}</div>
   <div class="pr-subnav">${SUBTABS.map(([k, l]) => `<button class="${!E && tab === k ? 'is-on' : ''}" data-a="tab" data-t="${k}">${l}${k === 'plans' && pend ? ` <span class="modnav__n modnav__n--alert">${pend}</span>` : ''}${k === 'vault' && holds ? ` <span class="modnav__n modnav__n--alert">${holds}</span>` : ''}</button>`).join('')}</div>`;
 }
@@ -182,7 +182,7 @@ function planRow(p, s) {
         ${p.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${holds ? `<span class="tag tag--danger">${holds} 个暂停接管</span>` : ''}
         ${p.campaign ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : ''}
-        <span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}
+        ${S.team ? `<span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}` : ''}
       </div>
       <div class="plan__say">${planSay(p)}</div>
       <div class="plan__prods">${prods.slice(0, 3).map((i) => `<span>${esc(i.product || i.title)}</span>`).join('')}${prods.length > 3 ? `<span class="muted">…另有 ${prods.length - 3} 个产品</span>` : ''}</div>
@@ -309,7 +309,7 @@ function summaryHtml() {
       ${p.kind === 'window' && p.layer !== 'sitewide' ? line(`层级:${core.LAYER_CN[p.layer]}(和别的限时计划撞到同一个产品时用)`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
       ${p.tagsRemove.length ? line(`生效期间去掉标签 <b>${p.tagsRemove.map(esc).join('、')}</b>,结束自动加回`) : ''}
-      ${line(`审批人:<b>${p.approver ? esc(nameOf(p.approver)) : '管理员'}</b>${p.owner ? ` · 负责人 ${esc(nameOf(p.owner))}` : ''}`)}
+      ${S.team ? line(`审批人:<b>${p.approver ? esc(nameOf(p.approver)) : '管理员'}</b>${p.owner ? ` · 负责人 ${esc(nameOf(p.owner))}` : ''}`) : ''}
       ${its.length ? line(`影响 <b>${nProd}</b> 个产品 / <b>${live.length}</b> 个变体${maxOff > 0 ? `,最多降 <b>${maxOff}%</b>` : ''} · 预计 ${mins} 分钟内改完`) : line('<span class="tx-warn">还没算产品,点下面的「试算预览」</span>')}
     </ul>
   </div>${its.length && !stale() ? checkHtml() : ''}`;
@@ -354,13 +354,13 @@ function editorHtml() {
         <div class="pr-fld">生效期间去掉 <em>结束自动加回来</em>${tagChips('tagsRemove', ro)}</div></div>
         <p class="muted">用来驱动「按标签自动归类」的合集,比如 FlashDeal、TOP DEALS。</p>`, '可不填')}
 
-      ${sec('负责人与审批', `<div class="grid2">
-        <label class="pr-fld">负责人<select class="sel" data-f="owner" ${ro ? 'disabled' : ''}><option value="">不指定</option>${S.people.map((u) => `<option value="${u.id}" ${p.owner === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>
-        <label class="pr-fld">审批人 <em>不指定 = 管理员审批;审批人自己提交直接生效</em><select class="sel" data-f="approver" ${ro ? 'disabled' : ''}><option value="">管理员审批</option>${S.people.map((u) => `<option value="${u.id}" ${p.approver === u.id ? 'selected' : ''}>${esc(u.name)}${u.admin ? '(管理员)' : ''}</option>`).join('')}</select></label>
+      ${sec(S.team ? '负责人与审批' : '关联活动与备注', `<div class="grid2">
+        ${S.team ? `<label class="pr-fld">负责人<select class="sel" data-f="owner" ${ro ? 'disabled' : ''}><option value="">不指定</option>${S.people.map((u) => `<option value="${u.id}" ${p.owner === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>
+        <label class="pr-fld">审批人 <em>不指定 = 管理员审批;审批人自己提交直接生效</em><select class="sel" data-f="approver" ${ro ? 'disabled' : ''}><option value="">管理员审批</option>${S.people.map((u) => `<option value="${u.id}" ${p.approver === u.id ? 'selected' : ''}>${esc(u.name)}${u.admin ? '(管理员)' : ''}</option>`).join('')}</select></label>` : ''}
         <label class="pr-fld">关联活动 <em>关联后在活动页里能看到这次改价</em><select class="sel" data-f="campaign" ${ro ? 'disabled' : ''}><option value="">不关联</option>${(cache.campaigns || []).map((c) => `<option value="${c.id}" ${p.campaign?.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}${p.campaign && !(cache.campaigns || []).some((c) => c.id === p.campaign.id) ? `<option value="${p.campaign.id}" selected>${esc(p.campaign.name)}</option>` : ''}</select></label>
-        <div class="pr-fld">抄送 <em>只通知,不能批准</em><div class="row">${S.people.map((u) => `<label class="row" style="gap:4px;font-size:13px"><input type="checkbox" data-f="cc" value="${u.id}" ${(p.cc || []).includes(u.id) ? 'checked' : ''} ${ro ? 'disabled' : ''}/>${esc(u.name)}</label>`).join('') || '<span class="muted">没有别的能看改价页的成员</span>'}</div></div>
+        ${S.team ? `<div class="pr-fld">抄送 <em>只通知,不能批准</em><div class="row">${S.people.map((u) => `<label class="row" style="gap:4px;font-size:13px"><input type="checkbox" data-f="cc" value="${u.id}" ${(p.cc || []).includes(u.id) ? 'checked' : ''} ${ro ? 'disabled' : ''}/>${esc(u.name)}</label>`).join('') || '<span class="muted">没有别的能看改价页的成员</span>'}</div></div>` : ''}
       </div>
-      <label class="pr-fld" style="margin-top:10px">备注 <em>给审批人看的说明</em><textarea class="inp" rows="2" data-f="note" ${ro ? 'disabled' : ''} placeholder="比如:配合首页 Banner,Flash 每天 0 点换">${esc(p.note || '')}</textarea></label>`)}
+      <label class="pr-fld" style="margin-top:10px">备注 <em>${S.team ? '给审批人看的说明' : '给同事看的说明'}</em><textarea class="inp" rows="2" data-f="note" ${ro ? 'disabled' : ''} placeholder="比如:配合首页 Banner,Flash 每天 0 点换">${esc(p.note || '')}</textarea></label>`)}
 
       ${sec('划线价', `${p.kind === 'window' ? `<div class="pr-fld" style="margin-bottom:12px">层级 <em>只有两个限时计划同时改到同一个产品时才有用:层级高的那个说了算(限时抢购 > 品牌 / 合集 > 全场)。一般不用动</em>
           <span class="pr-seg">${[['sitewide', '全场'], ['brand', '品牌 / 合集'], ['flash', '限时抢购']].map(([k, l]) => `<button type="button" class="${p.layer === k ? 'is-on' : ''}" data-a="layer" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>` : ''}
@@ -723,6 +723,7 @@ function settingsHtml() {
   const s = S.settings; const ap = isAdmin();
   return `
   <div class="pr-card"><div class="pr-card__t">通知 <span class="muted">改价通知只用飞书私信发给相关的人(负责人 / 审批人 / 提交人 / 抄送),不发群</span></div>
+    ${S.team ? '' : '<p class="muted">「多人协作」(飞书登录、分工、私信)暂时隐藏了,所以改价通知现在<b>不会发</b>;以后打开多人协作就恢复。</p>'}
     ${Object.entries(NOTIFY_CN).map(([k, l]) => `<label class="row" style="font-size:13px;margin:4px 0"><input type="checkbox" data-a="notify" data-k="${k}" ${s.notify[k] ? 'checked' : ''} ${ap ? '' : 'disabled'}/> ${l}</label>`).join('')}</div>
   <div class="pr-card"><div class="pr-card__t">安全</div>
     <div class="grid2"><label class="pr-fld">降幅上限 % <em>超过的在预览里标黄提醒</em><input class="inp" type="number" id="maxoff" value="${s.maxDiscountPct}" ${ap ? '' : 'disabled'}/></label>
@@ -731,7 +732,7 @@ function settingsHtml() {
   <div class="pr-card"><div class="pr-card__t">执行器</div>
     <div class="pr-kv"><span>状态</span>${S.engine.lastRun ? `上次对齐 ${ago(S.engine.lastRun)},改了 ${S.engine.lastWrites} 个变体` : '还没运行'}${S.engine.lastError ? ` · <span style="color:var(--danger)">${esc(S.engine.lastError)}</span>` : ''}</div>
     <div class="pr-kv"><span>时区</span>英国时间(Europe/London,自动处理夏令时)</div>
-    <div class="pr-kv"><span>成员 / 飞书</span>在网站更新中心的「设置」里管(谁能看改价页 = 角色勾了「改价」)</div>
+    ${S.team ? '<div class="pr-kv"><span>成员 / 飞书</span>在网站更新中心的「设置」里管(谁能看改价页 = 角色勾了「改价」)</div>' : ''}
   </div>`;
 }
 

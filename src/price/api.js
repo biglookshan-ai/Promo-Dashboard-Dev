@@ -9,6 +9,7 @@ import { load as loadSchedule } from '../schedule-store.js';
 import { actorOf, isAdmin, canSee } from '../members.js';
 import { loadPlanHistory, recordPlanAction } from './plan-history.js';
 import { changedKeys } from '../item-history.js';
+import { teamEnabled } from '../lark-login.js';
 
 const TZ = 'Europe/London';
 const csvCell = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -21,6 +22,7 @@ const toGid = (type, id) => (String(id).startsWith('gid://') ? String(id) : `gid
 const actorOfReq = (req) => (req.ctx.member ? actorOf(req.ctx.member) : { id: req.ctx.user || 'admin-token', name: '管理员', role: 'approver' });
 // 能被选成审批人 / 负责人 / 抄送的人:启用中、能看改价页面的成员
 function pricePeople(shop) {
+  if (!teamEnabled()) return []; // 「多人协作」关着:不分工
   const s = loadSchedule(shop);
   return (s.members || []).filter((m) => m.status === 'active' && canSee(s, m, 'price')).map((m) => ({ id: m.id, name: m.name, avatar: m.avatar, admin: isAdmin(m) }));
 }
@@ -42,7 +44,7 @@ export function priceRouter() {
     const appUrl = loadSchedule(req.ctx.shop).appUrl || '';
     if (appUrl && state.appUrl !== appUrl) { state.appUrl = appUrl; save(req.ctx.shop, state); }
     return {
-      me: { id: me.id, name: me.name, admin: me.role === 'approver' }, people: pricePeople(req.ctx.shop),
+      me: { id: me.id, name: me.name, admin: me.role === 'approver' }, people: pricePeople(req.ctx.shop), team: teamEnabled(),
       plans: state.plans, vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState,
       log: state.log.slice(0, 300), engine: state.engine, ledgerCount: state.ledger.length,
       settings: { maxDiscountPct: state.settings.maxDiscountPct, sweepMinutes: state.settings.sweepMinutes, notify: state.settings.notify },

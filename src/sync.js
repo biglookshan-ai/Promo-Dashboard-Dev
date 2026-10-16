@@ -77,11 +77,11 @@ export async function runEffects(ctx, state, effects, { gql = graphql, now = Dat
 export function performAction(shop, ctx, fn, opts = {}) {
   return withLock(shop, async () => {
     const state = load(shop);
-    const { doc, effects, message, id } = fn(state);
+    const { doc, effects, message, id, ids } = fn(state);
     const merged = { ...state, ...doc };
     replace(shop, merged);
     const r = await runEffects(ctx, merged, effects, opts);
     replace(shop, merged);
-    return { state: merged, message, id, syncErrors: r.errors, larkErrors: r.larkErrors };
+    return { state: merged, message, id, ids, syncErrors: r.errors, larkErrors: r.larkErrors };
   });
 }

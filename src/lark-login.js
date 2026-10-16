@@ -13,6 +13,10 @@ const OPEN = process.env.LARK_OPEN_ORIGIN || DOMAIN.open;
 const ACCOUNTS = process.env.LARK_ACCOUNTS_ORIGIN || DOMAIN.accounts;
 
 export const larkEnabled = () => !!(process.env.LARK_APP_ID && process.env.LARK_APP_SECRET);
+// 「多人协作」总开关:飞书登录 + 成员 / 角色 + 分工(负责人、审批人、抄送、截止)+ 私信 + 我的工作。
+// 2026-10-16 用户要求先隐藏(权限以后再做):Railway 里设 TEAM_MODE=on 才打开(还要配好飞书应用)。
+// 关着时:只认 Shopify 后台登录,从后台打开 app 的人都当管理员,改动直接生效;代码和数据都保留,打开就恢复。
+export const teamEnabled = () => larkEnabled() && process.env.TEAM_MODE === 'on';
 
 export function authorizeUrl(redirectUri, state) {
   const q = new URLSearchParams({ client_id: process.env.LARK_APP_ID, redirect_uri: redirectUri, response_type: 'code', state });

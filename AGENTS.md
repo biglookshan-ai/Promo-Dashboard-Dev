@@ -66,6 +66,10 @@
 - 认人:**v3 起改为飞书登录**(店里多人共用 Shopify 账号);Shopify session token 只证明「从本店后台打开」。第一次登录的人默认「待分配」,管理员分配角色后才能用;第一个管理员 = 第一个从 Shopify 后台里用飞书登录的人。(v2 旧做法:session token 的 `sub` = 员工 id、第一个打开的人是审核人。)
 - **飞书登录(v3 3.1)**:`src/lark-login.js`(授权 / 换 token / 读用户信息 + app 会话签名,签名密钥由 `SHOPIFY_API_SECRET` 派生)、`src/members.js`(成员 / 角色 / 页面权限,纯函数)、`src/auth-routes.js`(登录回调、/api/me、/api/members、/api/roles)、`src/auth-embedded.js` 的 `requireAccess` / `needMember`、页面 `public/auth.js`(登录门)。
   **只在 Railway 填了 `LARK_APP_ID` + `LARK_APP_SECRET` 时开启**;没填就和以前一样只认 Shopify(别把这个回退去掉)。飞书凭证只放环境变量,不进代码、不写日志。
+  **★ 2026-10-16 起「多人协作」整体先隐藏**(用户:权限以后再做,先把功能做好):总开关 `teamEnabled()`(`src/lark-login.js`)= 配了飞书 **且** Railway 设了 `TEAM_MODE=on`。
+  关着(现在的状态)时:不显示飞书登录门、成员 / 角色、测试模式、默认审批人、编辑器里的「分工」(负责人 / 审批人 / 抄送 / 截止)、「我的工作」、改价的负责人 / 审批人 / 抄送;
+  从 Shopify 后台打开的人都按管理员处理(改动直接生效,不走审核);飞书**私信**不发(改价通知本来只走私信 → 现在改价没有通知),群 webhook 通知照常。
+  代码和数据(成员、分工字段)都保留,设 `TEAM_MODE=on` 就全部恢复;本地 `live-harness.mjs --lark` 会自动带上 `TEAM_MODE=on`。
   后台 iframe 里登录用弹窗(弹窗被拦就给「新窗口打开」链接);直接开网页用整页跳转。
   **防冒充(别去掉)**:弹窗模式的会话只能用飞书回调页显示的 6 位验证码换(弹窗自动传回,传不回就手输;错 5 次作废、只能用一次)——
   否则有人把自己发起的登录链接发给管理员点,就能拿到管理员身份。网页模式靠 `/auth/lark/start` 种的 cookie 核对是同一个浏览器。

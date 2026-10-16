@@ -255,6 +255,36 @@ function run(input, action, actor, now) {
       return { doc, effects, message: '已删除' };
     }
 
+    // 批量清理(设置 →「清理内容」):管理员一次删掉多条,不管现在什么状态 —— 上线中的会立刻从网站上消失
+    case 'purge': {
+      if (!isApprover(actor)) fail('只有管理员能批量删除');
+      const ids = [...new Set(action.ids || [])];
+      if (!ids.length) fail('还没选要删除的内容');
+      const items = ids.map((id) => findItem(doc, id) || fail('有内容找不到了(可能刚被删掉),请刷新后再选'));
+      const fixed = items.find((it) => it.isDefault);
+      if (fixed) fail(`「${titleOf(fixed)}」是默认样式 / 平时版本,不能删`);
+      const sel = new Set(ids);
+      for (const c of items.filter((x) => x.kind === 'campaign')) {
+        const left = followersOf(doc, c.id).filter((f) => !sel.has(f.id));
+        if (left.length) fail(`活动「${c.name}」下面还挂着 ${left.length} 条跟随它时间的内容(${left.slice(0, 3).map(titleOf).join('、')}),要一起勾上`);
+      }
+      for (const it of items) {
+        const list = L(it.kind); list.splice(list.indexOf(it), 1);
+        addLog(doc, now, 'delete', it, '批量清理', actor);
+        if (it.shopifyId) effects.push({ type: 'remove', shopifyId: it.shopifyId });
+        for (const tab of it.tabs || []) if (tab.shopifyId) effects.push({ type: 'remove', shopifyId: tab.shopifyId });
+      }
+      // 留下的内容如果关联着被删的活动(自己有时间的那种),去掉关联;已上线的重写一次店里的条目
+      const gone = new Set(items.filter((x) => x.kind === 'campaign').map((x) => x.id));
+      for (const x of allOf(doc)) {
+        if (!gone.has(x.campaign)) continue;
+        x.campaign = null;
+        if (x.state === 'approved') effects.push({ type: 'sync', id: x.id });
+      }
+      if (doc.pendingOrder?.ids?.some((id) => sel.has(id))) doc.pendingOrder = null;
+      return { doc, effects, message: `已删除 ${items.length} 条`, ids };
+    }
+
     case 'order': {
       const { kind, ids } = action;
       if (!ORDERABLE.includes(kind)) fail('这类内容不能排序');

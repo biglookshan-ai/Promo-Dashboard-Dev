@@ -77,8 +77,8 @@ export function requireSession() {
 // 两种进入方式:
 //   ① 在 Shopify 后台里打开:有 Shopify session token(证明是本店后台)+ app 会话(证明是谁)
 //   ② 直接开网页:只有 app 会话;店铺授权用之前在后台里换到并存下的那份
-// 没配飞书(LARK_APP_ID / LARK_APP_SECRET 没填)时完全按旧方式:只认 Shopify session token。
-import { larkEnabled, verifySession } from './lark-login.js';
+// 「多人协作」没开(TEAM_MODE 不是 on,或没配飞书)时完全按旧方式:只认 Shopify session token。
+import { teamEnabled, verifySession } from './lark-login.js';
 import { load as loadSchedule } from './schedule-store.js';
 import { canSee, testModeOn, TEST_MEMBER } from './members.js';
 
@@ -93,7 +93,7 @@ export function requireAccess() {
         shop = v.shop; sub = v.payload.sub ? String(v.payload.sub) : null;
         token = process.env.SHOPIFY_ADMIN_TOKEN || await getAccessToken(shop, st);
       }
-      if (!larkEnabled()) {
+      if (!teamEnabled()) {
         if (!shop) return res.status(401).json({ error: 'Missing session token', needsAuth: true });
         req.ctx = { shop, token, user: sub, fromAdmin: true };
         return next();
@@ -123,7 +123,7 @@ export function requireAccess() {
 // 飞书模式下:必须是已登录、已启用的成员;可指定页面权限
 export function needMember(page) {
   return (req, res, next) => {
-    if (!larkEnabled()) return next();
+    if (!teamEnabled()) return next();
     const m = req.ctx.member;
     if (!m) return res.status(401).json({ error: '请先用飞书登录', needLogin: true });
     if (m.status !== 'active') return res.status(403).json({ error: m.status === 'disabled' ? '你的账号已被管理员停用' : '已登录,等管理员分配角色', pending: true });

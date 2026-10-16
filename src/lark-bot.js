@@ -2,7 +2,7 @@
 // 需要应用开了「机器人」能力和 im:message:send_as_bot 权限,且收信人在应用的可用范围里。
 // 凭证只从环境变量读(LARK_APP_ID / LARK_APP_SECRET),不写日志。群里的汇总仍走群机器人 webhook(src/lark.js)。
 import { buildCard } from './lark.js';
-import { larkEnabled } from './lark-login.js';
+import { teamEnabled } from './lark-login.js';
 
 const OPEN = process.env.LARK_OPEN_ORIGIN || (process.env.LARK_DOMAIN === 'feishu' ? 'https://open.feishu.cn' : 'https://open.larksuite.com');
 let cached = null;
@@ -19,7 +19,8 @@ async function tenantToken() {
   return cached.token;
 }
 
-export const botEnabled = larkEnabled;
+// 私信跟着「多人协作」开关走(关着时没有负责人 / 审批人,私信一律不发;群通知照常走 webhook)
+export const botEnabled = teamEnabled;
 
 export async function sendDM(openId, card) {
   const token = await tenantToken();
@@ -33,7 +34,7 @@ export async function sendDM(openId, card) {
 
 // 发给一群人(去重);返回失败的 [{ to, message }],不抛错
 export async function sendDMs(openIds, card) {
-  if (!larkEnabled()) return [];
+  if (!teamEnabled()) return [];
   const ids = [...new Set((openIds || []).filter(Boolean))];
   const res = await Promise.allSettled(ids.map((id) => sendDM(id, card)));
   return res.map((r, i) => (r.status === 'rejected' ? { to: ids[i], message: r.reason?.message || String(r.reason) } : null)).filter(Boolean);

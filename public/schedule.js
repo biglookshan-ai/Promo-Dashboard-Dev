@@ -133,7 +133,10 @@
   const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []), pin: (S.pins ||= []), salelink: (S.salelinks ||= []) }[k]);
   const byId = (id) => all().find((x) => x.id === id);
   const camp = (id) => S.campaigns.find((c) => c.id === id);
-  const me = () => S.staff.find((u) => u.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' };
+  // 「多人协作」(飞书登录、分工、我的工作、审核流程)开没开:服务器说了算(Railway 的 TEAM_MODE),演示数据里没有 = 关。
+  // 关着时打开 app 的人都是管理员:改动直接生效,不显示负责人 / 审批人 / 抄送、我的工作、成员与角色
+  const team = () => !!S.lark;
+  const me = () => { const u = S.staff.find((x) => x.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' }; return team() ? u : { ...u, role: 'approver' }; };
   const isApprover = () => me().role === 'approver'; // 管理员
   const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
   // ---- v3 分工:每条内容的负责人 / 审批人 / 抄送 / 截止(规则在 /lib/schedule-actions.js)----
@@ -247,7 +250,7 @@
   const TAGCN = { new: '新品', sale: '促销', event: '活动', none: '无角标' };
   const EFFECT = { none: '无', snow: '❄️ 飘雪', sparkle: '✨ 闪光', confetti: '🎉 彩带' };
   const thumb = (url, w = 600) => (url ? `${url}${url.includes('?') ? '&' : '?'}width=${w}` : '');
-  const kindChip = (k) => `<span class="kchip kchip--${k}">${KIND[k]}</span>`;
+  const kindChip = (k) => `<span class="kchip kchip--${k}">${KIND[k] || (k === 'system' ? '系统' : k || '')}</span>`;
   const empty = (msg) => `<div class="empty"><div>${esc(msg)}</div></div>`;
   const pageHead = (title, sub, actions = '') =>
     `<div class="phead"><div><h2>${esc(title)}</h2><p class="muted">${sub}</p></div><div class="phead__act">${actions}</div></div>`;
@@ -463,7 +466,7 @@
     }));
   }
 
-  // ================= 预览页(首页此刻 / 未来长什么样) =================
+  // ================= 首页预览(总览里的「首页长什么样」:此刻 / 未来某个时间点) =================
   let pvAt = null;      // 看哪个时刻(null = 现在)
   let pvModTab = { sale: 0, feature: 0 }; // 预览里各模块看哪个页签
   const PV_KINDS = ['banner', 'topbar', 'tbstyle', 'pmodule', 'pin'];
@@ -475,9 +478,10 @@
     const bns = S.banners.filter((b) => status(b, T) === 'live').sort(byOrder);
     const mods = ['sale', 'feature'].map((m) => ({ m, v: activeVersion(m, T) })).filter((x) => x.v);
     const pins = (S.pins || []).filter((p) => status(p, T) === 'live');
-    $('#pv-root').innerHTML = `
-      ${pageHead('预览', '按时间点看网站长什么样 —— 顶栏、Banner 轮播、首页两个商品模块,都是那一刻顾客实际会看到的')}
+    const root = $('#pv-root'); if (!root) return;
+    root.innerHTML = `
       <section class="panel">
+        <div class="panel__h"><h3>首页长什么样</h3><span class="muted">默认是现在;点时间点看那一刻顾客会看到的顶栏、Banner 轮播和首页商品模块</span></div>
         ${tlHtml('pv', points, pvAt)}
         ${tlChanges(points, pvAt)}
         <div class="pvwrap">
@@ -507,7 +511,7 @@
     // 商品模块:取真实产品(正式数据)
     for (const { m, v } of mods) {
       const t = (v.tabs || [])[pvModTab[m] || 0];
-      if (t) loadTabPreview(t, () => { if ($('#pv-root') && isActive('preview')) renderPreview(); });
+      if (t) loadTabPreview(t, () => { if ($('#pv-root') && isActive('overview')) renderPreview(); });
     }
     $$('#pv-root [data-pmtab]').forEach((el) => el.addEventListener('click', () => {
       const wrap = el.closest('[data-pm]'); const m = wrap?.dataset.pm; if (!m) return;
@@ -586,15 +590,15 @@
       </div>`).join('') : empty('接下来 14 天没有上线 / 下线变化');
 
     $('#ov-root').innerHTML = `
-      ${pageHead('总览', '现在网站上显示什么、接下来会发生什么')}
+      ${pageHead('总览', '网站现在长什么样、接下来会发生什么')}
       <div class="stats">
         ${stat(liveN, '上线中', 'stat--ok', 'banners')}
         ${stat(soonN, '7 天内上线', '', 'overview')}
         ${stat(endN, '7 天内到期', endN ? 'stat--warn' : '', 'overview')}
-        ${stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews')}
+        ${team() || pendN ? stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews') : ''}
       </div>
       ${alertsHtml(['banner', 'topbar', 'campaign', 'tbstyle', 'pmodule'])}
-      <section class="panel pvlink"><div><b>想看首页长什么样?</b><span class="muted">「预览」页按时间点画出顶栏、Banner 轮播和两个商品模块</span></div><button class="btn btn-sm" data-go="preview" type="button">打开预览</button></section>
+      <div id="pv-root"></div>
       <section class="panel">
         <div class="gtbar">
           <div class="gtbar__l">
@@ -634,6 +638,7 @@
     $$('#ov-zoom button').forEach((b) => b.addEventListener('click', () => { ov.zoom = b.dataset.zoom; ov.offset = 0; renderOverview(); }));
     $$('#ov-root [data-nav]').forEach((b) => b.addEventListener('click', () => { ov.offset = +b.dataset.nav ? ov.offset + +b.dataset.nav : 0; renderOverview(); }));
     $$('#ov-root [data-kind]').forEach((b) => b.addEventListener('click', () => { ov.kinds[b.dataset.kind] = !ov.kinds[b.dataset.kind]; renderOverview(); }));
+    renderPreview(); // 首页预览(原来单独的「预览」页)画在总览里
   }
 
   // ================= 排序(Banner 轮播 / 顶栏轮播共用)=================
@@ -1852,39 +1857,118 @@
     });
   }
 
+  // ================= 设置 → 清理内容(一次删掉测试时建的内容;规则在 /lib/schedule-actions.js 的 purge)=================
+  const cl = { q: '', sel: new Set(), sure: 0 };
+  const CL_KINDS = [['campaign', '活动'], ['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接']];
+  const clFollowers = (c) => all().filter((x) => x.campaign === c.id && x.start == null && x.end == null);
+  const clMatch = (x) => { const q = cl.q.trim().toLowerCase(); return !q || [titleOf(x), x.name, x.slug, x.collection?.title].some((v) => String(v || '').toLowerCase().includes(q)); };
+  const clItems = () => all().filter((x) => !x.isDefault && clMatch(x));
+  function drawClean() {
+    const box = $('#st-clean'); if (!box) return;
+    box.innerHTML = `<section class="panel">
+        <div class="panel__h"><h3>清理内容</h3><span class="muted">一次删掉测试时建的内容</span></div>
+        <p class="muted">勾上要删的,点「删除选中的」。店铺里对应的条目会一起删掉:<b>正在网站上显示的会立刻消失</b>,合集置顶删了合集会恢复原来的顺序。
+          默认样式和商品模块的「平时版本」不能删;改价计划在「改价」页里单独删。</p>
+        <div class="cltools"><input class="inp" id="cl-q" placeholder="按名字筛选,比如 test、测试、bfcm" value="${esc(cl.q)}"/>
+          <button class="btn btn-sm" data-clpick="draft" type="button">勾上所有草稿</button><button class="btn btn-sm" data-clpick="ended" type="button">勾上所有已结束</button>
+          <button class="btn btn-sm btn-ghost" data-clpick="none" type="button">全部取消</button></div>
+        <div id="cl-list"></div>
+      </section>
+      <section class="panel">
+        <div class="panel__h"><h3>清理记录</h3><span class="muted">测试留下的日志和历史版本</span></div>
+        <p class="muted">「已删除内容的历史版本」= 历史记录页里那些已经删掉的内容;还在的内容的历史版本不动。</p>
+        <div class="rowin"><button class="btn btn-sm" data-clh="deleted" type="button">删掉已删除内容的历史版本</button><button class="btn btn-sm btn-danger-t" data-clh="log" type="button">清空操作日志</button></div>
+      </section>`;
+    drawCleanList();
+    $('#cl-q').addEventListener('input', (e) => { cl.q = e.target.value; cl.sure = 0; drawCleanList(); });
+    $$('#st-clean [data-clpick]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.clpick;
+      if (k === 'none') cl.sel.clear();
+      else clItems().filter((x) => status(x) === k).forEach((x) => clPick(x, true));
+      cl.sure = 0; drawCleanList();
+    }));
+    $$('#st-clean [data-clh]').forEach((b) => b.addEventListener('click', () => clearRecords(b)));
+  }
+  // 勾活动 = 连同跟随它时间的内容一起勾(不然删不掉);取消跟随的内容 = 活动也取消
+  function clPick(x, on) {
+    if (on) { cl.sel.add(x.id); if (x.kind === 'campaign') clFollowers(x).forEach((f) => cl.sel.add(f.id)); return; }
+    cl.sel.delete(x.id);
+    if (x.kind === 'campaign') clFollowers(x).forEach((f) => cl.sel.delete(f.id));
+    else if (x.campaign && x.start == null && x.end == null) cl.sel.delete(x.campaign);
+  }
+  function drawCleanList() {
+    const el = $('#cl-list'); if (!el) return;
+    for (const id of [...cl.sel]) if (!byId(id)) cl.sel.delete(id); // 已经不在的(被删了)去掉
+    const items = clItems();
+    const groups = CL_KINDS.map(([k, label]) => {
+      const list = items.filter((x) => x.kind === k); if (!list.length) return '';
+      const allOn = list.every((x) => cl.sel.has(x.id));
+      return `<div class="clgrp"><label class="clgrp__h"><input type="checkbox" data-clall="${k}" ${allOn ? 'checked' : ''}/><b>${label}</b><span class="muted">${list.length}</span></label>
+        ${list.map((x) => { const w = win(x); const fol = x.kind === 'campaign' ? clFollowers(x).length : 0;
+          return `<label class="clrow ${cl.sel.has(x.id) ? 'is-on' : ''}"><input type="checkbox" data-cl="${x.id}" ${cl.sel.has(x.id) ? 'checked' : ''}/>${miniThumb(x)}
+            <span class="clrow__t">${esc(titleOf(x))}${fol ? `<span class="muted">(勾上会连同跟随它的 ${fol} 条一起删)</span>` : ''}</span>${badge(x)}
+            <span class="muted clrow__w">${w.start != null ? fMD(w.start) : '长期'} → ${w.end != null ? fMD(w.end) : '长期'}</span></label>`; }).join('')}</div>`;
+    }).join('');
+    const sel = [...cl.sel].map(byId).filter(Boolean);
+    const liveN = sel.filter((x) => status(x) === 'live').length;
+    el.innerHTML = `<div class="cllist">${groups || `<p class="muted">${cl.q ? '没有名字里带这几个字的内容' : '没有可以删的内容'}</p>`}</div>
+      <div class="clfoot"><span>已勾 <b>${sel.length}</b> 条${liveN ? `,其中 <b class="cl-live">${liveN} 条正在网站上显示</b>` : ''}</span>
+        <button class="btn ${cl.sure ? 'btn-danger' : 'btn-danger-t'}" id="cl-go" type="button" ${sel.length ? '' : 'disabled'}>${cl.sure ? `确认删除这 ${sel.length} 条(删了不能恢复)` : '删除勾上的'}</button></div>`;
+    $$('#cl-list [data-cl]').forEach((c) => c.addEventListener('change', () => { const x = byId(c.dataset.cl); if (x) clPick(x, c.checked); cl.sure = 0; drawCleanList(); }));
+    $$('#cl-list [data-clall]').forEach((c) => c.addEventListener('change', () => { items.filter((x) => x.kind === c.dataset.clall).forEach((x) => clPick(x, c.checked)); cl.sure = 0; drawCleanList(); }));
+    $('#cl-go').addEventListener('click', async (e) => {
+      if (!cl.sure) { cl.sure = Date.now(); drawCleanList(); setTimeout(() => { if (cl.sure && Date.now() - cl.sure >= 5900) { cl.sure = 0; drawCleanList(); } }, 6000); return; }
+      e.target.disabled = true; e.target.textContent = '删除中…';
+      const ids = sel.map((x) => x.id); cl.sure = 0;
+      const r = await act({ type: 'purge', ids });
+      if (!r) { drawCleanList(); return; }
+      cl.sel.clear(); toast(r.message || `已删除 ${ids.length} 条`);
+      if (r.colRep?.failures?.length) toast('合集顺序恢复时出错:' + (r.colRep.failures[0].message || ''), false);
+    });
+  }
+  async function clearRecords(b) {
+    const what = b.dataset.clh;
+    if (!b.dataset.sure) { b.dataset.sure = '1'; const t = b.textContent; b.textContent = '再点一次确认'; setTimeout(() => { if (b.dataset.sure) { delete b.dataset.sure; b.textContent = t; } }, 4000); return; }
+    b.disabled = true;
+    if (MODE !== 'live') { if (what === 'log') S.log = []; save(); renderAll(); toast('已清理(演示)'); return; }
+    try { const v = await api('POST', '/api/schedule/clear-history', { [what]: true }); S = await normalizeLive(v); renderAll(); toast(v.message || '已清理'); }
+    catch (err) { toast(err.message, false); b.disabled = false; }
+  }
+
   function renderSettings() {
     const N = S.settings.notify; if (N.due === undefined) N.due = true;
     const live = MODE === 'live';
     const larkOn = !!window.CGP_ME?.larkEnabled; // 开了飞书登录:成员管理和数据模式无关,一直显示
+    const teamOn = team(); // 多人协作关着:不显示成员与角色、默认审批人、只跟分工有关的通知
     const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''} ${live && !isApprover() ? 'disabled' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
     const hookVal = live ? '' : esc(S.settings.larkWebhook || '');
     const hookPh = live && S.settings.larkWebhookSet ? `已设置(结尾 ${esc(S.settings.larkWebhookTail)}),要换就粘贴新地址` : 'https://open.larksuite.com/open-apis/bot/v2/hook/…';
     $('#st-root').innerHTML = `
-      ${pageHead('设置', '店铺连接、成员与审核、飞书通知、定时器和操作日志')}
+      ${pageHead('设置', teamOn ? '店铺连接、成员与审核、飞书通知、定时器、清理和操作日志' : '店铺连接、飞书通知、定时器、清理测试内容和操作日志')}
       <section class="panel conn" id="st-conn"><div class="panel__h"><h3>店铺连接(正式数据)</h3></div><p class="muted">检查中…</p></section>
       ${larkOn ? larkPanelsHtml() : ''}
       <div class="stgrid">
-        ${larkOn ? '' : `<section class="panel">
-          ${live ? `<div class="panel__h"><h3>我</h3><span class="tag ${isApprover() ? 'tag--ok' : ''}">${isApprover() ? '审核人' : '编辑'}</span></div>
-            <p class="muted">系统按登录 Shopify 后台的员工账号认人。第一个打开的人自动成为审核人。起个名字,飞书通知和日志里会显示。</p>
+        ${larkOn || (!live && !teamOn) ? '' : `<section class="panel">
+          ${live ? `<div class="panel__h"><h3>我</h3>${teamOn ? `<span class="tag ${isApprover() ? 'tag--ok' : ''}">${isApprover() ? '审核人' : '编辑'}</span>` : ''}</div>
+            <p class="muted">系统按登录 Shopify 后台的员工账号认人。${teamOn ? '第一个打开的人自动成为审核人。' : ''}起个名字,飞书通知和日志里会显示。</p>
             <div class="rowin"><input class="inp" id="st-myname" value="${esc(me().name)}" maxlength="30"/><button class="btn btn-sm" id="st-myname-save" type="button">保存</button></div>`
           : `<div class="panel__h"><h3>当前身份</h3><span class="tag tag--warn">演示用</span></div>
             <p class="muted">正式版会自动识别登录 Shopify 后台的员工。演示时切换身份,就能分别体验「编辑提交」和「审核人批准」两边。</p>
             <select class="sel" id="st-me">${S.staff.map((u) => `<option value="${u.id}" ${u.id === S.me ? 'selected' : ''}>${esc(u.name)} · ${u.role === 'approver' ? '审核人' : '编辑'}</option>`).join('')}</select>`}
-        </section>
-        <section class="panel">
+        </section>`}
+        ${larkOn || !teamOn ? '' : `<section class="panel">
           <div class="panel__h"><h3>成员与角色</h3></div>
           <p class="muted"><b>审核人</b>:自己的改动直接生效,能批准 / 退回别人的。<b>编辑</b>:改动要提交审核才会上线。${live ? '同事第一次打开这个 app 后会出现在这里,默认是编辑。' : ''}</p>
           ${S.staff.map((u) => `<div class="mrow"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span><b>${esc(u.name)}${u.id === S.me ? ' <span class="muted">(我)</span>' : ''}</b>
             ${live && u.lastSeen ? `<span class="muted">${fAgo(u.lastSeen)}来过</span>` : ''}
             <select class="sel sel--sm" data-role="${u.id}" ${live && !isApprover() ? 'disabled' : ''}><option value="approver" ${u.role === 'approver' ? 'selected' : ''}>审核人</option><option value="editor" ${u.role === 'editor' ? 'selected' : ''}>编辑</option></select></div>`).join('')}
         </section>`}
-        <section class="panel">
+        ${teamOn ? `<section class="panel">
           <div class="panel__h"><h3>默认审批人</h3><span class="muted">每类内容由谁审批</span></div>
           <p class="muted">一条内容没单独选审批人时,就由这里设的人审批;这里也没设 = 管理员审批。审批人自己提交的直接生效,轮播顺序也由他批。</p>
           ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'salelink', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: '合集排序', salelink: '促销链接', campaign: '活动' })[k]}</span>
             <select class="sel sel--sm" data-defappr="${k}" ${live && !isApprover() ? 'disabled' : ''}><option value="">管理员审批</option>${peopleFor(k).map((u) => `<option value="${esc(u.id)}" ${appr()[k] === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>`).join('')}
-        </section>
+        </section>` : ''}
         <section class="panel">
           <div class="panel__h"><h3>飞书通知</h3>${live ? (S.settings.larkWebhookSet ? '<span class="tag tag--ok">已连接</span>' : '<span class="tag tag--warn">未设置</span>') : ''}</div>
           <p class="muted">在飞书群里:设置 → 群机器人 → 添加机器人 → 自定义机器人,复制它的 webhook 地址粘贴到这里。建议同时开「签名校验」,把密钥也填上。</p>
@@ -1894,13 +1978,13 @@
             <input class="inp" id="st-secret" type="password" placeholder="${live && S.settings.larkSecretSet ? '已设置,要换就粘贴新的' : '没开签名校验就留空'}" ${live && !isApprover() ? 'disabled' : ''}/></label>
           ${live && isApprover() ? '<button class="btn btn-sm" id="st-hook-save" type="button">保存飞书设置</button>' : ''}
           <div class="tgls">
-            ${tg('submit', '有人提交审核', '私信这条内容的审批人;群里也发')}
-            ${tg('decision', '批准 / 退回', '私信提交人、负责人和抄送的人,附退回意见')}
-            ${tg('dayBefore', '上线前一天提醒', '每天 10:00 汇总明天要上线的,没批准的会标出来')}
+            ${teamOn ? tg('submit', '有人提交审核', '私信这条内容的审批人;群里也发') : ''}
+            ${teamOn ? tg('decision', '批准 / 退回', '私信提交人、负责人和抄送的人,附退回意见') : ''}
+            ${tg('dayBefore', '上线前一天提醒', teamOn ? '每天 10:00 汇总明天要上线的,没批准的会标出来' : '每天 10:00 汇总明天要上线的')}
             ${tg('endingSoon', `下架前 ${ENDING_DAYS} 天提醒`, '每天 10:00 汇总快到期的 Banner / 公告 / 活动,方便决定延长还是准备替换')}
-            ${tg('upDown', '上线 / 下线', '定时器每次自动切换都通知;负责人和抄送的人收到私信')}
-            ${tg('unapproved', '到点还没批准', '快到上线时间还没批时私信审批人')}
-            ${tg('due', '截止提醒', '截止前一天、过了截止还没提交,私信负责人(过期也告诉审批人)')}
+            ${tg('upDown', '上线 / 下线', teamOn ? '定时器每次自动切换都通知;负责人和抄送的人收到私信' : '定时器每次自动切换都通知')}
+            ${teamOn ? tg('unapproved', '到点还没批准', '快到上线时间还没批时私信审批人') : ''}
+            ${teamOn ? tg('due', '截止提醒', '截止前一天、过了截止还没提交,私信负责人(过期也告诉审批人)') : ''}
             ${tg('failure', '定时切换失败', '附错误原因;同一小时只报一次')}
           </div>
           <button class="btn btn-sm" id="st-test" type="button" ${live && !isApprover() ? 'disabled' : ''}>发送测试消息</button>
@@ -1914,6 +1998,7 @@
           <p class="muted">每分钟检查一次:到了开始时间且已批准的内容自动上线,到了结束时间的自动下线。服务器短暂宕机的话,恢复后会自动补上。</p>
         </section>
       </div>
+      ${isApprover() ? '<div id="st-clean"></div>' : ''}
       <section class="panel">
         <div class="panel__h"><h3>操作日志</h3><span class="muted">谁、什么时候、做了什么</span></div>
         <div class="loglist">${S.log.slice(0, 60).map(logRow).join('') || '<p class="muted">暂无</p>'}</div>
@@ -1924,6 +2009,7 @@
       catch (e) { toast(e.message, false); return null; }
     };
     if (larkOn) bindLarkPanels();
+    drawClean();
     if (live) {
       $('#st-myname-save')?.addEventListener('click', () => post('/api/schedule/staff', { id: S.me, name: $('#st-myname').value }, '名字已保存'));
       $$('[data-role]').forEach((el) => el.addEventListener('change', () => post('/api/schedule/staff', { id: el.dataset.role, role: el.value }, '角色已更新')));
@@ -2478,7 +2564,7 @@
   const larkEdHtml = () => (ed.larkLinks.length ? `<div class="chips">${ed.larkLinks.map((l, i) => `<span class="chip"><span class="chip__t">${esc(l.label || '飞书任务')}</span><a class="lk" href="${esc(l.url)}" target="_blank" rel="noopener">打开↗</a><button type="button" class="chip__x" data-lk="rm" data-i="${i}" aria-label="移除">${I.x}</button></span>`).join('')}</div>` : '<span class="muted">还没关联</span>');
   // 分工:负责人 / 审批人 / 截止 / 抄送(所有内容都有,放在表单最后)
   function assignHtml(it) {
-    if (it.isDefault) return '';
+    if (it.isDefault || !team()) return '';
     const P = peopleFor(it.kind); const mine = me().id;
     const def = appr()[it.kind];
     const opt = (u, sel) => `<option value="${esc(u.id)}" ${sel === u.id ? 'selected' : ''}>${esc(u.name)}${u.admin || u.role === 'approver' ? '(管理员)' : ''}</option>`;
@@ -3229,13 +3315,18 @@
   // ================= 全局 =================
   function renderAll() {
     applySiteStyle(); hidePop();
-    renderOverview(); renderPreview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderSaleLinks(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
+    renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderSaleLinks(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
     if (isActive('history')) renderHistory();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
+    if (!team()) { // 多人协作关着:不显示「我的工作」;「审核」只在还有遗留的待审核时显示
+      const navOf = (k) => document.querySelector(`#modnav [data-section="${k}"]`);
+      navOf('mywork').hidden = true; navOf('reviews').hidden = !n;
+      if (['mywork', 'reviews'].some((k) => navOf(k).hidden && isActive(k))) showSection('overview');
+    }
     const L = window.CGP_ME; // 飞书登录了就显示登录的人和他的角色
     $('#me-chip').innerHTML = L?.larkEnabled
       ? `<button class="mechip" type="button" title="我的账号">${L.member.avatar ? `<img class="avatar-img" src="${esc(L.member.avatar)}" alt=""/>` : `<span class="avatar">${esc(L.member.name.slice(0, 1).toUpperCase())}</span>`}${esc(L.member.name)}<span class="muted">· ${esc(L.member.roles.map((k) => L.roles.find((r) => r.key === k)?.name || k).join('、'))}</span></button>`
-      : `<button class="mechip" type="button" title="切换身份(演示)"><span class="avatar">${esc(me().name.slice(0, 1).toUpperCase())}</span>${esc(me().name)}<span class="muted">· ${isApprover() ? '审核人' : '编辑'}</span></button>`;
+      : `<button class="mechip" type="button" title="${team() ? '切换身份(演示)' : '设置'}"><span class="avatar">${esc(me().name.slice(0, 1).toUpperCase())}</span>${esc(me().name)}${team() ? `<span class="muted">· ${isApprover() ? '审核人' : '编辑'}</span>` : ''}</button>`;
   }
 
   // 事件委托:任何地方的 data-open / data-new / data-go / 审核按钮

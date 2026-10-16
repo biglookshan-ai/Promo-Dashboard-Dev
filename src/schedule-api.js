@@ -12,12 +12,12 @@ import { scopeCounts, productCampaigns, tabProducts, collectionProducts, product
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 import { actorOf, pagesOf, isAdmin } from './members.js';
-import { larkEnabled } from './lark-login.js';
+import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
 import { diffOrder, diffSummary } from './order-diff.js';
-import { loadItemHistory, recordAction, changedKeys } from './item-history.js';
-import { titleOf } from './schedule-actions.js';
+import { loadItemHistory, recordAction, changedKeys, pruneItemHistory } from './item-history.js';
+import { titleOf, allOf } from './schedule-actions.js';
 
 // 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
 const APP_VERSION = { commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local', startedAt: Date.now() };
@@ -58,7 +58,7 @@ async function shopInfo(ctx) {
 // 认人:第一个打开的人自动成为审核人;之后新来的默认是编辑,审核人可以在「设置」里改
 function actorFor(state, userId) {
   // v3 飞书登录:成员就是身份(管理员 = 审核人,其他 = 编辑;3.2 改成每项指定审批人)
-  const member = (state.members || []).find((x) => x.id === userId);
+  const member = teamEnabled() && (state.members || []).find((x) => x.id === userId);
   if (member) { member.lastSeen = Date.now(); return actorOf(member); }
   const id = userId || 'admin-token';
   let u = state.staff.find((x) => x.id === id);
@@ -67,7 +67,8 @@ function actorFor(state, userId) {
     state.staff.push(u);
   }
   u.lastSeen = Date.now();
-  return u;
+  // 「多人协作」关着:从 Shopify 后台打开的人都是管理员(改动直接生效,不走审核)
+  return teamEnabled() ? u : { ...u, role: 'approver' };
 }
 
 // 给页面用的形状(不回传 webhook 原文和签名密钥)
@@ -77,8 +78,8 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
     mode: 'live', me, setup, store, site, themePin, // themePin:正在用的主题能不能在前台按清单排(null = 不知道)
     // 飞书模式下「成员」代替旧的 Shopify 员工名单(名字 / 角色给页面显示用)
     // pages:每人能看哪些页面(分工里选审批人 / 负责人时,只列看得到这类内容的人)
-    staff: larkEnabled() ? (state.members || []).filter((m) => m.status === 'active').map((m) => ({ ...actorOf(m), avatar: m.avatar || '', admin: isAdmin(m), pages: pagesOf(state, m) })) : state.staff,
-    lark: larkEnabled(),
+    staff: teamEnabled() ? (state.members || []).filter((m) => m.status === 'active').map((m) => ({ ...actorOf(m), avatar: m.avatar || '', admin: isAdmin(m), pages: pagesOf(state, m) })) : state.staff.map((u) => ({ ...u, role: 'approver' })),
+    lark: teamEnabled(), // 页面按它显示 / 隐藏分工、我的工作、成员与角色
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
     pins: state.pins || [], salelinks: state.salelinks || [],
     // 哪些合集现在被真的改了顺序(含「暂停接管」);原始顺序快照留在服务器,不发给页面
@@ -132,10 +133,11 @@ export function scheduleRouter() {
     const out = await performAction(shop, req.ctx, (state) => { before = state; const a = actorFor(state, req.ctx.user); who = a.name; return applyAction(state, action, a); }, { appUrl: info.appUrl });
     // 历史版本:动过的那条内容记一版(轮播顺序不算)
     if (action.type !== 'order' && action.id !== '__order') {
-      const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', delete: '删除' };
+      const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', delete: '删除', purge: '批量清理' };
       const it = findItem(out.state, action.id || out.id);
       const name = action.type === 'save' ? ACT[action.mode] : action.type === 'pause' ? (it?.paused ? '暂停' : '恢复显示') : ACT[action.type] || action.type;
-      try { recordAction(shop, before, out.state, [action.id, out.id], { action: action.historyNote ? '回滚' : name, by: who, note: action.historyNote || '' }); }
+      const ids = action.type === 'purge' ? out.ids || [] : [action.id, out.id];
+      try { recordAction(shop, before, out.state, ids, { action: action.historyNote ? '回滚' : name, by: who, note: action.historyNote || '' }); }
       catch (e) { console.error('[item-history]', e.message); }
     }
     // 活动存完顺手算一下产品数(失败不影响保存)
@@ -148,7 +150,8 @@ export function scheduleRouter() {
     }
     // 动的是合集置顶清单:马上把店里的合集对齐一次(手动合集真的改;自动归类的合集只会报「用前台排序」)
     let colRep = null; let state2 = out.state;
-    if (action.kind === 'pin' || /^pin-/.test(String(action.id || out.id || ''))) {
+    const pinTouched = action.kind === 'pin' || /^pin-/.test(String(action.id || out.id || '')) || (action.type === 'purge' && (out.ids || []).some((id) => /^pin-/.test(id)));
+    if (pinTouched) {
       colRep = await withLock(shop, async () => {
         const s = load(shop); const now = Date.now();
         const record = historyRecorder(shop);
@@ -201,6 +204,18 @@ export function scheduleRouter() {
       u.role = role;
     }
     replace(req.ctx.shop, s); return view(req, s);
+  })));
+  // 清理(设置 →「清理内容」):清空操作日志 / 删掉已删除内容的历史版本。还在的内容的历史版本不动
+  r.post('/clear-history', wrap(async (req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop); const a = needApprover(s, req);
+    const { log, deleted } = req.body || {};
+    if (!log && !deleted) throw new ActionError('没选要清理什么');
+    const n = deleted ? pruneItemHistory(req.ctx.shop, allOf(s).map((x) => x.id)) : 0;
+    const before = s.log.length;
+    if (log) s.log = [];
+    appendLog(s, { action: 'edit', kind: 'system', title: '清理', note: [log ? `清空了操作日志(${before} 条)` : '', deleted ? `删掉了 ${n} 条已删除内容的历史版本` : ''].filter(Boolean).join(','), by: a.name });
+    replace(req.ctx.shop, s);
+    return { ...(await view(req, s)), message: [log ? '操作日志已清空' : '', deleted ? `已删掉 ${n} 条已删除内容的历史` : ''].filter(Boolean).join(',') };
   })));
   r.post('/lark-test', wrap(async (req) => {
     const s = load(req.ctx.shop); const a = needApprover(s, req);

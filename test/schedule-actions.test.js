@@ -168,3 +168,30 @@ test('活动的倒计时样式:只认四种样式和 #rrggbb 颜色;写进店铺
   const f2 = Object.fromEntries(fieldsFor(c({})).map((x) => [x.key, x.value]));
   assert.equal(f2.countdown_style, '', '没设 = 空 = 主题按经典样式画(和以前一样)');
 });
+
+test('批量清理:管理员能删任何状态(上线中也行),连同店里的条目;编辑不行', () => {
+  const camp = { id: 'c1', kind: 'campaign', state: 'approved', name: 'Test Sale', start: T - D, end: T + D, shopifyId: 'gid://c1' };
+  const d = doc({
+    campaigns: [camp],
+    banners: [banner({ shopifyId: 'gid://b1' }), banner({ id: 'b2', campaign: 'c1', shopifyId: 'gid://b2' }), banner({ id: 'b3', campaign: 'c1', start: T, end: T + D, shopifyId: 'gid://b3' })],
+    pmodules: [{ id: 'pm-1', kind: 'pmodule', state: 'approved', isDefault: true, name: '平时', tabs: [] }],
+    pins: [{ id: 'pin-1', kind: 'pin', state: 'draft', name: 'P', tabs: [] }],
+  });
+  assert.throws(() => applyAction(d, { type: 'purge', ids: ['b1'] }, editor, T), /只有管理员/);
+  assert.throws(() => applyAction(d, { type: 'purge', ids: [] }, approver, T), /还没选/);
+  assert.throws(() => applyAction(d, { type: 'purge', ids: ['pm-1'] }, approver, T), /平时版本/);
+  assert.throws(() => applyAction(d, { type: 'purge', ids: ['nope'] }, approver, T), /找不到/);
+  // 活动下面挂着跟随它时间的 b2,要一起勾
+  assert.throws(() => applyAction(d, { type: 'purge', ids: ['c1'] }, approver, T), /一起勾上/);
+  const r = applyAction(d, { type: 'purge', ids: ['c1', 'b2', 'b1', 'pin-1'] }, approver, T);
+  assert.deepEqual(r.doc.banners.map((b) => b.id), ['b3']);
+  assert.equal(r.doc.campaigns.length, 0);
+  assert.equal(r.doc.pins.length, 0);
+  assert.equal(r.doc.pmodules.length, 1);
+  assert.deepEqual(r.effects.filter((e) => e.type === 'remove').map((e) => e.shopifyId).sort(), ['gid://b1', 'gid://b2', 'gid://c1']);
+  // 自己有时间、只是关联活动的 b3:去掉关联并重写
+  assert.equal(r.doc.banners[0].campaign, null);
+  assert.ok(r.effects.some((e) => e.type === 'sync' && e.id === 'b3'));
+  assert.deepEqual(r.ids, ['c1', 'b2', 'b1', 'pin-1']);
+  assert.equal(r.doc.log.filter((l) => l.action === 'delete').length, 4);
+});

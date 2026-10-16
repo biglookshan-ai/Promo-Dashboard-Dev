@@ -1268,3 +1268,18 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .pv-cdx b { font-variant-numeric: tabular-nums; }
 .pv-cdx--classic { border-radius: 6px; padding: 8px 12px; } .pv-cdx--minimal { padding: 0; }
 .pv-cmp__cd.is-chip { padding: 3px 8px; border-radius: 4px; }
+
+/* ---- 设置 → 清理内容 ---- */
+.cltools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+.cltools .inp { flex: 1 1 240px; max-width: 360px; }
+.cllist { max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 4px 10px; }
+.clgrp + .clgrp { border-top: 1px solid var(--border); }
+.clgrp__h { display: flex; align-items: center; gap: 8px; padding: 10px 0 6px; font-size: 13px; cursor: pointer; }
+.clrow { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 22px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.clrow:hover { background: var(--surface-2, #f6f6f8); }
+.clrow.is-on { background: var(--danger-soft); }
+.clrow__t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clrow__t .muted { margin-left: 6px; font-size: 12px; }
+.clrow__w { font-size: 12px; white-space: nowrap; }
+.clfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 13px; }
+.cl-live { color: var(--danger); }

@@ -5,7 +5,7 @@ import express from 'express';
 import { load, replace, appendLog } from './schedule-store.js';
 import { withLock } from './sync.js';
 import { knownShops } from './token-store.js';
-import { larkEnabled, authorizeUrl, loginWithCode, issueSession, newLoginState, takeLoginState, finishLoginState, loginStatus, redeemLoginState } from './lark-login.js';
+import { teamEnabled, authorizeUrl, loginWithCode, issueSession, newLoginState, takeLoginState, finishLoginState, loginStatus, redeemLoginState } from './lark-login.js';
 import { PAGES, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, setTestMode, testModeOn, testModeLeft, canStartTestMode, TEST_MODE_MAX_HOURS, MemberError } from './members.js';
 
 const SESSION_KEY = 'cgp-app-session'; // 和 public/auth.js 一致
@@ -32,7 +32,7 @@ const adminIds = () => String(process.env.LARK_ADMIN_IDS || '').split(',').map((
 export function publicAuthRouter() {
   const r = express.Router();
   r.get('/lark/start', (req, res) => {
-    if (!larkEnabled()) return res.status(400).send(page('未开启', '<h2>飞书登录还没开启</h2><p>管理员需要先在 Railway 填好飞书应用的 App ID 和 App Secret。</p>'));
+    if (!teamEnabled()) return res.status(400).send(page('未开启', '<h2>飞书登录还没开启</h2><p>现在只能从 Shopify 后台打开网站更新中心。</p>'));
     const shop = defaultShop();
     if (!shop) return res.status(400).send(page('请先从后台打开', '<h2>还不能直接打开</h2><p>请先从 Shopify 后台 → 应用里打开一次「网站更新中心」,之后就能直接开网页登录。</p>'));
     const state = newLoginState({ shop, fromAdmin: false, mode: 'web' });
@@ -81,7 +81,7 @@ export function publicAuthRouter() {
   return r;
 }
 
-export const authConfig = (req, res) => res.json({ larkEnabled: larkEnabled() });
+export const authConfig = (req, res) => res.json({ larkEnabled: teamEnabled() });
 
 export function apiAuthRouter() {
   const r = express.Router();
@@ -92,7 +92,7 @@ export function apiAuthRouter() {
 
   // 后台里点「用飞书登录」:必须带 Shopify session token(证明在本店后台里)
   r.post('/auth/lark/start', wrap(async (req) => {
-    if (!larkEnabled()) throw new MemberError('飞书登录还没开启');
+    if (!teamEnabled()) throw new MemberError('飞书登录还没开启');
     if (!req.ctx.fromAdmin) throw new MemberError('请从 Shopify 后台里打开再登录,或直接打开网页登录');
     const state = newLoginState({ shop: req.ctx.shop, fromAdmin: true, mode: 'popup' });
     return { url: authorizeUrl(redirectUri(req), state), state };
@@ -107,7 +107,7 @@ export function apiAuthRouter() {
   r.get('/me', wrap(async (req) => {
     const s = load(req.ctx.shop);
     const m = req.ctx.member;
-    return { larkEnabled: larkEnabled(), fromAdmin: !!req.ctx.fromAdmin, member: m ? { id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status } : null,
+    return { larkEnabled: teamEnabled(), fromAdmin: !!req.ctx.fromAdmin, member: m ? { id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status } : null,
       admin: isAdmin(m), pages: pagesOf(s, m), adminPinned: !!process.env.LARK_ADMIN_IDS,
       testMode: testModeOn(s) ? { on: true, left: testModeLeft(s), byName: s.testMode.byName || '', iam: !!req.ctx.testMode } : { on: false },
       canStartTestMode: canStartTestMode(m, adminIds()), testModeMaxHours: TEST_MODE_MAX_HOURS, roles: rolesOf(s).map((x) => ({ key: x.key, name: x.name })),
