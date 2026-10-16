@@ -362,6 +362,7 @@ lark-ops 是本地工具(用你个人的飞书登录 token,存在本机),没有�
 - Sale / Feature 的 tab、Top Categories 加上下线时间
 
 ### ⚠️ 发布清单(用户自己上线前)
+- ✅ **2026-10-16 已整套上正式主题**(用户确认后由我推,20 个文件;记录和回滚在主题分支 `docs/releases/2026-10-16-campaign-release/`)。下面是当时的注意事项,以后新功能上线照这个思路:以正式主题现在的文件为底合并、只推改动的文件。
 - **不要直接发布整个测试主题**:它的 `templates/index.json` 等编辑器配置停在 2026-09-29 复制时(比如促销模块还是「Sale + 6 个页签」,线上早已改成「Autumn Sale」),整套发布会把首页配置退回去。
 - 正确做法:只把排期改过的**代码文件**放到线上主题 —— `sections/gpt-slider-banner-3.liquid`、`blocks/ai_gen_block_a08faac.liquid`、`sections/GPT-Custom-Product-List.liquid`、`sections/gpt-555.liquid`、`snippets/cgp-*.liquid`(slider-slide / topbar-message / campaign-offer / pm-card / pdp-*)。产品模板 JSON 的 3 处改动(阶段 0)需要单独、外科手术式地改到线上模板里。
   - v3 首页商品模块的页签渲染抽成了 `snippets/cgp-pm-tab.liquid`(新文件,两个 section 共用),上线时别忘了一起搬。

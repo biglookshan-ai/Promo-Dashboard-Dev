@@ -2157,7 +2157,7 @@
         <div><div class="conn__k">2. 店里的内容类型</div>
           ${st.definitions.map((d) => `<div class="conn__r">${ok(d.exists && !(d.missingFields || []).length)}<span>${DEF_CN[d.type] || d.type}</span><span class="mono muted">${d.type}</span>${d.exists ? `<span class="muted">${d.entries} 条${(d.missingFields || []).length ? ` · 缺 ${d.missingFields.length} 个新字段` : ''}</span>` : ''}</div>`).join('')}
           ${(missingDefs.length || missingFields.length) && st.ready ? `<div class="note note--warn">新功能要${missingDefs.length ? `补建 ${missingDefs.length} 个内容类型` : ''}${missingDefs.length && missingFields.length ? '、' : ''}${missingFields.length ? `给已有类型补 ${missingFields.length} 个新字段` : ''}。点下面的按钮补上;已有的内容不受影响。${missingDefs.some((d) => d.type.startsWith('cgp_product')) ? '首页商品模块补好后,再点「从主题导入」把两个模块现在的配置导进来当平时版本。' : ''}</div>` : ''}
-          ${missingDefs.length || missingFields.length ? `<p class="muted">点下面的按钮在店里补齐。<b>前台不会读取它们,顾客看不到任何变化</b>;要等主题改造发布后才会用上。可以重复点,已建的会跳过。</p>
+          ${missingDefs.length || missingFields.length ? `<p class="muted">点下面的按钮在店里补齐。只是建好空的类型,<b>顾客看不到任何变化</b>,在 app 里保存内容后才会显示。可以重复点,已建的会跳过。</p>
             <button class="btn btn-sm btn-primary" data-conn="setup" type="button" ${canSetup ? '' : 'disabled'}>在店里创建内容类型</button>${st.missingScopes.length ? '<span class="muted"> 先补齐权限</span>' : ''}` : '<p class="muted">都建好了。</p>'}</div>
         <div><div class="conn__k">3. 定时器</div>
           <div class="conn__r">${ok(st.scheduler.running)}<span>${st.scheduler.running ? `运行中 · 每 ${st.scheduler.intervalSec} 秒检查一次` : '没有运行'}</span></div>
@@ -2177,7 +2177,7 @@
       ${st.app ? `<p class="muted conn__ver">app 版本 <span class="mono">${esc(st.app.commit)}</span> · 启动于 ${fDT(st.app.startedAt)}</p>` : ''}
       ${st.ready ? `<div class="conn__mode">${MODE === 'live'
         ? `现在看到的是店里的正式数据,所有改动${team() ? '按审核规则' : '保存后直接'}写进店铺。<button class="linkbtn" data-conn="demo" type="button">临时看演示数据</button>`
-        : '<b>内容类型已建好。</b><button class="btn btn-sm btn-primary" data-conn="live" type="button">切换到正式数据</button><span class="muted">切换后你在这里的操作会真的写进店铺(前台要等主题改造发布后才读这些内容)。</span>'}</div>` : ''}`;
+        : '<b>内容类型已建好。</b><button class="btn btn-sm btn-primary" data-conn="live" type="button">切换到正式数据</button><span class="muted">切换后你在这里的操作会真的写进店铺,正式网站马上按这些内容显示。</span>'}</div>` : ''}`;
     box.querySelector('[data-conn=live]')?.addEventListener('click', () => { localStorage.removeItem(FORCE_DEMO); location.reload(); });
     box.querySelector('[data-conn=demo]')?.addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
     if (box.querySelector('[data-conn=import]')) {
@@ -3399,7 +3399,7 @@
     const bar = $('#demobar'); if (!bar) return;
     if (MODE === 'live') {
       bar.className = 'demobar demobar--live';
-      bar.innerHTML = `<span class="demobar__tag">正式数据</span><span>改动${team() ? '按审核规则' : '保存后直接'}写进店铺 ${esc(S.store?.name || '')};前台要等主题改造发布后才会读这些内容。</span>
+      bar.innerHTML = `<span class="demobar__tag">正式数据</span><span>改动${team() ? '按审核规则' : '保存后直接'}写进店铺 ${esc(S.store?.name || '')},正式网站跟着变。</span>
         <button class="linkbtn" id="mode-demo" type="button">临时看演示数据</button>`;
       $('#mode-demo').addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
     } else if (liveSetup?.ready) {
