@@ -2695,12 +2695,14 @@
   };
   const cdOf = (v) => { const p = CD_STY[v.countdownStyle] || CD_STY.classic; return { key: CD_STY[v.countdownStyle] ? v.countdownStyle : 'classic', bg: v.countdownBg || p.bg, fg: v.countdownColor || p.fg, lbl: v.countdownLabel || p.lbl, custom: !!(v.countdownStyle && v.countdownStyle !== 'classic') || !!v.countdownBg || !!v.countdownColor }; };
   const CLOCK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>';
-  // 产品页那一块:徽章 + 倒计时(id 给走秒用)
+  // 产品页那一块:徽章和倒计时合成一条(和主题 cgp-campaign-offer.liquid 一样:只有一个就显示一个,都有 =「徽章 | 倒计时」)
+  // timeId:倒计时数字的 id(给走秒用),不要倒计时传空
   function cdPdpHtml(v, badge, timeId, timeText = '0d 0h 0m 0s') {
+    if (!badge && !timeId) return '';
     const c = cdOf(v);
-    const b = badge ? `<span class="pv-badge pv-badge--${c.key}" style="background:${c.key === 'minimal' ? '#ffefef' : c.bg};color:${c.fg}">${esc(badge)}</span>` : '';
-    const t = timeId ? `<div class="pv-cdx pv-cdx--${c.key}" style="background:${c.bg};color:${c.fg}">${c.key === 'classic' || c.key === 'minimal' ? '' : CLOCK}<span>${esc(c.lbl)}</span> <b id="${timeId}">${esc(timeText)}</b></div>` : '';
-    return b + t;
+    const sep = badge && timeId ? (c.key === 'minimal' ? '<span class="pv-co__dot">·</span>' : '<span class="pv-co__bar"></span>') : '';
+    const cd = timeId ? `<span class="pv-co__cd">${c.key === 'pill' || c.key === 'dark' ? CLOCK : ''}<span class="pv-co__lbl">${esc(c.lbl)}</span> <b id="${timeId}">${esc(timeText)}</b></span>` : '';
+    return `<div class="pv-co pv-co--${c.key}${badge && timeId ? ' pv-co--both' : ''}" style="${c.key === 'minimal' ? '' : `background:${c.bg};`}color:${c.fg}">${badge ? `<b>${esc(badge)}</b>` : ''}${sep}${cd}</div>`;
   }
   function previewHtml(v) {
     if (v.kind === 'pin') return wxPreviewHtml(v);
@@ -2740,9 +2742,8 @@
         <div class="pv-pdp__img" ${prod ? `style="background-image:url('${esc(prod.image)}')"` : ''}></div>
         <div class="pv-pdp__info">
           <div class="pv-pdp__title">${esc(prod?.title || v.products?.[0]?.title || 'DZOFILM VESPID 2 Prime 4 Lens Set')}</div>
-          ${cdPdpHtml(v, v.badge, '')}
           <div class="pv-pdp__price">£4,999.00 <s>£5,899.00</s></div>
-          ${v.countdown && v.end ? cdPdpHtml(v, '', 'pv-cd') : ''}
+          ${cdPdpHtml(v, v.badge, v.countdown && v.end ? 'pv-cd' : '')}
           <div class="pv-pdp__btn">Add to cart</div>
         </div>
       </div>
