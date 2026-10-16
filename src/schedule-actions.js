@@ -14,7 +14,7 @@ export const MODULE_CN = { sale: '促销模块', feature: '推荐 / 新品模块
 export const ORDERABLE = ['banner', 'topbar'];
 
 // 可编辑字段(审核对比、修改待审核都以它为准)
-export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description', 'button1_text', 'button1_url', 'button2_text', 'button2_url', 'tag',
+export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description', 'button1_text', 'button1_url', 'button2_text', 'button2_url', 'button1_video', 'button2_video', 'tag',
   'emoji', 'text', 'link', 'category', 'name', 'collections', 'tags', 'products', 'badge', 'countdown', 'priority',
   'bg', 'color', 'accent', 'effect', 'decoLeft', 'decoRight', 'start', 'end', 'campaign',
   'module', 'title2', 'titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText', 'tabs', 'isDefault',

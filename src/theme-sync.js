@@ -16,7 +16,7 @@ const isLive = (it, camps, now) => itemStatus(it, camps, now) === 'live';
 
 // 主题里一张 slide 和 app 里那张 Banner 哪些字段不一样
 const BANNER_FIELDS = [['title', '标题'], ['subtitle', '副标题'], ['description', '描述'], ['button1_text', '按钮 1 文字'], ['button1_url', '按钮 1 链接'],
-  ['button2_text', '按钮 2 文字'], ['button2_url', '按钮 2 链接'], ['tag', '角标']];
+  ['button2_text', '按钮 2 文字'], ['button2_url', '按钮 2 链接'], ['button1_video', '按钮 1 视频'], ['button2_video', '按钮 2 视频'], ['tag', '角标']];
 function bannerDiff(slide, b) {
   const out = [];
   for (const [k, cn] of BANNER_FIELDS) {
@@ -134,7 +134,7 @@ export function applyThemeSync(state, plan, picks, { built = {}, now = Date.now(
         if (kind === 'banners') {
           const nb = builtOf.banners.find((x) => x.source === it.source);
           if (!nb) { done.push(`⚠️ 没改成「${r.title}」(图片在店里找不到)`); continue; }
-          for (const k of ['image', 'imageId', 'title', 'subtitle', 'description', 'button1_text', 'button1_url', 'button2_text', 'button2_url', 'tag']) it[k] = nb[k];
+          for (const k of ['image', 'imageId', 'title', 'subtitle', 'description', 'button1_text', 'button1_url', 'button2_text', 'button2_url', 'button1_video', 'button2_video', 'tag']) it[k] = nb[k] ?? '';
         } else if (kind === 'topbar') Object.assign(it, { emoji: r.msg.emoji, text: r.msg.text, link: normalizeLink(r.msg.link) });
         else if (kind === 'tbstyle') Object.assign(it, { bg: r.bg, color: r.color });
         else if (kind === 'pmodules') {

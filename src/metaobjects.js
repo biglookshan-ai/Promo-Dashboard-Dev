@@ -42,6 +42,8 @@ export const DEFINITIONS = [
       t('button1_url', '按钮 1 链接', 'single_line_text_field', { description: '站内路径,如 /collections/xxx' }),
       t('button2_text', '按钮 2 文字', 'single_line_text_field'),
       t('button2_url', '按钮 2 链接', 'single_line_text_field'),
+      t('button1_video', '按钮 1 视频', 'single_line_text_field', { description: 'YouTube / Vimeo 链接;有就点按钮弹出视频,不跳转' }),
+      t('button2_video', '按钮 2 视频', 'single_line_text_field', { description: 'YouTube / Vimeo 链接;有就点按钮弹出视频,不跳转' }),
       t('tag', '角标', 'single_line_text_field', { validations: choices(['none', 'new', 'sale', 'event']) }),
       t('position', '轮播位置', 'number_integer', { description: '数字小的排前面' }),
       t('campaign', '所属活动', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
@@ -260,6 +262,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
     Object.assign(f, {
       title: str(it.title), subtitle: str(it.subtitle), description: str(it.description), image: str(it.imageId),
       button1_text: str(it.button1_text), button1_url: str(it.button1_url), button2_text: str(it.button2_text), button2_url: str(it.button2_url),
+      button1_video: str(it.button1_video), button2_video: str(it.button2_video),
       tag: ['none', 'new', 'sale', 'event'].includes(it.tag) ? it.tag : 'none', position: str(it.order ?? 0),
     });
   } else if (it.kind === 'topbar') {

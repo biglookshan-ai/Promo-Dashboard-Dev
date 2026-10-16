@@ -44,6 +44,7 @@ export async function buildImport(ctx, { slider, topbar, style, modules = [] }, 
       id: `b-${s.blockId.toLowerCase().replace(/[^a-z0-9]/g, '').slice(-10)}`, kind: 'banner', source,
       image: file.url, imageId: file.id, title: s.title || '', subtitle: s.subtitle || '', description: s.description || '',
       button1_text: s.button1_text || '', button1_url: normalizeLink(s.button1_url), button2_text: s.button2_text || '', button2_url: normalizeLink(s.button2_url),
+      button1_video: s.button1_video || '', button2_video: s.button2_video || '',
       tag: s.tag || 'none', order: order++, start: null, end: null, campaign: null, paused: false,
       state: 'approved', by: actor?.id || null, note: '从主题导入',
     });

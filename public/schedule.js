@@ -1372,7 +1372,7 @@
   // ================= 审核 =================
   const FIELD = {
     title: '标题', subtitle: '副标题', description: '描述', image: '图片', tag: '角标', button1_text: '按钮 1 文字', button1_url: '按钮 1 链接',
-    button2_text: '按钮 2 文字', button2_url: '按钮 2 链接', emoji: 'Emoji', text: '文字', link: '链接', category: '分类',
+    button2_text: '按钮 2 文字', button2_url: '按钮 2 链接', button1_video: '按钮 1 视频', button2_video: '按钮 2 视频', emoji: 'Emoji', text: '文字', link: '链接', category: '分类',
     name: '名称', collections: '合集', tags: '标签', products: '指定产品', badge: '徽章文字', countdown: '倒计时', priority: '优先级',
     bg: '底色', color: '文字颜色', accent: '点缀色', effect: '特效', decoLeft: '左侧装饰', decoRight: '右侧装饰',
     module: '模块', title2: '标题第二段', titleColor: '第一段颜色', title2Color: '第二段颜色', tabActiveBg: '页签高亮底色', tabActiveText: '页签高亮文字', tabs: '页签', isDefault: '平时版本',
@@ -2514,6 +2514,7 @@
         ${fld('描述', inp('description', it.description))}
         <div class="fld2">${fld('按钮 1 文字', inp('button1_text', it.button1_text))}${fld('按钮 1 链接', inp('button1_url', it.button1_url, '/collections/…'))}</div>
         <div class="fld2">${fld('按钮 2 文字', inp('button2_text', it.button2_text))}${fld('按钮 2 链接', inp('button2_url', it.button2_url))}</div>
+        <div class="fld2">${fld('按钮 1 视频(可不填)', inp('button1_video', it.button1_video, 'YouTube / Vimeo 链接'), '填了 = 点按钮弹出视频,不跳转链接')}${fld('按钮 2 视频(可不填)', inp('button2_video', it.button2_video, 'YouTube / Vimeo 链接'), '比如「Watch Video」按钮')}</div>
         ${fld('角标 / 类型', `<div class="seg" id="ed-tag">${Object.entries(TAGCN).map(([k, l]) => `<button type="button" data-tag="${k}" class="${it.tag === k ? 'is-active' : ''}">${l}</button>`).join('')}</div>`, '卡片左上角的 New / Sale / Event')}
         ${timeBlock(it, 'banner')}`;
     }
