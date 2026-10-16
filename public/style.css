@@ -1283,3 +1283,23 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .clrow__w { font-size: 12px; white-space: nowrap; }
 .clfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 13px; }
 .cl-live { color: var(--danger); }
+
+/* ---- 活动页:活动设置一览 + 按类型分组的内容 ---- */
+.hubhead .tag { margin-top: 6px; margin-right: 6px; }
+.hubset__g { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.hubset__i { display: flex; flex-direction: column; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+.hubset__k { font-size: 12px; color: var(--text-3); }
+.hubset__i b { font-size: 14px; }
+.hubset__s { font-size: 12.5px; line-height: 1.5; }
+.hubset__pv { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.hubsec--warn { border-color: #f3d9a4; background: #fffaf0; }
+.hgrp + .hgrp { margin-top: 12px; }
+.hgrp__h { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+
+/* ---- 活动设置抽屉:分成 1-4 段 ---- */
+.edsec { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px 6px; margin-bottom: 14px; background: var(--surface); }
+.edsec__h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+.edsec__h em { font-style: normal; font-weight: 400; font-size: 12px; color: var(--text-3); }
+.edsec__n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; }
+.edsec__hint { font-size: 12px; margin: 6px 0 10px; }
+.inp--num { max-width: 120px; }

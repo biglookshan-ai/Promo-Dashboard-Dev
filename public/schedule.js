@@ -822,6 +822,7 @@
   // ================= 活动总控台 =================
   // 一个活动下面所有「网站要更新的东西」:网站内容(Banner / 顶栏 / 首页模块 / 合集置顶)+ 改价;具体要求和分工在关联的飞书任务里
   let cpHub = null; // 正在看的活动 id
+  const openHub = (id) => { cpHub = id; hubPrice.at = 0; showSection('campaigns'); renderCampaigns(); window.scrollTo(0, 0); };
   let hubPrice = { plans: null, err: '', at: 0 };
   async function loadHubPrice() {
     if (MODE !== 'live' || !(window.cgpCanSee && window.cgpCanSee('price'))) { hubPrice = { plans: null, err: '', at: now() }; return; }
@@ -833,7 +834,8 @@
   function hubRow(x) {
     const pic = x.kind === 'banner' ? `<span class="hrow__slide">${slideHtml(x, { w: 160 })}</span>` : `<span class="hrow__ico">${kindChip(x.kind)}</span>`;
     const chipInPic = x.kind !== 'banner';
-    return `<button class="hrow" type="button" data-open="${x.id}">${pic}<span class="hrow__b"><span class="hrow__t">${chipInPic ? '' : kindChip(x.kind) + ' '}${esc(titleOf(x))}</span><span class="hrow__s">${esc(winText(x))}</span></span>${badge(x)}</button>`;
+    const when = win(x).via ? '跟随活动时间' : winText(x); // 活动页里不用再重复活动名和日期
+    return `<button class="hrow" type="button" data-open="${x.id}">${pic}<span class="hrow__b"><span class="hrow__t">${chipInPic ? '' : kindChip(x.kind) + ' '}${esc(titleOf(x))}</span><span class="hrow__s">${when}</span></span>${badge(x)}</button>`;
   }
 
   // ---- 一致性检查:文案折扣 vs 实际改价、各项时间 vs 活动时间、快开始了还没批准 ----
@@ -877,55 +879,79 @@
     }
     if (cs != null && cs > now() && cs - now() < 2 * DAY) {
       const notYet = content.filter((x) => x.state !== 'approved').length + livePlans.filter((p) => p.state !== 'approved').length;
-      if (notYet) out.push({ level: 'warn', text: `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项没批准` });
+      if (notYet) out.push({ level: 'warn', text: team() ? `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项没批准` : `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项是草稿(没保存生效)` });
     }
     return out;
   }
-  function checksHtml(c, plans) {
-    const list = consistencyChecks(c, plans);
-    return `<section class="panel hubsec"><div class="panel__h"><h3>一致性检查</h3><span class="muted">文案折扣 vs 实际改价、各项时间 vs 活动时间</span></div>
-      ${list.length ? `<div class="hchecks">${list.map((x) => `<div class="hcheck hcheck--${x.level}">${x.level === 'warn' ? '⚠️' : 'ℹ️'} <span>${esc(x.text)}</span>${x.id ? `<button type="button" class="linkbtn" data-open="${x.id}">去改</button>` : x.price ? `<button type="button" class="linkbtn" data-price="${x.price}">去改</button>` : ''}</div>`).join('')}</div>`
-        : '<p class="muted">✓ 没发现对不上的地方</p>'}</section>`;
-  }
   // 关联的飞书任务:链接 + 名字(任务状态在接好飞书任务权限后显示)
   const larkTaskGuid = (url) => (String(url).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0] || '';
-  function larkLinksHtml(c) {
-    const links = c.larkLinks || [];
-    return `<section class="panel hubsec"><div class="panel__h"><h3>关联的飞书任务</h3><span class="muted">具体要求、设计、文案、分工都在飞书任务里;在「编辑活动设置」里贴链接</span></div>
-      ${links.length ? `<div class="larklinks">${links.map((l) => `<a class="larklink" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="larklink__ico">✓</span><span class="larklink__b"><b>${esc(l.label || '飞书任务')}</b><span class="muted">${/task_?list|tasklist/i.test(l.url) ? '任务清单' : '任务'}${larkTaskGuid(l.url) ? '' : ' · 链接里没找到任务编号'}</span></span><span class="larklink__go">↗</span></a>`).join('')}</div>`
-        : `<p class="muted">还没关联。<button type="button" class="linkbtn" data-open="${c.id}">去贴飞书任务链接</button></p>`}</section>`;
+  // 活动页:① 活动设置(时间 / 产品 / 产品上显示什么,一眼看清)→ ② 需要留意(有问题才出现)→ ③ 网站内容(按类型分组)→ ④ 改价 → ⑤ 飞书任务
+  const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接']];
+  const dhm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h ${m % 60}m`; };
+  function hubSettingsHtml(c) {
+    const w = win(c); const t = now(); const s = status(c); const st = scopeTotal(c);
+    const span = w.start != null && w.end != null ? `共 ${relSpan(w.end - w.start)}` : '没有结束时间';
+    const left = s === 'live' ? (w.end != null ? `还剩 ${relSpan(w.end - t)}` : '进行中') : w.start != null && w.start > t ? `${relSpan(w.start - t)}后开始` : s === 'ended' ? '已结束' : '';
+    const cd = cdOf(c);
+    const cdText = w.end != null ? dhm(w.end - Math.max(t, w.start ?? t)) : '';
+    const noScope = !(c.collections?.length || c.tags?.length || c.products?.length);
+    const shows = noScope ? '<span class="muted">没选产品,产品上不显示</span>' : c.badge || (c.countdown && w.end != null)
+      ? `<div class="hubset__pv">${cdPdpHtml(c, c.badge, c.countdown && w.end != null ? `hubcd-${c.id}` : null, cdText)}</div>`
+      : '<span class="muted">不显示徽章和倒计时</span>';
+    const item = (k, main, sub) => `<div class="hubset__i"><span class="hubset__k">${k}</span>${main}<span class="muted hubset__s">${sub}</span></div>`;
+    return `<section class="panel hubset">
+      <div class="panel__h"><h3>活动设置</h3><button class="btn btn-primary btn-sm" type="button" data-open="${c.id}">修改活动设置</button></div>
+      <div class="hubset__g">
+        ${item('时间', `<b>${w.start != null ? fDT(w.start) : '立即'} → ${w.end != null ? fDT(w.end) : '不结束'}</b>`, `${span}${left ? ' · ' + left : ''}`)}
+        ${item('参加的产品', `<b>${st.total}${st.unknown ? '+' : ''} 个产品</b>`, campScope(c, false, '<br>'))}
+        ${item('产品上显示', shows, `${CD_STY[cd.key].name}${c.countdown ? ' · 有倒计时' : ' · 没开倒计时'}${c.priority ? ` · 优先级 ${esc(c.priority)}` : ''}`)}
+      </div>
+    </section>`;
   }
   function hubHtml(c) {
     const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
-    const content = [...mine('banner'), ...mine('topbar'), ...mine('tbstyle'), ...mine('pmodule'), ...mine('pin')];
+    const content = HUB_KINDS.flatMap(([k]) => mine(k));
     const canPrice = MODE === 'live' && window.cgpCanSee && window.cgpCanSee('price');
     const plans = (hubPrice.plans || []).filter((p) => p.campaign?.id === c.id);
-    const done = content.filter((x) => x.state === 'approved').length + plans.filter((p) => p.state === 'approved').length;
-    const total = content.length + plans.length;
-    const waiting = content.filter((x) => x.state === 'pending' || x.pendingChange).length + plans.filter((p) => p.state === 'pending' || p.pendingChange).length;
-    const pct = total ? Math.round((done / total) * 100) : 0;
     const add = (kind, label) => `<button type="button" class="btn btn-sm" data-new="${kind}" data-for="${c.id}">${I.plus}${label}</button>`;
-    const sec = (title, sub, rows, adds, emptyMsg) => `<section class="panel hubsec"><div class="panel__h"><h3>${title}</h3><span class="muted">${sub}</span></div>
-      <div class="hrows">${rows || `<p class="muted">${emptyMsg}</p>`}</div><div class="hubsec__add">${adds}</div></section>`;
+    const needType = (flag, label) => `<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">${label}(要先补建内容类型)</button>`;
+    const adds = add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页商品模块')
+      + (MODE === 'live' && S.setup && S.setup.pinReady === false ? needType('pin', '合集置顶') : add('pin', '合集置顶'))
+      + (MODE === 'live' && S.setup && S.setup.slReady === false ? needType('salelink', '促销链接') : add('salelink', '促销链接'));
+    const groups = HUB_KINDS.map(([k, label]) => { const list = mine(k); return list.length
+      ? `<div class="hgrp"><div class="hgrp__h">${label}<span class="muted">${list.length}</span></div><div class="hrows">${list.map(hubRow).join('')}</div></div>` : ''; }).join('');
     const priceRows = plans.map((p) => `<button class="hrow" type="button" data-price="${p.id}"><span class="hrow__ico">${kindChip('price')}</span><span class="hrow__b"><span class="hrow__t">${esc(p.name)}</span>
       <span class="hrow__s">${p.kind === 'permanent' ? '永久调价' : '限时'} · ${new Set(p.slots.flatMap((s) => s.items.map((i) => i.productId))).size} 个产品 · ${fDT(Math.min(...p.slots.map((s) => s.start)))}</span></span><span class="tag">${PLAN_ST[p.state === 'approved' ? 'scheduled' : p.state] || p.state}</span></button>`).join('');
+    // 审批进度:只在「多人协作」开着时有意义
+    let prog = '';
+    if (team()) {
+      const done = content.filter((x) => x.state === 'approved').length + plans.filter((p) => p.state === 'approved').length;
+      const total = content.length + plans.length;
+      const waiting = content.filter((x) => x.state === 'pending' || x.pendingChange).length + plans.filter((p) => p.state === 'pending' || p.pendingChange).length;
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      prog = total ? `<div class="hubprog"><div class="hubprog__bar"><span style="width:${pct}%"></span></div>
+        <div class="hubprog__n"><b>${done}</b> / ${total} 项已批准(${pct}%)${waiting ? ` · <span class="tx-warn">${waiting} 项等审批</span>` : ''}</div></div>` : '';
+    }
+    const checks = consistencyChecks(c, canPrice ? (hubPrice.plans || undefined) : null);
+    const links = c.larkLinks || [];
     return `
       <button class="btn btn-ghost btn-back" type="button" data-hubback>← 全部活动</button>
       <div class="hubhead">
-        <div><h2>${esc(c.name)} ${badge(c)}</h2><div class="muted">${I.clock}${esc(winText(c))} · 产品:${campScope(c, true)}</div></div>
-        <button class="btn" type="button" data-open="${c.id}">编辑活动设置</button>
+        <div><h2>${esc(c.name)} ${badge(c)}</h2>${endingTag(c)}${syncTag(c)}</div>
       </div>
-      <div class="hubprog">
-        <div class="hubprog__bar"><span style="width:${pct}%"></span></div>
-        <div class="hubprog__n"><b>${done}</b> / ${total} 项已批准(${pct}%)${waiting ? ` · <span class="tx-warn">${waiting} 项等审批</span>` : ''}</div>
-      </div>
-      ${larkLinksHtml(c)}
-      ${checksHtml(c, canPrice ? (hubPrice.plans || undefined) : null)}
-      ${sec('网站内容', '到点自动上线、结束自动下线', content.map(hubRow).join(''),
-        add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页促销模块版本')
-          + (MODE === 'live' && S.setup && S.setup.pinReady === false ? '<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">合集置顶清单(要先补建内容类型)</button>' : add('pin', '合集置顶清单')), '还没有内容')}
-      ${sec('改价', canPrice ? '定价同事负责;到点自动改、到期自动恢复' : '改价信息保密,只有定价同事和管理员能看', canPrice ? priceRows : '',
-        canPrice ? `<button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button>` : '', canPrice ? (hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…') : '你没有改价页的权限')}`;
+      ${prog}
+      ${hubSettingsHtml(c)}
+      ${checks.length ? `<section class="panel hubsec hubsec--warn"><div class="panel__h"><h3>⚠️ 需要留意</h3><span class="muted">文案里的折扣对不上实际改价、时间和活动不一致</span></div>
+        <div class="hchecks">${checks.map((x) => `<div class="hcheck hcheck--${x.level}">${x.level === 'warn' ? '⚠️' : 'ℹ️'} <span>${esc(x.text)}</span>${x.id ? `<button type="button" class="linkbtn" data-open="${x.id}">去改</button>` : x.price ? `<button type="button" class="linkbtn" data-price="${x.price}">去改</button>` : ''}</div>`).join('')}</div></section>` : ''}
+      <section class="panel hubsec"><div class="panel__h"><h3>网站上跟着活动变的</h3><span class="muted">跟随活动时间的:活动开始自动上线、结束自动下线</span></div>
+        ${groups || '<p class="muted">还没有。活动期间想让首页 Banner、顶栏、首页商品模块、合集排序也跟着换,就在下面加。</p>'}
+        <div class="hubsec__add">${adds}</div></section>
+      <section class="panel hubsec"><div class="panel__h"><h3>改价</h3><span class="muted">${canPrice ? '到点自动改价、到期自动恢复' : '改价信息保密,只有定价同事和管理员能看'}</span></div>
+        <div class="hrows">${canPrice ? priceRows || `<p class="muted">${hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…'}</p>` : '<p class="muted">你没有改价页的权限</p>'}</div>
+        ${canPrice ? `<div class="hubsec__add"><button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button></div>` : ''}</section>
+      <section class="panel hubsec"><div class="panel__h"><h3>关联的飞书任务</h3><span class="muted">具体要求、设计、文案放在飞书任务里</span></div>
+        ${links.length ? `<div class="larklinks">${links.map((l) => `<a class="larklink" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="larklink__ico">✓</span><span class="larklink__b"><b>${esc(l.label || '飞书任务')}</b><span class="muted">${/task_?list|tasklist/i.test(l.url) ? '任务清单' : '任务'}${larkTaskGuid(l.url) ? '' : ' · 链接里没找到任务编号'}</span></span><span class="larklink__go">↗</span></a>`).join('')}</div>`
+          : `<p class="muted">还没关联(可不填)。<button type="button" class="linkbtn" data-open="${c.id}">在活动设置里贴飞书任务链接</button></p>`}</section>`;
   }
 
   // ================= 促销链接(合集 ?onsale=<后缀>)=================
@@ -991,8 +1017,7 @@
       ${pageHead('促销链接', '给合集做一条只显示打折产品的链接,比如 /collections/dzofilm?onsale=autumn。可以只显示有货的、置顶几个产品、限制数量、换排序;放进 Banner、邮件、社媒都行。链接发出去以后还能改设置;没生效时退回「这个合集所有打折的产品」。',
         need ? '' : `<button class="btn btn-primary" data-new="salelink" type="button">${I.plus}新建促销链接</button>`)}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
-      <div class="note">💡 不用保存也能用:任何合集链接后面加 <b class="mono">?onsale</b>,就只显示这个合集里打折的产品(顺序和合集平时一样)。<br>
-        ⚠️ 前台认这种链接的代码目前<b>只在测试主题(Promo Panel Test)</b>里,线上要等你发布主题。</div>
+      <div class="note">💡 不用保存也能用:任何合集链接后面加 <b class="mono">?onsale</b>,就只显示这个合集里打折的产品(顺序和合集平时一样)。</div>
       ${alertsHtml(['salelink'])}
       ${rows.length ? rows.map((g) => `<section class="panel"><div class="panel__h"><h3>${esc(g.title)}</h3>${g.handle ? `<span class="muted mono">/collections/${esc(g.handle)}</span>` : ''}</div>
         <div class="sllist">${g.list.sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0)).map((x) => `<div class="slrow">
@@ -2151,7 +2176,7 @@
       </div>
       ${st.app ? `<p class="muted conn__ver">app 版本 <span class="mono">${esc(st.app.commit)}</span> · 启动于 ${fDT(st.app.startedAt)}</p>` : ''}
       ${st.ready ? `<div class="conn__mode">${MODE === 'live'
-        ? '现在看到的是店里的正式数据,所有改动按审核规则写进店铺。<button class="linkbtn" data-conn="demo" type="button">临时看演示数据</button>'
+        ? `现在看到的是店里的正式数据,所有改动${team() ? '按审核规则' : '保存后直接'}写进店铺。<button class="linkbtn" data-conn="demo" type="button">临时看演示数据</button>`
         : '<b>内容类型已建好。</b><button class="btn btn-sm btn-primary" data-conn="live" type="button">切换到正式数据</button><span class="muted">切换后你在这里的操作会真的写进店铺(前台要等主题改造发布后才读这些内容)。</span>'}</div>` : ''}`;
     box.querySelector('[data-conn=live]')?.addEventListener('click', () => { localStorage.removeItem(FORCE_DEMO); location.reload(); });
     box.querySelector('[data-conn=demo]')?.addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
@@ -2634,32 +2659,31 @@
         ${it.isDefault ? '' : fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '同一时间有几个版本都生效时,数字大的显示')}
         ${it.isDefault ? '<div class="fld"><span>什么时候显示</span><em>平时版本一直有效:没有别的版本生效时就显示它。</em></div>' : timeBlock(it, 'pmodule')}`;
     }
-    const bn = S.banners.filter((b) => b.campaign === it.id), tb = S.topbar.filter((t) => t.campaign === it.id), sty = S.tbstyles.filter((t) => t.campaign === it.id), pm = [...(S.pmodules || []), ...(S.salelinks || [])].filter((m) => m.campaign === it.id);
+    // 活动设置:1 活动(名称 / 时间)→ 2 参加的产品 → 3 产品上显示什么(徽章 / 倒计时 / 样式)→ 4 飞书任务;挂在活动下的内容在活动页里管
+    const attached = HUB_KINDS.flatMap(([k]) => listOf(k).filter((x) => x.campaign === it.id)).length;
+    const sec = (n, title, hint, body) => `<div class="edsec"><div class="edsec__h"><span class="edsec__n">${n}</span>${title}${hint ? `<em>${hint}</em>` : ''}</div>${body}</div>`;
     return `
-      ${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}
-      ${timeBlock(it, 'campaign')}
-      <div class="fld"><span>参加活动的产品 <em>满足任一条件就参加</em></span>
-        <div class="scope" id="ed-scope">${scopeHtml()}</div>
-        <em>在任一合集里、带任一标签、或被单独指定的产品,都会显示本活动的徽章和倒计时。点「后台↗ / 前台↗」可以核对具体是哪些产品。</em></div>
-      <div class="fld2">${fld('徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'), '产品页和搜索 / 合集页的产品卡上都会显示')}${fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在多个活动里时,数字大的优先')}</div>
-      <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">产品页和产品卡上都显示,倒数到活动结束,到期自动消失</span></span></label>
-      <div class="fld"><span>徽章和倒计时的样式 <em>产品页、搜索 / 合集页的产品卡、首页商品模块都用这个;挂在这个活动下的合集置顶清单(Flash)也一样</em></span>
-        <div class="cdsty" id="ed-cdsty">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-cdsty="${k}" class="cdsty__i ${(it.countdownStyle || 'classic') === k ? 'is-active' : ''}">
-          <span class="cdsty__demo" style="background:${x.bg};color:${x.fg};${k === 'minimal' ? '' : 'padding:4px 9px;'}border-radius:${k === 'classic' ? '6px' : '999px'}">${k === 'classic' || k === 'minimal' ? '' : CLOCK}${esc(x.lbl)} 2 days</span>
-          <b>${x.name}</b><em>${x.hint}</em></button>`).join('')}</div></div>
-      <div class="fld2">${fld('倒计时文案', inp('countdownLabel', it.countdownLabel, CD_STY[it.countdownStyle || 'classic']?.lbl || ''), '空 = 用样式默认的,如「Black Friday ends in」')}
-        <div class="fld"><span>颜色 <em>不改 = 用样式默认的</em></span><div class="rowin">
-          <label class="clr2">底色 <input type="color" id="cd-bg" value="${esc(it.countdownBg || (CD_STY[it.countdownStyle]?.bg !== 'transparent' && CD_STY[it.countdownStyle]?.bg) || '#ffefef')}"/></label>
-          <label class="clr2">文字 <input type="color" id="cd-fg" value="${esc(it.countdownColor || CD_STY[it.countdownStyle || 'classic'].fg)}"/></label>
-          <button type="button" class="btn btn-sm" data-cdreset="1" ${it.countdownBg || it.countdownColor ? '' : 'hidden'}>用默认颜色</button></div></div></div>
-      <div class="fld"><span>关联的飞书任务 <em>具体要求、设计、文案、分工放在飞书任务里;贴任务或任务清单的链接,可以起个名字(如「设计」「文案」「定价」)</em></span>
+      ${sec(1, '活动', '', `${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}${timeBlock(it, 'campaign')}`)}
+      ${sec(2, '参加的产品', '在任一合集里、带任一标签、或单独指定的产品都算', `<div class="scope" id="ed-scope">${scopeHtml()}</div>
+        <p class="muted edsec__hint">点「后台↗ / 前台↗」可以核对具体是哪些产品。</p>`)}
+      ${sec(3, '产品上显示什么', '产品页、搜索 / 合集页的产品卡、首页商品模块都按这里显示,右边是预览', `
+        ${fld('徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'), '留空 = 不显示徽章')}
+        <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到活动结束,到期自动消失</span></span></label>
+        <div class="fld"><span>样式 <em>徽章和倒计时一起用;挂在这个活动下的合集置顶清单(Flash)也一样</em></span>
+          <div class="cdsty" id="ed-cdsty">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-cdsty="${k}" class="cdsty__i ${(it.countdownStyle || 'classic') === k ? 'is-active' : ''}">
+            <span class="cdsty__demo" style="background:${x.bg};color:${x.fg};${k === 'minimal' ? '' : 'padding:4px 9px;'}border-radius:${k === 'classic' ? '6px' : '999px'}">${k === 'classic' || k === 'minimal' ? '' : CLOCK}${esc(x.lbl)} 2 days</span>
+            <b>${x.name}</b><em>${x.hint}</em></button>`).join('')}</div></div>
+        <div class="fld2">${fld('倒计时文案', inp('countdownLabel', it.countdownLabel, CD_STY[it.countdownStyle || 'classic']?.lbl || ''), '空 = 用样式默认的,如「Black Friday ends in」')}
+          <div class="fld"><span>颜色 <em>不改 = 用样式默认的</em></span><div class="rowin">
+            <label class="clr2">底色 <input type="color" id="cd-bg" value="${esc(it.countdownBg || (CD_STY[it.countdownStyle]?.bg !== 'transparent' && CD_STY[it.countdownStyle]?.bg) || '#ffefef')}"/></label>
+            <label class="clr2">文字 <input type="color" id="cd-fg" value="${esc(it.countdownColor || CD_STY[it.countdownStyle || 'classic'].fg)}"/></label>
+            <button type="button" class="btn btn-sm" data-cdreset="1" ${it.countdownBg || it.countdownColor ? '' : 'hidden'}>用默认颜色</button></div></div></div>
+        ${fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在几个活动里时,显示数字大的那个活动的徽章和倒计时')}`)}
+      ${sec(4, '关联的飞书任务', '可不填 · 具体要求、设计、文案放在飞书任务里', `
         <div id="ed-lark">${larkEdHtml()}</div>
-        <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div></div>
-      ${it.state !== 'new' ? `<div class="fld"><span>挂在本活动下的内容</span>
-        <div class="attach">${[...bn, ...tb, ...sty, ...pm].map((x) => `<button type="button" class="attach__i" data-open="${x.id}" data-pop="${x.id}">
-          ${x.kind === 'banner' ? `<span class="attach__slide">${slideHtml(x, { w: 200 })}</span>` : miniThumb(x)}
-          <span class="attach__t">${kindChip(x.kind)} ${esc(titleOf(x))}</span>${badge(x)}</button>`).join('') || '<span class="muted">还没有</span>'}</div>
-        <div class="attach__add"><button type="button" class="btn btn-sm" data-new="banner" data-for="${it.id}">${I.plus}Banner</button><button type="button" class="btn btn-sm" data-new="topbar" data-for="${it.id}">${I.plus}顶栏公告</button><button type="button" class="btn btn-sm" data-new="tbstyle" data-for="${it.id}">${I.plus}顶栏样式</button><button type="button" class="btn btn-sm" data-new="pmodule" data-for="${it.id}">${I.plus}首页促销模块版本</button><button type="button" class="btn btn-sm" data-new="salelink" data-for="${it.id}">${I.plus}促销链接</button></div></div>` : ''}`;
+        <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字,如「设计」(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div>`)}
+      ${it.state === 'new' ? '<div class="note">保存后会打开这个活动的页面,在那里加 Banner、顶栏、首页商品模块、合集置顶、促销链接和改价。</div>'
+        : cpHub === it.id && isActive('campaigns') ? '' : `<div class="note">挂在这个活动下的内容(${attached} 条)在活动页里管理。<button type="button" class="linkbtn" data-hubgo="${it.id}">打开活动页</button></div>`}`;
   }
 
   // 倒计时样式(和主题 snippets/cgp-campaign-offer.liquid 的默认颜色 / 文案一样,改一边要同步另一边)
@@ -2672,10 +2696,10 @@
   const cdOf = (v) => { const p = CD_STY[v.countdownStyle] || CD_STY.classic; return { key: CD_STY[v.countdownStyle] ? v.countdownStyle : 'classic', bg: v.countdownBg || p.bg, fg: v.countdownColor || p.fg, lbl: v.countdownLabel || p.lbl, custom: !!(v.countdownStyle && v.countdownStyle !== 'classic') || !!v.countdownBg || !!v.countdownColor }; };
   const CLOCK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>';
   // 产品页那一块:徽章 + 倒计时(id 给走秒用)
-  function cdPdpHtml(v, badge, timeId) {
+  function cdPdpHtml(v, badge, timeId, timeText = '0d 0h 0m 0s') {
     const c = cdOf(v);
     const b = badge ? `<span class="pv-badge pv-badge--${c.key}" style="background:${c.key === 'minimal' ? '#ffefef' : c.bg};color:${c.fg}">${esc(badge)}</span>` : '';
-    const t = timeId ? `<div class="pv-cdx pv-cdx--${c.key}" style="background:${c.bg};color:${c.fg}">${c.key === 'classic' || c.key === 'minimal' ? '' : CLOCK}<span>${esc(c.lbl)}</span> <b id="${timeId}">0d 0h 0m 0s</b></div>` : '';
+    const t = timeId ? `<div class="pv-cdx pv-cdx--${c.key}" style="background:${c.bg};color:${c.fg}">${c.key === 'classic' || c.key === 'minimal' ? '' : CLOCK}<span>${esc(c.lbl)}</span> <b id="${timeId}">${esc(timeText)}</b></div>` : '';
     return b + t;
   }
   function previewHtml(v) {
@@ -3196,6 +3220,8 @@
       if (nb && nb.dataset.for) { openEditor(nb.dataset.new, null, { campaign: nb.dataset.for }); return; }
       const op = e.target.closest('.attach__i[data-open]');
       if (op) { openEditor(byId(op.dataset.open).kind, op.dataset.open); return; }
+      const hg = e.target.closest('[data-hubgo]');
+      if (hg) { closeDrawer(); openHub(hg.dataset.hubgo); return; }
       const a = e.target.closest('[data-act]'); if (!a || a.disabled) return;
       const kindOfAct = a.dataset.act;
       if (kindOfAct === 'close') return closeDrawer();
@@ -3222,6 +3248,7 @@
       busy(false);
       if (!r) return;
       closeDrawer();
+      if (isNew && it.kind === 'campaign' && byId(it.id)) openHub(it.id); // 新建的活动:直接进活动页继续加内容
       if (mode === 'publish') {
         const saved = byId(it.id); const st2 = saved ? status(saved) : '';
         const col = colSay(r.colRep, saved?.collection?.id);
@@ -3337,7 +3364,7 @@
     const n = e.target.closest('[data-new]');
     if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : undefined); return; }
     const hb = e.target.closest('[data-hub]');
-    if (hb) { cpHub = hb.dataset.hub; hubPrice.at = 0; renderCampaigns(); window.scrollTo(0, 0); return; }
+    if (hb) { openHub(hb.dataset.hub); return; }
     if (e.target.closest('[data-hubback]')) { cpHub = null; renderCampaigns(); return; }
     const pr = e.target.closest('[data-price]');
     if (pr && window.cgpPriceOpen) { showSection('price'); window.cgpPriceOpen(pr.dataset.price); return; }
@@ -3372,7 +3399,7 @@
     const bar = $('#demobar'); if (!bar) return;
     if (MODE === 'live') {
       bar.className = 'demobar demobar--live';
-      bar.innerHTML = `<span class="demobar__tag">正式数据</span><span>改动按审核规则写进店铺 ${esc(S.store?.name || '')};前台要等主题改造发布后才会读这些内容。</span>
+      bar.innerHTML = `<span class="demobar__tag">正式数据</span><span>改动${team() ? '按审核规则' : '保存后直接'}写进店铺 ${esc(S.store?.name || '')};前台要等主题改造发布后才会读这些内容。</span>
         <button class="linkbtn" id="mode-demo" type="button">临时看演示数据</button>`;
       $('#mode-demo').addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
     } else if (liveSetup?.ready) {
