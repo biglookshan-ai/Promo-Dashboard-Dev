@@ -1332,3 +1332,5 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .tbpreset__bar { position: relative; overflow: hidden; height: 30px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; }
 .tbpreset__bar > span:last-child { position: relative; z-index: 1; }
 .tbpreset b { font-size: 12.5px; }
+
+.tabed__hint { font-size: 12px; margin: -2px 0 8px; }
