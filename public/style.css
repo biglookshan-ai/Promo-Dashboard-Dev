@@ -1240,3 +1240,16 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .tsrow__act--add, .tsrow__act--revive { background: #e8f5ee; color: #1f7a4d; }
 .tsrow__act--retire, .tsrow__act--pause { background: #fdeeea; color: #b13a27; }
 .tsrow__act--update, .tsrow__act--order { background: #eef3ff; color: #1d4ed8; }
+
+.tscmp { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 6px 0 10px; }
+.tscmp__col { border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-width: 0; background: #fff; }
+.tscmp__h { font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+.tscmp__row { display: flex; align-items: center; gap: 6px; padding: 4px 2px; font-size: 12.5px; border-top: 1px solid #f0f0f2; }
+.tscmp__row img { width: 34px; height: 46px; object-fit: cover; border-radius: 4px; flex: none; background: #eee; }
+.tscmp__row.is-miss { background: #fff6f4; }
+.tscmp__n { width: 18px; text-align: right; color: var(--text-3); flex: none; }
+.tscmp__t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tscmp__mod { font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+.tscmp__modh { font-size: 13px; font-weight: 600; margin-top: 8px; }
+.tsacts { margin-top: 6px; } .tsacts summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 4px 0; }
+@media (max-width: 720px) { .tscmp { grid-template-columns: 1fr; } }

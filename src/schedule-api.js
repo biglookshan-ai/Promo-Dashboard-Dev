@@ -6,7 +6,7 @@ import { performAction, withLock, runEffects } from './sync.js';
 import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQUIRED_SCOPES } from './metaobjects.js';
 import { schedulerInfo, logColReport } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
-import { planThemeSync, applyThemeSync, planCount } from './theme-sync.js';
+import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
 import { uploadImage } from './files.js';
 import { scopeCounts, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
@@ -269,7 +269,7 @@ export function scheduleRouter() {
     const s = load(req.ctx.shop); needApprover(s, req);
     const theme = await readMainTheme(req.ctx);
     const plan = planThemeSync(s, theme);
-    return { theme: theme.theme.name, plan, total: planCount(plan) };
+    return { theme: theme.theme.name, plan, total: planCount(plan), compare: compareView(s, theme) };
   }));
   r.post('/theme-sync', wrap(async (req) => {
     const shop = req.ctx.shop;

@@ -170,3 +170,31 @@ export function applyThemeSync(state, plan, picks, { built = {}, now = Date.now(
   if (done.length) state.log.unshift({ at: now, action: 'import', kind: 'system', title: '对照正式主题', note: done.join(';').slice(0, 900), by: actor?.name || '' });
   return { effects, done };
 }
+
+// 两栏对照用:左边 = 正式网站(编辑器)现在显示的,右边 = app 里此刻会显示的(上线后首页就是右边)
+export function compareView(state, theme, now = Date.now()) {
+  const camps = campaignIndex(state.campaigns);
+  const live = (x) => isLive(x, camps, now);
+  const slides = (theme.slider?.slides || []).filter((s) => !s.disabled);
+  const appBanners = state.banners.filter(live).sort((a, b) => a.order - b.order);
+  const tbSrc = (m) => `theme:${theme.topbar?.sectionId}:${theme.topbar?.blockId}:${m.n}`;
+  const modWinner = (mod) => {
+    const vs = (state.pmodules || []).filter((v) => v.module === mod && (v.isDefault ? v.state === 'approved' && !v.paused : live(v)));
+    return vs.filter((v) => !v.isDefault).sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || vs.find((v) => v.isDefault) || null;
+  };
+  return {
+    banners: {
+      site: slides.map((s) => ({ key: `theme:${theme.slider.sectionId}:${s.blockId}`, title: s.title || '(无标题)', image: shopImageName(s.image) })),
+      app: appBanners.map((b) => ({ key: b.source || b.id, title: titleOf(b), image: b.image, mine: !b.source?.startsWith('theme:') })),
+    },
+    topbar: {
+      site: (theme.topbar?.messages || []).map((m) => ({ key: tbSrc(m), title: `${m.emoji} ${m.text}`.trim() })),
+      app: state.topbar.filter(live).sort((a, b) => a.order - b.order).map((t) => ({ key: t.source || t.id, title: titleOf(t), mine: !t.source?.startsWith('theme:') })),
+    },
+    modules: (theme.modules || []).map((m) => {
+      const w = modWinner(m.module);
+      return { module: m.module, site: { title: `${m.title} ${m.title2}`.trim(), tabs: m.tabs.map((t) => t.title || t.collectionHandle) },
+        app: w ? { title: `${w.title || ''} ${w.title2 || ''}`.trim() || w.name, tabs: (w.tabs || []).map((t) => t.title || t.collection?.title || ''), name: w.name, isDefault: !!w.isDefault } : null };
+    }),
+  };
+}

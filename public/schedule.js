@@ -1961,15 +1961,42 @@
     let r;
     try { r = await api('GET', '/api/schedule/theme-sync'); } catch (e) { $('#ts-body').innerHTML = `<div class="note note--danger">${esc(e.message)}</div>`; return; }
     $('#ts-theme').textContent = `正式主题「${r.theme}」`;
-    const rows = GROUPS.map(([k, cn]) => {
-      const L = r.plan[k] || [];
-      return `<section class="panel"><div class="panel__h"><h3>${cn}</h3><span class="muted">${L.length ? `${L.length} 处不同` : '✅ 和正式网站一样'}</span></div>
-        ${L.map((x) => `<label class="tsrow"><input type="checkbox" data-ts="${esc(x.key)}" ${x.pick ? 'checked' : ''}/>
-          <span class="tag tsrow__act tsrow__act--${x.act}">${ACT[x.act] || x.act}</span><span><b>${esc(x.title)}</b><span class="muted"> · ${esc(x.why)}</span></span></label>`).join('')}</section>`;
+    // 左右两栏:正式网站现在 vs app 里(上线后会显示的);不一样的标出来,下面是要做的改动
+    const C = r.compare || {};
+    const siteImg = (name) => (name ? `${S.store?.domain || ''}/cdn/shop/files/${encodeURIComponent(name)}?width=96` : '');
+    const listCol = (head, rows, otherKeys, missTag, isSite) => `<div class="tscmp__col"><div class="tscmp__h">${head} <span class="muted">${rows.length}</span></div>
+      ${rows.map((x, i) => { const miss = !otherKeys.has(x.key);
+        const img = isSite ? siteImg(x.image) : (x.image ? thumb(x.image, 96) : '');
+        return `<div class="tscmp__row ${miss ? 'is-miss' : ''}"><span class="tscmp__n">${i + 1}</span>${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ''}<span class="tscmp__t">${esc(x.title)}</span>
+          ${miss ? `<span class="tag ${isSite ? 'tag--warn' : 'tag--danger'}">${missTag}</span>` : ''}${!isSite && x.mine ? '<span class="tag">app 里建的</span>' : ''}</div>`; }).join('') || '<p class="muted">(没有)</p>'}</div>`;
+    const cmpLists = (cmp) => {
+      if (!cmp) return '';
+      const sk = new Set(cmp.site.map((x) => x.key)), ak = new Set(cmp.app.map((x) => x.key));
+      const sameSet = sk.size === ak.size && [...sk].every((k) => ak.has(k));
+      const sameOrder = sameSet && cmp.site.map((x) => x.key).join('|') === cmp.app.map((x) => x.key).join('|');
+      return { html: `<div class="tscmp">${listCol('正式网站现在', cmp.site, ak, 'app 里没有', true)}${listCol('app 里 · 上线后会显示', cmp.app, sk, '正式网站没有', false)}</div>
+        ${sameSet && !sameOrder ? '<p class="muted">两边一样的东西,只是顺序不同。</p>' : ''}`, same: sameOrder };
+    };
+    const modCmp = () => (C.modules || []).map((m) => {
+      const same = m.app && m.app.title === m.site.title && m.app.tabs.join('|') === m.site.tabs.join('|');
+      const card = (head, x, note) => `<div class="tscmp__col"><div class="tscmp__h">${head}</div>${x ? `<div class="tscmp__mod"><b>${esc(x.title || '(无标题)')}</b>${note || ''}<div>${x.tabs.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div></div>` : '<p class="muted">(没有)</p>'}</div>`;
+      return `<div class="tscmp__modh">${m.module === 'sale' ? '促销模块' : '推荐 / 新品模块'} ${same ? '<span class="tag tag--ok">一样</span>' : '<span class="tag tag--danger">不一样</span>'}</div>
+        <div class="tscmp">${card('正式网站现在', m.site)}${card('app 里 · 上线后会显示', m.app, m.app ? `<span class="muted"> · ${m.app.isDefault ? '平时版本' : `版本「${esc(m.app.name || '')}」`}</span>` : '')}</div>`;
     }).join('');
-    $('#ts-body').innerHTML = r.total ? `<div class="note">勾上的会写进店铺(和点「保存」一样),没勾的保持原样。新加的都是「已批准 · 长期显示」;结束 / 暂停的随时可以在各自页面恢复。每一处都会记进历史记录。</div>${rows}
-        ${(r.plan.notes || []).map((n) => `<div class="note note--warn">ℹ️ ${esc(n)}</div>`).join('')}`
-      : `<div class="note note--ok">✅ app 里的首页内容和正式网站完全一样,可以放心上线。</div>${(r.plan.notes || []).map((n) => `<div class="note note--warn">ℹ️ ${esc(n)}</div>`).join('')}`;
+    const actList = (k) => { const L = r.plan[k] || []; return L.length ? `<details class="tsacts" open><summary>要做的改动 ${L.length} 处 <span class="muted">(默认已勾好;勾上的会让右边变成和左边一样)</span></summary>
+      ${L.map((x) => `<label class="tsrow"><input type="checkbox" data-ts="${esc(x.key)}" ${x.pick ? 'checked' : ''}/>
+        <span class="tag tsrow__act tsrow__act--${x.act}">${ACT[x.act] || x.act}</span><span><b>${esc(x.title)}</b><span class="muted"> · ${esc(x.why)}</span></span></label>`).join('')}</details>` : ''; };
+    const bc = cmpLists(C.banners), tc = cmpLists(C.topbar);
+    const sec = (title, same, body, k) => `<section class="panel"><div class="panel__h"><h3>${title}</h3>${same ? '<span class="tag tag--ok">✅ 两边一样</span>' : `<span class="tag tag--danger">${(r.plan[k] || []).length} 处不一样</span>`}</div>${body}${actList(k)}</section>`;
+    const rows = [
+      sec('首页 Banner', !(r.plan.banners || []).length, bc.html || '', 'banners'),
+      sec('顶栏公告', !(r.plan.topbar || []).length, tc.html || '', 'topbar'),
+      (r.plan.tbstyle || []).length ? sec('顶栏样式', false, '', 'tbstyle') : '',
+      sec('首页商品模块', !(r.plan.pmodules || []).length, modCmp(), 'pmodules'),
+    ].join('');
+    $('#ts-body').innerHTML = `<div class="note">左边是<b>正式网站现在</b>的样子,右边是 <b>app 里的</b>(主题改造上线后,首页显示的就是右边)。点「按勾选的对齐」会把右边改成和左边一样;没勾的保持原样。每一处都会记进历史记录,结束 / 暂停的随时能在各自页面恢复。</div>
+      ${rows}${(r.plan.notes || []).map((n) => `<div class="note note--warn">ℹ️ ${esc(n)}</div>`).join('')}
+      ${r.total ? '' : '<div class="note note--ok">✅ 两边完全一样,可以放心上线。</div>'}`;
     const count = () => { const n = $$('#ts-body [data-ts]:checked').length; $('#ts-count').textContent = r.total ? `勾了 ${n} / ${r.total} 处` : ''; $('#ts-go').disabled = !n; };
     $('#ts-body').addEventListener('change', count); count();
     $('#ts-go').onclick = async (e) => {
