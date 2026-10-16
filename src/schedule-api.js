@@ -6,6 +6,7 @@ import { performAction, withLock, runEffects } from './sync.js';
 import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQUIRED_SCOPES } from './metaobjects.js';
 import { schedulerInfo, logColReport } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
+import { planThemeSync, applyThemeSync, planCount } from './theme-sync.js';
 import { uploadImage } from './files.js';
 import { scopeCounts, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
@@ -259,6 +260,41 @@ export function scheduleRouter() {
       replace(shop, s);
       const parts = [imp.banners.length && `${imp.banners.length} 张 Banner`, imp.topbar.length && `${imp.topbar.length} 条顶栏`, pmCount && `${pmCount} 个商品模块平时版本`].filter(Boolean);
       return { ...(await view(req, s)), message: parts.length ? `已导入 ${parts.join('、')}` : '没有新的可导入(导过的已跳过)', skipped: imp.skipped, syncErrors: r2.errors };
+    });
+  }));
+
+  // ---- 上线前对照正式主题(管理员):列出 app 和正式网站首页(编辑器)的不同,勾选后对齐 ----
+  // 主题改造上线后首页显示的是 app 里的内容,上线前先让两边一模一样(src/theme-sync.js)
+  r.get('/theme-sync', wrap(async (req) => {
+    const s = load(req.ctx.shop); needApprover(s, req);
+    const theme = await readMainTheme(req.ctx);
+    const plan = planThemeSync(s, theme);
+    return { theme: theme.theme.name, plan, total: planCount(plan) };
+  }));
+  r.post('/theme-sync', wrap(async (req) => {
+    const shop = req.ctx.shop;
+    const theme = await readMainTheme(req.ctx);
+    const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
+    return withLock(shop, async () => {
+      const s = load(shop); const a = needApprover(s, req);
+      const before = JSON.parse(JSON.stringify(s));
+      const plan = planThemeSync(s, theme); // 现算,不信页面上那份(可能过时了)
+      const picks = new Set(req.body?.picks || []);
+      // 要新加 / 要改成主题样子的,重新按主题生成(图片在文件库里找、合集按 handle 找)
+      const rebuild = new Set([...plan.banners, ...plan.topbar, ...plan.pmodules].filter((x) => picks.has(x.key) && (x.act === 'add' || x.act === 'update') && x.source).map((x) => x.source));
+      const existing = new Set([...s.banners, ...s.topbar, ...s.tbstyles, ...(s.pmodules || [])].map((x) => x.source).filter((x) => x && !rebuild.has(x)));
+      existing.add('theme:topbar-style'); // 默认样式只改颜色,不重建
+      const imp = rebuild.size ? await buildImport(req.ctx, theme, existing, { actor: a }) : {};
+      const built = { ...imp,
+        bannerOrder: (theme.slider?.slides || []).filter((x) => !x.disabled).map((x) => `theme:${theme.slider.sectionId}:${x.blockId}`),
+        topbarOrder: theme.topbar ? theme.topbar.messages.map((m) => `theme:${theme.topbar.sectionId}:${theme.topbar.blockId}:${m.n}`) : [] };
+      const { effects, done } = applyThemeSync(s, plan, picks, { built, actor: a });
+      replace(shop, s);
+      const r2 = await runEffects(req.ctx, s, effects, { appUrl: info.appUrl });
+      replace(shop, s);
+      const ids = [...new Set(effects.filter((e) => e.type === 'sync').map((e) => e.id))];
+      try { recordAction(shop, before, s, ids, { action: '对照正式主题', by: a.name }); } catch (e) { console.error('[item-history]', e.message); }
+      return { ...(await view(req, s)), done, skipped: imp.skipped || [], syncErrors: r2.errors, left: planCount(planThemeSync(s, theme)) };
     });
   }));
 

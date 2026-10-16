@@ -1947,6 +1947,44 @@
     renderConn();
   }
 
+  // ---- 上线前对照正式主题:app 里的首页内容 vs 正式网站编辑器里的,勾选后对齐(服务器 src/theme-sync.js)----
+  async function openThemeSync() {
+    hidePop();
+    const ACT = { add: '新加', update: '改内容', revive: '恢复显示', retire: '结束', pause: '暂停', order: '顺序' };
+    const GROUPS = [['banners', '首页 Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodules', '首页商品模块']];
+    $('#drawer').innerHTML = `<div class="drawer__h"><div><b>对照正式主题</b> <span class="muted" id="ts-theme"></span></div>
+        <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button></div>
+      <div class="drawer__b"><div class="drawer__form" id="ts-body" style="max-width:none"><p class="muted">正在读正式主题(只读)…</p></div></div>
+      <div class="drawer__f"><span class="muted" id="ts-count"></span><div class="drawer__acts"><button class="btn btn-primary" id="ts-go" type="button" disabled>按勾选的对齐</button></div></div>`;
+    $('#drawer').hidden = false; $('#drawer-mask').hidden = false; document.body.classList.add('no-scroll');
+    $('#drawer').onclick = (e) => { if (e.target.closest('[data-act="close"]')) closeDrawer(); };
+    let r;
+    try { r = await api('GET', '/api/schedule/theme-sync'); } catch (e) { $('#ts-body').innerHTML = `<div class="note note--danger">${esc(e.message)}</div>`; return; }
+    $('#ts-theme').textContent = `正式主题「${r.theme}」`;
+    const rows = GROUPS.map(([k, cn]) => {
+      const L = r.plan[k] || [];
+      return `<section class="panel"><div class="panel__h"><h3>${cn}</h3><span class="muted">${L.length ? `${L.length} 处不同` : '✅ 和正式网站一样'}</span></div>
+        ${L.map((x) => `<label class="tsrow"><input type="checkbox" data-ts="${esc(x.key)}" ${x.pick ? 'checked' : ''}/>
+          <span class="tag tsrow__act tsrow__act--${x.act}">${ACT[x.act] || x.act}</span><span><b>${esc(x.title)}</b><span class="muted"> · ${esc(x.why)}</span></span></label>`).join('')}</section>`;
+    }).join('');
+    $('#ts-body').innerHTML = r.total ? `<div class="note">勾上的会写进店铺(和点「保存」一样),没勾的保持原样。新加的都是「已批准 · 长期显示」;结束 / 暂停的随时可以在各自页面恢复。每一处都会记进历史记录。</div>${rows}
+        ${(r.plan.notes || []).map((n) => `<div class="note note--warn">ℹ️ ${esc(n)}</div>`).join('')}`
+      : `<div class="note note--ok">✅ app 里的首页内容和正式网站完全一样,可以放心上线。</div>${(r.plan.notes || []).map((n) => `<div class="note note--warn">ℹ️ ${esc(n)}</div>`).join('')}`;
+    const count = () => { const n = $$('#ts-body [data-ts]:checked').length; $('#ts-count').textContent = r.total ? `勾了 ${n} / ${r.total} 处` : ''; $('#ts-go').disabled = !n; };
+    $('#ts-body').addEventListener('change', count); count();
+    $('#ts-go').onclick = async (e) => {
+      const b = e.currentTarget;
+      if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认(会写进店铺)'; b.classList.add('btn-danger'); return; }
+      b.disabled = true; b.textContent = '对齐中…(要在文件库里找图,可能要一分钟)';
+      try {
+        const out = await api('POST', '/api/schedule/theme-sync', { picks: $$('#ts-body [data-ts]:checked').map((x) => x.dataset.ts) });
+        S = await normalizeLive(out); renderAll();
+        toast(`${out.done.length} 处已对齐${out.syncErrors?.length ? `;${out.syncErrors.length} 条写进店铺时出错:${out.syncErrors[0]}` : ''}${out.left ? `;还剩 ${out.left} 处不同(没勾的)` : ';和正式网站一样了'}`, !out.syncErrors?.length);
+        openThemeSync();
+      } catch (err) { toast(err.message, false); b.disabled = false; b.textContent = '按勾选的对齐'; delete b.dataset.sure; b.classList.remove('btn-danger'); }
+    };
+  }
+
   // ---- 店铺连接(真实接口):权限 / 4 个内容类型 / 定时器 ----
   // 只有在 Shopify 后台里打开才有 session token;本地预览会提示。
   const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: '合集置顶清单', cgp_sale_link: '促销链接' };
@@ -1993,6 +2031,10 @@
             ${S.imported.skipped?.length ? `<div class="note note--warn">跳过 ${S.imported.skipped.length} 个:${S.imported.skipped.map((x) => `${esc(x.title || '')}(${esc(x.reason)})`).join('、')}</div>` : ''}` : ''}
           <p class="muted">把线上主题首页<b>正在显示的 Banner</b>、顶栏公告和顶栏配色,以及首页两个商品模块现在的标题和页签(当「平时版本」)导进来,变成「已批准 · 长期显示」,和现在网站上一样。只读主题、不改主题;可以重复点,导过的会跳过。</p>
           <button class="btn btn-sm ${S.imported && MODE === 'live' ? '' : 'btn-primary'}" data-conn="import" type="button">从主题导入</button><span class="muted" id="imp-prev"></span></div>` : ''}
+        ${st.ready && MODE === 'live' ? `<div><div class="conn__k">5. 上线前对照正式主题</div>
+          <p class="muted">主题改造上线后,首页的 Banner、顶栏、两个商品模块显示的是 <b>app 里的内容</b>。导入之后编辑器里又换过的(加了新 Banner、删了旧的、改了文案、换了页签),app 里还是旧的。
+            上线前点这里,列出 app 和正式网站首页每一处不同,勾选后一键对齐,上线那一刻首页才和现在一模一样。</p>
+          <button class="btn btn-sm" data-conn="themesync" type="button">对照正式主题</button></div>` : ''}
       </div>
       ${st.app ? `<p class="muted conn__ver">app 版本 <span class="mono">${esc(st.app.commit)}</span> · 启动于 ${fDT(st.app.startedAt)}</p>` : ''}
       ${st.ready ? `<div class="conn__mode">${MODE === 'live'
@@ -2023,6 +2065,7 @@
         } catch (err) { toast('导入失败:' + err.message, false); b.disabled = false; b.textContent = '从主题导入'; }
       });
     }
+    box.querySelector('[data-conn=themesync]')?.addEventListener('click', () => openThemeSync());
     box.querySelector('[data-conn=reconnect]')?.addEventListener('click', async () => {
       try { await api('POST', '/api/reconnect'); } catch (e) { /* 忽略,下面重新检查 */ }
       renderConn(true);
