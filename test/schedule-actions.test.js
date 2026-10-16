@@ -155,3 +155,16 @@ test('合集置顶清单:要选合集和产品;批准后要写 Shopify;跟随活
 });
 
 
+
+test('活动的倒计时样式:只认四种样式和 #rrggbb 颜色;写进店铺的字段', async () => {
+  const { fieldsFor } = await import('../src/metaobjects.js');
+  const c = (o) => ({ id: 'c1', kind: 'campaign', name: 'BF', start: T, end: T + D, ...o });
+  const save = (v) => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'campaign', isNew: true, values: v }, approver, T);
+  assert.throws(() => save(c({ countdownStyle: 'neon' })), /倒计时样式/);
+  assert.throws(() => save(c({ countdownStyle: 'dark', countdownBg: 'black' })), /#rrggbb/);
+  const r = save(c({ countdownStyle: 'dark', countdownLabel: 'Black Friday ends in', countdownBg: '#000000', countdownColor: '#F5C518' }));
+  const f = Object.fromEntries(fieldsFor(r.doc.campaigns[0]).map((x) => [x.key, x.value]));
+  assert.deepEqual([f.countdown_style, f.countdown_label, f.countdown_bg, f.countdown_color], ['dark', 'Black Friday ends in', '#000000', '#F5C518']);
+  const f2 = Object.fromEntries(fieldsFor(c({})).map((x) => [x.key, x.value]));
+  assert.equal(f2.countdown_style, '', '没设 = 空 = 主题按经典样式画(和以前一样)');
+});

@@ -2557,6 +2557,15 @@
         <em>在任一合集里、带任一标签、或被单独指定的产品,都会显示本活动的徽章和倒计时。点「后台↗ / 前台↗」可以核对具体是哪些产品。</em></div>
       <div class="fld2">${fld('徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'), '产品页和搜索 / 合集页的产品卡上都会显示')}${fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在多个活动里时,数字大的优先')}</div>
       <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">产品页和产品卡上都显示,倒数到活动结束,到期自动消失</span></span></label>
+      <div class="fld"><span>徽章和倒计时的样式 <em>产品页、搜索 / 合集页的产品卡、首页商品模块都用这个;挂在这个活动下的合集置顶清单(Flash)也一样</em></span>
+        <div class="cdsty" id="ed-cdsty">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-cdsty="${k}" class="cdsty__i ${(it.countdownStyle || 'classic') === k ? 'is-active' : ''}">
+          <span class="cdsty__demo" style="background:${x.bg};color:${x.fg};${k === 'minimal' ? '' : 'padding:4px 9px;'}border-radius:${k === 'classic' ? '6px' : '999px'}">${k === 'classic' || k === 'minimal' ? '' : CLOCK}${esc(x.lbl)} 2 days</span>
+          <b>${x.name}</b><em>${x.hint}</em></button>`).join('')}</div></div>
+      <div class="fld2">${fld('倒计时文案', inp('countdownLabel', it.countdownLabel, CD_STY[it.countdownStyle || 'classic']?.lbl || ''), '空 = 用样式默认的,如「Black Friday ends in」')}
+        <div class="fld"><span>颜色 <em>不改 = 用样式默认的</em></span><div class="rowin">
+          <label class="clr2">底色 <input type="color" id="cd-bg" value="${esc(it.countdownBg || (CD_STY[it.countdownStyle]?.bg !== 'transparent' && CD_STY[it.countdownStyle]?.bg) || '#ffefef')}"/></label>
+          <label class="clr2">文字 <input type="color" id="cd-fg" value="${esc(it.countdownColor || CD_STY[it.countdownStyle || 'classic'].fg)}"/></label>
+          <button type="button" class="btn btn-sm" data-cdreset="1" ${it.countdownBg || it.countdownColor ? '' : 'hidden'}>用默认颜色</button></div></div></div>
       <div class="fld"><span>关联的飞书任务 <em>具体要求、设计、文案、分工放在飞书任务里;贴任务或任务清单的链接,可以起个名字(如「设计」「文案」「定价」)</em></span>
         <div id="ed-lark">${larkEdHtml()}</div>
         <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div></div>
@@ -2567,6 +2576,22 @@
         <div class="attach__add"><button type="button" class="btn btn-sm" data-new="banner" data-for="${it.id}">${I.plus}Banner</button><button type="button" class="btn btn-sm" data-new="topbar" data-for="${it.id}">${I.plus}顶栏公告</button><button type="button" class="btn btn-sm" data-new="tbstyle" data-for="${it.id}">${I.plus}顶栏样式</button><button type="button" class="btn btn-sm" data-new="pmodule" data-for="${it.id}">${I.plus}首页促销模块版本</button><button type="button" class="btn btn-sm" data-new="salelink" data-for="${it.id}">${I.plus}促销链接</button></div></div>` : ''}`;
   }
 
+  // 倒计时样式(和主题 snippets/cgp-campaign-offer.liquid 的默认颜色 / 文案一样,改一边要同步另一边)
+  const CD_STY = {
+    classic: { name: '经典红框', bg: '#ffefef', fg: '#d10000', lbl: 'Deals Expires in :', hint: '现在产品页用的' },
+    pill: { name: '胶囊', bg: '#fdecec', fg: '#c8102e', lbl: 'Deal ends in', hint: '时钟图标,最后一天变实心' },
+    dark: { name: '黑金', bg: '#111111', fg: '#f5c518', lbl: 'Deal ends in', hint: '适合 Black Friday' },
+    minimal: { name: '只有文字', bg: 'transparent', fg: '#d10000', lbl: 'Ends in', hint: '不要底色' },
+  };
+  const cdOf = (v) => { const p = CD_STY[v.countdownStyle] || CD_STY.classic; return { key: CD_STY[v.countdownStyle] ? v.countdownStyle : 'classic', bg: v.countdownBg || p.bg, fg: v.countdownColor || p.fg, lbl: v.countdownLabel || p.lbl, custom: !!(v.countdownStyle && v.countdownStyle !== 'classic') || !!v.countdownBg || !!v.countdownColor }; };
+  const CLOCK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>';
+  // 产品页那一块:徽章 + 倒计时(id 给走秒用)
+  function cdPdpHtml(v, badge, timeId) {
+    const c = cdOf(v);
+    const b = badge ? `<span class="pv-badge pv-badge--${c.key}" style="background:${c.key === 'minimal' ? '#ffefef' : c.bg};color:${c.fg}">${esc(badge)}</span>` : '';
+    const t = timeId ? `<div class="pv-cdx pv-cdx--${c.key}" style="background:${c.bg};color:${c.fg}">${c.key === 'classic' || c.key === 'minimal' ? '' : CLOCK}<span>${esc(c.lbl)}</span> <b id="${timeId}">0d 0h 0m 0s</b></div>` : '';
+    return b + t;
+  }
   function previewHtml(v) {
     if (v.kind === 'pin') return wxPreviewHtml(v);
     if (v.kind === 'salelink') return slPreviewHtml(v);
@@ -2605,16 +2630,17 @@
         <div class="pv-pdp__img" ${prod ? `style="background-image:url('${esc(prod.image)}')"` : ''}></div>
         <div class="pv-pdp__info">
           <div class="pv-pdp__title">${esc(prod?.title || v.products?.[0]?.title || 'DZOFILM VESPID 2 Prime 4 Lens Set')}</div>
-          ${v.badge ? `<span class="pbadge">${esc(v.badge)}</span>` : ''}
+          ${cdPdpHtml(v, v.badge, '')}
           <div class="pv-pdp__price">£4,999.00 <s>£5,899.00</s></div>
-          ${v.countdown && v.end ? `<div class="pv-cd">Deals Expires in : <span id="pv-cd"></span></div>` : ''}
+          ${v.countdown && v.end ? cdPdpHtml(v, '', 'pv-cd') : ''}
           <div class="pv-pdp__btn">Add to cart</div>
         </div>
       </div>
       ${v.badge || (v.countdown && v.end) ? `<div class="pv-label">搜索 / 合集页的产品卡</div>
       <div class="pv-card">
         <div class="pv-card__img" ${prod ? `style="background-image:url('${esc(prod.image)}')"` : ''}></div>
-        <div class="pv-cmp">${v.badge ? `<span class="pv-cmp__badge">${esc(v.badge)}</span>` : ''}${v.countdown && v.end ? '<span class="pv-cmp__cd" id="pv-cd2"></span>' : ''}</div>
+        ${(() => { const c = cdOf(v); const st = c.custom ? `background:${c.bg};color:${c.fg}` : '';
+          return `<div class="pv-cmp">${v.badge ? `<span class="pv-cmp__badge" style="${st}">${esc(v.badge)}</span>` : ''}${v.countdown && v.end ? `<span class="pv-cmp__cd ${c.custom ? 'is-chip' : ''}" style="${st}" id="pv-cd2"></span>` : ''}</div>`; })()}
         <div class="pv-card__title">${esc(prod?.title || v.products?.[0]?.title || 'DZOFILM VESPID 2 Prime 4 Lens Set')}</div>
         <div class="pv-card__price"><s>£5,899.00</s> £4,999.00</div>
       </div>` : ''}
@@ -2743,6 +2769,9 @@
       v.larkLinks = ed.larkLinks.map((l) => ({ url: l.url, label: l.label }));
       v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
       v.countdown = g('countdown').checked; v.priority = +g('priority').value || 0;
+      v.countdownStyle = ($('#ed-cdsty .is-active') || {}).dataset?.cdsty || '';
+      if (v.countdownStyle === 'classic') v.countdownStyle = '';
+      v.countdownBg = ed.cdBg ?? base.countdownBg ?? ''; v.countdownColor = ed.cdFg ?? base.countdownColor ?? '';
     }
     return v;
   }
@@ -2838,7 +2867,9 @@
           const el = $('#pv-cd'); if (!el) return;
           let d = left;
           const dd = Math.floor(d / 86400); d %= 86400; const hh = Math.floor(d / 3600); d %= 3600;
-          el.textContent = `${dd}d ${hh}h ${Math.floor(d / 60)}m ${d % 60}s`;
+          const p2 = (x) => String(x).padStart(2, '0');
+          el.textContent = cdOf(v).key === 'classic' ? `${dd}d ${hh}h ${Math.floor(d / 60)}m ${d % 60}s`
+            : `${dd > 0 ? `${dd} ${dd === 1 ? 'day' : 'days'} ` : ''}${p2(hh)}:${p2(Math.floor(d / 60))}:${p2(d % 60)}`;
         };
         tick(); pvTimer = setInterval(tick, 1000);
       }
@@ -2859,6 +2890,7 @@
       if (e.target.id === 'wx-onlyn') { const n = Math.round(+e.target.value); if (n >= 1) { wx.onlyN = Math.min(n, wx.order.length); redrawWx(); const el = $('#wx-onlyn'); if (el) { el.focus(); el.setSelectionRange?.(9, 9); } } return; }
       if (e.target.id === 'pg-posin') return;
       if (e.target.dataset.tf) { edTabs[+e.target.dataset.i][e.target.dataset.tf] = e.target.value; }
+      if (e.target.id === 'cd-bg' || e.target.id === 'cd-fg') { ed[e.target.id === 'cd-bg' ? 'cdBg' : 'cdFg'] = e.target.value; const rb = $('#ed-form [data-cdreset]'); if (rb) rb.hidden = false; }
       if (it.kind === 'salelink') { // 后缀:没手动改过就跟着名称自动生成;链接那一行实时更新
         const sg = f.querySelector('[name="slug"]');
         if (e.target.name === 'name' && !sg.dataset.touched) sg.value = SL.slugOf(e.target.value);
@@ -3054,6 +3086,11 @@
       if (tl) { edTabs[+tl.dataset.i].limit = +tl.dataset.tlim; return refreshTabs(); }
       const tp = e.target.closest('[data-tpick]');
       if (tp) return pickForTab(+tp.dataset.i, tp.dataset.tpick);
+      const cs = e.target.closest('[data-cdsty]');
+      if (cs) { $$('#ed-cdsty [data-cdsty]').forEach((b) => b.classList.toggle('is-active', b === cs)); const lbl = $('#ed-form [name="countdownLabel"]'); if (lbl) lbl.placeholder = CD_STY[cs.dataset.cdsty].lbl;
+        if (ed.cdBg == null && ed.cdFg == null && !base.countdownBg && !base.countdownColor) { const p = CD_STY[cs.dataset.cdsty]; if ($('#cd-bg')) $('#cd-bg').value = p.bg === 'transparent' ? '#ffffff' : p.bg; if ($('#cd-fg')) $('#cd-fg').value = p.fg; }
+        refreshPv(); return; }
+      if (e.target.closest('[data-cdreset]')) { ed.cdBg = ''; ed.cdFg = ''; e.target.closest('[data-cdreset]').hidden = true; refreshPv(); return; }
       const seg = e.target.closest('#ed-tag button, #ed-effect button, #ed-module button');
       if (seg) { $$(`#${seg.parentElement.id} button`).forEach((b) => b.classList.toggle('is-active', b === seg)); refreshPv(); return; }
       const im = e.target.closest('.imgpick__i');

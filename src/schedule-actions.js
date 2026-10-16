@@ -23,7 +23,10 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   // v3 分工:负责人 / 审批人 / 抄送(成员 id)、截止时间(ms)
   'owner', 'approver', 'cc', 'due',
   // 促销链接(?onsale=<后缀>);置顶的产品用 products,合集用 collection
-  'slug', 'inStock', 'minDiscount', 'limit', 'sort', 'heading', 'view'];
+  'slug', 'inStock', 'minDiscount', 'limit', 'sort', 'heading', 'view',
+  // 活动的倒计时样式(产品页 / 产品卡 / 首页商品模块都用)
+  'countdownStyle', 'countdownLabel', 'countdownBg', 'countdownColor'];
+export const COUNTDOWN_STYLES = ['classic', 'pill', 'dark', 'minimal'];
 
 export class ActionError extends Error {}
 const fail = (msg) => { throw new ActionError(msg); };
@@ -61,6 +64,8 @@ export function validate(it) {
   if (it.kind === 'topbar' && !String(it.text || '').trim()) return '请填写公告文字';
   if ((it.kind === 'campaign' || it.kind === 'tbstyle') && !String(it.name || '').trim()) return '请填写名称';
   if (it.kind === 'campaign' && it.start == null) return '活动需要开始时间';
+  if (it.kind === 'campaign' && it.countdownStyle && !COUNTDOWN_STYLES.includes(it.countdownStyle)) return '倒计时样式不对';
+  if (it.kind === 'campaign' && [it.countdownBg, it.countdownColor].some((c) => c && !/^#[0-9a-f]{6}$/i.test(c))) return '倒计时颜色要是 #rrggbb 这种写法';
   if (it.kind === 'pmodule') {
     if (!['sale', 'feature'].includes(it.module)) return '请选择是哪个模块';
     if (!(it.tabs || []).length) return '至少要有一个页签';
