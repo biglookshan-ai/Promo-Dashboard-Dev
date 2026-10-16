@@ -766,7 +766,10 @@ textarea.inp { resize: vertical; }
 .pm__now { margin-bottom: 12px; }
 .pm__list { display: flex; flex-direction: column; }
 .pmrow { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; text-align: left; font: inherit; color: inherit; padding: 8px 4px; border-radius: 8px; cursor: pointer; flex-wrap: wrap; }
-.pmrow + .pmrow { border-top: 1px solid #f0f0f2; }
+.pmrow + .pmrow, .pmrow-w + .pmrow-w { border-top: 1px solid #f0f0f2; }
+.pmrow-w { display: flex; align-items: center; gap: 6px; }
+.pmrow-w .pmrow { flex: 1; min-width: 0; }
+.pmrow__dup { flex: none; }
 .pmrow:hover { background: var(--surface-2); }
 .pmrow.is-dim { opacity: .6; }
 .pmrow__b { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

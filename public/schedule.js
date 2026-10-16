@@ -238,6 +238,7 @@
   const I = {
     clock: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     plus: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    copy: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
     grip: '<svg class="ico" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
     up: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
     down: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
@@ -1390,13 +1391,13 @@
           <span class="muted">${cur ? `现在显示:<b>${esc(cur.name)}</b>${cur.isDefault ? '(平时版本)' : ''}` : '现在显示:主题编辑器里的设置(还没导入平时版本)'}
           <button class="btn btn-sm btn-primary" data-new="pmodule" data-module="${mod}" type="button" ${needSetup ? 'disabled' : ''}>${I.plus}新建版本</button></span></div>
         ${cur ? `<div class="pm__now" data-pmnow="${mod}">${moduleHtml(cur, { activeTab: at })}</div>` : ''}
-        <div class="pm__list">${list.map((m) => `<button class="pmrow ${status(m) === 'ended' ? 'is-dim' : ''}" data-open="${m.id}" data-pop="${m.id}" type="button">
+        <div class="pm__list">${list.map((m) => `<div class="pmrow-w"><button class="pmrow ${status(m) === 'ended' ? 'is-dim' : ''}" data-open="${m.id}" data-pop="${m.id}" type="button">
           ${miniThumb(m)}
           <span class="pmrow__b"><b>${esc(m.name || '未命名版本')}</b>${m.isDefault ? '<span class="tag">平时版本</span>' : ''}${cur === m ? '<span class="tag tag--ok">正在显示</span>' : ''}
             <span class="pmrow__w">${m.isDefault ? '没有别的版本生效时显示' : `${I.clock}${winText(m)}`}</span>
             <span class="pmrow__tabs">${(m.tabs || []).map((t) => `<span class="chip chip--sm">${esc(tabLabel(t))}</span>`).join('')}</span></span>
           ${endingTag(m)}${syncTag(m)}${m.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${badge(m)}
-        </button>`).join('') || empty('还没有版本。先在「设置 → 店铺连接」点「从主题导入」把现在的配置导进来当平时版本。')}</div>
+        </button><button class="btn btn-sm btn-ghost pmrow__dup" data-dup="${m.id}" type="button" title="${m.isDefault ? '从平时版本复制一个新版本出来改' : '复制这个版本'}">${I.copy}复制</button></div>`).join('') || empty('还没有版本。先在「设置 → 店铺连接」点「从主题导入」把现在的配置导进来当平时版本。')}</div>
       </section>`;
     };
     root.innerHTML = `
@@ -2917,6 +2918,23 @@
     if (v.kind !== 'campaign' && v.campaign === null && ($('#ed-mode .is-active') || {}).dataset?.mode === 'campaign') return '请选择要跟随的活动';
     return '';
   }
+  // 复制一份(所有内容都能复制,2026-10-16 用户:商品模块想从平时版本复制出来改,不用一个个重选)
+  //   字段原样带过来,换新 id、变成还没保存的新内容;后台用的名字加「(复制)」(顾客看得到的标题 / 公告文字不动)。
+  //   平时版本复制出来是普通版本 → 给下周的时间段,免得一保存就把首页换掉;促销链接的后缀要唯一,清空让人重填。
+  function dupItem(src) {
+    const prefix = { banner: 'b-', topbar: 't-', tbstyle: 's-', pmodule: 'pm-', pin: 'pin-', campaign: 'c-', salelink: 'sl-' }[src.kind] || 'x-';
+    const v = JSON.parse(JSON.stringify(src));
+    for (const k of ['shopifyId', 'syncedStatus', 'syncedTabIds', 'syncError', 'pendingChange', 'rejectNote', 'lastReject', 'counts']) delete v[k];
+    Object.assign(v, { id: rid(prefix), state: 'new', by: S.me, owner: S.me, paused: false, isDefault: false });
+    if (['pmodule', 'tbstyle', 'pin', 'campaign', 'salelink'].includes(v.kind)) v.name = `${v.name || ''}(复制)`;
+    if (v.kind === 'pmodule') v.tabs = (v.tabs || []).map((t) => { const { shopifyId, ...rest } = t; return { ...rest, id: rid('tab-'), products: [...(t.products || [])] }; }); // eslint-disable-line no-unused-vars
+    if (v.kind === 'salelink') { v.slug = ''; v.view = ''; }
+    if (v.kind === 'banner') v.order = S.banners.length;
+    if (v.kind === 'topbar') v.order = S.topbar.length;
+    if (src.isDefault) { v.start = dayStart(7); v.end = dayStart(14); v.campaign = null; v.priority = v.priority || 10; }
+    openEditor(v.kind, null, { dup: v });
+    toast(src.isDefault ? '已从平时版本复制一份 —— 改好内容、确认时间(默认下周)再保存' : '已复制一份 —— 改好、确认时间再保存');
+  }
   function openEditor(kind, id, preset) {
     hidePop();
     const isNew = !id; const it = id ? byId(id) : (preset?.dup || newItem(kind, preset));
@@ -2963,7 +2981,8 @@
     $('#drawer').innerHTML = `
       <div class="drawer__h">
         <div>${kindChip(kind)} <b>${isNew ? `新建${KIND[kind]}` : esc(titleOf(it))}</b> ${isNew ? '' : badge(it)}
-          ${!isNew && MODE === 'live' ? `<button class="btn btn-sm btn-ghost" type="button" data-act="history">${I.clock}历史版本</button>` : ''}</div>
+          ${!isNew && MODE === 'live' ? `<button class="btn btn-sm btn-ghost" type="button" data-act="history">${I.clock}历史版本</button>` : ''}
+          ${!isNew ? `<button class="btn btn-sm btn-ghost" type="button" data-act="dup" title="复制成一条新的(连同你还没保存的修改),原来这条不变">${I.copy}复制一份</button>` : ''}</div>
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button>
       </div>
       <div class="drawer__b drawer__b--${kind}">
@@ -3249,6 +3268,7 @@
       const kindOfAct = a.dataset.act;
       if (kindOfAct === 'close') return closeDrawer();
       if (kindOfAct === 'history') return openItemHistory(it.id);
+      if (kindOfAct === 'dup') return dupItem({ ...readForm(base), kind: it.kind, isDefault: !!it.isDefault });
       if (kindOfAct === 'delete' && !a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '再点一次确认删除'; a.classList.add('btn-danger'); return; }
       runDrawerAction(kindOfAct, a);
     };
@@ -3382,6 +3402,8 @@
   // 事件委托:任何地方的 data-open / data-new / data-go / 审核按钮
   document.addEventListener('click', (e) => {
     if (e.target.closest('#drawer')) return;
+    const dp = e.target.closest('[data-dup]');
+    if (dp && dp.closest('.section')) { const x = byId(dp.dataset.dup); if (x) dupItem(x); return; }
     const o = e.target.closest('[data-open]');
     if (o && o.closest('.section')) { const x = byId(o.dataset.open); if (x) openEditor(x.kind, x.id); return; }
     const n = e.target.closest('[data-new]');
