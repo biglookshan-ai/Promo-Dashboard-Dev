@@ -1275,6 +1275,7 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .pv-co { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 9px; max-width: 100%; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; line-height: 1.35; margin: 6px 0; }
 .pv-co--classic { border-radius: 6px; padding: 7px 11px; } .pv-co--minimal { padding: 0; }
 .pv-co > b { font-weight: 700; }
+.pv-co > b.is-link { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; } /* 网站上徽章能点(去活动的第一个合集) */
 .pv-co__bar { width: 1px; height: 13px; background: currentColor; opacity: .35; }
 .pv-co__dot { opacity: .6; }
 .pv-co__cd { display: inline-flex; align-items: center; gap: 5px; }
