@@ -1245,7 +1245,8 @@
       <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
         ${fld('最多显示几个', `<input class="inp" type="number" min="0" name="limit" value="${esc(it.limit ?? '')}" placeholder="不限"/>`, '按下面的排法取前面几个')}</div>
       ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和合集平时一样」= 合集页默认的 Featured 顺序(包括生效中的合集排序清单)。顾客自己选了 Sort by 就按他选的')}
-      <div class="fld"><span>固定位置的产品 <em>在右边直接拖动卡片排序更方便;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span><div id="sl-pins"></div></div>
+      <div class="fld"><span>固定位置的产品 <em>拖动产品卡片排序:右边直接拖,或点「放大排序」铺满整个窗口来排;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span>
+        <div class="rowin"><button type="button" class="btn btn-sm btn-primary" data-sl="big">⤢ 放大排序</button></div><div id="sl-pins"></div></div>
       ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
       ${timeBlock(it, 'salelink')}
       <div class="fld"><span>结束后去哪 <em>时间到了(或跟随的活动结束)以后,顾客再打开这条链接会怎样</em></span>
@@ -1307,12 +1308,18 @@
     if (a === 'rm') sl.products.splice(i, 1);
     if (a === 'up' && i > 0) [sl.products[i - 1], sl.products[i]] = [sl.products[i], sl.products[i - 1]];
     if (a === 'reload') { slLoad(done, true); return; }
+    if (a === 'big') { // 大图排序:藏起左边的设置,产品网格铺满整个窗口(2026-10-19 用户:右边那一栏太小不方便看)
+      sl.big = !sl.big; slQ = '';
+      const body = $('#drawer .drawer__b'); body?.classList.toggle('drawer__b--slsort', sl.big);
+      done(); body?.scrollTo({ top: 0 }); return;
+    }
     if (a === 'slugview') { const fh = $('#ed-form'); const sg = fh.querySelector('[name="slug"]'); sg.value = String(fh.querySelector('[name="view"]').value).trim().toLowerCase(); sg.dataset.touched = '1'; redrawSlUrl(); return; }
     redrawSl(); done();
   }
   // ---- 促销链接里的产品顺序(2026-10-19):右边的卡片直接拖 ----
   // 存法和以前的「置顶的产品」一样(sl.products 按顺序排最前),只记「最短前缀」:没动过的照排序规则,和合集排序清单同一套(order-diff.js)
   let slPos = null; // 正在输入「移到第几位」的那张卡片
+  let slQ = ''; // 大图排序里「找产品」(只把不匹配的变淡,不打乱顺序)
   const slOpts = (c, d) => ({ sortRule: d.sortRule, pinIds: (activePin(numId(c.id))?.products || []).map((p) => p.id) });
   // 完整顺序(不算「最多几个」):固定了位置的排最前,其余按排序规则;all = 连现在不会出现的也排进来
   function slOrder(d, link, opts, all) {
@@ -1325,7 +1332,8 @@
   const SL_ST = { instock: 'In Stock', preorder: 'Pre Order', oos: 'Out of Stock' };
   const slCardHtml = (p, pos, why, pin, over) => {
     const id = numId(p.id);
-    return `<div class="slcard${pin ? ' is-pin' : ''}${why ? ' is-out' : ''}${over ? ' is-overlimit' : ''}" draggable="true" data-slid="${id}">
+    const dim = slQ && !String(p.title || '').toLowerCase().includes(slQ.toLowerCase());
+    return `<div class="slcard${pin ? ' is-pin' : ''}${why ? ' is-out' : ''}${over ? ' is-overlimit' : ''}${dim ? ' is-dim' : ''}" draggable="true" data-slid="${id}">
       ${slPos === id ? `<input class="slcard__pos" type="number" min="1" data-slposin="${id}" value="${pos || ''}" aria-label="移到第几位"/>`
         : `<button type="button" class="slcard__n" data-slpos="${id}" title="点一下,输入要移到第几位">${pos || '—'}</button>`}
       <span class="slcard__img" ${p.image ? `style="background-image:url('${esc(p.image)}')"` : ''}>${p.discount > 0 ? `<span class="slcard__off">${p.discount}% OFF</span>` : ''}</span>
@@ -1357,7 +1365,9 @@
       return (limit && pos === limit + 1 ? `<div class="slcut">—— 最多显示 ${limit} 个,下面的不显示(拖到这条线上面就会显示)——</div>` : '')
         + slCardHtml(p, pos, why, pinned.has(numId(p.id)), !!(limit && pos > limit));
     }).join('');
-    return `${head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button>')}
+    const bigBar = sl.big ? `<div class="slbig__bar"><button type="button" class="btn btn-sm" data-sl="big">← 返回链接设置</button><b>排序 · ${esc(v.name || c.title)}</b>
+        <input class="inp inp--sm" data-slq placeholder="找产品(不会打乱顺序)" value="${esc(slQ)}"/><button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button></div>` : '';
+    return `${bigBar || head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button> <button type="button" class="btn btn-sm btn-primary" data-sl="big">⤢ 放大排序</button>')}
       <p class="slsum">显示 <b>${view.list.length}</b> 个产品${view.total > view.list.length ? `(符合条件的有 ${view.total} 个,只取前 ${view.list.length} 个)` : ''} · 这个合集一共 ${d.total} 个产品,打折的 ${onSale} 个${d.truncated ? ' · ⚠️ 合集太大,前台只读前 1000 个' : ''}</p>
       ${view.pins.some((p) => !p.shown) && !all ? `<div class="note note--warn note--sm">${view.pins.filter((p) => !p.shown).map((p) => `固定了位置的「${esc(p.title)}」现在不会显示:${esc(p.why)}`).join('<br>')}${lost.length ? '<br>符合条件后(比如开始打折)会出现在你排的位置;不过在下面拖动别的产品时,它们会挪到固定部分的最后 —— 想一起排,勾上「也显示现在不会出现的产品」。' : ''}</div>` : ''}
       ${sl.products.length > 50 ? `<div class="note note--warn note--sm">前台最多固定前 50 个位置,你现在固定了 ${sl.products.length} 个 —— 第 51 个以后按「排序」排。</div>` : ''}
@@ -1367,7 +1377,7 @@
         ${sl.products.length ? `<span class="slord__sum">固定了前 <b>${sl.products.length}</b> 个位置</span><button type="button" class="btn btn-sm btn-ghost" data-slclear title="清掉手动排的顺序">全部按排序规则</button>` : ''}
       </div>
       <p class="muted pv-cap">拖动卡片调整顾客看到的顺序,或点左上角的序号输入第几位;红框 = 固定了位置。没动过的按左边的「排序」排,以后新打折的产品排在固定的后面。</p>
-      ${cards ? `<div class="slgrid">${cards}</div>${list.length > MAXC ? `<p class="muted">……还有 ${list.length - MAXC} 个,按排序规则排在后面</p>` : ''}` : '<p class="muted">按现在的设置一个产品都没有,顾客打开会看到「没有产品」。</p>'}
+      ${cards ? `<div class="slgrid${sl.big ? ' slgrid--big' : ''}">${cards}</div>${list.length > MAXC ? `<p class="muted">……还有 ${list.length - MAXC} 个,按排序规则排在后面</p>` : ''}` : '<p class="muted">按现在的设置一个产品都没有,顾客打开会看到「没有产品」。</p>'}
       <p class="muted pv-cap">数据来自前台(和顾客看到的一样),两分钟内不重复读;刚改过价格 / 库存就点「刷新」。</p>`;
   }
 
@@ -3239,7 +3249,7 @@
       ed.collections = []; ed.tags = [];
     }
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
-    sl = base.kind === 'salelink' ? { collection: base.collection || null, products: [...(base.products || [])], showAll: false } : null; slPos = null;
+    sl = base.kind === 'salelink' ? { collection: base.collection || null, products: [...(base.products || [])], showAll: false, big: false } : null; slPos = null; slQ = '';
     wx = base.kind === 'pin' ? { collection: base.collection || null, order: [...(base.products || [])], hidden: [...(base.hidden || [])],
       onlyN: base.onlyListed ? (base.products || []).length : null, fullOrder: !!base.fullOrder, init: { products: base.products || [], hidden: base.hidden || [] } } : null;
     wxAll = null; wxBase = []; wxQ = ''; wxPosEdit = null; wxBusy = false;
@@ -3563,6 +3573,12 @@
         if (e.target.closest('[data-slclear]')) { sl.products = []; redrawSl(); refreshPv(); }
       });
       pv.addEventListener('change', (e) => { if (e.target.matches?.('[data-slall]')) { sl.showAll = e.target.checked; refreshPv(); } });
+      pv.addEventListener('input', (e) => { // 找产品:只把不匹配的变淡、滚到第一个匹配的,不重画(输入框不丢焦点)
+        if (!e.target.matches?.('[data-slq]')) return;
+        slQ = e.target.value.trim(); const q = slQ.toLowerCase(); let first = null;
+        $$('#ed-pv .slcard').forEach((c) => { const hit = !q || c.querySelector('.slcard__t').textContent.toLowerCase().includes(q); c.classList.toggle('is-dim', !hit); if (q && hit && !first) first = c; });
+        if (first) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
       pv.addEventListener('keydown', (e) => {
         const id = e.target.dataset?.slposin; if (id == null) return;
         if (e.key === 'Enter') { e.preventDefault(); slGoPos(id, +e.target.value); }

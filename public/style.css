@@ -1291,6 +1291,22 @@ button.slcard__n:hover { background: var(--accent); }
 .slcut { grid-column: 1 / -1; text-align: center; font-size: 11.5px; color: #b45309; padding: 2px 0; }
 .slord { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 6px 0 2px; }
 .slord__sum { font-size: 12.5px; }
+/* 大图排序:藏起左边的设置,网格铺满(卡片和「合集排序」一样大) */
+.drawer__b--slsort { grid-template-columns: minmax(0, 1fr); }
+.drawer__b--slsort .drawer__form { display: none; }
+.drawer__b--slsort .drawer__pv { position: static; }
+.slbig__bar { position: sticky; top: -18px; z-index: 5; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -18px -18px 10px; padding: 12px 18px; background: var(--bg, #f6f6f7); border-bottom: 1px solid var(--border); }
+.slbig__bar .inp { width: 220px; margin-left: auto; }
+.slgrid--big { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.slgrid--big .slcard { border-radius: 12px; padding: 8px; gap: 6px; font-size: 13px; border-width: 1.5px; }
+.slgrid--big .slcard.is-pin { border: 2px solid #d10000; box-shadow: none; }
+.slgrid--big .slcard__img { border-radius: 8px; background-color: #f6f6f8; }
+.slgrid--big .slcard__n { top: 8px; left: 8px; min-width: 24px; height: 22px; border-radius: 11px; font-size: 12px; line-height: 22px; text-align: center; }
+.slgrid--big .slcard__off { font-size: 11.5px; padding: 2px 6px; right: 6px; top: 6px; }
+.slgrid--big .slcard__t { font-size: 13px; }
+.slgrid--big .slcard__s, .slgrid--big .slcard__why, .slgrid--big .slcard__acts button, .slgrid--big .slcard__acts a { font-size: 12px; }
+.slgrid--big .slcard__pos { top: 6px; left: 6px; width: 64px; height: 26px; font-size: 13px; }
+.slcard.is-dim { opacity: .22; }
 
 /* ---- 对照正式主题 ---- */
 .tsrow { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; }
