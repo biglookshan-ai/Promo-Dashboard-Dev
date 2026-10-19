@@ -5,7 +5,8 @@
 //   3. 粘贴的图片网址 → createImageFromUrl,让 Shopify 自己去抓
 import { graphql } from './shopify.js';
 
-const FILE_FIELDS = 'id fileStatus ... on MediaImage { image { url width height } }';
+// fileStatus 在 File 接口上;node(id:) 返回的是 Node,要用 ... on File 才查得到(直接写会报「Field 'fileStatus' doesn't exist on type 'Node'」)
+const FILE_FIELDS = 'id ... on File { fileStatus } ... on MediaImage { image { url width height } }';
 const pickImage = (n) => (n ? { id: n.id, url: n.image?.url || '', status: n.fileStatus } : null);
 
 export async function findImageByFilename(ctx, filename, gql = graphql) {
