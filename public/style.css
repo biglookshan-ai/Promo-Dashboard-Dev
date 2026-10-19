@@ -1278,9 +1278,9 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .pv-co { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 9px; max-width: 100%; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; line-height: 1.35; margin: 6px 0; }
 .pv-co--classic { border-radius: 4px; padding: 5px 10px; } .pv-co--minimal { padding: 0; }
 .pv-co--solo { padding: 3px 10px; font-size: 12px; } .pv-co--solo.pv-co--minimal { padding: 0; } /* 只有徽章 = 标签大小,和网站一致 */
-.pv-co > b.is-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 .pv-co > b { font-weight: 500; } /* 和网站标签同一套:字重 500、能点也不带下划线 */
-.pv-co > b.is-link { cursor: pointer; }
+.pv-co > b.is-link { cursor: pointer; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; } /* 和网站一致:能点的徽章带细下划线 */
 .pv-co__bar { width: 1px; height: 13px; background: currentColor; opacity: .35; }
 .pv-co__dot { opacity: .6; }
 .pv-co__cd { display: inline-flex; align-items: center; gap: 5px; }
