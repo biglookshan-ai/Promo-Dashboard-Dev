@@ -8,8 +8,8 @@
 import { itemStatus, campaignIndex } from './schedule-core.js';
 import { SLUG_RE, SALE_SORTS, VIEW_RE, AFTER_END, AFTER_URL_RE } from './sale-link.js';
 
-export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins', salelink: 'salelinks' };
-export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: '合集置顶清单', salelink: '促销链接' };
+export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins', salelink: 'salelinks', callout: 'callouts' };
+export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: '合集置顶清单', salelink: '促销链接', callout: '产品页推广' };
 export const MODULE_CN = { sale: '促销模块', feature: '推荐 / 新品模块' };
 export const ORDERABLE = ['banner', 'topbar'];
 
@@ -27,7 +27,9 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   // 活动的倒计时样式(产品页 / 产品卡 / 首页商品模块都用)
   'countdownStyle', 'countdownLabel', 'countdownBg', 'countdownColor',
   // 活动徽章点了去哪:'' = 自动(促销链接 / 参加的第一个合集);'none' = 不能点;/… 或 https://… = 指定链接
-  'badgeLink'];
+  'badgeLink',
+  // 产品页推广块:推广的产品、链接文字、品牌、排除的产品 / 标签(其余沿用 title / text / link / image / collections / tags / products / priority)
+  'promo', 'linkText', 'vendors', 'exProducts', 'exTags'];
 export const COUNTDOWN_STYLES = ['classic', 'pill', 'dark', 'minimal'];
 
 export class ActionError extends Error {}
@@ -35,7 +37,7 @@ const fail = (msg) => { throw new ActionError(msg); };
 
 export const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
   : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
-export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || []), ...(doc.salelinks || [])];
+export const allOf = (doc) => [...doc.campaigns, ...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || []), ...(doc.salelinks || []), ...(doc.callouts || [])];
 export const findItem = (doc, id) => allOf(doc).find((x) => x.id === id);
 const isApprover = (actor) => actor?.role === 'approver'; // 管理员(旧名单里的「审核人」)
 
@@ -87,6 +89,13 @@ export function validate(it) {
     if (it.view && !VIEW_RE.test(it.view)) return '页面模板的名字不对(主题里 collection.<名字> 的那个名字)';
     if (it.afterEnd && !AFTER_END.some(([k]) => k === it.afterEnd)) return '「结束后去哪」的选项不对';
     if (it.afterEnd === 'url' && !AFTER_URL_RE.test(String(it.afterEndUrl || '').trim())) return '结束后要跳到的链接不对:填站内路径(/collections/…)或 https:// 开头的完整链接';
+  }
+  if (it.kind === 'callout') {
+    if (!String(it.name || '').trim()) return '请填写名称';
+    if (!String(it.title || '').trim()) return '请填写标题(产品页上那一句)';
+    if (it.link && !AFTER_URL_RE.test(String(it.link).trim())) return '链接不对:填站内路径(/products/…)或 https:// 开头的完整链接';
+    if (!String(it.link || '').trim() && !it.promo?.id) return '请选推广的产品,或者填一个链接';
+    if (![it.collections, it.tags, it.vendors, it.products].some((x) => (x || []).length)) return '请选放在哪些产品上(合集 / 标签 / 品牌 / 指定产品至少一个)';
   }
   if (it.kind === 'campaign' && it.badgeLink && it.badgeLink !== 'none' && !AFTER_URL_RE.test(String(it.badgeLink).trim())) return '徽章链接不对:填站内路径(/collections/…)或 https:// 开头的完整链接';
   if (it.start != null && it.end != null && it.end <= it.start) return '结束时间要晚于开始时间';
@@ -317,4 +326,4 @@ function run(input, action, actor, now) {
 
 // 挂在活动下、跟随活动时间的内容
 export const followersOf = (doc, campaignId) =>
-  [...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || []), ...(doc.salelinks || [])].filter((x) => x.campaign === campaignId && x.start == null && x.end == null);
+  [...doc.banners, ...doc.topbar, ...doc.tbstyles, ...(doc.pmodules || []), ...(doc.pins || []), ...(doc.salelinks || []), ...(doc.callouts || [])].filter((x) => x.campaign === campaignId && x.start == null && x.end == null);

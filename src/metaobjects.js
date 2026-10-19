@@ -164,6 +164,30 @@ export const DEFINITIONS = [
       t('view', '页面模板', 'single_line_text_field', { description: '?view= 后面那段;产品卡上的活动徽章点了去这条链接时用' }),
     ],
   },
+  {
+    // 2026-10-19:产品页推广块(比如镜头页「把手动镜头变成索尼自动对焦 → Smart Fusion」),主题 snippets/cgp-pdp-callout.liquid 画
+    type: 'cgp_pdp_callout', name: 'CGP 产品页推广块', displayNameKey: 'name',
+    description: '网站更新中心:产品页价格下面的推广小卡片。放在哪些产品 = 合集 + 标签 + 品牌 + 指定产品(满足任一),再去掉排除的;一个产品只显示优先级最高的一个。由 app 管理,请勿在这里手改。',
+    fields: [
+      t('name', '名称(后台看的)', 'single_line_text_field', { required: true }),
+      t('title', '标题', 'single_line_text_field'),
+      t('text', '说明', 'single_line_text_field'),
+      t('link_text', '链接文字', 'single_line_text_field', { description: '空 = Learn more' }),
+      t('link', '链接', 'single_line_text_field', { description: '/… 或 https://…;空 = 推广产品的页面' }),
+      t('promo_product', '推广的产品', 'product_reference', { description: '图片默认用它的主图,链接默认去它的页面' }),
+      t('image', '图片', 'file_reference', { validations: [{ name: 'file_type_options', value: '["Image"]' }], description: '空 = 推广产品的主图' }),
+      t('collections', '放在这些合集的产品', 'list.collection_reference'),
+      t('tags', '放在带这些标签的产品', 'list.single_line_text_field'),
+      t('vendors', '放在这些品牌的产品', 'list.single_line_text_field', { description: '和产品的 Vendor 一字不差' }),
+      t('products', '指定产品', 'list.product_reference'),
+      t('exclude_products', '排除的产品', 'list.product_reference'),
+      t('exclude_tags', '排除带这些标签的产品', 'list.single_line_text_field'),
+      t('priority', '优先级', 'number_integer', { description: '一个产品同时符合几个推广块时,只显示数字大的那个' }),
+      t('campaign', '所属活动', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
+      t('starts_at', '开始(仅记录)', 'date_time'),
+      t('ends_at', '结束(仅记录)', 'date_time'),
+    ],
+  },
 ];
 
 // ---- 权限 ----
@@ -262,7 +286,7 @@ export async function setPublishStatus(ctx, id, status, gql = graphql) {
 }
 
 // ---- 把 app 里的一条内容写成 Shopify 条目(只写已批准的版本)----
-export const TYPE_OF = { campaign: 'cgp_campaign', banner: 'cgp_banner_slide', topbar: 'cgp_topbar_message', tbstyle: 'cgp_topbar_style', pmodule: 'cgp_product_module', pin: 'cgp_collection_pin', salelink: 'cgp_sale_link' };
+export const TYPE_OF = { campaign: 'cgp_campaign', banner: 'cgp_banner_slide', topbar: 'cgp_topbar_message', tbstyle: 'cgp_topbar_style', pmodule: 'cgp_product_module', pin: 'cgp_collection_pin', salelink: 'cgp_sale_link', callout: 'cgp_pdp_callout' };
 export const handleFor = (it) => `cgp-${String(it.id).toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
 export const toGid = (type, id) => (id == null ? null : String(id).startsWith('gid://') ? String(id) : `gid://shopify/${type}/${id}`);
 const iso = (ms) => (ms == null ? '' : new Date(ms).toISOString());
@@ -321,6 +345,15 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       limit: String(Math.max(0, Math.round(Number(it.limit) || 0))), sort: str(it.sort), title: str(it.heading),
       after_end: ['collection', 'url'].includes(it.afterEnd) ? it.afterEnd : '', after_end_url: it.afterEnd === 'url' ? str(it.afterEndUrl).trim() : '',
       view: str(it.view).trim(),
+    });
+  } else if (it.kind === 'callout') {
+    const gids = (arr, type) => list((arr || []).slice(0, 50).map((x) => toGid(type, x.id)).filter(Boolean));
+    Object.assign(f, {
+      name: str(it.name), title: str(it.title), text: str(it.text), link_text: str(it.linkText), link: str(it.link).trim(),
+      promo_product: toGid('Product', it.promo?.id) || '', image: str(it.imageId),
+      collections: gids(it.collections, 'Collection'), tags: list(it.tags || []), vendors: list(it.vendors || []),
+      products: gids(it.products, 'Product'), exclude_products: gids(it.exProducts, 'Product'), exclude_tags: list(it.exTags || []),
+      priority: str(it.priority ?? 0),
     });
   }
   if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });

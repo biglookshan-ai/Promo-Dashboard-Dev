@@ -36,6 +36,35 @@ export async function scopeCounts(ctx, { collections = [], tags = [], products =
   return out;
 }
 
+// 产品页推广块(2026-10-19):「放在哪些产品」命中多少个 + 前几个是谁(编辑器右边显示)
+//   条件 = (合集 OR 标签 OR 品牌 OR 指定产品) 去掉排除标签;排除的产品单独数一遍再减掉(不依赖 Shopify 认不认 -id:)
+//   和主题 snippets/cgp-pdp-callout.liquid 同一套判断
+export async function calloutScope(ctx, { collections = [], tags = [], vendors = [], products = [], exProducts = [], exTags = [] }, gql = graphql) {
+  const inc = [...collections.map((c) => `collection_id:${numId(c.id || c)}`), ...tags.map((t) => `tag:${q(t)}`),
+    ...vendors.map((v) => `vendor:${q(v)}`), ...products.map((p) => `id:${numId(p.id || p)}`)];
+  if (!inc.length) return { total: 0, sample: [], maybeAll: false };
+  const base = `(${inc.join(' OR ')})${exTags.map((t) => ` NOT tag:${q(t)}`).join('')}`;
+  const exIds = new Set(exProducts.map((p) => numId(p.id || p)).filter(Boolean));
+  const exQ = exIds.size ? `${base} (${[...exIds].map((id) => `id:${id}`).join(' OR ')})` : null;
+  const d = await gql(ctx, `query($q: String!, $ex: String!, $n: Int!, $hasEx: Boolean!) {
+      total: productsCount(query: $q, limit: null) { count }
+      all: productsCount(limit: null) { count }
+      ex: productsCount(query: $ex, limit: null) @include(if: $hasEx) { count }
+      products(first: $n, query: $q, sortKey: TITLE) { nodes { id title handle vendor status featuredMedia { preview { image { url } } } } } }`,
+  { q: base, ex: exQ || '', n: Math.min(50, 12 + exIds.size), hasEx: !!exQ });
+  const total = Math.max(0, d.total.count - (d.ex?.count || 0));
+  const sample = d.products.nodes.filter((p) => !exIds.has(numId(p.id))).slice(0, 12)
+    .map((p) => ({ id: p.id, title: p.title, handle: p.handle, vendor: p.vendor, status: p.status, image: p.featuredMedia?.preview?.image?.url || '' }));
+  // Shopify 不认识某个条件会静默忽略 → 返回全店数量;恰好等于全店时提示「以前台为准」
+  return { total, sample, maybeAll: d.total.count === d.all.count };
+}
+// 店里所有品牌(Vendor),推广块选品牌用
+export async function shopVendors(ctx, gql = graphql) {
+  const d = await gql(ctx, '{ productVendors(first: 250) { nodes } }').catch(() => null)
+    || await gql(ctx, '{ shop { productVendors(first: 250) { edges { node } } } }').then((x) => ({ productVendors: { nodes: x.shop.productVendors.edges.map((e) => e.node) } }));
+  return d.productVendors.nodes.filter(Boolean).sort((a, b) => a.localeCompare(b));
+}
+
 // 某个产品在哪些活动里(查产品用):按产品的合集 / 标签 / id 对照活动的三个条件
 export async function productCampaigns(ctx, handleOrId, campaigns, gql = graphql) {
   const byId = String(handleOrId).match(/^(gid:\/\/shopify\/Product\/)?\d+$/);

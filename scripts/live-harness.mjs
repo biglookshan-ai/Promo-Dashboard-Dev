@@ -214,6 +214,30 @@ function gql(query, v) {
       metafield: meta('cgp_sort_off'), sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new'),
       productsCount: { count: all.length }, products: { nodes, pageInfo: { hasNextPage: start + first < all.length, endCursor: String(start + first) } } } };
   }
+  // 产品页推广块:命中多少 + 前几个(假店没有品牌和合集成员:品牌 = 标题第一个词,合集 = 标题里带合集名的产品)
+  if (q.includes('sortKey: TITLE')) {
+    const vendorOf = (p) => p.title.split(' ')[0];
+    const unq = (x) => x.replace(/^'|'$/g, '').replace(/\\'/g, "'");
+    const parse = (query) => {
+      let rest = query; let only = null;
+      const m = rest.match(/ \((id:\d+(?: OR id:\d+)*)\)$/);
+      if (m) { only = new Set(m[1].split(' OR ').map((x) => x.slice(3))); rest = rest.slice(0, m.index); }
+      const [incS, ...nots] = rest.split(' NOT ');
+      const inc = incS.replace(/^\(/, '').replace(/\)$/, '').split(' OR ');
+      const exT = nots.map((n) => unq(n.replace(/^tag:/, '')));
+      return cat.products.filter((p) => (!only || only.has(String(p.id))) && !exT.some((t) => p.tags.includes(t)) && inc.some((part) => {
+        if (part.startsWith('tag:')) return p.tags.includes(unq(part.slice(4)));
+        if (part.startsWith('vendor:')) return vendorOf(p).toLowerCase() === unq(part.slice(7)).toLowerCase();
+        if (part.startsWith('id:')) return String(p.id) === part.slice(3);
+        if (part.startsWith('collection_id:')) { const c = cat.collections.find((x) => String(x.id) === part.split(':')[1]); return !!c && p.title.toLowerCase().includes(c.title.toLowerCase()); }
+        return false;
+      }));
+    };
+    const hits = parse(v.q).sort((a, b) => a.title.localeCompare(b.title));
+    return { total: { count: hits.length }, all: { count: cat.products.length }, ...(v.hasEx ? { ex: { count: parse(v.ex).length } } : {}),
+      products: { nodes: hits.slice(0, v.n).map((p) => ({ id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, vendor: vendorOf(p), status: 'ACTIVE', featuredMedia: { preview: { image: { url: p.image } } } })) } };
+  }
+  if (q.includes('productVendors')) return { productVendors: { nodes: [...new Set(cat.products.map((p) => p.title.split(' ')[0]))].sort() } };
   if (q.includes('productsCount')) {
     const out = {};
     const count = (query) => {

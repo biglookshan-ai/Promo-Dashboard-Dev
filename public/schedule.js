@@ -74,7 +74,7 @@
       tbstyles: seed.tbstyles.map((t) => conv(t, 'tbstyle')),
       pmodules: (seed.pmodules || []).map((m) => conv(m, 'pmodule')),
       campaigns: seed.campaigns.map((c) => conv(c, 'campaign')),
-      pins: [], salelinks: [],
+      pins: [], salelinks: [], callouts: [],
       log: seed.log.map((l) => ({ ...l, at: now() + l.at * DAY })),
       pendingOrder: null,
     };
@@ -89,12 +89,12 @@
       Object.assign(tagCounts, c.counts?.tags || {});
       Object.entries(c.counts?.collections || {}).forEach(([gid, x]) => { liveColCounts[gid] = x.count; });
     });
-    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], salelinks: v.salelinks || [], colState: v.colState || {}, sortFlags: v.sortFlags || {} };
+    return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], salelinks: v.salelinks || [], callouts: v.callouts || [], colState: v.colState || {}, sortFlags: v.sortFlags || {} };
   }
   async function load(force) {
     if (MODE === 'live') { S = await normalizeLive(await api('GET', '/api/schedule/state')); return; }
     const raw = !force && localStorage.getItem(DEMO_KEY);
-    if (raw) { S = JSON.parse(raw); S.pins ||= []; S.salelinks ||= []; return; }
+    if (raw) { S = JSON.parse(raw); S.pins ||= []; S.salelinks ||= []; S.callouts ||= []; return; }
     S = materialize(await getSeed());
     save();
   }
@@ -114,7 +114,7 @@
     try {
       if (MODE === 'demo') {
         const r = A.applyAction(S, action, me(), now());
-        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pins', 'salelinks', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k] ?? S[k]; });
+        ['banners', 'topbar', 'tbstyles', 'campaigns', 'pmodules', 'pins', 'salelinks', 'callouts', 'pendingOrder', 'log'].forEach((k) => { S[k] = r.doc[k] ?? S[k]; });
         save(); renderAll();
         return r;
       }
@@ -129,8 +129,8 @@
     }
   }
 
-  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || []), ...(S.pins || []), ...(S.salelinks || [])];
-  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []), pin: (S.pins ||= []), salelink: (S.salelinks ||= []) }[k]);
+  const all = () => [...S.campaigns, ...S.banners, ...S.topbar, ...S.tbstyles, ...(S.pmodules || []), ...(S.pins || []), ...(S.salelinks || []), ...(S.callouts || [])];
+  const listOf = (k) => ({ banner: S.banners, topbar: S.topbar, tbstyle: S.tbstyles, campaign: S.campaigns, pmodule: (S.pmodules ||= []), pin: (S.pins ||= []), salelink: (S.salelinks ||= []), callout: (S.callouts ||= []) }[k]);
   const byId = (id) => all().find((x) => x.id === id);
   const camp = (id) => S.campaigns.find((c) => c.id === id);
   // 「多人协作」(飞书登录、分工、我的工作、审核流程)开没开:服务器说了算(Railway 的 TEAM_MODE),演示数据里没有 = 关。
@@ -146,9 +146,9 @@
   const canOrd = (kind) => A.canOrder(me(), S, kind);
   const apprName = (it) => { const a = effAppr(it); return a ? who(a) : '管理员'; };
   // 能被选进分工的人:正式数据 = 看得到这类内容所在页面的成员;演示 = 名单里所有人
-  const PAGE_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pmodules', salelink: 'pmodules', campaign: 'campaigns' };
+  const PAGE_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pmodules', salelink: 'pmodules', callout: 'pmodules', campaign: 'campaigns' };
   const peopleFor = (kind) => S.staff.filter((u) => !u.pages || u.admin || u.pages.includes(PAGE_OF[kind]));
-  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', salelink: '促销链接', price: '改价' };
+  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', salelink: '促销链接', callout: '产品页推广', price: '改价' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
   const rid = (p) => p + Math.random().toString(36).slice(2, 9);
@@ -337,6 +337,7 @@
     if (x.kind === 'banner') return `<span class="mthumb mthumb--banner" style="background-image:url('${esc(thumb(x.image, 80))}')"></span>`;
     if (x.kind === 'tbstyle') return `<span class="mthumb mthumb--sw" style="background:${esc(x.bg)};color:${esc(x.color)}">${esc(x.decoLeft || 'Aa')}</span>`;
     if (x.kind === 'topbar') return `<span class="mthumb mthumb--tb">${esc(x.emoji || '📣')}</span>`;
+    if (x.kind === 'callout') return coImg(x) ? `<span class="mthumb mthumb--banner" style="background-image:url('${esc(thumb(coImg(x), 80))}')"></span>` : '<span class="mthumb mthumb--tb">💡</span>';
     if (x.kind === 'pmodule') { const c = pmColors(x); return `<span class="mthumb mthumb--sw" style="background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}" title="${(x.tabs || []).length} 个页签">${(x.tabs || []).length}</span>`; }
     const b = S.banners.find((y) => y.campaign === x.id && y.image);
     return b ? `<span class="mthumb mthumb--banner" style="background-image:url('${esc(thumb(b.image, 80))}')"></span>` : `<span class="mthumb mthumb--camp">${I.flag}</span>`;
@@ -900,7 +901,7 @@
   // 关联的飞书任务:链接 + 名字(任务状态在接好飞书任务权限后显示)
   const larkTaskGuid = (url) => (String(url).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0] || '';
   // 活动页:① 活动设置(时间 / 产品 / 产品上显示什么,一眼看清)→ ② 需要留意(有问题才出现)→ ③ 网站内容(按类型分组)→ ④ 改价 → ⑤ 飞书任务
-  const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接']];
+  const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接'], ['callout', '产品页推广']];
   const dhm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h ${m % 60}m`; };
   // 徽章点了去哪(活动的 badgeLink):'' 自动 / 'none' 不能点 / 链接
   const blMode = (v) => (v === 'none' ? 'none' : v ? 'url' : '');
@@ -954,7 +955,8 @@
     const needType = (flag, label) => `<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">${label}(要先补建内容类型)</button>`;
     const adds = add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页商品模块')
       + (MODE === 'live' && S.setup && S.setup.pinReady === false ? needType('pin', '合集置顶') : add('pin', '合集置顶'))
-      + (MODE === 'live' && S.setup && S.setup.slReady === false ? needType('salelink', '促销链接') : add('salelink', '促销链接'));
+      + (MODE === 'live' && S.setup && S.setup.slReady === false ? needType('salelink', '促销链接') : add('salelink', '促销链接'))
+      + (MODE === 'live' && S.setup && S.setup.coReady === false ? needType('callout', '产品页推广') : add('callout', '产品页推广'));
     const groups = HUB_KINDS.map(([k, label]) => { const list = mine(k); return list.length
       ? `<div class="hgrp"><div class="hgrp__h">${label}<span class="muted">${list.length}</span></div><div class="hrows">${list.map(hubRow).join('')}</div></div>` : ''; }).join('');
     const priceRows = plans.map((p) => `<button class="hrow" type="button" data-price="${p.id}"><span class="hrow__ico">${kindChip('price')}</span><span class="hrow__b"><span class="hrow__t">${esc(p.name)}</span>
@@ -1041,6 +1043,141 @@
     catch { el.focus(); el.select(); try { if (!document.execCommand('copy')) throw new Error(); toast('链接已复制'); } catch { toast('已选中链接,按 Ctrl/⌘ + C 复制', false); } }
   }
   document.addEventListener('click', (e) => { const c = e.target.closest?.('[data-copy]'); if (c) { e.preventDefault(); e.stopPropagation(); copyText(c.dataset.copy); } }, true);
+
+  // ================= 产品页推广块(2026-10-19 用户:镜头页自动加「变成索尼自动对焦 → Smart Fusion」,不用一个个产品去加) =================
+  // 放在哪些产品 = 合集 / 标签 / 品牌 / 指定产品(满足任一),再去掉排除的产品 / 标签;一个产品只显示优先级最高的一个。
+  // 主题 snippets/cgp-pdp-callout.liquid 画在产品页价格 / 活动徽章下面;「命中多少个」由服务器 /callout-scope 按同一套条件算
+  let coVendors = null; // 店里的品牌(打开编辑器时按需读一次)
+  let coRes = null; // 编辑器右边的命中结果:null 没算 / 'loading' / { total, sample, maybeAll } / { error }
+  const coLink = (x) => String(x.link || '').trim() || (x.promo?.handle ? `/products/${x.promo.handle}` : '');
+  const coImg = (x) => x.image || x.promo?.image || '';
+  const coHas = (x) => [x.collections, x.tags, x.vendors, x.products].some((a) => (a || []).length);
+  const frontUrl = (u) => (/^https:\/\//.test(u) ? u : `${S.store?.domain || ''}${u}`);
+  function coScopeText(x) {
+    const n = (a) => (a || []).length;
+    const inc = [n(x.collections) && `合集 ${x.collections.map((c) => c.title).join('、')}`, n(x.tags) && `标签 ${x.tags.join('、')}`,
+      n(x.vendors) && `品牌 ${x.vendors.join('、')}`, n(x.products) && `指定 ${n(x.products)} 个产品`].filter(Boolean);
+    const exc = [n(x.exProducts) && `${n(x.exProducts)} 个产品`, n(x.exTags) && `标签 ${x.exTags.join('、')}`].filter(Boolean);
+    return inc.length ? `${inc.join(' + ')}${exc.length ? `;排除 ${exc.join('、')}` : ''}` : '还没选放在哪些产品';
+  }
+  // 产品页上那张小卡片(和主题同一个样子;列表和预览共用)
+  const coCardHtml = (x) => `<span class="pv-callout">${coImg(x) ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(coImg(x), 160))}')"></span>` : ''}<span class="pv-callout__b">
+    <span class="pv-callout__t">${esc(x.title || '(还没写标题)')}</span>${x.text ? `<span class="pv-callout__s">${esc(x.text)}</span>` : ''}${coLink(x) ? `<span class="pv-callout__m">${esc(x.linkText || 'Learn more')} →</span>` : ''}</span></span>`;
+  function renderCallouts() {
+    const root = $('#co-root'); if (!root) return;
+    const need = MODE === 'live' && S.setup && S.setup.coReady === false;
+    const list = [...(S.callouts || [])].sort((a, b) => (RANK[status(a)] ?? 9) - (RANK[status(b)] ?? 9) || (b.priority ?? 0) - (a.priority ?? 0));
+    root.innerHTML = `
+      ${pageHead('产品页推广', '在一批产品的产品页(价格 / 活动徽章下面)自动加一张推广小卡片,比如镜头页「Turn this manual lens into a Sony autofocus lens → Smart Fusion」。按合集 / 标签 / 品牌 / 指定产品选放在哪里,以后新上架的产品进了合集就自动带上;一个产品同时符合几张时只显示优先级最高的那张。',
+        need ? '' : `<button class="btn btn-primary" data-new="callout" type="button">${I.plus}新建推广块</button>`)}
+      ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
+      ${alertsHtml(['callout'])}
+      ${list.length ? `<div class="sllist">${list.map((x) => `<div class="slrow corow">
+          <button class="slrow__main" type="button" data-open="${x.id}"><span class="slrow__h"><b>${esc(titleOf(x))}</b>${badge(x)}<span class="muted">优先级 ${esc(x.priority ?? 0)}</span></span>
+            <span class="muted">${I.clock}${esc(winText(x))}</span><span class="corow__scope">放在:${esc(coScopeText(x))}</span></button>
+          <span class="corow__pv">${coCardHtml(x)}</span>
+          <button class="btn btn-sm btn-ghost" data-dup="${x.id}" type="button" title="复制一份出来改">${I.copy}复制</button></div>`).join('')}</div>`
+        : (need ? '' : empty('还没有推广块。点右上角新建:写一句标题、选推广的产品(图片和链接自动用它的),再选放在哪些产品上。'))}`;
+  }
+  // ---- 编辑器 ----
+  const coPromoHtml = () => `${ed.promo ? `<span class="chip chip--p">${ed.promo.image ? `<img src="${esc(ed.promo.image)}" alt="">` : ''}<span class="chip__t">${esc(ed.promo.title)}</span>${linkPair('products', ed.promo)}<button type="button" class="chip__x" data-co="unpromo" aria-label="移除">${I.x}</button></span>` : '<span class="muted">还没选</span>'}
+    <button type="button" class="btn btn-sm" data-pick="promo">${ed.promo ? '换一个' : '选择产品'}</button>`;
+  const coImgSrcHtml = (v) => (v.image ? `<span class="coimg" style="background-image:url('${esc(thumb(v.image, 120))}')"></span><span>用上传的图</span><button type="button" class="btn btn-sm btn-ghost" data-co="noimg">改回用产品主图</button>`
+    : `<span class="muted">${v.promo ? '用推广产品的主图' : '没有图(选了推广的产品就用它的主图)'}</span>`);
+  function coFormHtml(it) {
+    const sec = (n, title, hint, body) => `<div class="edsec"><div class="edsec__h"><span class="edsec__n">${n}</span>${title}${hint ? `<em>${hint}</em>` : ''}</div>${body}</div>`;
+    return `
+      ${sec(1, '卡片内容', '产品页上显示的是英文,右边是预览', `
+        ${fld('名称(后台看的)', inp('name', it.name, '如:Smart Fusion · 手动镜头'))}
+        ${fld('标题', inp('title', it.title, 'Turn this manual lens into a Sony autofocus lens'), '加粗的那一句')}
+        ${fld('说明(可不填)', inp('text', it.text, 'With PDMOVIE SMART FUSION + LIVE AIR 4 SMART'), '灰色小字')}
+        <div class="fld"><span>推广的产品 <em>图片和链接默认用它的</em></span><div class="rowin" id="co-promo">${coPromoHtml()}</div></div>
+        <div class="fld2">${fld('链接文字', inp('linkText', it.linkText, 'Learn more'), '留空 = Learn more')}
+          ${fld('链接(可不填)', `<input class="inp mono" name="link" value="${esc(it.link || '')}" placeholder="留空 = 推广产品的页面"/>`, '要指定款式就粘贴完整链接,如 /products/pdmovie-smart-fusion?variant=…')}</div>
+        <div class="fld"><span>图片</span><div class="rowin coimgrow"><span class="rowin" id="co-imgsrc">${coImgSrcHtml(it)}</span>
+          ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>' : ''}</div>
+          <input type="hidden" name="image" value="${esc(it.image || '')}"/><input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
+          <em>一般不用传,直接用推广产品的主图;想换一张(比如镜头 + Smart Fusion 的合照)再上传,存进 Shopify 文件库。</em></div>`)}
+      ${sec(2, '放在哪些产品', '以后新上架的产品进了这些合集 / 带了这些标签,自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
+      ${sec(3, '什么时候显示', '', `${timeBlock(it, 'callout')}
+        ${fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '一个产品同时符合几张推广块时,只显示数字大的那张')}`)}`;
+  }
+  const coSumHtml = () => {
+    if (!coHas(ed)) return '还没选 —— 至少选一个合集 / 标签 / 品牌 / 产品';
+    if (MODE !== 'live') return '正式数据里会算出命中多少个产品,并在右边列出前几个';
+    if (coRes == null || coRes === 'loading') return '正在算命中多少个产品…';
+    if (coRes.error) return `没算出来:${esc(coRes.error)}`;
+    return `命中 <b>${coRes.total}</b> 个产品(已去掉排除的)${coRes.maybeAll ? ',和全店数量一样,可能有条件 Shopify 没认出来,以前台为准' : ''};右边列出前几个,点开可以去前台核对`;
+  };
+  function coScopeHtml() {
+    const rm = (key, i) => `<button type="button" class="chip__x" data-rm="${key}:${i}" aria-label="移除">${I.x}</button>`;
+    const pchip = (p, key, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span>${linkPair('products', p)}${rm(key, i)}</span>`;
+    const tchip = (t, key, i) => `<span class="chip"><span class="chip__t mono">${esc(t)}</span>${linkPair('tags', t)}${rm(key, i)}</span>`;
+    const row = (k, body) => `<div class="scope__row"><span class="scope__k">${k}</span><span class="chips">${body}</span></div>`;
+    return `
+      <div class="scope__lbl">满足任一就显示</div>
+      ${row('合集', `${ed.collections.map((c, i) => `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}${rm('collections', i)}</span>`).join('')}<button type="button" class="chipadd" data-pick="collections">${I.plus}选择合集</button>`)}
+      ${row('标签', `${ed.tags.map((t, i) => tchip(t, 'tags', i)).join('')}<input class="chipinp" id="sc-tag" list="sc-tags" placeholder="输入标签,回车添加"/>`)}
+      ${row('品牌', `${ed.vendors.map((v, i) => `<span class="chip"><span class="chip__t">${esc(v)}</span>${rm('vendors', i)}</span>`).join('')}<input class="chipinp" id="sc-vendor" list="sc-vendors" placeholder="输入或选品牌,回车添加"/>`)}
+      ${row('指定产品', `${ed.products.map((p, i) => pchip(p, 'products', i)).join('')}<button type="button" class="chipadd" data-pick="products">${I.plus}选择产品</button>`)}
+      <div class="scope__lbl">排除 <em>就算符合上面也不显示,比如自动对焦镜头、不兼容的型号</em></div>
+      ${row('排除产品', `${ed.exProducts.map((p, i) => pchip(p, 'exProducts', i)).join('')}<button type="button" class="chipadd" data-pick="exProducts">${I.plus}选择产品</button>`)}
+      ${row('排除标签', `${ed.exTags.map((t, i) => tchip(t, 'exTags', i)).join('')}<input class="chipinp" id="sc-extag" list="sc-tags" placeholder="输入标签,回车添加"/>`)}
+      <datalist id="sc-tags">${Object.entries(S.tagCounts).map(([t, n]) => `<option value="${esc(t)}">${n} 个产品</option>`).join('')}</datalist>
+      <datalist id="sc-vendors">${(coVendors || []).filter((v) => !ed.vendors.includes(v)).map((v) => `<option value="${esc(v)}"></option>`).join('')}</datalist>
+      <div class="scope__sum">${coSumHtml()}</div>`;
+  }
+  let coTimer = null;
+  function fetchCoScope() {
+    if (MODE !== 'live' || !ed) return;
+    clearTimeout(coTimer);
+    const mine = ed;
+    if (!coHas(mine)) { coRes = null; return; }
+    coRes = 'loading';
+    coTimer = setTimeout(async () => {
+      try {
+        const r = await api('POST', '/api/schedule/callout-scope', { collections: mine.collections, tags: mine.tags, vendors: mine.vendors, products: mine.products, exProducts: mine.exProducts, exTags: mine.exTags });
+        if (ed !== mine) return; coRes = r;
+      } catch (e) { if (ed !== mine) return; coRes = { error: e.message || String(e) }; }
+      const sum = $('#ed-scope .scope__sum'); if (sum) sum.innerHTML = coSumHtml();
+      $('#ed-form')?.dispatchEvent(new Event('change'));
+    }, 500);
+  }
+  async function coLoadVendors() {
+    if (coVendors) return;
+    try {
+      coVendors = MODE === 'live' ? (await api('GET', '/api/schedule/vendors')).vendors
+        : [...new Set((S.products || []).map((p) => p.vendor).filter(Boolean))].sort();
+      const dl = $('#sc-vendors'); if (dl && ed) dl.innerHTML = coVendors.filter((v) => !ed.vendors.includes(v)).map((v) => `<option value="${esc(v)}"></option>`).join('');
+    } catch (e) { console.warn('[vendors]', e); }
+  }
+  function coMatchHtml(v) {
+    const r = coRes && typeof coRes === 'object' && !coRes.error ? coRes : null;
+    if (!coHas(v)) return '<p class="muted">还没选放在哪些产品。</p>';
+    if (MODE !== 'live') return `<p class="muted">${esc(coScopeText(v))}。正式数据里这里会列出命中的产品(前 12 个)。</p>`;
+    if (!r) return `<p class="muted">${coRes?.error ? '没算出来:' + esc(coRes.error) : '正在算…'}</p>`;
+    if (!r.total) return '<p class="muted">一个产品都没命中,检查一下合集 / 标签 / 品牌。</p>';
+    return `<p class="muted pv-cap">共 <b>${r.total}</b> 个产品${r.total > r.sample.length ? `,下面是按名称排的前 ${r.sample.length} 个` : ''}${r.maybeAll ? '(和全店数量一样,可能有条件没被识别,以前台为准)' : ''}。推广的那个产品自己的页面不显示。</p>
+      <div class="comatch">${r.sample.map((p) => `<a class="comatch__i" href="${esc(frontUrl(`/products/${p.handle}`))}" target="_blank" rel="noopener" title="在前台打开看看">
+        <span class="comatch__img" ${p.image ? `style="background-image:url('${esc(thumb(p.image, 120))}')"` : ''}></span><span class="comatch__t">${esc(p.title)}</span>${p.status && p.status !== 'ACTIVE' ? `<span class="muted">${p.status === 'DRAFT' ? '草稿' : '已归档'}</span>` : ''}</a>`).join('')}</div>`;
+  }
+  function coPreviewHtml(v) {
+    const r = coRes && typeof coRes === 'object' && !coRes.error ? coRes : null;
+    const prod = r?.sample?.find((p) => p.id !== v.promo?.id) || v.products?.[0] || null;
+    return `<div class="pv-label">产品页上的样子 <em>价格 / 活动徽章下面</em></div>
+      <div class="pv-pdp">
+        <div class="pv-pdp__img" ${prod?.image ? `style="background-image:url('${esc(thumb(prod.image, 300))}')"` : ''}></div>
+        <div class="pv-pdp__info">
+          <div class="pv-pdp__title">${esc(prod?.title || 'DZOFILM VESPID 2 Prime 6 Lens Set')}</div>
+          <div class="pv-pdp__price">£4,099.00</div>
+          ${coCardHtml(v)}
+          <div class="pv-pdp__btn">Add to cart</div>
+        </div>
+      </div>
+      <p class="muted pv-cap">${coLink(v) ? `整张卡片可以点,去 <a class="lk mono" href="${esc(frontUrl(coLink(v)))}" target="_blank" rel="noopener">${esc(coLink(v))}</a>` : '还没有链接:选推广的产品,或者填一个链接'}</p>
+      <div class="pv-label">会显示在这些产品上</div>
+      ${coMatchHtml(v)}`;
+  }
 
   function renderSaleLinks() {
     const root = $('#sl-root'); if (!root) return;
@@ -1948,7 +2085,7 @@
 
   // ================= 设置 → 清理内容(一次删掉测试时建的内容;规则在 /lib/schedule-actions.js 的 purge)=================
   const cl = { q: '', sel: new Set(), sure: 0 };
-  const CL_KINDS = [['campaign', '活动'], ['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接']];
+  const CL_KINDS = [['campaign', '活动'], ['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接'], ['callout', '产品页推广']];
   const clFollowers = (c) => all().filter((x) => x.campaign === c.id && x.start == null && x.end == null);
   const clMatch = (x) => { const q = cl.q.trim().toLowerCase(); return !q || [titleOf(x), x.name, x.slug, x.collection?.title].some((v) => String(v || '').toLowerCase().includes(q)); };
   const clItems = () => all().filter((x) => !x.isDefault && clMatch(x));
@@ -2055,7 +2192,7 @@
         ${teamOn ? `<section class="panel">
           <div class="panel__h"><h3>默认审批人</h3><span class="muted">每类内容由谁审批</span></div>
           <p class="muted">一条内容没单独选审批人时,就由这里设的人审批;这里也没设 = 管理员审批。审批人自己提交的直接生效,轮播顺序也由他批。</p>
-          ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'salelink', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: '合集排序', salelink: '促销链接', campaign: '活动' })[k]}</span>
+          ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'salelink', 'callout', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: '合集排序', salelink: '促销链接', callout: '产品页推广', campaign: '活动' })[k]}</span>
             <select class="sel sel--sm" data-defappr="${k}" ${live && !isApprover() ? 'disabled' : ''}><option value="">管理员审批</option>${peopleFor(k).map((u) => `<option value="${esc(u.id)}" ${appr()[k] === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>`).join('')}
         </section>` : ''}
         <section class="panel">
@@ -2189,7 +2326,7 @@
 
   // ---- 店铺连接(真实接口):权限 / 4 个内容类型 / 定时器 ----
   // 只有在 Shopify 后台里打开才有 session token;本地预览会提示。
-  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: '合集置顶清单', cgp_sale_link: '促销链接' };
+  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: '合集置顶清单', cgp_sale_link: '促销链接', cgp_pdp_callout: '产品页推广块' };
   let connCache = null;
   async function renderConn(force) {
     const box = $('#st-conn'); if (!box) return;
@@ -2199,7 +2336,7 @@
       try {
         st = connCache = await api('GET', '/api/schedule/status');
         // 页面上只留一份连接状态:查到新的就同步给其他页(比如商品模块页的「缺类型」提示)
-        if (S.setup && (S.setup.pmReady !== st.pmReady || S.setup.ready !== st.ready || S.setup.pinReady !== st.pinReady)) { Object.assign(S.setup, { pmReady: st.pmReady, pinReady: st.pinReady, ready: st.ready, upgrade: st.upgrade }); renderPmodules(); if (cpHub) renderCampaigns(); }
+        if (S.setup && ['pmReady', 'ready', 'pinReady', 'slReady', 'coReady'].some((k) => S.setup[k] !== st[k])) { Object.assign(S.setup, { pmReady: st.pmReady, pinReady: st.pinReady, slReady: st.slReady, coReady: st.coReady, ready: st.ready, upgrade: st.upgrade }); renderPmodules(); renderSaleLinks(); renderCallouts(); if (cpHub) renderCampaigns(); }
       }
       catch (e) {
         box.innerHTML = `${head}<p class="muted">${/后台里打开/.test(e.message) ? '本地预览连不到店铺。在 Shopify 后台里打开这个 app,这里会显示权限、内容类型和定时器的真实状态。' : `读取失败:${esc(e.message)}`}</p>
@@ -2383,6 +2520,7 @@
         tabs: c && c.collections?.length ? [newTab({ title: 'Top Picks', collection: c.collections[0], onlyDiscounted: true, sortByDiscount: true, countdown: !!c.countdown })] : [newTab()],
         priority: 10, order: (S.pmodules || []).length, start: c ? null : dayStart(7), end: c ? null : dayStart(14) };
     }
+    if (kind === 'callout') return { ...baseIt, id: rid('co-'), name: '', title: '', text: '', linkText: '', link: '', promo: null, image: '', imageId: '', collections: [], tags: [], vendors: [], products: [], exProducts: [], exTags: [], priority: 10, start: null, end: null };
     if (kind === 'salelink') return { ...baseIt, id: rid('sl-'), name: '', slug: '', collection: null, products: [], inStock: false, minDiscount: null, limit: null, sort: '', heading: '', start: null, end: null };
     if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, countdown: false, badge: '', start: preset.campaign ? null : dayStart(1), end: preset.campaign ? null : dayStart(2) };
     return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
@@ -2674,6 +2812,7 @@
   function formHtml(it) {
     if (it.kind === 'pin') return wxFormHtml(it);
     if (it.kind === 'salelink') return slFormHtml(it);
+    if (it.kind === 'callout') return coFormHtml(it);
     if (it.kind === 'banner') {
       const seenImg = new Set();
       const imgs = S.banners.filter((b) => b.image && !seenImg.has(b.image) && seenImg.add(b.image)).slice(0, 40);
@@ -2783,6 +2922,7 @@
   function previewHtml(v) {
     if (v.kind === 'pin') return wxPreviewHtml(v);
     if (v.kind === 'salelink') return slPreviewHtml(v);
+    if (v.kind === 'callout') return coPreviewHtml(v);
     if (v.kind === 'pmodule') {
       return `<div class="pv-label">首页上的样子</div>${moduleHtml(v, { activeTab: pvTab })}
         <p class="muted pv-cap">点页签切换预览。${MODE === 'live' ? '产品是按这个页签的设置从店里取的前几个。' : '演示数据只画占位;正式数据里会显示这个页签真实会出现的产品。'}到时间后首页这个模块整套换成它,结束回到平时版本。</p>`;
@@ -2838,26 +2978,29 @@
 
   // 合集 / 产品选择器。在 Shopify 后台里打开时优先用 Shopify 自带的选择器(真实数据、可搜全店)
   async function pick(type) {
+    // type:collections / products / exProducts(推广块排除的产品)/ promo(推广块推广的那一个产品,单选)
+    const isProd = type !== 'collections'; const single = type === 'promo';
+    const cur = () => (single ? (ed.promo ? [ed.promo] : []) : ed[type]);
+    const put = (arr) => { if (single) { ed.promo = arr[arr.length - 1] || null; const el = $('#co-promo'); if (el) el.innerHTML = coPromoHtml(); $('#ed-form').dispatchEvent(new Event('change')); } else { ed[type] = arr; refreshScope(); } };
     if (window.shopify && typeof window.shopify.resourcePicker === 'function') {
       try {
         const sel = await window.shopify.resourcePicker({
-          type: type === 'products' ? 'product' : 'collection', multiple: true, action: 'select',
-          selectionIds: ed[type].filter((x) => String(x.id || '').startsWith('gid://')).map((x) => ({ id: x.id })),
+          type: isProd ? 'product' : 'collection', multiple: !single, action: 'select',
+          selectionIds: cur().filter((x) => String(x.id || '').startsWith('gid://')).map((x) => ({ id: x.id })),
         });
         if (!sel) return;
         const picked = sel.map((x) => ({ id: x.id, handle: x.handle, title: x.title, image: x.images?.[0]?.originalSrc || '', count: x.productsCount ?? null }));
-        ed[type] = [...ed[type].filter((x) => !String(x.id || '').startsWith('gid://')), ...picked];
-        return refreshScope();
+        return put(single ? picked : [...cur().filter((x) => !String(x.id || '').startsWith('gid://')), ...picked]);
       } catch (e) { /* 不在后台 / 没权限 → 用下面的演示选择器 */ }
     }
-    const src = type === 'products' ? S.products : S.collections;
-    const chosen = new Set(ed[type].map((x) => x.handle));
+    const src = isProd ? S.products : S.collections;
+    const chosen = new Set(cur().map((x) => x.handle));
     const box = document.createElement('div');
     box.className = 'picker';
     box.innerHTML = `<div class="picker__box">
-      <div class="picker__h"><b>选择${type === 'products' ? '产品' : '合集'}</b><input class="inp" placeholder="搜索" id="pk-q"/></div>
+      <div class="picker__h"><b>选择${isProd ? '产品' : '合集'}</b><input class="inp" placeholder="搜索" id="pk-q"/></div>
       <div class="picker__list" id="pk-list"></div>
-      <div class="picker__f"><span class="muted">演示:${type === 'products' ? '列表是店里标了 New Gear 的真实产品' : '列表是首页链接里出现过的真实合集,数字是前台能看到的产品数'}。在 Shopify 后台打开时,这里会换成 Shopify 自带的选择器,可以搜全店。</span>
+      <div class="picker__f"><span class="muted">演示:${isProd ? '列表是店里标了 New Gear 的真实产品' : '列表是首页链接里出现过的真实合集,数字是前台能看到的产品数'}。在 Shopify 后台打开时,这里会换成 Shopify 自带的选择器,可以搜全店。</span>
         <span class="picker__acts"><button class="btn btn-sm" data-pk="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-pk="ok" type="button">确定</button></span></div>
     </div>`;
     $('#drawer').appendChild(box);
@@ -2865,21 +3008,23 @@
       const q = $('#pk-q').value.trim().toLowerCase();
       $('#pk-list').innerHTML = src.filter((x) => !q || x.title.toLowerCase().includes(q) || x.handle.includes(q)).map((x) => `
         <label class="picker__row"><input type="checkbox" value="${esc(x.handle)}" ${chosen.has(x.handle) ? 'checked' : ''}/>
-          ${type === 'products' ? `<span class="picker__img" ${x.image ? `style="background-image:url('${esc(x.image)}')"` : ''}></span>` : ''}
+          ${isProd ? `<span class="picker__img" ${x.image ? `style="background-image:url('${esc(x.image)}')"` : ''}></span>` : ''}
           <span class="picker__t">${esc(x.title)}</span>
-          <span class="muted picker__m">${type === 'products' ? esc(x.handle) : `${nTxt(x.count)} 个产品`}</span></label>`).join('') || '<p class="muted">没有匹配的</p>';
+          <span class="muted picker__m">${isProd ? esc(x.handle) : `${nTxt(x.count)} 个产品`}</span></label>`).join('') || '<p class="muted">没有匹配的</p>';
     };
     list();
     $('#pk-q').addEventListener('input', list);
-    $('#pk-list').addEventListener('change', (e) => { if (e.target.checked) chosen.add(e.target.value); else chosen.delete(e.target.value); });
+    $('#pk-list').addEventListener('change', (e) => {
+      if (single && e.target.checked) { chosen.clear(); $$('#pk-list input').forEach((i) => { if (i !== e.target) i.checked = false; }); } // 单选
+      if (e.target.checked) chosen.add(e.target.value); else chosen.delete(e.target.value);
+    });
     box.addEventListener('click', (e) => {
       e.stopPropagation();
       const b = e.target.closest('[data-pk]'); if (!b && e.target !== box) return;
       if (b && b.dataset.pk === 'ok') {
-        const keepOld = ed[type].filter((x) => chosen.has(x.handle));
+        const keepOld = cur().filter((x) => chosen.has(x.handle));
         const added = src.filter((x) => chosen.has(x.handle) && !keepOld.some((o) => o.handle === x.handle));
-        ed[type] = [...keepOld, ...added];
-        refreshScope();
+        put([...keepOld, ...added]);
       }
       box.remove();
     });
@@ -2887,6 +3032,7 @@
   }
   function refreshScope(fromCounts) {
     const el = $('#ed-scope'); if (!el) return;
+    if (ed.co) { fetchCoScope(); el.innerHTML = coScopeHtml(); $('#ed-form').dispatchEvent(new Event('change')); return; } // 产品页推广块
     if (!fromCounts) delete ed.counts;
     el.innerHTML = scopeHtml(); $('#ed-form').dispatchEvent(new Event('change'));
     if (!fromCounts) fetchCounts();
@@ -2946,6 +3092,12 @@
       v.cc = cc.length ? cc : base.cc ? [] : undefined;
       v.due = fromInput($('#asg-due').value) ?? (base.due != null ? null : undefined);
     }
+    if (base.kind === 'callout') {
+      const slim = (p) => (p ? { id: p.id, handle: p.handle, title: p.title, image: p.image || '' } : null);
+      v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.vendors = [...ed.vendors];
+      v.products = ed.products.map(slim); v.exProducts = ed.exProducts.map(slim); v.exTags = [...ed.exTags]; v.promo = slim(ed.promo);
+      v.link = String(v.link || '').trim(); if (g('priority')) v.priority = +g('priority').value || 0;
+    }
     if (base.kind === 'salelink') {
       const num = (n) => { const x = Math.round(Number(g(n)?.value)); return x > 0 ? x : null; };
       v.collection = sl.collection; v.products = sl.products.map(({ id, handle, title, image }) => ({ id, handle, title, image }));
@@ -2984,11 +3136,11 @@
   //   字段原样带过来,换新 id、变成还没保存的新内容;后台用的名字加「(复制)」(顾客看得到的标题 / 公告文字不动)。
   //   平时版本复制出来是普通版本 → 给下周的时间段,免得一保存就把首页换掉;促销链接的后缀要唯一,清空让人重填。
   function dupItem(src) {
-    const prefix = { banner: 'b-', topbar: 't-', tbstyle: 's-', pmodule: 'pm-', pin: 'pin-', campaign: 'c-', salelink: 'sl-' }[src.kind] || 'x-';
+    const prefix = { banner: 'b-', topbar: 't-', tbstyle: 's-', pmodule: 'pm-', pin: 'pin-', campaign: 'c-', salelink: 'sl-', callout: 'co-' }[src.kind] || 'x-';
     const v = JSON.parse(JSON.stringify(src));
     for (const k of ['shopifyId', 'syncedStatus', 'syncedTabIds', 'syncError', 'pendingChange', 'rejectNote', 'lastReject', 'counts']) delete v[k];
     Object.assign(v, { id: rid(prefix), state: 'new', by: S.me, owner: S.me, paused: false, isDefault: false });
-    if (['pmodule', 'tbstyle', 'pin', 'campaign', 'salelink'].includes(v.kind)) v.name = `${v.name || ''}(复制)`;
+    if (['pmodule', 'tbstyle', 'pin', 'campaign', 'salelink', 'callout'].includes(v.kind)) v.name = `${v.name || ''}(复制)`;
     if (v.kind === 'pmodule') v.tabs = (v.tabs || []).map((t) => { const { shopifyId, ...rest } = t; return { ...rest, id: rid('tab-'), products: [...(t.products || [])] }; }); // eslint-disable-line no-unused-vars
     if (v.kind === 'salelink') { v.slug = ''; v.view = ''; }
     if (v.kind === 'banner') v.order = S.banners.length;
@@ -3004,7 +3156,9 @@
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
     // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
     const base = { ...it, ...(it.pendingChange && !canAppr(it) ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
-    ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])] };
+    ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])],
+      co: base.kind === 'callout', vendors: [...(base.vendors || [])], exProducts: [...(base.exProducts || [])], exTags: [...(base.exTags || [])], promo: base.promo || null };
+    coRes = null;
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
     sl = base.kind === 'salelink' ? { collection: base.collection || null, products: [...(base.products || [])] } : null;
     wx = base.kind === 'pin' ? { collection: base.collection || null, order: [...(base.products || [])], hidden: [...(base.hidden || [])],
@@ -3061,6 +3215,7 @@
     const refreshPv = () => {
       const v = readForm(base);
       $('#ed-pv').innerHTML = previewHtml(v);
+      if (v.kind === 'callout' && $('#co-imgsrc')) $('#co-imgsrc').innerHTML = coImgSrcHtml(v);
       if (v.kind === 'pmodule') loadTabPreview(v.tabs[pvTab], () => { if ($('#ed-pv') && edTabs) $('#ed-pv').innerHTML = previewHtml(readForm(base)); });
       // 代码框跟着色块走;正在输入的那个框只要和色块一致就不打断(别把用户敲到一半的写法改掉)
       $$('#ed-form .clr__hex').forEach((h) => { const c = h.closest('label')?.querySelector('input[type="color"]'); if (!c || (h === document.activeElement && normHex(h.value) === c.value)) return; h.value = c.value; h.classList.remove('is-bad'); });
@@ -3091,6 +3246,9 @@
       if ($('#cd-fg') && !(onlyUnset && (ed.cdFg ?? base.countdownColor))) $('#cd-fg').value = p.fg;
     };
     f.addEventListener('input', (e) => {
+      if (e.target.id === 'sc-vendor' && (e.inputType === 'insertReplacementText' || e.inputType == null) && (coVendors || []).includes(e.target.value) && !ed.vendors.includes(e.target.value)) { // 从下拉里点选的品牌直接加上
+        ed.vendors.push(e.target.value); refreshScope(); $('#sc-vendor')?.focus(); return;
+      }
       if (e.target.classList.contains('clr__hex')) { // 输入 / 粘贴颜色代码:认得出就同步到色块(走色块自己的流程:记录改动、刷新预览)
         const h = normHex(e.target.value); e.target.classList.toggle('is-bad', !h && !!e.target.value.trim());
         const c = e.target.closest('label')?.querySelector('input[type="color"]');
@@ -3224,6 +3382,7 @@
     };
     if (it.kind === 'pin' && wx.collection) loadWxAll(redrawWx); // 打开就去读这个合集现在的顺序
     if (it.kind === 'salelink') { redrawSl(); slLoad(refreshPv); slLoadTpl(); }
+    if (it.kind === 'callout') { refreshScope(); coLoadVendors(); }
     f.addEventListener('click', async (e) => {
       const lk = e.target.closest('[data-lk]');
       if (lk) {
@@ -3285,10 +3444,11 @@
     // 预览里点页签:切换预览的页签
     $('#ed-pv').addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (t && edTabs) { pvTab = +t.dataset.pmtab; refreshPv(); } });
     f.addEventListener('keydown', (e) => {
-      if (e.target.id !== 'sc-tag' || e.key !== 'Enter') return;
+      const key = { 'sc-tag': 'tags', 'sc-extag': 'exTags', 'sc-vendor': 'vendors' }[e.target.id]; // 推广块多了排除标签、品牌
+      if (!key || e.key !== 'Enter') return;
       e.preventDefault();
-      const t = e.target.value.trim();
-      if (t && !ed.tags.includes(t)) { ed.tags.push(t); refreshScope(); $('#sc-tag').focus(); } else e.target.value = '';
+      const t = e.target.value.trim(); const id = e.target.id;
+      if (t && !ed[key].includes(t)) { ed[key].push(t); refreshScope(); $('#' + id)?.focus(); } else e.target.value = '';
     });
     f.addEventListener('click', (e) => {
       if (e.target.classList?.contains('clr__hex')) { if (e.target.dataset.sel) { delete e.target.dataset.sel; e.target.select(); } return; } // 点进去先全选,方便复制
@@ -3336,6 +3496,12 @@
       }
       const rmb = e.target.closest('[data-rm]');
       if (rmb) { const [k, i] = rmb.dataset.rm.split(':'); ed[k].splice(+i, 1); refreshScope(); return; }
+      const co = e.target.closest('[data-co]');
+      if (co) { // 推广块:不要推广的产品 / 图片改回用产品主图
+        if (co.dataset.co === 'unpromo') { ed.promo = null; $('#co-promo').innerHTML = coPromoHtml(); }
+        if (co.dataset.co === 'noimg') { f.querySelector('[name="image"]').value = ''; f.querySelector('[name="imageId"]').value = ''; }
+        refreshPv(); return;
+      }
       const pk = e.target.closest('[data-pick]');
       if (pk) pick(pk.dataset.pick);
     });
@@ -3469,7 +3635,7 @@
   // ================= 全局 =================
   function renderAll() {
     applySiteStyle(); hidePop();
-    renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderSaleLinks(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
+    renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderSaleLinks(); renderCallouts(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
     if (isActive('history')) renderHistory();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     if (!team()) { // 多人协作关着:不显示「我的工作」;「审核」只在还有遗留的待审核时显示

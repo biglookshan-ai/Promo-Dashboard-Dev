@@ -8,7 +8,7 @@ import { schedulerInfo, logColReport } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
 import { uploadImage } from './files.js';
-import { scopeCounts, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
+import { scopeCounts, calloutScope, shopVendors, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 import { actorOf, pagesOf, isAdmin } from './members.js';
@@ -41,6 +41,7 @@ async function setupStatus(ctx) {
     pmReady: definitions.filter((d) => ['cgp_product_tab', 'cgp_product_module'].includes(d.type)).every((d) => d.exists),
     pinReady: definitions.filter((d) => d.type === 'cgp_collection_pin').every((d) => d.exists),
     slReady: definitions.filter((d) => d.type === 'cgp_sale_link').every((d) => d.exists),
+    coReady: definitions.filter((d) => d.type === 'cgp_pdp_callout').every((d) => d.exists),
     upgrade: definitions.filter((d) => !d.core && !d.exists).map((d) => d.type),
     // 已建好的类型后来加了字段:也算要补建(同一个按钮)
     fieldsMissing: definitions.flatMap((d) => (d.exists ? [...(d.missingFields || []), ...(d.staleFields || [])].map((k) => `${d.type}.${k}`) : [])),
@@ -81,7 +82,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
     staff: teamEnabled() ? (state.members || []).filter((m) => m.status === 'active').map((m) => ({ ...actorOf(m), avatar: m.avatar || '', admin: isAdmin(m), pages: pagesOf(state, m) })) : state.staff.map((u) => ({ ...u, role: 'approver' })),
     lark: teamEnabled(), // 页面按它显示 / 隐藏分工、我的工作、成员与角色
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
-    pins: state.pins || [], salelinks: state.salelinks || [],
+    pins: state.pins || [], salelinks: state.salelinks || [], callouts: state.callouts || [],
     // 哪些合集现在被真的改了顺序(含「暂停接管」);原始顺序快照留在服务器,不发给页面
     colState: Object.fromEntries(Object.entries(state.colState || {}).map(([k, c]) => [k,
       { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, at: c.at }])),
@@ -511,6 +512,9 @@ export function scheduleRouter() {
 
   // ---- 产品数 / 查产品 ----
   r.post('/counts', wrap(async (req) => scopeCounts(req.ctx, req.body || {})));
+  // 产品页推广块:按「放在哪些产品」算出命中多少个 + 前几个是谁(编辑器右边显示);品牌下拉用
+  r.post('/callout-scope', wrap(async (req) => calloutScope(req.ctx, req.body || {})));
+  r.get('/vendors', wrap(async (req) => ({ vendors: await shopVendors(req.ctx) })));
   r.get('/product', wrap(async (req) => {
     const q = String(req.query.q || '').trim().replace(/^https?:\/\/[^/]+\/products\//, '').split(/[?#/]/)[0];
     if (!q) throw new ActionError('请输入产品 handle、链接或 id');
