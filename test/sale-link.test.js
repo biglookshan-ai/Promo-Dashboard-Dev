@@ -94,3 +94,15 @@ test('结束后去哪:选项和链接格式校验;写进店铺的字段', async 
   const g = Object.fromEntries(fieldsFor({ ...base, afterEnd: 'collection', afterEndUrl: '/x' }).map((x) => [x.key, x.value]));
   assert.equal(g.after_end, 'collection'); assert.equal(g.after_end_url, '');
 });
+
+test('活动徽章链接:自动 / 不能点 / 指定链接的校验和写进店铺的值', async () => {
+  const { validate } = await import('../src/schedule-actions.js');
+  const { fieldsFor } = await import('../src/metaobjects.js');
+  const c = { kind: 'campaign', name: 'x', start: 1, end: 2, collections: [], tags: [], products: [] };
+  assert.equal(validate({ ...c, badgeLink: '' }), '');
+  assert.equal(validate({ ...c, badgeLink: 'none' }), '');
+  assert.equal(validate({ ...c, badgeLink: '/collections/dzofilm?view=bfcm-dzo' }), '');
+  assert.match(validate({ ...c, badgeLink: 'javascript:alert(1)' }), /徽章链接不对/);
+  const f = (v) => Object.fromEntries(fieldsFor({ ...c, badgeLink: v }).map((x) => [x.key, x.value])).badge_link;
+  assert.equal(f(''), ''); assert.equal(f('none'), 'none'); assert.equal(f(' /collections/x '), '/collections/x');
+});

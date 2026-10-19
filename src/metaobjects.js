@@ -35,6 +35,7 @@ export const DEFINITIONS = [
       t('countdown_label', '倒计时文案', 'single_line_text_field', { description: '空 = 样式默认的(如 Deal ends in)' }),
       t('countdown_bg', '倒计时底色', 'single_line_text_field', { description: '#rrggbb;空 = 样式默认' }),
       t('countdown_color', '倒计时文字颜色', 'single_line_text_field', { description: '#rrggbb;空 = 样式默认' }),
+      t('badge_link', '徽章点了去哪', 'single_line_text_field', { description: '空 = 自动(促销链接 / 参加的第一个合集);none = 不能点;/… 或 https://… = 指定链接' }),
     ],
   },
   {
@@ -279,6 +280,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       tags: list(it.tags || []),
       products: list((it.products || []).map((p) => toGid('Product', p.id)).filter(Boolean)),
       badge_text: str(it.badge), show_countdown: it.countdown ? 'true' : 'false', priority: str(it.priority ?? 0),
+      badge_link: it.badgeLink === 'none' ? 'none' : String(it.badgeLink || '').trim(),
       countdown_style: str(it.countdownStyle), countdown_label: str(it.countdownLabel), countdown_bg: hex(it.countdownBg), countdown_color: hex(it.countdownColor),
     });
   } else if (it.kind === 'banner') {

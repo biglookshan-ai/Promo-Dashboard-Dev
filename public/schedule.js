@@ -902,6 +902,10 @@
   // 活动页:① 活动设置(时间 / 产品 / 产品上显示什么,一眼看清)→ ② 需要留意(有问题才出现)→ ③ 网站内容(按类型分组)→ ④ 改价 → ⑤ 飞书任务
   const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接']];
   const dhm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h ${m % 60}m`; };
+  // 徽章点了去哪(活动的 badgeLink):'' 自动 / 'none' 不能点 / 链接
+  const blMode = (v) => (v === 'none' ? 'none' : v ? 'url' : '');
+  const BL_OPTS = [['', '自动(促销链接 / 参加的第一个合集)'], ['url', '指定链接'], ['none', '不能点']];
+  const blSelect = (v, attrs) => `<select class="sel sel--sm" ${attrs}>${BL_OPTS.map(([k, l]) => `<option value="${k}" ${blMode(v) === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   // 活动下的促销链接(2026-10-19 起自动算参加:主题判断产品出现在这个活动的某条进行中的促销链接里 → 显示徽章)
   const campLinks = (c) => (S.salelinks || []).filter((x) => x.campaign === c.id && x.collection?.id);
   function slCoverHtml(c) {
@@ -925,6 +929,8 @@
     // 常用设置直接在这里改,改了马上保存(2026-10-19 用户:要打开活动设置才看得到有没有开徽章 / 倒计时)
     const quick = `<div class="qset" data-qcamp="${c.id}">
       <label class="qset__r"><span>徽章文字</span><input class="inp inp--sm" data-q="badge" value="${esc(c.badge || '')}" placeholder="留空 = 不显示徽章" maxlength="40"/></label>
+      <div class="qset__r"><span>点了去</span>${blSelect(c.badgeLink, 'data-q="blmode"')}
+        <input class="inp inp--sm mono" data-q="blurl" value="${esc(blMode(c.badgeLink) === 'url' ? c.badgeLink : '')}" placeholder="/collections/dzofilm?view=bfcm-dzo" ${blMode(c.badgeLink) === 'url' ? '' : 'hidden'}/></div>
       <label class="qset__r qset__ck"><span>倒计时</span><span class="tgl tgl--sm"><input type="checkbox" data-q="countdown" ${c.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span class="muted">${c.countdown ? '开着' : '关着'}${c.countdown && w.end == null ? '(活动没有结束时间,不会显示)' : ''}</span></span></label>
       <div class="qset__r"><span>样式</span><div class="seg seg--sm">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-qsty="${k}" class="${cd.key === k ? 'is-active' : ''}">${x.name}</button>`).join('')}</div></div>
       <label class="qset__r"><span>优先级</span><input class="inp inp--sm inp--num" type="number" data-q="priority" value="${esc(c.priority ?? 0)}"/><span class="muted">同一产品在几个活动里时,大的显示</span></label>
@@ -1291,6 +1297,13 @@
     };
     box.querySelector('[data-q="badge"]').addEventListener('change', (e) => save({ badge: e.target.value.trim() }, e.target.value.trim() ? `徽章改成「${e.target.value.trim()}」` : '已关掉徽章'));
     box.querySelector('[data-q="badge"]').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+    const bm = box.querySelector('[data-q="blmode"]'), bu = box.querySelector('[data-q="blurl"]');
+    bm.addEventListener('change', () => {
+      if (bm.value === 'url') { bu.hidden = false; bu.focus(); return; } // 填好链接再保存
+      save({ badgeLink: bm.value === 'none' ? 'none' : '' }, bm.value === 'none' ? '徽章改成不能点' : '徽章链接改成自动');
+    });
+    bu.addEventListener('change', () => { const u = bu.value.trim(); if (u) save({ badgeLink: u }, `徽章点了去 ${u}`); });
+    bu.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
     box.querySelector('[data-q="countdown"]').addEventListener('change', (e) => save({ countdown: e.target.checked }, e.target.checked ? '已打开倒计时' : '已关掉倒计时'));
     box.querySelector('[data-q="priority"]').addEventListener('change', (e) => save({ priority: +e.target.value || 0 }, `优先级改成 ${+e.target.value || 0}`));
     box.querySelectorAll('[data-qsty]').forEach((b) => b.addEventListener('click', () => { if (!b.classList.contains('is-active')) save({ countdownStyle: b.dataset.qsty }, `样式改成「${CD_STY[b.dataset.qsty].name}」`); }));
@@ -2723,6 +2736,9 @@
         <p class="muted edsec__hint">点「后台↗ / 前台↗」可以核对具体是哪些产品。</p>`)}
       ${sec(3, '产品上显示什么', '产品页、搜索 / 合集页的产品卡、首页商品模块都按这里显示,右边是预览', `
         ${fld('徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'), '留空 = 不显示徽章')}
+        <div class="fld"><span>徽章点了去哪 <em>自动 = 去这个产品所在的促销链接(没有就去参加的第一个合集);想统一去一个页面(比如 DZOFILM 总促销页)就选「指定链接」</em></span>
+          <div class="rowin">${blSelect(it.badgeLink, 'name="badgeLinkMode" id="ed-blmode"')}
+          <input class="inp mono" name="badgeLinkUrl" id="ed-blurl" value="${esc(blMode(it.badgeLink) === 'url' ? it.badgeLink : '')}" placeholder="/collections/dzofilm?view=bfcm-dzo" ${blMode(it.badgeLink) === 'url' ? '' : 'hidden'}/></div></div>
         <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到活动结束,到期自动消失</span></span></label>
         <div class="fld"><span>样式 <em>徽章和倒计时一起用;挂在这个活动下的合集置顶清单(Flash)也一样</em></span>
           <div class="cdsty" id="ed-cdsty">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-cdsty="${k}" class="cdsty__i ${(it.countdownStyle || 'classic') === k ? 'is-active' : ''}">
@@ -2757,7 +2773,8 @@
     const c = cdOf(v);
     const sep = badge && timeId ? (c.key === 'minimal' ? '<span class="pv-co__dot">·</span>' : '<span class="pv-co__bar"></span>') : '';
     const cd = timeId ? `<span class="pv-co__cd">${c.key === 'pill' || c.key === 'dark' ? CLOCK : ''}<span class="pv-co__lbl">${esc(c.lbl)}</span> <b id="${timeId}">${esc(timeText)}</b></span>` : '';
-    return `<div class="pv-co pv-co--${c.key}${badge && timeId ? ' pv-co--both' : ''}${timeId ? '' : ' pv-co--solo'}" style="${c.key === 'minimal' ? '' : `background:${c.bg};`}color:${c.fg}">${badge ? `<b class="${v.collections?.length ? 'is-link' : ''}" title="${v.collections?.length ? `点了去合集 ${esc(v.collections[0].title || '')}` : ''}">${esc(badge)}</b>` : ''}${sep}${cd}</div>`;
+    return `<div class="pv-co pv-co--${c.key}${badge && timeId ? ' pv-co--both' : ''}${timeId ? '' : ' pv-co--solo'}" style="${c.key === 'minimal' ? '' : `background:${c.bg};`}color:${c.fg}">${badge ? (() => { const link = v.badgeLink === 'none' ? '' : v.badgeLink ? v.badgeLink : v.collections?.length ? `合集 ${v.collections[0].title || ''}` : (S.salelinks || []).some((x) => x.campaign === v.id) ? '这个产品所在的促销链接' : '';
+      return `<b class="${link ? 'is-link' : ''}" title="${link ? `点了去 ${esc(link)}` : '不能点'}">${esc(badge)}</b>`; })() : ''}${sep}${cd}</div>`;
   }
   function previewHtml(v) {
     if (v.kind === 'pin') return wxPreviewHtml(v);
@@ -2935,6 +2952,7 @@
       v.larkLinks = ed.larkLinks.map((l) => ({ url: l.url, label: l.label }));
       v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.products = [...ed.products];
       v.countdown = g('countdown').checked; v.priority = +g('priority').value || 0;
+      { const m = g('badgeLinkMode')?.value || ''; v.badgeLink = m === 'none' ? 'none' : m === 'url' ? String(g('badgeLinkUrl')?.value || '').trim() : ''; delete v.badgeLinkMode; delete v.badgeLinkUrl; }
       v.countdownStyle = ($('#ed-cdsty .is-active') || {}).dataset?.cdsty || '';
       if (v.countdownStyle === 'classic') v.countdownStyle = '';
       v.countdownBg = ed.cdBg ?? base.countdownBg ?? ''; v.countdownColor = ed.cdFg ?? base.countdownColor ?? '';
@@ -3168,6 +3186,7 @@
     f.addEventListener('change', (e) => {
       if (e.target.dataset?.tck) edTabs[+e.target.dataset.i][e.target.dataset.tck] = e.target.checked;
       if (e.target.name === 'afterEnd') { const u = $('#sl-afterurl'); if (u) { u.hidden = e.target.value !== 'url'; if (!u.hidden) u.focus(); } }
+      if (e.target.name === 'badgeLinkMode') { const u = $('#ed-blurl'); if (u) { u.hidden = e.target.value !== 'url'; if (!u.hidden) u.focus(); } }
       if (e.target.id === 'asg-approver' && !live) $('#drawer .drawer__acts').innerHTML = actsHtml(mayAppr(e.target.value)); // 换了审批人:能不能直接生效跟着变
       refreshPv();
     });

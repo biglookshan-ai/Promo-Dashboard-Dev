@@ -25,7 +25,9 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   // 促销链接(?onsale=<后缀>);置顶的产品用 products,合集用 collection
   'slug', 'inStock', 'minDiscount', 'limit', 'sort', 'heading', 'view', 'afterEnd', 'afterEndUrl',
   // 活动的倒计时样式(产品页 / 产品卡 / 首页商品模块都用)
-  'countdownStyle', 'countdownLabel', 'countdownBg', 'countdownColor'];
+  'countdownStyle', 'countdownLabel', 'countdownBg', 'countdownColor',
+  // 活动徽章点了去哪:'' = 自动(促销链接 / 参加的第一个合集);'none' = 不能点;/… 或 https://… = 指定链接
+  'badgeLink'];
 export const COUNTDOWN_STYLES = ['classic', 'pill', 'dark', 'minimal'];
 
 export class ActionError extends Error {}
@@ -86,6 +88,7 @@ export function validate(it) {
     if (it.afterEnd && !AFTER_END.some(([k]) => k === it.afterEnd)) return '「结束后去哪」的选项不对';
     if (it.afterEnd === 'url' && !AFTER_URL_RE.test(String(it.afterEndUrl || '').trim())) return '结束后要跳到的链接不对:填站内路径(/collections/…)或 https:// 开头的完整链接';
   }
+  if (it.kind === 'campaign' && it.badgeLink && it.badgeLink !== 'none' && !AFTER_URL_RE.test(String(it.badgeLink).trim())) return '徽章链接不对:填站内路径(/collections/…)或 https:// 开头的完整链接';
   if (it.start != null && it.end != null && it.end <= it.start) return '结束时间要晚于开始时间';
   return '';
 }
