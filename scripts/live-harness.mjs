@@ -214,30 +214,32 @@ function gql(query, v) {
       metafield: meta('cgp_sort_off'), sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new'),
       productsCount: { count: all.length }, products: { nodes, pageInfo: { hasNextPage: start + first < all.length, endCursor: String(start + first) } } } };
   }
-  // 产品页推广块:命中多少 + 前几个(假店没有品牌和合集成员:品牌 = 标题第一个词,合集 = 标题里带合集名的产品)
-  if (q.includes('sortKey: TITLE')) {
-    const vendorOf = (p) => p.title.split(' ')[0];
-    const unq = (x) => x.replace(/^'|'$/g, '').replace(/\\'/g, "'");
-    const parse = (query) => {
-      let rest = query; let only = null;
-      const m = rest.match(/ \((id:\d+(?: OR id:\d+)*)\)$/);
-      if (m) { only = new Set(m[1].split(' OR ').map((x) => x.slice(3))); rest = rest.slice(0, m.index); }
-      const [incS, ...nots] = rest.split(' NOT ');
-      const inc = incS.replace(/^\(/, '').replace(/\)$/, '').split(' OR ');
-      const exT = nots.map((n) => unq(n.replace(/^tag:/, '')));
-      return cat.products.filter((p) => (!only || only.has(String(p.id))) && !exT.some((t) => p.tags.includes(t)) && inc.some((part) => {
-        if (part.startsWith('tag:')) return p.tags.includes(unq(part.slice(4)));
-        if (part.startsWith('vendor:')) return vendorOf(p).toLowerCase() === unq(part.slice(7)).toLowerCase();
-        if (part.startsWith('id:')) return String(p.id) === part.slice(3);
-        if (part.startsWith('collection_id:')) { const c = cat.collections.find((x) => String(x.id) === part.split(':')[1]); return !!c && p.title.toLowerCase().includes(c.title.toLowerCase()); }
-        return false;
-      }));
+  // 产品页推广块:命中多少 + 前几个(假店没有品牌 / 类型 / 合集成员:品牌 = 标题第一个词,类型按标题猜,合集 = 标题里带合集名的产品)
+  const vendorOf = (p) => p.title.split(' ')[0];
+  const typeOf = (p) => (/\blens\b|prime|zoom/i.test(p.title) && !/case|filter|adapter/i.test(p.title) ? 'Cine Lens' : /case/i.test(p.title) ? 'Case' : 'Accessory');
+  if (/status:active/.test(v.q || '')) {
+    const unq = (x) => x.replace(/^'|'$/g, '').replace(/\\'/g, "'").toLowerCase();
+    const term = (p, t) => {
+      if (t === 'status:active') return true;
+      if (t.startsWith('vendor:')) return vendorOf(p).toLowerCase() === unq(t.slice(7));
+      if (t.startsWith('product_type:')) return typeOf(p).toLowerCase() === unq(t.slice(13));
+      if (t.startsWith('tag:')) return p.tags.some((x) => x.toLowerCase() === unq(t.slice(4)));
+      if (t.startsWith('id:')) return String(p.id) === t.slice(3);
+      if (t.startsWith('collection_id:')) { const c = cat.collections.find((x) => String(x.id) === t.slice(14)); return !!c && p.title.toLowerCase().includes(c.title.toLowerCase()); }
+      return false;
     };
-    const hits = parse(v.q).sort((a, b) => a.title.localeCompare(b.title));
-    return { total: { count: hits.length }, all: { count: cat.products.length }, ...(v.hasEx ? { ex: { count: parse(v.ex).length } } : {}),
-      products: { nodes: hits.slice(0, v.n).map((p) => ({ id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, vendor: vendorOf(p), status: 'ACTIVE', featuredMedia: { preview: { image: { url: p.image } } } })) } };
+    const match = (query) => cat.products.filter((p) => query.split(' AND ').every((c) => (c.startsWith('NOT ') ? !term(p, c.slice(4)) : c.startsWith('(') ? c.slice(1, -1).split(' OR ').some((t) => term(p, t)) : term(p, c))))
+      .sort((x, y) => x.title.localeCompare(y.title));
+    const node = (p) => ({ id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, status: 'ACTIVE' });
+    const hits = match(v.q);
+    if (q.includes('after: $after')) { const start = Number(v.after || 0); const page = hits.slice(start, start + 250);
+      return { products: { nodes: page.map(node), pageInfo: { hasNextPage: start + 250 < hits.length, endCursor: String(start + 250) } } }; }
+    if (q.includes('total: productsCount')) return { total: { count: hits.length }, ...(v.hasEx ? { ex: { count: match(v.ex).length } } : {}), products: { nodes: hits.slice(0, v.n).map(node) } };
+    return { productsCount: { count: hits.length } };
   }
-  if (q.includes('productVendors')) return { productVendors: { nodes: [...new Set(cat.products.map((p) => p.title.split(' ')[0]))].sort() } };
+  for (const [field, list] of [['productVendors', () => cat.products.map(vendorOf)], ['productTypes', () => cat.products.map(typeOf)], ['productTags', () => cat.products.flatMap((p) => p.tags)]]) {
+    if (q.includes(`${field}(first`)) return { [field]: { nodes: [...new Set(list())].sort(), pageInfo: { hasNextPage: false, endCursor: null } } };
+  }
   if (q.includes('productsCount')) {
     const out = {};
     const count = (query) => {

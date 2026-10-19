@@ -1045,20 +1045,29 @@
   document.addEventListener('click', (e) => { const c = e.target.closest?.('[data-copy]'); if (c) { e.preventDefault(); e.stopPropagation(); copyText(c.dataset.copy); } }, true);
 
   // ================= 产品页推广块(2026-10-19 用户:镜头页自动加「变成索尼自动对焦 → Smart Fusion」,不用一个个产品去加) =================
-  // 放在哪些产品 = 合集 / 标签 / 品牌 / 指定产品(满足任一),再去掉排除的产品 / 标签;一个产品只显示优先级最高的一个。
+  // 放在哪些产品 = 条件(品牌 / 产品类型 / 合集 / 标签 / 标题,可以叠加,每条都要满足;一条里几个值 = 任一个)
+  //   + 一定显示的产品,再去掉排除的产品;一个产品只显示优先级最高的一张。(2026-10-19 用户:要能叠加条件 / 排除条件)
   // 主题 snippets/cgp-pdp-callout.liquid 画在产品页价格 / 活动徽章下面;「命中多少个」由服务器 /callout-scope 按同一套条件算
-  let coVendors = null; // 店里的品牌(打开编辑器时按需读一次)
-  let coRes = null; // 编辑器右边的命中结果:null 没算 / 'loading' / { total, sample, maybeAll } / { error }
+  let coOpts = null; // 店里的品牌 / 产品类型 / 标签(条件的下拉,打开编辑器时按需读一次)
+  let coRes = null; // 编辑器右边的命中结果:null 没算 / 'loading' / { total, sample, capped } / { error }
+  const CO_F = { vendor: '品牌', type: '产品类型', collection: '合集', tag: '标签', title: '标题' };
+  const CO_OPS = { vendor: ['是', '不是'], type: ['是', '不是'], collection: ['在', '不在'], tag: ['带', '不带'], title: ['包含', '不包含'] };
   const coLink = (x) => String(x.link || '').trim() || (x.promo?.handle ? `/products/${x.promo.handle}` : '');
   const coImg = (x) => x.image || x.promo?.image || '';
-  const coHas = (x) => [x.collections, x.tags, x.vendors, x.products].some((a) => (a || []).length);
+  const coRulesOf = (x) => (x.rules || []).filter((r) => (r.v || []).length);
+  // 第一版的设置(合集 / 标签 / 品牌满足任一 + 排除标签)换成条件;打开编辑器时用
+  const coLegacyRules = (x) => [(x.vendors || []).length && { f: 'vendor', n: false, v: [...x.vendors] },
+    (x.collections || []).length && { f: 'collection', n: false, v: x.collections.map(({ id, handle, title }) => ({ id, handle, title })) },
+    (x.tags || []).length && { f: 'tag', n: false, v: [...x.tags] }, (x.exTags || []).length && { f: 'tag', n: true, v: [...x.exTags] }].filter(Boolean);
+  const coHas = (x) => coRulesOf(x).length > 0 || [x.products, x.collections, x.tags, x.vendors].some((a) => (a || []).length);
   const frontUrl = (u) => (/^https:\/\//.test(u) ? u : `${S.store?.domain || ''}${u}`);
+  const coRuleText = (r) => `${CO_F[r.f]}${CO_OPS[r.f][r.n ? 1 : 0]} ${r.v.map((v) => (r.f === 'collection' ? v.title : v)).join(' / ')}`;
   function coScopeText(x) {
-    const n = (a) => (a || []).length;
-    const inc = [n(x.collections) && `合集 ${x.collections.map((c) => c.title).join('、')}`, n(x.tags) && `标签 ${x.tags.join('、')}`,
-      n(x.vendors) && `品牌 ${x.vendors.join('、')}`, n(x.products) && `指定 ${n(x.products)} 个产品`].filter(Boolean);
-    const exc = [n(x.exProducts) && `${n(x.exProducts)} 个产品`, n(x.exTags) && `标签 ${x.exTags.join('、')}`].filter(Boolean);
-    return inc.length ? `${inc.join(' + ')}${exc.length ? `;排除 ${exc.join('、')}` : ''}` : '还没选放在哪些产品';
+    const n = (a) => (a || []).length; const rs = coRulesOf(x);
+    const main = rs.length ? rs.map(coRuleText).join(' 且 ')
+      : [n(x.collections) && `合集 ${x.collections.map((c) => c.title).join('、')}`, n(x.tags) && `标签 ${x.tags.join('、')}`, n(x.vendors) && `品牌 ${x.vendors.join('、')}`].filter(Boolean).join(' 或 ');
+    const extra = [n(x.products) && `一定显示 ${n(x.products)} 个产品`, n(x.exProducts) && `排除 ${n(x.exProducts)} 个产品`, !rs.length && n(x.exTags) && `排除标签 ${x.exTags.join('、')}`].filter(Boolean);
+    return [main, ...extra].filter(Boolean).join(';') || '还没设置放在哪些产品';
   }
   // 产品页上那张小卡片(和主题同一个样子;列表和预览共用)
   const coCardHtml = (x) => `<span class="pv-callout">${coImg(x) ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(coImg(x), 160))}')"></span>` : ''}<span class="pv-callout__b">
@@ -1098,33 +1107,45 @@
           ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>' : ''}</div>
           <input type="hidden" name="image" value="${esc(it.image || '')}"/><input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
           <em>一般不用传,直接用推广产品的主图;想换一张(比如镜头 + Smart Fusion 的合照)再上传,存进 Shopify 文件库。</em></div>`)}
-      ${sec(2, '放在哪些产品', '以后新上架的产品进了这些合集 / 带了这些标签,自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
+      ${sec(2, '放在哪些产品', '按条件自动算,以后新上架的产品符合条件就自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
       ${sec(3, '什么时候显示', '', `${timeBlock(it, 'callout')}
         ${fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '一个产品同时符合几张推广块时,只显示数字大的那张')}`)}`;
   }
   const coSumHtml = () => {
-    if (!coHas(ed)) return '还没选 —— 至少选一个合集 / 标签 / 品牌 / 产品';
+    if (!coHas(ed)) return '还没设置 —— 加一条条件,或者选几个一定显示的产品';
     if (MODE !== 'live') return '正式数据里会算出命中多少个产品,并在右边列出前几个';
     if (coRes == null || coRes === 'loading') return '正在算命中多少个产品…';
     if (coRes.error) return `没算出来:${esc(coRes.error)}`;
-    return `命中 <b>${coRes.total}</b> 个产品(已去掉排除的)${coRes.maybeAll ? ',和全店数量一样,可能有条件 Shopify 没认出来,以前台为准' : ''};右边列出前几个,点开可以去前台核对`;
+    return `命中 <b>${coRes.total}${coRes.capped ? '+' : ''}</b> 个上架中的产品${coRes.capped ? '(条件太宽,只看了前 2000 个)' : ''};右边列出前几个,点开可以去前台核对`;
+  };
+  const coDlHtml = () => {
+    const o = coOpts || { vendors: [], types: [], tags: Object.keys(S.tagCounts || {}) };
+    const dl = (id, arr) => `<datalist id="co-dl-${id}">${arr.map((v) => `<option value="${esc(v)}"></option>`).join('')}</datalist>`;
+    return dl('vendor', o.vendors) + dl('type', o.types) + dl('tag', o.tags);
   };
   function coScopeHtml() {
-    const rm = (key, i) => `<button type="button" class="chip__x" data-rm="${key}:${i}" aria-label="移除">${I.x}</button>`;
-    const pchip = (p, key, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span>${linkPair('products', p)}${rm(key, i)}</span>`;
-    const tchip = (t, key, i) => `<span class="chip"><span class="chip__t mono">${esc(t)}</span>${linkPair('tags', t)}${rm(key, i)}</span>`;
+    const x = (attr) => `<button type="button" class="chip__x" ${attr} aria-label="移除">${I.x}</button>`;
+    const pchip = (p, key, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span>${linkPair('products', p)}${x(`data-rm="${key}:${i}"`)}</span>`;
     const row = (k, body) => `<div class="scope__row"><span class="scope__k">${k}</span><span class="chips">${body}</span></div>`;
+    const rules = ed.rules.map((r, i) => {
+      const vals = r.v.map((v, j) => `<span class="chip"><span class="chip__t${r.f === 'tag' ? ' mono' : ''}">${esc(r.f === 'collection' ? v.title : v)}</span>${r.f === 'collection' ? linkPair('collections', v) : r.f === 'tag' ? linkPair('tags', v) : ''}${x(`data-rvx="${i}:${j}"`)}</span>`).join('');
+      const add = r.f === 'collection' ? `<button type="button" class="chipadd" data-pick="rule:${i}">${I.plus}选择合集</button>`
+        : `<input class="chipinp" data-rv="${i}" ${r.f === 'title' ? '' : `list="co-dl-${r.f}"`} placeholder="${r.f === 'title' ? '输入文字,回车添加' : `输入或选${CO_F[r.f]},回车添加`}"/>`;
+      return `<div class="corule${r.n ? ' is-not' : ''}">
+        <select class="sel sel--sm" data-rf="${i}" aria-label="条件类型">${Object.entries(CO_F).map(([k, l]) => `<option value="${k}" ${r.f === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select class="sel sel--sm" data-rn="${i}" aria-label="是 / 不是">${CO_OPS[r.f].map((l, k) => `<option value="${k}" ${+!!r.n === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <span class="chips">${vals}${add}</span>
+        <button type="button" class="btn btn-sm btn-ghost corule__x" data-rdel="${i}" title="删掉这条条件">${I.x}</button></div>`;
+    }).join('');
     return `
-      <div class="scope__lbl">满足任一就显示</div>
-      ${row('合集', `${ed.collections.map((c, i) => `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}${rm('collections', i)}</span>`).join('')}<button type="button" class="chipadd" data-pick="collections">${I.plus}选择合集</button>`)}
-      ${row('标签', `${ed.tags.map((t, i) => tchip(t, 'tags', i)).join('')}<input class="chipinp" id="sc-tag" list="sc-tags" placeholder="输入标签,回车添加"/>`)}
-      ${row('品牌', `${ed.vendors.map((v, i) => `<span class="chip"><span class="chip__t">${esc(v)}</span>${rm('vendors', i)}</span>`).join('')}<input class="chipinp" id="sc-vendor" list="sc-vendors" placeholder="输入或选品牌,回车添加"/>`)}
-      ${row('指定产品', `${ed.products.map((p, i) => pchip(p, 'products', i)).join('')}<button type="button" class="chipadd" data-pick="products">${I.plus}选择产品</button>`)}
-      <div class="scope__lbl">排除 <em>就算符合上面也不显示,比如自动对焦镜头、不兼容的型号</em></div>
+      <div class="scope__lbl">条件 <em>每一条都要满足;一条里填几个值 = 任一个就算(「不是 / 不包含」= 一个都不能有)</em></div>
+      ${rules || '<p class="muted">还没有条件。</p>'}
+      <div class="coadd"><span class="muted">加一条条件:</span>${Object.entries(CO_F).map(([k, l]) => `<button type="button" class="chipadd" data-radd="${k}">${I.plus}${l}</button>`).join('')}</div>
+      ${ed.coLegacy ? '<div class="note note--warn">这张是第一版的设置(合集 / 标签 / 品牌「满足任一」),已经换成上面的条件 —— 现在是「每条都要满足」,检查一下再保存。</div>' : ''}
+      <div class="scope__lbl">另外 <em>不看上面的条件</em></div>
+      ${row('一定显示', `${ed.products.map((p, i) => pchip(p, 'products', i)).join('')}<button type="button" class="chipadd" data-pick="products">${I.plus}选择产品</button>`)}
       ${row('排除产品', `${ed.exProducts.map((p, i) => pchip(p, 'exProducts', i)).join('')}<button type="button" class="chipadd" data-pick="exProducts">${I.plus}选择产品</button>`)}
-      ${row('排除标签', `${ed.exTags.map((t, i) => tchip(t, 'exTags', i)).join('')}<input class="chipinp" id="sc-extag" list="sc-tags" placeholder="输入标签,回车添加"/>`)}
-      <datalist id="sc-tags">${Object.entries(S.tagCounts).map(([t, n]) => `<option value="${esc(t)}">${n} 个产品</option>`).join('')}</datalist>
-      <datalist id="sc-vendors">${(coVendors || []).filter((v) => !ed.vendors.includes(v)).map((v) => `<option value="${esc(v)}"></option>`).join('')}</datalist>
+      <div id="co-dls">${coDlHtml()}</div>
       <div class="scope__sum">${coSumHtml()}</div>`;
   }
   let coTimer = null;
@@ -1136,28 +1157,36 @@
     coRes = 'loading';
     coTimer = setTimeout(async () => {
       try {
-        const r = await api('POST', '/api/schedule/callout-scope', { collections: mine.collections, tags: mine.tags, vendors: mine.vendors, products: mine.products, exProducts: mine.exProducts, exTags: mine.exTags });
+        const r = await api('POST', '/api/schedule/callout-scope', { rules: coRulesOf(mine), products: mine.products, exProducts: mine.exProducts, promo: mine.promo });
         if (ed !== mine) return; coRes = r;
       } catch (e) { if (ed !== mine) return; coRes = { error: e.message || String(e) }; }
       const sum = $('#ed-scope .scope__sum'); if (sum) sum.innerHTML = coSumHtml();
       $('#ed-form')?.dispatchEvent(new Event('change'));
     }, 500);
   }
-  async function coLoadVendors() {
-    if (coVendors) return;
+  async function coLoadOptions() {
+    if (coOpts) return;
     try {
-      coVendors = MODE === 'live' ? (await api('GET', '/api/schedule/vendors')).vendors
-        : [...new Set((S.products || []).map((p) => p.vendor).filter(Boolean))].sort();
-      const dl = $('#sc-vendors'); if (dl && ed) dl.innerHTML = coVendors.filter((v) => !ed.vendors.includes(v)).map((v) => `<option value="${esc(v)}"></option>`).join('');
-    } catch (e) { console.warn('[vendors]', e); }
+      coOpts = MODE === 'live' ? await api('GET', '/api/schedule/callout-options')
+        : { vendors: [...new Set((S.products || []).map((p) => p.vendor).filter(Boolean))].sort(), types: [], tags: Object.keys(S.tagCounts || {}) };
+      const box = $('#co-dls'); if (box) box.innerHTML = coDlHtml();
+    } catch (e) { console.warn('[callout-options]', e); }
+  }
+  // 推广块条件加一个值(去掉前后空格、不分大小写去重;品牌 / 类型 / 标签照店里的写法)
+  function coAddVal(i, raw) {
+    const r = ed?.rules[i]; const t = String(raw || '').trim(); if (!r || !t) return;
+    const known = ({ vendor: coOpts?.vendors, type: coOpts?.types, tag: coOpts?.tags }[r.f] || []).find((x) => x.toLowerCase() === t.toLowerCase());
+    const val = known || t;
+    if (!r.v.some((x) => String(x).toLowerCase() === val.toLowerCase())) r.v.push(val);
+    refreshScope(); $(`#ed-scope [data-rv="${i}"]`)?.focus();
   }
   function coMatchHtml(v) {
     const r = coRes && typeof coRes === 'object' && !coRes.error ? coRes : null;
-    if (!coHas(v)) return '<p class="muted">还没选放在哪些产品。</p>';
+    if (!coHas(v)) return '<p class="muted">还没设置放在哪些产品。</p>';
     if (MODE !== 'live') return `<p class="muted">${esc(coScopeText(v))}。正式数据里这里会列出命中的产品(前 12 个)。</p>`;
     if (!r) return `<p class="muted">${coRes?.error ? '没算出来:' + esc(coRes.error) : '正在算…'}</p>`;
-    if (!r.total) return '<p class="muted">一个产品都没命中,检查一下合集 / 标签 / 品牌。</p>';
-    return `<p class="muted pv-cap">共 <b>${r.total}</b> 个产品${r.total > r.sample.length ? `,下面是按名称排的前 ${r.sample.length} 个` : ''}${r.maybeAll ? '(和全店数量一样,可能有条件没被识别,以前台为准)' : ''}。推广的那个产品自己的页面不显示。</p>
+    if (!r.total) return '<p class="muted">一个上架中的产品都没命中,检查一下条件。</p>';
+    return `<p class="muted pv-cap">共 <b>${r.total}${r.capped ? '+' : ''}</b> 个上架中的产品${r.total > r.sample.length ? `,下面是按名称排的前 ${r.sample.length} 个` : ''}。推广的那个产品自己的页面不显示。</p>
       <div class="comatch">${r.sample.map((p) => `<a class="comatch__i" href="${esc(frontUrl(`/products/${p.handle}`))}" target="_blank" rel="noopener" title="在前台打开看看">
         <span class="comatch__img" ${p.image ? `style="background-image:url('${esc(thumb(p.image, 120))}')"` : ''}></span><span class="comatch__t">${esc(p.title)}</span>${p.status && p.status !== 'ACTIVE' ? `<span class="muted">${p.status === 'DRAFT' ? '草稿' : '已归档'}</span>` : ''}</a>`).join('')}</div>`;
   }
@@ -2520,7 +2549,7 @@
         tabs: c && c.collections?.length ? [newTab({ title: 'Top Picks', collection: c.collections[0], onlyDiscounted: true, sortByDiscount: true, countdown: !!c.countdown })] : [newTab()],
         priority: 10, order: (S.pmodules || []).length, start: c ? null : dayStart(7), end: c ? null : dayStart(14) };
     }
-    if (kind === 'callout') return { ...baseIt, id: rid('co-'), name: '', title: '', text: '', linkText: '', link: '', promo: null, image: '', imageId: '', collections: [], tags: [], vendors: [], products: [], exProducts: [], exTags: [], priority: 10, start: null, end: null };
+    if (kind === 'callout') return { ...baseIt, id: rid('co-'), name: '', title: '', text: '', linkText: '', link: '', promo: null, image: '', imageId: '', rules: [{ f: 'vendor', n: false, v: [] }], collections: [], tags: [], vendors: [], products: [], exProducts: [], exTags: [], priority: 10, start: null, end: null };
     if (kind === 'salelink') return { ...baseIt, id: rid('sl-'), name: '', slug: '', collection: null, products: [], inStock: false, minDiscount: null, limit: null, sort: '', heading: '', start: null, end: null };
     if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, countdown: false, badge: '', start: preset.campaign ? null : dayStart(1), end: preset.campaign ? null : dayStart(2) };
     return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
@@ -2979,9 +3008,15 @@
   // 合集 / 产品选择器。在 Shopify 后台里打开时优先用 Shopify 自带的选择器(真实数据、可搜全店)
   async function pick(type) {
     // type:collections / products / exProducts(推广块排除的产品)/ promo(推广块推广的那一个产品,单选)
-    const isProd = type !== 'collections'; const single = type === 'promo';
-    const cur = () => (single ? (ed.promo ? [ed.promo] : []) : ed[type]);
-    const put = (arr) => { if (single) { ed.promo = arr[arr.length - 1] || null; const el = $('#co-promo'); if (el) el.innerHTML = coPromoHtml(); $('#ed-form').dispatchEvent(new Event('change')); } else { ed[type] = arr; refreshScope(); } };
+    //   rule:<i>(推广块第 i 条「合集」条件的值)
+    const ri = type.startsWith('rule:') ? +type.slice(5) : null;
+    const isProd = type !== 'collections' && ri == null; const single = type === 'promo';
+    const cur = () => (single ? (ed.promo ? [ed.promo] : []) : ri != null ? ed.rules[ri].v : ed[type]);
+    const put = (arr) => {
+      if (single) { ed.promo = arr[arr.length - 1] || null; const el = $('#co-promo'); if (el) el.innerHTML = coPromoHtml(); $('#ed-form').dispatchEvent(new Event('change')); }
+      else if (ri != null) { ed.rules[ri].v = arr.map(({ id, handle, title }) => ({ id, handle, title })); refreshScope(); }
+      else { ed[type] = arr; refreshScope(); }
+    };
     if (window.shopify && typeof window.shopify.resourcePicker === 'function') {
       try {
         const sel = await window.shopify.resourcePicker({
@@ -3094,8 +3129,9 @@
     }
     if (base.kind === 'callout') {
       const slim = (p) => (p ? { id: p.id, handle: p.handle, title: p.title, image: p.image || '' } : null);
-      v.collections = [...ed.collections]; v.tags = [...ed.tags]; v.vendors = [...ed.vendors];
-      v.products = ed.products.map(slim); v.exProducts = ed.exProducts.map(slim); v.exTags = [...ed.exTags]; v.promo = slim(ed.promo);
+      v.rules = coRulesOf(ed).map((r) => ({ f: r.f, n: !!r.n, v: r.f === 'collection' ? r.v.map(({ id, handle, title }) => ({ id, handle, title })) : [...r.v] }));
+      v.collections = []; v.tags = []; v.vendors = []; v.exTags = []; // 第一版的字段不再用(条件都在 rules 里)
+      v.products = ed.products.map(slim); v.exProducts = ed.exProducts.map(slim); v.promo = slim(ed.promo);
       v.link = String(v.link || '').trim(); if (g('priority')) v.priority = +g('priority').value || 0;
     }
     if (base.kind === 'salelink') {
@@ -3157,8 +3193,14 @@
     // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
     const base = { ...it, ...(it.pendingChange && !canAppr(it) ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])],
-      co: base.kind === 'callout', vendors: [...(base.vendors || [])], exProducts: [...(base.exProducts || [])], exTags: [...(base.exTags || [])], promo: base.promo || null };
+      co: base.kind === 'callout', vendors: [], exProducts: [...(base.exProducts || [])], exTags: [], promo: base.promo || null, rules: [], coLegacy: false };
     coRes = null;
+    if (ed.co) { // 推广块:条件放 ed.rules;第一版「满足任一」的设置换成条件(两种以上一起用时提示一下)
+      const legacy = !coRulesOf(base).length && coLegacyRules(base).length;
+      ed.rules = (legacy ? coLegacyRules(base) : base.rules || []).map((r) => ({ f: r.f, n: !!r.n, v: [...(r.v || [])] }));
+      ed.coLegacy = !!legacy && coLegacyRules(base).filter((r) => !r.n).length > 1;
+      ed.collections = []; ed.tags = [];
+    }
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
     sl = base.kind === 'salelink' ? { collection: base.collection || null, products: [...(base.products || [])] } : null;
     wx = base.kind === 'pin' ? { collection: base.collection || null, order: [...(base.products || [])], hidden: [...(base.hidden || [])],
@@ -3246,8 +3288,9 @@
       if ($('#cd-fg') && !(onlyUnset && (ed.cdFg ?? base.countdownColor))) $('#cd-fg').value = p.fg;
     };
     f.addEventListener('input', (e) => {
-      if (e.target.id === 'sc-vendor' && (e.inputType === 'insertReplacementText' || e.inputType == null) && (coVendors || []).includes(e.target.value) && !ed.vendors.includes(e.target.value)) { // 从下拉里点选的品牌直接加上
-        ed.vendors.push(e.target.value); refreshScope(); $('#sc-vendor')?.focus(); return;
+      if (e.target.dataset?.rv != null && (e.inputType === 'insertReplacementText' || e.inputType == null)) { // 推广块条件:从下拉里点选的直接加上
+        const i = +e.target.dataset.rv; const r = ed.rules[i]; const val = e.target.value;
+        if (r && ({ vendor: coOpts?.vendors, type: coOpts?.types, tag: coOpts?.tags }[r.f] || []).includes(val)) { coAddVal(i, val); return; }
       }
       if (e.target.classList.contains('clr__hex')) { // 输入 / 粘贴颜色代码:认得出就同步到色块(走色块自己的流程:记录改动、刷新预览)
         const h = normHex(e.target.value); e.target.classList.toggle('is-bad', !h && !!e.target.value.trim());
@@ -3299,6 +3342,11 @@
       if (!e.target.classList.contains('clr__hex')) return;
       const c = e.target.closest('label')?.querySelector('input[type="color"]');
       e.target.value = normHex(e.target.value) || c?.value || ''; e.target.classList.remove('is-bad');
+    });
+    f.addEventListener('change', (e) => { // 推广块条件:换条件类型(值清空,类型不同值也不同)/ 换「是 / 不是」
+      const d = e.target.dataset || {};
+      if (d.rf != null) { const r = ed.rules[+d.rf]; if (r.f !== e.target.value) { r.f = e.target.value; r.v = []; } refreshScope(); $(`#ed-scope [data-rv="${d.rf}"]`)?.focus(); }
+      if (d.rn != null) { ed.rules[+d.rn].n = e.target.value === '1'; refreshScope(); }
     });
     f.addEventListener('focusin', (e) => { if (e.target.classList?.contains('clr__hex')) e.target.dataset.sel = '1'; });
     f.addEventListener('change', (e) => {
@@ -3382,7 +3430,7 @@
     };
     if (it.kind === 'pin' && wx.collection) loadWxAll(redrawWx); // 打开就去读这个合集现在的顺序
     if (it.kind === 'salelink') { redrawSl(); slLoad(refreshPv); slLoadTpl(); }
-    if (it.kind === 'callout') { refreshScope(); coLoadVendors(); }
+    if (it.kind === 'callout') { refreshScope(); coLoadOptions(); }
     f.addEventListener('click', async (e) => {
       const lk = e.target.closest('[data-lk]');
       if (lk) {
@@ -3444,7 +3492,8 @@
     // 预览里点页签:切换预览的页签
     $('#ed-pv').addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (t && edTabs) { pvTab = +t.dataset.pmtab; refreshPv(); } });
     f.addEventListener('keydown', (e) => {
-      const key = { 'sc-tag': 'tags', 'sc-extag': 'exTags', 'sc-vendor': 'vendors' }[e.target.id]; // 推广块多了排除标签、品牌
+      if (e.target.dataset?.rv != null && e.key === 'Enter') { e.preventDefault(); coAddVal(+e.target.dataset.rv, e.target.value); return; } // 推广块条件
+      const key = { 'sc-tag': 'tags' }[e.target.id];
       if (!key || e.key !== 'Enter') return;
       e.preventDefault();
       const t = e.target.value.trim(); const id = e.target.id;
@@ -3496,6 +3545,16 @@
       }
       const rmb = e.target.closest('[data-rm]');
       if (rmb) { const [k, i] = rmb.dataset.rm.split(':'); ed[k].splice(+i, 1); refreshScope(); return; }
+      const rvx = e.target.closest('[data-rvx]'); // 推广块条件:删一个值 / 删一条 / 加一条
+      if (rvx) { const [i, j] = rvx.dataset.rvx.split(':').map(Number); ed.rules[i].v.splice(j, 1); refreshScope(); return; }
+      const rdel = e.target.closest('[data-rdel]');
+      if (rdel) { ed.rules.splice(+rdel.dataset.rdel, 1); refreshScope(); return; }
+      const radd = e.target.closest('[data-radd]');
+      if (radd) {
+        ed.rules.push({ f: radd.dataset.radd, n: false, v: [] }); refreshScope();
+        const i = ed.rules.length - 1; if (radd.dataset.radd === 'collection') pick(`rule:${i}`); else $(`#ed-scope [data-rv="${i}"]`)?.focus();
+        return;
+      }
       const co = e.target.closest('[data-co]');
       if (co) { // 推广块:不要推广的产品 / 图片改回用产品主图
         if (co.dataset.co === 'unpromo') { ed.promo = null; $('#co-promo').innerHTML = coPromoHtml(); }

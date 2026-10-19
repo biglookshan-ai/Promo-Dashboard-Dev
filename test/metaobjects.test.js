@@ -50,7 +50,7 @@ test('已存在的不重复建(可以重复点按钮)', async () => {
 test('字段类型都是合法的 Shopify 类型', () => {
   const ok = new Set(['single_line_text_field', 'multi_line_text_field', 'date_time', 'boolean', 'number_integer', 'color',
     'file_reference', 'metaobject_reference', 'collection_reference', 'product_reference', 'list.collection_reference', 'list.product_reference',
-    'list.single_line_text_field', 'list.metaobject_reference']);
+    'list.single_line_text_field', 'list.metaobject_reference', 'json']);
   for (const def of DEFINITIONS) for (const f of def.fields) assert.ok(ok.has(f.type), `${def.type}.${f.key}: ${f.type}`);
 });
 

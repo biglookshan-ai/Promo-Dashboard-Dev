@@ -167,7 +167,7 @@ export const DEFINITIONS = [
   {
     // 2026-10-19:产品页推广块(比如镜头页「把手动镜头变成索尼自动对焦 → Smart Fusion」),主题 snippets/cgp-pdp-callout.liquid 画
     type: 'cgp_pdp_callout', name: 'CGP 产品页推广块', displayNameKey: 'name',
-    description: '网站更新中心:产品页价格下面的推广小卡片。放在哪些产品 = 合集 + 标签 + 品牌 + 指定产品(满足任一),再去掉排除的;一个产品只显示优先级最高的一个。由 app 管理,请勿在这里手改。',
+    description: '网站更新中心:产品页价格下面的推广小卡片。放在哪些产品 = 条件(rules,同时满足)+ 一定显示的产品,再去掉排除的;一个产品只显示优先级最高的一个。由 app 管理,请勿在这里手改。',
     fields: [
       t('name', '名称(后台看的)', 'single_line_text_field', { required: true }),
       t('title', '标题', 'single_line_text_field'),
@@ -176,12 +176,14 @@ export const DEFINITIONS = [
       t('link', '链接', 'single_line_text_field', { description: '/… 或 https://…;空 = 推广产品的页面' }),
       t('promo_product', '推广的产品', 'product_reference', { description: '图片默认用它的主图,链接默认去它的页面' }),
       t('image', '图片', 'file_reference', { validations: [{ name: 'file_type_options', value: '["Image"]' }], description: '空 = 推广产品的主图' }),
-      t('collections', '放在这些合集的产品', 'list.collection_reference'),
-      t('tags', '放在带这些标签的产品', 'list.single_line_text_field'),
-      t('vendors', '放在这些品牌的产品', 'list.single_line_text_field', { description: '和产品的 Vendor 一字不差' }),
-      t('products', '指定产品', 'list.product_reference'),
+      // 2026-10-19 起用 rules(条件可以叠加);下面三个是第一版「满足任一」的旧字段,rules 为空时主题才看它们
+      t('rules', '条件', 'json', { description: '[{f: vendor/type/collection/tag/title, n: 取反, v: [值]}],同时满足;一行多个值 = 任一个' }),
+      t('collections', '(旧)放在这些合集的产品', 'list.collection_reference'),
+      t('tags', '(旧)放在带这些标签的产品', 'list.single_line_text_field'),
+      t('vendors', '(旧)放在这些品牌的产品', 'list.single_line_text_field'),
+      t('products', '一定显示的产品', 'list.product_reference'),
       t('exclude_products', '排除的产品', 'list.product_reference'),
-      t('exclude_tags', '排除带这些标签的产品', 'list.single_line_text_field'),
+      t('exclude_tags', '(旧)排除带这些标签的产品', 'list.single_line_text_field'),
       t('priority', '优先级', 'number_integer', { description: '一个产品同时符合几个推广块时,只显示数字大的那个' }),
       t('campaign', '所属活动', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
       t('starts_at', '开始(仅记录)', 'date_time'),
@@ -293,6 +295,9 @@ const iso = (ms) => (ms == null ? '' : new Date(ms).toISOString());
 const str = (v) => (v == null ? '' : String(v));
 const list = (arr) => (arr && arr.length ? JSON.stringify(arr) : '');
 const hex = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '');
+// 推广块条件写进店里的样子(主题 cgp-pdp-callout.liquid 读):合集只留数字 id / handle / 名字
+const coRulesOut = (rules) => (Array.isArray(rules) ? rules : []).filter((r) => r && Array.isArray(r.v) && r.v.length)
+  .map((r) => ({ f: r.f, n: !!r.n, v: r.f === 'collection' ? r.v.map((c) => ({ id: Number(String(c.id).split('/').pop()), handle: c.handle || '', title: c.title || '' })) : r.v.map(String) }));
 
 // win = 有效时间窗(跟随活动的已换算成活动的时间),campaignGid = 所属活动的 Shopify id(没有就空)
 export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaignGid = '', tabGids = [] } = {}) {
@@ -351,6 +356,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
     Object.assign(f, {
       name: str(it.name), title: str(it.title), text: str(it.text), link_text: str(it.linkText), link: str(it.link).trim(),
       promo_product: toGid('Product', it.promo?.id) || '', image: str(it.imageId),
+      rules: JSON.stringify(coRulesOut(it.rules)),
       collections: gids(it.collections, 'Collection'), tags: list(it.tags || []), vendors: list(it.vendors || []),
       products: gids(it.products, 'Product'), exclude_products: gids(it.exProducts, 'Product'), exclude_tags: list(it.exTags || []),
       priority: str(it.priority ?? 0),

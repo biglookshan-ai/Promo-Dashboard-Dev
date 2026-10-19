@@ -1242,6 +1242,12 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .corow__pv { flex: 0 1 340px; min-width: 240px; display: flex; }
 .corow__pv .pv-callout { flex: 1; }
 #co-promo .chip { min-width: 0; }
+.corule { display: flex; align-items: flex-start; gap: 6px; padding: 6px 6px 6px 8px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.corule.is-not { border-color: #f1caca; background: #fff8f8; }
+.corule > .sel { flex: 0 0 auto; }
+.corule .chips { flex: 1; min-width: 0; padding-top: 2px; }
+.corule__x { flex: 0 0 auto; padding: 4px 6px; }
+.coadd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 12px; }
 #co-promo .btn { flex-shrink: 0; white-space: nowrap; }
 .scope__lbl { font-size: 12.5px; font-weight: 600; margin: 4px 0 2px; }
 .scope__lbl em { font-weight: 400; font-style: normal; color: var(--text-3); margin-left: 6px; }

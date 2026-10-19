@@ -37,32 +37,86 @@ export async function scopeCounts(ctx, { collections = [], tags = [], products =
 }
 
 // 产品页推广块(2026-10-19):「放在哪些产品」命中多少个 + 前几个是谁(编辑器右边显示)
-//   条件 = (合集 OR 标签 OR 品牌 OR 指定产品) 去掉排除标签;排除的产品单独数一遍再减掉(不依赖 Shopify 认不认 -id:)
-//   和主题 snippets/cgp-pdp-callout.liquid 同一套判断
-export async function calloutScope(ctx, { collections = [], tags = [], vendors = [], products = [], exProducts = [], exTags = [] }, gql = graphql) {
-  const inc = [...collections.map((c) => `collection_id:${numId(c.id || c)}`), ...tags.map((t) => `tag:${q(t)}`),
-    ...vendors.map((v) => `vendor:${q(v)}`), ...products.map((p) => `id:${numId(p.id || p)}`)];
-  if (!inc.length) return { total: 0, sample: [], maybeAll: false };
-  const base = `(${inc.join(' OR ')})${exTags.map((t) => ` NOT tag:${q(t)}`).join('')}`;
-  const exIds = new Set(exProducts.map((p) => numId(p.id || p)).filter(Boolean));
-  const exQ = exIds.size ? `${base} (${[...exIds].map((id) => `id:${id}`).join(' OR ')})` : null;
-  const d = await gql(ctx, `query($q: String!, $ex: String!, $n: Int!, $hasEx: Boolean!) {
-      total: productsCount(query: $q, limit: null) { count }
-      all: productsCount(limit: null) { count }
-      ex: productsCount(query: $ex, limit: null) @include(if: $hasEx) { count }
-      products(first: $n, query: $q, sortKey: TITLE) { nodes { id title handle vendor status featuredMedia { preview { image { url } } } } } }`,
-  { q: base, ex: exQ || '', n: Math.min(50, 12 + exIds.size), hasEx: !!exQ });
-  const total = Math.max(0, d.total.count - (d.ex?.count || 0));
-  const sample = d.products.nodes.filter((p) => !exIds.has(numId(p.id))).slice(0, 12)
-    .map((p) => ({ id: p.id, title: p.title, handle: p.handle, vendor: p.vendor, status: p.status, image: p.featuredMedia?.preview?.image?.url || '' }));
-  // Shopify 不认识某个条件会静默忽略 → 返回全店数量;恰好等于全店时提示「以前台为准」
-  return { total, sample, maybeAll: d.total.count === d.all.count };
+//   条件(rules)同时满足才算:{ f: vendor 品牌 / type 产品类型 / collection 合集 / tag 标签 / title 标题, n: 是否取反, v: [值…] }
+//   一行里多个值 = 任一个就算(取反 = 一个都不能有);标题是「包含」,不分大小写。
+//   再加上「一定显示」的产品(products)、去掉排除的产品(exProducts)和推广产品自己(promo)。只算上架中的产品。
+//   和主题 snippets/cgp-pdp-callout.liquid 同一套判断(改一边要改另一边)。
+//   标题包含 Shopify 搜索做不到(只认整词 / 前缀)→ 有标题条件时先按其他条件把候选产品逐页拉回来,在这里比标题。
+export const CO_FIELDS = ['vendor', 'type', 'collection', 'tag', 'title'];
+const CO_Q = { vendor: (v) => `vendor:${q(v)}`, type: (v) => `product_type:${q(v)}`, tag: (v) => `tag:${q(v)}`, collection: (v) => `collection_id:${numId(v?.id ?? v)}` };
+const coRules = (rules) => (Array.isArray(rules) ? rules : []).filter((r) => r && CO_FIELDS.includes(r.f) && Array.isArray(r.v) && r.v.length);
+export function calloutQuery(rules) {
+  return ['status:active', ...coRules(rules).filter((r) => CO_Q[r.f]).map((r) => (r.n ? r.v.map((v) => `NOT ${CO_Q[r.f](v)}`).join(' AND ') : `(${r.v.map(CO_Q[r.f]).join(' OR ')})`))].join(' AND ');
 }
-// 店里所有品牌(Vendor),推广块选品牌用
-export async function shopVendors(ctx, gql = graphql) {
-  const d = await gql(ctx, '{ productVendors(first: 250) { nodes } }').catch(() => null)
-    || await gql(ctx, '{ shop { productVendors(first: 250) { edges { node } } } }').then((x) => ({ productVendors: { nodes: x.shop.productVendors.edges.map((e) => e.node) } }));
-  return d.productVendors.nodes.filter(Boolean).sort((a, b) => a.localeCompare(b));
+// 标题条件(其他条件已经由 Shopify 筛过)
+export function calloutTitleOk(rules, title) {
+  const t = String(title || '').toLowerCase();
+  return coRules(rules).filter((r) => r.f === 'title').every((r) => { const m = r.v.some((v) => t.includes(String(v).toLowerCase())); return r.n ? !m : m; });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function gqlRetry(ctx, gql, query, vars) { // 逐页拉的时候可能被限流,等一下再试
+  for (let i = 0; ; i++) {
+    try { return await gql(ctx, query, vars); } catch (e) { if (i >= 5 || !/THROTTLED/i.test(e.message)) throw e; await sleep(1500 * (i + 1)); }
+  }
+}
+export async function calloutScope(ctx, { rules = [], products = [], exProducts = [], promo = null }, gql = graphql) {
+  const rs = coRules(rules);
+  const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), promo?.id ? numId(promo.id) : null].filter(Boolean));
+  const incIds = products.map((p) => numId(p.id || p)).filter((id) => id && !exIds.has(id));
+  if (!rs.length && !incIds.length) return { total: 0, sample: [], capped: false };
+  const SAMPLE = 12; const CAP = 2000;
+  const hits = new Map(); // 命中的产品 id → { title, handle, status }
+  let capped = false;
+  if (rs.length) {
+    const query = calloutQuery(rs);
+    const hasTitle = rs.some((r) => r.f === 'title');
+    if (!hasTitle) {
+      // 没有标题条件:Shopify 直接数(去掉排除的),再取按名称排的前几个
+      const exQ = exIds.size ? `${query} AND (${[...exIds].map((id) => `id:${id}`).join(' OR ')})` : null;
+      const d = await gql(ctx, `query($q: String!, $ex: String!, $hasEx: Boolean!, $n: Int!) {
+          total: productsCount(query: $q, limit: null) { count }
+          ex: productsCount(query: $ex, limit: null) @include(if: $hasEx) { count }
+          products(first: $n, query: $q, sortKey: TITLE) { nodes { id title handle status } } }`,
+      { q: query, ex: exQ || '', hasEx: !!exQ, n: Math.min(60, SAMPLE + exIds.size + incIds.length) });
+      d.products.nodes.filter((p) => !exIds.has(numId(p.id))).forEach((p) => hits.set(numId(p.id), p));
+      const ruleTotal = Math.max(0, d.total.count - (d.ex?.count || 0));
+      // 「一定显示」的产品里本来就符合条件的不重复算
+      const extra = incIds.length ? (await gql(ctx, `query($q: String!) { productsCount(query: $q, limit: null) { count } }`, { q: `${query} AND (${incIds.map((id) => `id:${id}`).join(' OR ')})` })).productsCount.count : 0;
+      const sample = await coSample(ctx, gql, [...hits.keys(), ...incIds], SAMPLE);
+      return { total: ruleTotal + incIds.length - extra, sample, capped: false };
+    }
+    let after = null; let scanned = 0;
+    do {
+      const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { products(first: 250, after: $after, query: $q, sortKey: TITLE) { nodes { id title handle status } pageInfo { hasNextPage endCursor } } }`, { q: query, after });
+      for (const p of d.products.nodes) if (!exIds.has(numId(p.id)) && calloutTitleOk(rs, p.title)) hits.set(numId(p.id), p);
+      after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
+      scanned += d.products.nodes.length;
+      if (after && scanned >= CAP) { capped = true; break; } // 候选太多(比如只有标题条件 = 全店)就只看前 2000 个,数字显示「至少」
+    } while (after);
+  }
+  incIds.forEach((id) => { if (!hits.has(id)) hits.set(id, null); });
+  return { total: hits.size, sample: await coSample(ctx, gql, [...hits.keys()], SAMPLE), capped };
+}
+// 前几个命中的产品(带图,给编辑器看)
+async function coSample(ctx, gql, ids, n) {
+  const want = [...new Set(ids)].slice(0, n);
+  if (!want.length) return [];
+  const d = await gql(ctx, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id title handle vendor productType status featuredMedia { preview { image { url } } } } } }`, { ids: want.map((id) => toGid('Product', id)) });
+  return d.nodes.filter(Boolean).map((p) => ({ id: p.id, title: p.title, handle: p.handle, vendor: p.vendor, type: p.productType, status: p.status, image: p.featuredMedia?.preview?.image?.url || '' }));
+}
+// 推广块条件的下拉选项:店里所有品牌、产品类型、标签
+export async function calloutOptions(ctx, gql = graphql) {
+  const strs = async (field) => {
+    const out = []; let after = null;
+    for (let i = 0; i < 6; i++) {
+      const d = await gqlRetry(ctx, gql, `query($after: String) { ${field}(first: 250, after: $after) { nodes pageInfo { hasNextPage endCursor } } }`, { after }).catch(() => null);
+      if (!d?.[field]) break;
+      out.push(...d[field].nodes);
+      if (!d[field].pageInfo?.hasNextPage) break; after = d[field].pageInfo.endCursor;
+    }
+    return [...new Set(out.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  };
+  return { vendors: await strs('productVendors'), types: await strs('productTypes'), tags: await strs('productTags') };
 }
 
 // 某个产品在哪些活动里(查产品用):按产品的合集 / 标签 / id 对照活动的三个条件

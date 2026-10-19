@@ -8,7 +8,7 @@ import { schedulerInfo, logColReport } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
 import { uploadImage } from './files.js';
-import { scopeCounts, calloutScope, shopVendors, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
+import { scopeCounts, calloutScope, calloutOptions, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 import { actorOf, pagesOf, isAdmin } from './members.js';
@@ -512,9 +512,9 @@ export function scheduleRouter() {
 
   // ---- 产品数 / 查产品 ----
   r.post('/counts', wrap(async (req) => scopeCounts(req.ctx, req.body || {})));
-  // 产品页推广块:按「放在哪些产品」算出命中多少个 + 前几个是谁(编辑器右边显示);品牌下拉用
+  // 产品页推广块:按「放在哪些产品」算出命中多少个 + 前几个是谁(编辑器右边显示);品牌 / 类型 / 标签下拉用
   r.post('/callout-scope', wrap(async (req) => calloutScope(req.ctx, req.body || {})));
-  r.get('/vendors', wrap(async (req) => ({ vendors: await shopVendors(req.ctx) })));
+  r.get('/callout-options', wrap(async (req) => calloutOptions(req.ctx)));
   r.get('/product', wrap(async (req) => {
     const q = String(req.query.q || '').trim().replace(/^https?:\/\/[^/]+\/products\//, '').split(/[?#/]/)[0];
     if (!q) throw new ActionError('请输入产品 handle、链接或 id');

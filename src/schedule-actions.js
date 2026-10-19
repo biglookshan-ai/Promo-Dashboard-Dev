@@ -29,7 +29,7 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   // 活动徽章点了去哪:'' = 自动(促销链接 / 参加的第一个合集);'none' = 不能点;/… 或 https://… = 指定链接
   'badgeLink',
   // 产品页推广块:推广的产品、链接文字、品牌、排除的产品 / 标签(其余沿用 title / text / link / image / collections / tags / products / priority)
-  'promo', 'linkText', 'vendors', 'exProducts', 'exTags'];
+  'promo', 'linkText', 'vendors', 'exProducts', 'exTags', 'rules'];
 export const COUNTDOWN_STYLES = ['classic', 'pill', 'dark', 'minimal'];
 
 export class ActionError extends Error {}
@@ -95,7 +95,14 @@ export function validate(it) {
     if (!String(it.title || '').trim()) return '请填写标题(产品页上那一句)';
     if (it.link && !AFTER_URL_RE.test(String(it.link).trim())) return '链接不对:填站内路径(/products/…)或 https:// 开头的完整链接';
     if (!String(it.link || '').trim() && !it.promo?.id) return '请选推广的产品,或者填一个链接';
-    if (![it.collections, it.tags, it.vendors, it.products].some((x) => (x || []).length)) return '请选放在哪些产品上(合集 / 标签 / 品牌 / 指定产品至少一个)';
+    const rules = (it.rules || []).filter((r) => (r.v || []).length);
+    if (rules.length > 20) return '条件最多 20 行';
+    for (const r of rules) {
+      if (!['vendor', 'type', 'collection', 'tag', 'title'].includes(r.f)) return '条件的类型不对';
+      if (r.v.length > 50) return '一行条件最多 50 个值';
+      if (r.f === 'collection' ? r.v.some((c) => !c?.id) : r.v.some((x) => typeof x !== 'string' || !x.trim())) return '条件里有空的值';
+    }
+    if (!rules.length && !(it.products || []).length && ![it.collections, it.tags, it.vendors].some((x) => (x || []).length)) return '请设置放在哪些产品上(至少一条条件,或者选几个一定显示的产品)';
   }
   if (it.kind === 'campaign' && it.badgeLink && it.badgeLink !== 'none' && !AFTER_URL_RE.test(String(it.badgeLink).trim())) return '徽章链接不对:填站内路径(/collections/…)或 https:// 开头的完整链接';
   if (it.start != null && it.end != null && it.end <= it.start) return '结束时间要晚于开始时间';
