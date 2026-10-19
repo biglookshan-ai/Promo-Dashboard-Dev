@@ -2757,7 +2757,7 @@
     const c = cdOf(v);
     const sep = badge && timeId ? (c.key === 'minimal' ? '<span class="pv-co__dot">·</span>' : '<span class="pv-co__bar"></span>') : '';
     const cd = timeId ? `<span class="pv-co__cd">${c.key === 'pill' || c.key === 'dark' ? CLOCK : ''}<span class="pv-co__lbl">${esc(c.lbl)}</span> <b id="${timeId}">${esc(timeText)}</b></span>` : '';
-    return `<div class="pv-co pv-co--${c.key}${badge && timeId ? ' pv-co--both' : ''}" style="${c.key === 'minimal' ? '' : `background:${c.bg};`}color:${c.fg}">${badge ? `<b class="${v.collections?.length ? 'is-link' : ''}" title="${v.collections?.length ? `点了去合集 ${esc(v.collections[0].title || '')}` : ''}">${esc(badge)}</b>` : ''}${sep}${cd}</div>`;
+    return `<div class="pv-co pv-co--${c.key}${badge && timeId ? ' pv-co--both' : ''}${timeId ? '' : ' pv-co--solo'}" style="${c.key === 'minimal' ? '' : `background:${c.bg};`}color:${c.fg}">${badge ? `<b class="${v.collections?.length ? 'is-link' : ''}" title="${v.collections?.length ? `点了去合集 ${esc(v.collections[0].title || '')}` : ''}">${esc(badge)}</b>` : ''}${sep}${cd}</div>`;
   }
   function previewHtml(v) {
     if (v.kind === 'pin') return wxPreviewHtml(v);

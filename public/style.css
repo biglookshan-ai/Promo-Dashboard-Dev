@@ -1276,7 +1276,9 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .clr2 input { width: 34px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; }
 /* 产品页的徽章 + 倒计时合成一条(和主题 cgp-campaign-offer.liquid 一样) */
 .pv-co { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 9px; max-width: 100%; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; line-height: 1.35; margin: 6px 0; }
-.pv-co--classic { border-radius: 6px; padding: 7px 11px; } .pv-co--minimal { padding: 0; }
+.pv-co--classic { border-radius: 4px; padding: 5px 10px; } .pv-co--minimal { padding: 0; }
+.pv-co--solo { padding: 3px 10px; font-size: 12px; } .pv-co--solo.pv-co--minimal { padding: 0; } /* 只有徽章 = 标签大小,和网站一致 */
+.pv-co > b.is-link { text-decoration-color: color-mix(in srgb, currentColor 55%, transparent); }
 .pv-co > b { font-weight: 700; }
 .pv-co > b.is-link { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; } /* 网站上徽章能点(去活动的第一个合集) */
 .pv-co__bar { width: 1px; height: 13px; background: currentColor; opacity: .35; }
