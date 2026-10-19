@@ -73,6 +73,11 @@ export function saleView(products, link = {}, opts = {}) {
   return { list, total, pins };
 }
 
+// 结束后去哪(2026-10-17 用户):'' = 不跳转(退回「这个合集所有打折的产品」;短链接照样用模板打开)
+//   'collection' = 跳回合集原来的页面;'url' = 跳到指定链接(站内路径 /… 或 https://…)
+export const AFTER_END = [['', '不跳转'], ['collection', '跳回合集原来的页面'], ['url', '跳到指定链接']];
+export const AFTER_URL_RE = /^(\/[^\/\s][^\s]*|https:\/\/[^\s]+)$/;
+
 // 页面模板:?view= 后面那段(主题里 templates/collection.<名字>.json),留空 = 合集原来的模板
 export const VIEW_RE = /^[\w][\w -]{0,59}$/;
 // 后缀和模板名一样(不分大小写)→ 只写 ?view=<模板名> 就够了(主题按名字自动套用这条链接)

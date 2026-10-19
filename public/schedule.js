@@ -217,7 +217,7 @@
     if (c.collections?.length) parts.push(short ? `合集 ${c.collections.length}` : `合集:${c.collections.map((x) => `${esc(x.title)}(${nTxt(colCount(x))})`).join('、')}`);
     if (c.tags?.length) parts.push(short ? `标签 ${c.tags.length}` : `标签:${c.tags.map((t) => `${esc(t)}(${nTxt(tagCount(t))})`).join('、')}`);
     if (c.products?.length) parts.push(short ? `产品 ${c.products.length}` : `指定 ${c.products.length} 个产品`);
-    return parts.join(short ? ' · ' : sep) || (short ? '无产品' : '<span class="muted">没有选产品(只串联 Banner / 顶栏)</span>');
+    return parts.join(short ? ' · ' : sep) || (short ? '无产品' : '<span class="muted">没选产品(不显示徽章;挂在下面的 Banner / 顶栏 / 促销链接照常上下线)</span>');
   }
 
   // ---- 后台 / 前台链接 ----
@@ -902,13 +902,27 @@
   // 活动页:① 活动设置(时间 / 产品 / 产品上显示什么,一眼看清)→ ② 需要留意(有问题才出现)→ ③ 网站内容(按类型分组)→ ④ 改价 → ⑤ 飞书任务
   const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接']];
   const dhm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h ${m % 60}m`; };
+  // 活动下的促销链接覆盖了哪些合集、哪些不在「参加的产品」里(2026-10-17 用户:只建了促销链接,活动页却显示没选产品)
+  function slCover(c) {
+    const links = (S.salelinks || []).filter((x) => x.campaign === c.id && x.collection?.id);
+    const inScope = new Set((c.collections || []).map((x) => numId(x.id)));
+    const seen = new Set(); const missing = [];
+    for (const x of links) { const k = numId(x.collection.id); if (!inScope.has(k) && !seen.has(k)) { seen.add(k); missing.push(x.collection); } }
+    return { links, missing, cols: new Set(links.map((x) => numId(x.collection.id))).size };
+  }
+  function slCoverHtml(c) {
+    const v = slCover(c); if (!v.links.length) return '';
+    return `<span class="hubset__cover"><span>促销链接 ${v.links.length} 条,覆盖 ${v.cols} 个合集${v.missing.length
+      ? `;其中 <b>${v.missing.length}</b> 个不在参加的产品里(${v.missing.slice(0, 3).map((x) => esc(x.title)).join('、')}${v.missing.length > 3 ? ' 等' : ''}),这些产品不显示徽章和倒计时</span>
+        <button type="button" class="btn btn-sm" data-hubaddcols="${c.id}">把这 ${v.missing.length} 个合集加进参加的产品</button>` : ',都已经在参加的产品里</span>'}</span>`;
+  }
   function hubSettingsHtml(c) {
     const w = win(c); const t = now(); const s = status(c); const st = scopeTotal(c);
+    const noScope = !(c.collections?.length || c.tags?.length || c.products?.length);
     const span = w.start != null && w.end != null ? `共 ${relSpan(w.end - w.start)}` : '没有结束时间';
     const left = s === 'live' ? (w.end != null ? `还剩 ${relSpan(w.end - t)}` : '进行中') : w.start != null && w.start > t ? `${relSpan(w.start - t)}后开始` : s === 'ended' ? '已结束' : '';
     const cd = cdOf(c);
     const cdText = w.end != null ? dhm(w.end - Math.max(t, w.start ?? t)) : '';
-    const noScope = !(c.collections?.length || c.tags?.length || c.products?.length);
     const shows = noScope ? '<span class="muted">没选产品,产品上不显示</span>' : c.badge || (c.countdown && w.end != null)
       ? `<div class="hubset__pv">${cdPdpHtml(c, c.badge, c.countdown && w.end != null ? `hubcd-${c.id}` : null, cdText)}</div>`
       : '<span class="muted">不显示徽章和倒计时</span>';
@@ -917,7 +931,7 @@
       <div class="panel__h"><h3>活动设置</h3><button class="btn btn-primary btn-sm" type="button" data-open="${c.id}">修改活动设置</button></div>
       <div class="hubset__g">
         ${item('时间', `<b>${w.start != null ? fDT(w.start) : '立即'} → ${w.end != null ? fDT(w.end) : '不结束'}</b>`, `${span}${left ? ' · ' + left : ''}`)}
-        ${item('参加的产品', `<b>${st.total}${st.unknown ? '+' : ''} 个产品</b>`, campScope(c, false, '<br>'))}
+        ${item('参加的产品', `<b>${noScope ? '没选产品' : `${st.total}${st.unknown ? '+' : ''} 个产品`}</b>`, `${noScope ? '参加的产品 = 显示活动徽章和倒计时的产品' : campScope(c, false, '<br>')}${slCoverHtml(c)}`)}
         ${item('产品上显示', shows, `${CD_STY[cd.key].name}${c.countdown ? ' · 有倒计时' : ' · 没开倒计时'}${c.priority ? ` · 优先级 ${esc(c.priority)}` : ''}`)}
       </div>
     </section>`;
@@ -1006,6 +1020,8 @@
     if (x.sort) t.push(SORT_LABEL()[x.sort] || x.sort);
     if ((x.products || []).length) t.push(`置顶 ${x.products.length} 个`);
     if (x.view) t.push(`模板 ${x.view}`);
+    if (x.afterEnd === 'collection') t.push('结束后跳回合集');
+    if (x.afterEnd === 'url') t.push(`结束后跳到 ${x.afterEndUrl || ''}`);
     return t.map((s) => `<span class="tag">${esc(s)}</span>`).join('');
   }
   const copyBox = (url, id) => `<span class="slurl"><input class="inp slurl__i mono" id="${id}" readonly value="${esc(url)}"/><button type="button" class="btn btn-sm" data-copy="${id}">复制</button><a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener">打开↗</a></span>`;
@@ -1057,7 +1073,10 @@
       <div class="fld"><span>置顶的产品 <em>按顺序排在最前;照样要打折(勾了有货还要有货)才会显示</em></span><div id="sl-pins"></div></div>
       ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
       ${timeBlock(it, 'salelink')}
-      <em class="muted">没生效时(还没开始 / 已结束 / 暂停)这个链接照样能打开,显示这个合集所有打折的产品。</em>`;
+      <div class="fld"><span>结束后去哪 <em>时间到了(或跟随的活动结束)以后,顾客再打开这条链接会怎样</em></span>
+        <select class="sel" name="afterEnd">${SL.AFTER_END.map(([k, l]) => `<option value="${k}" ${(it.afterEnd || '') === k ? 'selected' : ''}>${k ? l : '不跳转(显示这个合集所有打折的产品)'}</option>`).join('')}</select>
+        <input class="inp mono" name="afterEndUrl" id="sl-afterurl" value="${esc(it.afterEndUrl || '')}" placeholder="/collections/black-friday 或 https://…" ${it.afterEnd === 'url' ? '' : 'hidden'}/>
+        <em>不跳转:链接照样能打开,显示这个合集所有打折的产品(短链接 ?view= 还会用这个模板的版面)。跳回合集:回到这个合集原来的页面。暂停中的链接不跳转。</em></div>`;
   }
   const slCollHtml = (c) => `${c ? `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}</span>` : '<span class="muted">还没选</span>'}
     <button type="button" class="btn btn-sm" data-sl="coll">${c ? '换一个合集' : '选择合集'}</button>`;
@@ -1274,7 +1293,7 @@
         <span class="ccard__row"><span class="muted">产品</span><span class="ccard__v ccard__v--col">${campScope(c, false, '<br>')}<br><span class="muted">合计${st.exact ? '' : '约'} <b>${st.total}${st.unknown ? '+' : ''}</b> 个${st.exact ? '(已去重)' : st.overlap ? '(可能有重叠)' : ''}</span></span></span>
         ${zero.length ? `<span class="tag tag--danger">⚠️ ${esc(zero.join('、'))} 里没有产品</span>` : ''}
         <span class="ccard__row"><span class="muted">徽章</span><span class="ccard__v">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : '<span class="muted">无徽章</span>'}${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span></span>
-        <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}${(c.larkLinks || []).length ? ` · ${c.larkLinks.length} 个飞书任务` : ''}</span></span>
+        <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}${(S.salelinks || []).filter((x) => x.campaign === c.id).length ? ` · ${(S.salelinks || []).filter((x) => x.campaign === c.id).length} 条促销链接` : ''}${(c.larkLinks || []).length ? ` · ${c.larkLinks.length} 个飞书任务` : ''}</span></span>
         ${bn.length ? `<span class="ccard__thumbs">${bn.map((b) => `<span class="ccard__t">${slideHtml(b, { w: 200 })}</span>`).join('')}</span>` : ''}
       </button>`;
     };
@@ -3128,6 +3147,7 @@
     });
     f.addEventListener('change', (e) => {
       if (e.target.dataset?.tck) edTabs[+e.target.dataset.i][e.target.dataset.tck] = e.target.checked;
+      if (e.target.name === 'afterEnd') { const u = $('#sl-afterurl'); if (u) { u.hidden = e.target.value !== 'url'; if (!u.hidden) u.focus(); } }
       if (e.target.id === 'asg-approver' && !live) $('#drawer .drawer__acts').innerHTML = actsHtml(mayAppr(e.target.value)); // 换了审批人:能不能直接生效跟着变
       refreshPv();
     });
@@ -3409,6 +3429,16 @@
     if (o && o.closest('.section')) { const x = byId(o.dataset.open); if (x) openEditor(x.kind, x.id); return; }
     const n = e.target.closest('[data-new]');
     if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : n.dataset.tbpreset ? { tbpreset: n.dataset.tbpreset } : undefined); return; }
+    const ac = e.target.closest('[data-hubaddcols]');
+    if (ac) {
+      const c = camp(ac.dataset.hubaddcols); if (!c) return;
+      const add = slCover(c).missing.map(({ id, title, handle }) => ({ id, title, handle }));
+      if (!add.length) return;
+      ac.disabled = true;
+      act({ type: 'save', mode: c.state === 'approved' ? 'publish' : 'draft', kind: 'campaign', id: c.id, values: { collections: [...(c.collections || []), ...add] } })
+        .then((r) => { if (r) toast(`已把 ${add.length} 个合集加进参加的产品 —— 这些产品${c.state === 'approved' ? '现在' : '在活动生效后'}会显示活动徽章和倒计时`); else ac.disabled = false; });
+      return;
+    }
     const hb = e.target.closest('[data-hub]');
     if (hb) { openHub(hb.dataset.hub); return; }
     if (e.target.closest('[data-hubback]')) { cpHub = null; renderCampaigns(); return; }

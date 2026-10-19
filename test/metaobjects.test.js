@@ -91,3 +91,16 @@ test('已建好的类型后来加了字段:补建时只补缺的字段,不重建
   assert.equal(updates[0].id, all.cgp_collection_pin);
   assert.deepEqual(updates[0].definition.fieldDefinitions.map((f) => f.create.key), ['show_countdown', 'badge_text']);
 });
+
+test('写条目:店里缺新字段时跳过这些字段照常保存', async () => {
+  const { upsertItem } = await import('../src/metaobjects.js');
+  const calls = [];
+  const gql = async (ctx, q, v) => {
+    calls.push(v.metaobject.fields.map((f) => f.key));
+    if (v.metaobject.fields.some((f) => f.key === 'after_end')) return { metaobjectUpsert: { userErrors: [{ field: ['fields', 'after_end'], message: "Field definition 'after_end' does not exist" }] } };
+    return { metaobjectUpsert: { metaobject: { id: 'gid://x/1', capabilities: { publishable: { status: 'ACTIVE' } } }, userErrors: [] } };
+  };
+  const r = await upsertItem({}, { id: 'sl-1', kind: 'salelink', name: 'x', slug: 'bf', collection: { id: 1 }, afterEnd: 'collection' }, { status: 'ACTIVE', win: { start: null, end: null } }, gql);
+  assert.equal(r.id, 'gid://x/1');
+  assert.ok(!calls.at(-1).includes('after_end'));
+});

@@ -60,3 +60,15 @@ test('下架前 3 天提醒', () => {
   assert.equal(isEndingSoon(item({ end: T + 4 * D }), new Map(), T), false);
   assert.equal(isEndingSoon(item({ end: null }), new Map(), T), false);
 });
+
+test('促销链接设了「结束后去哪」:结束后也保持 ACTIVE(主题按结束时间跳走);没设 / 暂停 / 没开始的照旧', async () => {
+  const { desiredPublishStatus } = await import('../src/schedule-core.js');
+  const T = Date.UTC(2026, 9, 20, 12), D = 86400000;
+  const sl = (o) => ({ kind: 'salelink', state: 'approved', start: T - 5 * D, end: T - D, campaign: null, paused: false, ...o });
+  assert.equal(desiredPublishStatus(sl({ afterEnd: 'collection' }), {}, T), 'ACTIVE');
+  assert.equal(desiredPublishStatus(sl({ afterEnd: 'url', afterEndUrl: '/collections/x' }), {}, T), 'ACTIVE');
+  assert.equal(desiredPublishStatus(sl({ afterEnd: '' }), {}, T), 'DRAFT');
+  assert.equal(desiredPublishStatus(sl({ afterEnd: 'collection', paused: true }), {}, T), 'DRAFT');
+  assert.equal(desiredPublishStatus(sl({ afterEnd: 'collection', start: T + D, end: T + 2 * D }), {}, T), 'DRAFT');
+  assert.equal(desiredPublishStatus({ kind: 'banner', state: 'approved', start: T - 5 * D, end: T - D, afterEnd: 'collection' }, {}, T), 'DRAFT');
+});

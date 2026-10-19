@@ -34,9 +34,12 @@ export function itemStatus(item, campaignsById, t = Date.now()) {
 
 // Shopify 上这条 metaobject 应该是什么状态:只有「此刻上线中」的是 ACTIVE,其余一律 DRAFT(前台看不到)。
 // 顶栏默认样式永远 ACTIVE。
+// 促销链接设了「结束后去哪」(跳回合集 / 跳到指定链接):结束后也保持 ACTIVE,主题按 ends_at 判断已结束,打开就跳走。
 export function desiredPublishStatus(item, campaignsById, t = Date.now()) {
   if (item.isDefault && item.state === 'approved') return 'ACTIVE';
-  return itemStatus(item, campaignsById, t) === 'live' ? 'ACTIVE' : 'DRAFT';
+  const s = itemStatus(item, campaignsById, t);
+  if (s === 'ended' && item.kind === 'salelink' && item.state === 'approved' && ['collection', 'url'].includes(item.afterEnd)) return 'ACTIVE';
+  return s === 'live' ? 'ACTIVE' : 'DRAFT';
 }
 
 export function isEndingSoon(item, campaignsById, t = Date.now()) {

@@ -6,7 +6,7 @@
 // actor:{ id, name, role: 'approver' | 'editor' }
 // 返回 { doc, effects, message }。effects 交给服务器执行(写 Shopify / 发飞书),浏览器演示模式忽略。
 import { itemStatus, campaignIndex } from './schedule-core.js';
-import { SLUG_RE, SALE_SORTS, VIEW_RE } from './sale-link.js';
+import { SLUG_RE, SALE_SORTS, VIEW_RE, AFTER_END, AFTER_URL_RE } from './sale-link.js';
 
 export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins', salelink: 'salelinks' };
 export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: '合集置顶清单', salelink: '促销链接' };
@@ -23,7 +23,7 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   // v3 分工:负责人 / 审批人 / 抄送(成员 id)、截止时间(ms)
   'owner', 'approver', 'cc', 'due',
   // 促销链接(?onsale=<后缀>);置顶的产品用 products,合集用 collection
-  'slug', 'inStock', 'minDiscount', 'limit', 'sort', 'heading', 'view',
+  'slug', 'inStock', 'minDiscount', 'limit', 'sort', 'heading', 'view', 'afterEnd', 'afterEndUrl',
   // 活动的倒计时样式(产品页 / 产品卡 / 首页商品模块都用)
   'countdownStyle', 'countdownLabel', 'countdownBg', 'countdownColor'];
 export const COUNTDOWN_STYLES = ['classic', 'pill', 'dark', 'minimal'];
@@ -83,6 +83,8 @@ export function validate(it) {
     if (!SLUG_RE.test(String(it.slug || ''))) return '链接后缀只能用小写字母、数字和横线(不能以横线开头,最多 40 个字)';
     if (it.sort && !SALE_SORTS.some(([k]) => k === it.sort)) return '排序方式不对';
     if (it.view && !VIEW_RE.test(it.view)) return '页面模板的名字不对(主题里 collection.<名字> 的那个名字)';
+    if (it.afterEnd && !AFTER_END.some(([k]) => k === it.afterEnd)) return '「结束后去哪」的选项不对';
+    if (it.afterEnd === 'url' && !AFTER_URL_RE.test(String(it.afterEndUrl || '').trim())) return '结束后要跳到的链接不对:填站内路径(/collections/…)或 https:// 开头的完整链接';
   }
   if (it.start != null && it.end != null && it.end <= it.start) return '结束时间要晚于开始时间';
   return '';

@@ -157,7 +157,9 @@ export const DEFINITIONS = [
       t('title', '页面上的标题', 'single_line_text_field'),
       t('campaign', '所属活动', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
       t('starts_at', '开始(仅记录)', 'date_time'),
-      t('ends_at', '结束(仅记录)', 'date_time'),
+      t('ends_at', '结束', 'date_time', { description: '设了「结束后去哪」时,主题按这个时间判断链接结束了没有' }),
+      t('after_end', '结束后去哪', 'single_line_text_field', { description: '空 = 不跳转;collection = 跳回合集原来的页面;url = 跳到 after_end_url' }),
+      t('after_end_url', '结束后跳到的链接', 'single_line_text_field'),
     ],
   },
 ];
@@ -314,6 +316,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       products: list((it.products || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)), // 主题一次只读得到前 50 个
       in_stock: it.inStock ? 'true' : 'false', min_discount: String(Math.max(0, Math.round(Number(it.minDiscount) || 0))),
       limit: String(Math.max(0, Math.round(Number(it.limit) || 0))), sort: str(it.sort), title: str(it.heading),
+      after_end: ['collection', 'url'].includes(it.afterEnd) ? it.afterEnd : '', after_end_url: it.afterEnd === 'url' ? str(it.afterEndUrl).trim() : '',
     });
   }
   if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });
@@ -335,7 +338,16 @@ export async function upsertItem(ctx, it, { status, win, campaignGid, tabGids } 
     const retry = await send(fields.filter((f) => f.value !== ''));
     if (!retry.userErrors?.length) { console.warn(`[upsert] ${handle.handle} 带空值被拒(${errText(r.userErrors)}),去掉空字段后成功`); r = retry; }
   }
-  if (r.userErrors?.length) throw new Error(errText(r.userErrors));
+  // 店里的内容类型还没补建新字段(比如促销链接的 after_end):先跳过这些字段照常保存,设置页会提示「补建」
+  if (r.userErrors?.length) {
+    const keys = new Set(fields.map((f) => f.key));
+    const bad = new Set(r.userErrors.flatMap((e) => [...(e.field || []), ...(String(e.message || '').match(/[a-z][a-z0-9_]+/g) || [])]).filter((k) => keys.has(k)));
+    if (bad.size && bad.size < keys.size) {
+      const retry = await send(fields.filter((f) => !bad.has(f.key) && f.value !== ''));
+      if (!retry.userErrors?.length) { console.warn(`[upsert] ${handle.handle} 店里缺字段 ${[...bad].join(', ')},先不写这些(去设置里补建)`); r = retry; }
+    }
+  }
+  if (r.userErrors?.length) throw new Error(errText(r.userErrors) + (/does not exist|not exist|undefined|invalid field|not found/i.test(errText(r.userErrors)) ? '(店里的内容类型可能缺新字段:到「设置 → 店铺连接」点补建)' : ''));
   return { id: r.metaobject.id, status: r.metaobject.capabilities.publishable.status };
 }
 

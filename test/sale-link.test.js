@@ -78,3 +78,19 @@ test('短链接:后缀和模板名一样(不分大小写)就只写 ?view=', asyn
   assert.equal(u('https://x', 'dzofilm', 'bfcm', 'blackfriday-collection'), 'https://x/collections/dzofilm?view=blackfriday-collection&onsale=bfcm');
   assert.ok(!viewBound('', 'sale')); assert.ok(!viewBound('sale', ''));
 });
+
+test('结束后去哪:选项和链接格式校验;写进店铺的字段', async () => {
+  const { validate } = await import('../src/schedule-actions.js');
+  const { fieldsFor } = await import('../src/metaobjects.js');
+  const base = { kind: 'salelink', name: 'x', slug: 'bf', collection: { id: 1 }, start: null, end: null };
+  assert.equal(validate({ ...base, afterEnd: 'collection' }), '');
+  assert.match(validate({ ...base, afterEnd: 'nope' }), /选项不对/);
+  assert.match(validate({ ...base, afterEnd: 'url', afterEndUrl: 'javascript:alert(1)' }), /链接不对/);
+  assert.match(validate({ ...base, afterEnd: 'url', afterEndUrl: '//evil.com' }), /链接不对/);
+  assert.equal(validate({ ...base, afterEnd: 'url', afterEndUrl: '/collections/black-friday' }), '');
+  assert.equal(validate({ ...base, afterEnd: 'url', afterEndUrl: 'https://www.cinegearpro.co.uk/collections/bf' }), '');
+  const f = Object.fromEntries(fieldsFor({ ...base, afterEnd: 'url', afterEndUrl: ' /collections/bf ' }).map((x) => [x.key, x.value]));
+  assert.equal(f.after_end, 'url'); assert.equal(f.after_end_url, '/collections/bf');
+  const g = Object.fromEntries(fieldsFor({ ...base, afterEnd: 'collection', afterEndUrl: '/x' }).map((x) => [x.key, x.value]));
+  assert.equal(g.after_end, 'collection'); assert.equal(g.after_end_url, '');
+});
