@@ -49,10 +49,16 @@ const BY = {
 
 // 打开这条链接时顾客看到的产品(按顺序)。products = 合集后台顺序的全部产品
 // 返回 { list: 显示的, total: 不算「最多几个」时有几个, pins: [{ id, title, shown, why }] }
-export function saleView(products, link = {}, opts = {}) {
-  const base = featuredOrder(products.filter((p) => !whyOut(p, link)), opts);
+// 不算置顶时的顺序(合集平时的顺序 → 按链接的排序方式)。all = 连没打折 / 不符合条件的也排进来
+// (排序编辑器「也显示现在不会出现的产品」用:活动开始前先排好,开始后才打折的产品照这个位置出现)
+export function saleBase(products, link = {}, opts = {}, all = false) {
+  const base = featuredOrder(all ? products : products.filter((p) => !whyOut(p, link)), opts);
   const by = BY[link.sort];
-  let list = by ? base.map((p, i) => ({ p, i })).sort((a, b) => by(a.p, b.p) || a.i - b.i).map((o) => o.p) : base;
+  return by ? base.map((p, i) => ({ p, i })).sort((a, b) => by(a.p, b.p) || a.i - b.i).map((o) => o.p) : base;
+}
+
+export function saleView(products, link = {}, opts = {}) {
+  let list = saleBase(products, link, opts);
   const pinIds = (link.products || []).map((x) => nid(x.id));
   if (pinIds.length) {
     const byId = new Map(list.map((p) => [nid(p.id), p]));

@@ -106,3 +106,19 @@ test('活动徽章链接:自动 / 不能点 / 指定链接的校验和写进店�
   const f = (v) => Object.fromEntries(fieldsFor({ ...c, badgeLink: v }).map((x) => [x.key, x.value])).badge_link;
   assert.equal(f(''), ''); assert.equal(f('none'), 'none'); assert.equal(f(' /collections/x '), '/collections/x');
 });
+
+test('排序编辑器:saleBase 不算置顶;all = 连没打折的也排进来;置顶 = 最短前缀', async () => {
+  const { saleBase, saleView } = await import('../src/sale-link.js');
+  const { minimalPrefix } = await import('../src/order-diff.js');
+  const P = [{ id: 1, discount: 10 }, { id: 2, discount: 0 }, { id: 3, discount: 30 }, { id: 4, discount: 20 }];
+  assert.deepEqual(saleBase(P, {}).map((p) => p.id), [1, 3, 4]);
+  assert.deepEqual(saleBase(P, {}, {}, true).map((p) => p.id), [1, 2, 3, 4]);
+  assert.deepEqual(saleBase(P, { sort: 'discount' }).map((p) => p.id), [3, 4, 1]);
+  // 把 4 拖到第 1 位 → 只要固定 [4],其余照排序;顾客看到 4,1,3
+  const pins = minimalPrefix([1, 3, 4], [4, 1, 3]);
+  assert.deepEqual(pins, ['4']);
+  assert.deepEqual(saleView(P, { products: pins.map((id) => ({ id })) }).list.map((p) => p.id), [4, 1, 3]);
+  // 没打折的 2 先排在第 1 位:现在不出现,打折后排第一
+  assert.deepEqual(saleView(P, { products: [{ id: 2 }] }).list.map((p) => p.id), [1, 3, 4]);
+  assert.deepEqual(saleView(P.map((p) => (p.id === 2 ? { ...p, discount: 5 } : p)), { products: [{ id: 2 }] }).list.map((p) => p.id), [2, 1, 3, 4]);
+});

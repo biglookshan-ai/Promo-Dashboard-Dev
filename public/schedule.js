@@ -1245,7 +1245,7 @@
       <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
         ${fld('最多显示几个', `<input class="inp" type="number" min="0" name="limit" value="${esc(it.limit ?? '')}" placeholder="不限"/>`, '按下面的排法取前面几个')}</div>
       ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和合集平时一样」= 合集页默认的 Featured 顺序(包括生效中的合集排序清单)。顾客自己选了 Sort by 就按他选的')}
-      <div class="fld"><span>置顶的产品 <em>按顺序排在最前;照样要打折(勾了有货还要有货)才会显示</em></span><div id="sl-pins"></div></div>
+      <div class="fld"><span>固定位置的产品 <em>在右边直接拖动卡片排序更方便;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span><div id="sl-pins"></div></div>
       ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
       ${timeBlock(it, 'salelink')}
       <div class="fld"><span>结束后去哪 <em>时间到了(或跟随的活动结束)以后,顾客再打开这条链接会怎样</em></span>
@@ -1310,6 +1310,29 @@
     if (a === 'slugview') { const fh = $('#ed-form'); const sg = fh.querySelector('[name="slug"]'); sg.value = String(fh.querySelector('[name="view"]').value).trim().toLowerCase(); sg.dataset.touched = '1'; redrawSlUrl(); return; }
     redrawSl(); done();
   }
+  // ---- 促销链接里的产品顺序(2026-10-19):右边的卡片直接拖 ----
+  // 存法和以前的「置顶的产品」一样(sl.products 按顺序排最前),只记「最短前缀」:没动过的照排序规则,和合集排序清单同一套(order-diff.js)
+  let slPos = null; // 正在输入「移到第几位」的那张卡片
+  const slOpts = (c, d) => ({ sortRule: d.sortRule, pinIds: (activePin(numId(c.id))?.products || []).map((p) => p.id) });
+  // 完整顺序(不算「最多几个」):固定了位置的排最前,其余按排序规则;all = 连现在不会出现的也排进来
+  function slOrder(d, link, opts, all) {
+    const base = SL.saleBase(d.products, link, opts, all);
+    const byId = new Map(base.map((p) => [numId(p.id), p]));
+    const head = []; const hs = new Set();
+    for (const x of link.products || []) { const id = numId(x.id); if (byId.has(id) && !hs.has(id)) { head.push(byId.get(id)); hs.add(id); } }
+    return { list: [...head, ...base.filter((p) => !hs.has(numId(p.id)))], baseIds: base.map((p) => numId(p.id)) };
+  }
+  const SL_ST = { instock: 'In Stock', preorder: 'Pre Order', oos: 'Out of Stock' };
+  const slCardHtml = (p, pos, why, pin, over) => {
+    const id = numId(p.id);
+    return `<div class="slcard${pin ? ' is-pin' : ''}${why ? ' is-out' : ''}${over ? ' is-overlimit' : ''}" draggable="true" data-slid="${id}">
+      ${slPos === id ? `<input class="slcard__pos" type="number" min="1" data-slposin="${id}" value="${pos || ''}" aria-label="移到第几位"/>`
+        : `<button type="button" class="slcard__n" data-slpos="${id}" title="点一下,输入要移到第几位">${pos || '—'}</button>`}
+      <span class="slcard__img" ${p.image ? `style="background-image:url('${esc(p.image)}')"` : ''}>${p.discount > 0 ? `<span class="slcard__off">${p.discount}% OFF</span>` : ''}</span>
+      <span class="slcard__t">${esc(p.title)}</span><span class="slcard__p">${p.compareStr ? `<s>${esc(p.compareStr)}</s> ` : ''}<b>${esc(p.priceStr || '')}</b></span>
+      ${why ? `<span class="slcard__why">现在不会出现:${esc(why)}</span>` : `<span class="slcard__s slcard__s--${esc(p.status)}">${SL_ST[p.status] || esc(p.status)}</span>`}
+      <span class="slcard__acts"><button type="button" data-sltop="${id}" title="移到第 1 位">置顶</button><a href="${esc((S.store?.domain || '') + (p.url || ''))}" target="_blank" rel="noopener" draggable="false">前台↗</a></span></div>`;
+  };
   function slPreviewHtml(v) {
     const head = (extra = '') => `<div class="pv-label">顾客打开这条链接会看到${extra}</div>`;
     const c = sl?.collection || v.collection;
@@ -1319,19 +1342,32 @@
     if (!d || d.busy) return `${head()}<p class="muted">正在读前台这个合集的产品…</p>`;
     if (d.error) return `${head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">重试</button>')}<div class="note note--danger">${esc(d.error)}</div>`;
     const ap = activePin(numId(c.id));
-    const view = SL.saleView(d.products, { ...v, products: sl.products }, { sortRule: d.sortRule, pinIds: (ap?.products || []).map((p) => p.id) });
+    const opts = slOpts(c, d); const link = { ...v, products: sl.products };
+    const view = SL.saleView(d.products, link, opts);
     const onSale = d.products.filter((p) => p.discount > 0).length;
-    const ST2 = { instock: 'In Stock', preorder: 'Pre Order', oos: 'Out of Stock' };
+    // 排序网格(2026-10-19 用户:合集排序里是整个合集的产品,排不了促销链接里只显示打折的那些 → 在这里直接拖)
+    const all = !!sl.showAll;
+    const { list } = slOrder(d, link, opts, all);
+    const limit = Math.max(0, parseInt(v.limit, 10) || 0);
     const pinned = new Set(sl.products.map((p) => numId(p.id)));
-    const card = (p, i) => `<a class="slcard ${pinned.has(numId(p.id)) ? 'is-pin' : ''}" href="${esc((S.store?.domain || '') + (p.url || ''))}" target="_blank" rel="noopener"><span class="slcard__n">${i + 1}</span>
-      <span class="slcard__img" ${p.image ? `style="background-image:url('${esc(p.image)}')"` : ''}><span class="slcard__off">${p.discount}% OFF</span></span>
-      <span class="slcard__t">${esc(p.title)}</span><span class="slcard__p">${p.compareStr ? `<s>${esc(p.compareStr)}</s> ` : ''}<b>${esc(p.priceStr || '')}</b></span>
-      <span class="slcard__s slcard__s--${esc(p.status)}">${ST2[p.status] || esc(p.status)}</span></a>`;
+    const lost = sl.products.filter((x) => !list.some((p) => numId(p.id) === numId(x.id)));
+    const MAXC = 150; let n = 0;
+    const cards = list.slice(0, MAXC).map((p) => {
+      const why = SL.whyOut(p, link); const pos = why ? null : ++n;
+      return (limit && pos === limit + 1 ? `<div class="slcut">—— 最多显示 ${limit} 个,下面的不显示(拖到这条线上面就会显示)——</div>` : '')
+        + slCardHtml(p, pos, why, pinned.has(numId(p.id)), !!(limit && pos > limit));
+    }).join('');
     return `${head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button>')}
       <p class="slsum">显示 <b>${view.list.length}</b> 个产品${view.total > view.list.length ? `(符合条件的有 ${view.total} 个,只取前 ${view.list.length} 个)` : ''} · 这个合集一共 ${d.total} 个产品,打折的 ${onSale} 个${d.truncated ? ' · ⚠️ 合集太大,前台只读前 1000 个' : ''}</p>
-      ${view.pins.some((p) => !p.shown) ? `<div class="note note--warn">${view.pins.filter((p) => !p.shown).map((p) => `置顶的「${esc(p.title)}」不会显示:${esc(p.why)}`).join('<br>')}</div>` : ''}
+      ${view.pins.some((p) => !p.shown) && !all ? `<div class="note note--warn note--sm">${view.pins.filter((p) => !p.shown).map((p) => `固定了位置的「${esc(p.title)}」现在不会显示:${esc(p.why)}`).join('<br>')}${lost.length ? '<br>符合条件后(比如开始打折)会出现在你排的位置;不过在下面拖动别的产品时,它们会挪到固定部分的最后 —— 想一起排,勾上「也显示现在不会出现的产品」。' : ''}</div>` : ''}
+      ${sl.products.length > 50 ? `<div class="note note--warn note--sm">前台最多固定前 50 个位置,你现在固定了 ${sl.products.length} 个 —— 第 51 个以后按「排序」排。</div>` : ''}
       ${ap && !v.sort ? `<p class="muted">「和合集平时一样」包括正在生效的合集排序清单「${esc(titleOf(ap))}」。</p>` : ''}
-      ${view.list.length ? `<div class="slgrid">${view.list.slice(0, 60).map(card).join('')}</div>${view.list.length > 60 ? `<p class="muted">……还有 ${view.list.length - 60} 个</p>` : ''}` : '<p class="muted">按现在的设置一个产品都没有,顾客打开会看到「没有产品」。</p>'}
+      <div class="slord">
+        <label class="tgl tgl--sm"><input type="checkbox" data-slall ${all ? 'checked' : ''}/><span class="tgl__ui"></span><span>也显示现在不会出现的产品<span class="muted">(没打折 / 没货 / 折扣不够的,灰色;活动前先排好,开始打折后就在这个位置出现)</span></span></label>
+        ${sl.products.length ? `<span class="slord__sum">固定了前 <b>${sl.products.length}</b> 个位置</span><button type="button" class="btn btn-sm btn-ghost" data-slclear title="清掉手动排的顺序">全部按排序规则</button>` : ''}
+      </div>
+      <p class="muted pv-cap">拖动卡片调整顾客看到的顺序,或点左上角的序号输入第几位;红框 = 固定了位置。没动过的按左边的「排序」排,以后新打折的产品排在固定的后面。</p>
+      ${cards ? `<div class="slgrid">${cards}</div>${list.length > MAXC ? `<p class="muted">……还有 ${list.length - MAXC} 个,按排序规则排在后面</p>` : ''}` : '<p class="muted">按现在的设置一个产品都没有,顾客打开会看到「没有产品」。</p>'}
       <p class="muted pv-cap">数据来自前台(和顾客看到的一样),两分钟内不重复读;刚改过价格 / 库存就点「刷新」。</p>`;
   }
 
@@ -1378,6 +1414,7 @@
       ${pageHead('合集排序', '让合集页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
         need ? '' : `${MODE === 'live' && isApprover() ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶清单</button>`)}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
+      <div class="note note--sm">💡 只想排<b>促销链接里</b>的顺序(只显示打折产品的那页)?打开那条促销链接,右边的产品直接拖就行,不用在这里排整个合集。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
       ${alertsHtml(['pin'])}
       <section class="panel">
         <div class="panel__h"><h3>这一刻各合集的排序</h3><span class="muted">${pnAt == null ? '现在' : `${fDT(T)} · ${relDay(T)}`}</span></div>
@@ -3202,7 +3239,7 @@
       ed.collections = []; ed.tags = [];
     }
     edTabs = (base.tabs || []).map((t) => ({ ...t, products: [...(t.products || [])] })); pvTab = 0;
-    sl = base.kind === 'salelink' ? { collection: base.collection || null, products: [...(base.products || [])] } : null;
+    sl = base.kind === 'salelink' ? { collection: base.collection || null, products: [...(base.products || [])], showAll: false } : null; slPos = null;
     wx = base.kind === 'pin' ? { collection: base.collection || null, order: [...(base.products || [])], hidden: [...(base.hidden || [])],
       onlyN: base.onlyListed ? (base.products || []).length : null, fullOrder: !!base.fullOrder, init: { products: base.products || [], hidden: base.hidden || [] } } : null;
     wxAll = null; wxBase = []; wxQ = ''; wxPosEdit = null; wxBusy = false;
@@ -3491,6 +3528,65 @@
     });
     // 预览里点页签:切换预览的页签
     $('#ed-pv').addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (t && edTabs) { pvTab = +t.dataset.pmtab; refreshPv(); } });
+    // 促销链接:右边的产品拖动 / 输入位置 / 置顶 → 重新算「固定位置的产品」(最短前缀)
+    if (it.kind === 'salelink') {
+      const pv = $('#ed-pv'); let slDrag = null;
+      const slReorder = (move) => {
+        const c = sl?.collection; const d = c && slPrev[c.handle]; if (!d?.products) return;
+        const link = { ...readForm(base), products: sl.products };
+        const { list, baseIds } = slOrder(d, link, slOpts(c, d), !!sl.showAll);
+        const ids = list.map((p) => numId(p.id));
+        move(ids, list, link);
+        const byId = new Map(d.products.map((p) => [numId(p.id), p]));
+        const keep = OD.minimalPrefix(baseIds, ids).map(String);
+        const lost = sl.products.filter((x) => !ids.includes(numId(x.id))); // 现在不在网格里的(没打折等)留着,排在后面
+        sl.products = [...keep.map((id) => { const p = byId.get(id); return { id: p.id, handle: String(p.url || '').split('/products/')[1]?.split(/[?#]/)[0] || '', title: p.title, image: p.image || '' }; }), ...lost];
+        slPos = null; redrawSl(); refreshPv();
+      };
+      const slGoPos = (id, n) => {
+        if (slPos !== id) return; slPos = null;
+        if (!(n >= 1)) { refreshPv(); return; }
+        slReorder((ids, list, link) => { // 第 n 位 = 顾客看到的第 n 个(灰色的不算)
+          const out = new Set(list.filter((p) => SL.whyOut(p, link)).map((p) => numId(p.id)));
+          ids.splice(ids.indexOf(id), 1);
+          const vis = ids.filter((x) => !out.has(x)); const target = vis[Math.round(n) - 1];
+          if (target != null) ids.splice(ids.indexOf(target), 0, id);
+          else { const last = vis[vis.length - 1]; ids.splice(last != null ? ids.indexOf(last) + 1 : ids.length, 0, id); }
+        });
+      };
+      pv.addEventListener('click', async (e) => {
+        const sb = e.target.closest('[data-sl]'); if (sb) { await slAct(sb, refreshPv); return; } // 「刷新」以前放在右边点了没反应
+        const tp = e.target.closest('[data-sltop]');
+        if (tp) { const id = tp.dataset.sltop; slReorder((ids) => { ids.splice(ids.indexOf(id), 1); ids.unshift(id); }); return; }
+        const ps = e.target.closest('[data-slpos]');
+        if (ps) { slPos = ps.dataset.slpos; refreshPv(); const i = $(`#ed-pv [data-slposin="${slPos}"]`); if (i) { i.focus(); i.select(); } return; }
+        if (e.target.closest('[data-slclear]')) { sl.products = []; redrawSl(); refreshPv(); }
+      });
+      pv.addEventListener('change', (e) => { if (e.target.matches?.('[data-slall]')) { sl.showAll = e.target.checked; refreshPv(); } });
+      pv.addEventListener('keydown', (e) => {
+        const id = e.target.dataset?.slposin; if (id == null) return;
+        if (e.key === 'Enter') { e.preventDefault(); slGoPos(id, +e.target.value); }
+        if (e.key === 'Escape') { e.preventDefault(); slPos = null; refreshPv(); }
+      });
+      pv.addEventListener('focusout', (e) => { const id = e.target.dataset?.slposin; if (id != null) slGoPos(id, +e.target.value); });
+      pv.addEventListener('dragstart', (e) => {
+        const c = e.target.closest?.('[data-slid]'); if (!c) return;
+        slDrag = c.dataset.slid; c.classList.add('is-drag');
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', slDrag); }
+      });
+      pv.addEventListener('dragover', (e) => {
+        if (!slDrag) return; const c = e.target.closest?.('[data-slid]'); if (!c) return;
+        e.preventDefault(); $$('#ed-pv .slcard.is-target').forEach((x) => { if (x !== c) x.classList.remove('is-target'); }); c.classList.add('is-target');
+      });
+      pv.addEventListener('drop', (e) => {
+        if (!slDrag) return; e.preventDefault();
+        const c = e.target.closest?.('[data-slid]'); const from = slDrag; slDrag = null;
+        if (!c || c.dataset.slid === from) { refreshPv(); return; }
+        const to = c.dataset.slid;
+        slReorder((ids) => { const ti = ids.indexOf(to); ids.splice(ids.indexOf(from), 1); ids.splice(ti, 0, from); }); // 往后拖放到目标后面,往前拖放到目标前面
+      });
+      pv.addEventListener('dragend', () => { slDrag = null; $$('#ed-pv .slcard').forEach((x) => x.classList.remove('is-drag', 'is-target')); });
+    }
     f.addEventListener('keydown', (e) => {
       if (e.target.dataset?.rv != null && e.key === 'Enter') { e.preventDefault(); coAddVal(+e.target.dataset.rv, e.target.value); return; } // 推广块条件
       const key = { 'sc-tag': 'tags' }[e.target.id];

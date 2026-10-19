@@ -1275,6 +1275,22 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .slcard__t { line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .slcard__p s { color: var(--text-3); } .slcard__p b { color: #d10000; }
 .slcard__s { font-size: 10.5px; color: #1f7a4d; } .slcard__s--preorder { color: #b45309; } .slcard__s--oos { color: #9b1c1c; }
+/* 促销链接排序:卡片可以拖 */
+.slcard { cursor: grab; user-select: none; }
+.slcard.is-drag { opacity: .35; }
+.slcard.is-target { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.slcard.is-out { opacity: .55; border-style: dashed; }
+.slcard.is-overlimit { opacity: .6; }
+button.slcard__n { border: 0; cursor: pointer; font: inherit; font-size: 10.5px; line-height: 1.6; }
+button.slcard__n:hover { background: var(--accent); }
+.slcard__pos { position: absolute; top: 3px; left: 3px; z-index: 2; width: 52px; height: 22px; padding: 0 4px; border: 1px solid var(--accent); border-radius: 4px; font-size: 12px; }
+.slcard__why { font-size: 10.5px; color: var(--text-3); }
+.slcard__acts { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: auto; padding-top: 2px; }
+.slcard__acts button, .slcard__acts a { border: 0; background: none; padding: 0; font: inherit; font-size: 10.5px; color: var(--text-3); cursor: pointer; text-decoration: none; }
+.slcard__acts button:hover, .slcard__acts a:hover { color: var(--accent); }
+.slcut { grid-column: 1 / -1; text-align: center; font-size: 11.5px; color: #b45309; padding: 2px 0; }
+.slord { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 6px 0 2px; }
+.slord__sum { font-size: 12.5px; }
 
 /* ---- 对照正式主题 ---- */
 .tsrow { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; }
