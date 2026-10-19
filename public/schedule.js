@@ -1130,7 +1130,7 @@
     const rules = ed.rules.map((r, i) => {
       const vals = r.v.map((v, j) => `<span class="chip"><span class="chip__t${r.f === 'tag' ? ' mono' : ''}">${esc(r.f === 'collection' ? v.title : v)}</span>${r.f === 'collection' ? linkPair('collections', v) : r.f === 'tag' ? linkPair('tags', v) : ''}${x(`data-rvx="${i}:${j}"`)}</span>`).join('');
       const add = r.f === 'collection' ? `<button type="button" class="chipadd" data-pick="rule:${i}">${I.plus}选择合集</button>`
-        : `<input class="chipinp" data-rv="${i}" ${r.f === 'title' ? '' : `list="co-dl-${r.f}"`} placeholder="${r.f === 'title' ? '输入文字,回车添加' : `输入或选${CO_F[r.f]},回车添加`}"/>`;
+        : `<input class="chipinp" data-rv="${i}" ${r.f === 'title' ? '' : `list="co-dl-${r.f}"`} placeholder="${r.f === 'title' ? '输入一段文字(整段连着出现才算),回车添加' : `输入或选${CO_F[r.f]},回车添加`}" ${r.f === 'title' ? 'title="整段文字连在一起出现才算(不分大小写),比如 e mount 不会因为只有 e 或只有 mount 就算;想「这个或那个」就分成几个值"' : ''}/>`;
       return `<div class="corule${r.n ? ' is-not' : ''}">
         <select class="sel sel--sm" data-rf="${i}" aria-label="条件类型">${Object.entries(CO_F).map(([k, l]) => `<option value="${k}" ${r.f === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <select class="sel sel--sm" data-rn="${i}" aria-label="是 / 不是">${CO_OPS[r.f].map((l, k) => `<option value="${k}" ${+!!r.n === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
