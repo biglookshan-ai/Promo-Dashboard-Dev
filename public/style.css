@@ -695,8 +695,10 @@ textarea.inp { resize: vertical; }
 .scope__sum { padding: 8px 10px; border-top: 1px solid #f0f0f2; font-size: 12.5px; background: var(--surface-2); }
 .clrs { display: flex; gap: 10px; flex-wrap: wrap; }
 .clr { display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px 4px 4px; font-size: 12.5px; cursor: pointer; }
-.clr input { width: 30px; height: 26px; border: none; padding: 0; background: none; cursor: pointer; }
-.clr .mono { color: var(--text-3); font-size: 11px; }
+.clr input[type="color"] { width: 30px; height: 26px; border: none; padding: 0; background: none; cursor: pointer; }
+.clr__hex { width: 76px; height: 24px; padding: 0 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-2); font-size: 11.5px; cursor: text; }
+.clr__hex:focus { outline: none; border-color: var(--accent); color: var(--text); }
+.clr__hex.is-bad { border-color: var(--danger); color: var(--danger); }
 .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
 .attach__i { gap: 10px; }
 .attach__slide { width: 40px; flex: none; }
@@ -1272,8 +1274,10 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .cdsty__i.is-active { border-color: var(--accent, #3b5bdb); box-shadow: 0 0 0 2px rgba(59, 91, 219, .18); }
 .cdsty__i em { font-style: normal; font-size: 11.5px; color: var(--text-3); }
 .cdsty__demo { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
-.clr2 { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
-.clr2 input { width: 34px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; }
+.clr2 { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
+.rowin--wrap { flex-wrap: wrap; row-gap: 6px; }
+.rowin--wrap .clr2 + .clr2 { margin-left: 8px; }
+.clr2 input[type="color"] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; }
 /* 产品页的徽章 + 倒计时合成一条(和主题 cgp-campaign-offer.liquid 一样) */
 .pv-co { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 9px; max-width: 100%; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; line-height: 1.35; margin: 6px 0; }
 .pv-co--classic { border-radius: 4px; padding: 5px 10px; } .pv-co--minimal { padding: 0; }

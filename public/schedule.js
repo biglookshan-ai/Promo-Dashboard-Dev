@@ -2705,7 +2705,7 @@
         ${timeBlock(it, 'topbar')}`;
     }
     if (it.kind === 'tbstyle') {
-      const color = (n, v, l) => `<label class="clr"><input type="color" name="${n}" value="${esc(v)}"/><span>${l}</span><span class="mono">${esc(v)}</span></label>`;
+      const color = (n, v, l) => `<label class="clr"><input type="color" name="${n}" value="${esc(v)}"/><span>${l}</span>${hexBox(v)}</label>`;
       return `
         <div class="fld"><span>从节日模板开始 <em>一键填好颜色、特效和装饰,填好后还能再改</em></span><div class="rowin">${Object.entries(TB_PRESETS).map(([k, x]) => `<button type="button" class="btn btn-sm" data-tbfill="${k}">${x.label}</button>`).join('')}</div></div>
         ${fld('样式名称', inp('name', it.name, '如:圣诞节 / Black Friday'))}
@@ -2716,7 +2716,7 @@
         ${timeBlock(it, 'tbstyle')}`;
     }
     if (it.kind === 'pmodule') {
-      const color = (n, v, l) => `<label class="clr"><input type="color" name="${n}" value="${esc(v || '#000000')}"/><span>${l}</span><span class="mono">${esc(v || '')}</span></label>`;
+      const color = (n, v, l) => `<label class="clr"><input type="color" name="${n}" value="${esc(v || '#000000')}"/><span>${l}</span>${hexBox(v || '#000000')}</label>`;
       return `
         <div class="fld"><span>哪个模块</span><div class="seg" id="ed-module">${Object.entries(MODULE_CN).map(([k, l]) => `<button type="button" data-module="${k}" class="${it.module === k ? 'is-active' : ''}" ${it.isDefault ? 'disabled' : ''}>${l}</button>`).join('')}</div></div>
         ${fld('版本名(后台看的)', inp('name', it.name, '如:Black Friday 2026'))}
@@ -2744,11 +2744,11 @@
           <div class="cdsty" id="ed-cdsty">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-cdsty="${k}" class="cdsty__i ${(it.countdownStyle || 'classic') === k ? 'is-active' : ''}">
             <span class="cdsty__demo" style="background:${x.bg};color:${x.fg};${k === 'minimal' ? '' : 'padding:4px 9px;'}border-radius:${k === 'classic' ? '6px' : '999px'}">${k === 'classic' || k === 'minimal' ? '' : CLOCK}${esc(x.lbl)} 2 days</span>
             <b>${x.name}</b><em>${x.hint}</em></button>`).join('')}</div></div>
-        <div class="fld2">${fld('倒计时文案', inp('countdownLabel', it.countdownLabel, CD_STY[it.countdownStyle || 'classic']?.lbl || ''), '空 = 用样式默认的,如「Black Friday ends in」')}
-          <div class="fld"><span>颜色 <em>不改 = 用样式默认的</em></span><div class="rowin">
-            <label class="clr2">底色 <input type="color" id="cd-bg" value="${esc(it.countdownBg || (CD_STY[it.countdownStyle]?.bg !== 'transparent' && CD_STY[it.countdownStyle]?.bg) || '#ffefef')}"/></label>
-            <label class="clr2">文字 <input type="color" id="cd-fg" value="${esc(it.countdownColor || CD_STY[it.countdownStyle || 'classic'].fg)}"/></label>
-            <button type="button" class="btn btn-sm" data-cdreset="1" ${it.countdownBg || it.countdownColor ? '' : 'hidden'}>用默认颜色</button></div></div></div>
+        ${fld('倒计时文案', inp('countdownLabel', it.countdownLabel, CD_STY[it.countdownStyle || 'classic']?.lbl || ''), '空 = 用样式默认的,如「Black Friday ends in」')}
+          <div class="fld"><span>颜色 <em>不改 = 用样式默认的;右边的框可以直接粘贴颜色代码</em></span><div class="rowin rowin--wrap">
+            ${((bg, fg) => `<label class="clr2">底色 <input type="color" id="cd-bg" value="${esc(bg)}"/>${hexBox(bg)}</label>
+            <label class="clr2">文字 <input type="color" id="cd-fg" value="${esc(fg)}"/>${hexBox(fg)}</label>`)(it.countdownBg || (CD_STY[it.countdownStyle]?.bg !== 'transparent' && CD_STY[it.countdownStyle]?.bg) || '#ffefef', it.countdownColor || CD_STY[it.countdownStyle || 'classic'].fg)}
+            <button type="button" class="btn btn-sm" data-cdreset="1" ${it.countdownBg || it.countdownColor ? '' : 'hidden'}>用默认颜色</button></div></div>
         ${fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在几个活动里时,显示数字大的那个活动的徽章和倒计时')}`)}
       ${sec(4, '关联的飞书任务', '可不填 · 具体要求、设计、文案放在飞书任务里', `
         <div id="ed-lark">${larkEdHtml()}</div>
@@ -2758,6 +2758,10 @@
   }
 
   // 倒计时样式(和主题 snippets/cgp-campaign-offer.liquid 的默认颜色 / 文案一样,改一边要同步另一边)
+  // 颜色代码:#abc / abc / #AABBCC / aabbcc 都认,统一成 #aabbcc;认不出返回 null
+  const normHex = (x) => { const m = String(x || '').trim().replace(/^#/, '').match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i); return m ? '#' + (m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1]).toLowerCase() : null; };
+  // 色块旁边的十六进制输入框(没有 name,不会被 readForm 读走;和色块双向联动)
+  const hexBox = (v) => `<input class="clr__hex mono" type="text" value="${esc(v)}" maxlength="7" spellcheck="false" autocomplete="off" title="十六进制颜色代码,可直接粘贴,如 #a23f3f"/>`;
   const CD_STY = {
     classic: { name: '经典红框', bg: '#ffefef', fg: '#d10000', lbl: 'Deals Expires in :', hint: '现在产品页用的' },
     pill: { name: '胶囊', bg: '#fdecec', fg: '#c8102e', lbl: 'Deal ends in', hint: '时钟图标,最后一天变实心' },
@@ -3058,7 +3062,8 @@
       const v = readForm(base);
       $('#ed-pv').innerHTML = previewHtml(v);
       if (v.kind === 'pmodule') loadTabPreview(v.tabs[pvTab], () => { if ($('#ed-pv') && edTabs) $('#ed-pv').innerHTML = previewHtml(readForm(base)); });
-      $$('#ed-form .clr').forEach((l) => { const i = l.querySelector('input'); l.querySelector('.mono').textContent = i.value; });
+      // 代码框跟着色块走;正在输入的那个框只要和色块一致就不打断(别把用户敲到一半的写法改掉)
+      $$('#ed-form .clr__hex').forEach((h) => { const c = h.closest('label')?.querySelector('input[type="color"]'); if (!c || (h === document.activeElement && normHex(h.value) === c.value)) return; h.value = c.value; h.classList.remove('is-bad'); });
       clearInterval(pvTimer);
       if (v.kind === 'campaign' && v.countdown && v.end) {
         const tick = () => {
@@ -3079,7 +3084,19 @@
     refreshPv();
     if (kind === 'campaign' && MODE === 'live' && !ed.counts) fetchCounts();
     const f = $('#ed-form');
+    // 倒计时色块显示成「现在实际用的颜色」:没自定义的那个跟着样式默认色走(onlyUnset = 只改没自定义的)
+    const cdPaint = (k, onlyUnset) => {
+      const p = CD_STY[k] || CD_STY.classic;
+      if ($('#cd-bg') && !(onlyUnset && (ed.cdBg ?? base.countdownBg))) $('#cd-bg').value = p.bg === 'transparent' ? '#ffffff' : p.bg;
+      if ($('#cd-fg') && !(onlyUnset && (ed.cdFg ?? base.countdownColor))) $('#cd-fg').value = p.fg;
+    };
     f.addEventListener('input', (e) => {
+      if (e.target.classList.contains('clr__hex')) { // 输入 / 粘贴颜色代码:认得出就同步到色块(走色块自己的流程:记录改动、刷新预览)
+        const h = normHex(e.target.value); e.target.classList.toggle('is-bad', !h && !!e.target.value.trim());
+        const c = e.target.closest('label')?.querySelector('input[type="color"]');
+        if (h && c && c.value !== h) { c.value = h; c.dispatchEvent(new Event('input', { bubbles: true })); }
+        return;
+      }
       if (e.target.id === 'wx-q') { // 找产品:只把不匹配的变淡、滚到第一个匹配的,不打乱顺序
         wxQ = e.target.value; const q = wxQ.trim().toLowerCase(); let first = null;
         $$('#pg .pg__card[data-pg]').forEach((c) => {
@@ -3120,6 +3137,12 @@
       lab.firstChild.textContent = old; e.target.value = '';
     });
     // ---- 合集排序网格:「只显示前 N 个」开关、输入序号移动、拖拽 ----
+    f.addEventListener('change', (e) => { // 颜色代码框离开时:认不出就恢复成色块现在的颜色,认得出就统一写法
+      if (!e.target.classList.contains('clr__hex')) return;
+      const c = e.target.closest('label')?.querySelector('input[type="color"]');
+      e.target.value = normHex(e.target.value) || c?.value || ''; e.target.classList.remove('is-bad');
+    });
+    f.addEventListener('focusin', (e) => { if (e.target.classList?.contains('clr__hex')) e.target.dataset.sel = '1'; });
     f.addEventListener('change', (e) => {
       if (e.target.id === 'wx-full') { wx.fullOrder = e.target.checked; return redrawWx(); }
       if (e.target.id !== 'wx-only') return;
@@ -3268,6 +3291,7 @@
       if (t && !ed.tags.includes(t)) { ed.tags.push(t); refreshScope(); $('#sc-tag').focus(); } else e.target.value = '';
     });
     f.addEventListener('click', (e) => {
+      if (e.target.classList?.contains('clr__hex')) { if (e.target.dataset.sel) { delete e.target.dataset.sel; e.target.select(); } return; } // 点进去先全选,方便复制
       if (e.target.closest('a.lk')) return; // 后台 / 前台链接照常打开
       const m = e.target.closest('#ed-mode button');
       if (m) {
@@ -3292,9 +3316,9 @@
       if (tp) return pickForTab(+tp.dataset.i, tp.dataset.tpick);
       const cs = e.target.closest('[data-cdsty]');
       if (cs) { $$('#ed-cdsty [data-cdsty]').forEach((b) => b.classList.toggle('is-active', b === cs)); const lbl = $('#ed-form [name="countdownLabel"]'); if (lbl) lbl.placeholder = CD_STY[cs.dataset.cdsty].lbl;
-        if (ed.cdBg == null && ed.cdFg == null && !base.countdownBg && !base.countdownColor) { const p = CD_STY[cs.dataset.cdsty]; if ($('#cd-bg')) $('#cd-bg').value = p.bg === 'transparent' ? '#ffffff' : p.bg; if ($('#cd-fg')) $('#cd-fg').value = p.fg; }
+        cdPaint(cs.dataset.cdsty, true);
         refreshPv(); return; }
-      if (e.target.closest('[data-cdreset]')) { ed.cdBg = ''; ed.cdFg = ''; e.target.closest('[data-cdreset]').hidden = true; refreshPv(); return; }
+      if (e.target.closest('[data-cdreset]')) { ed.cdBg = ''; ed.cdFg = ''; cdPaint(($('#ed-cdsty .is-active') || {}).dataset?.cdsty); e.target.closest('[data-cdreset]').hidden = true; refreshPv(); return; }
       const tf = e.target.closest('[data-tbfill]');
       if (tf) {
         const v = TB_PRESETS[tf.dataset.tbfill].v;
