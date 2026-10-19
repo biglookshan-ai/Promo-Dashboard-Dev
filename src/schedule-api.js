@@ -2,8 +2,8 @@
 import express from 'express';
 import { load, update, replace, appendLog } from './schedule-store.js';
 import { applyAction, ActionError, findItem, LIST } from './schedule-actions.js';
-import { performAction, withLock, runEffects } from './sync.js';
-import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQUIRED_SCOPES } from './metaobjects.js';
+import { performAction, withLock, runEffects, syncItem } from './sync.js';
+import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQUIRED_SCOPES, TYPE_OF } from './metaobjects.js';
 import { schedulerInfo, logColReport } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
@@ -239,6 +239,18 @@ export function scheduleRouter() {
     if (missing.length) throw new ActionError(`还缺权限:${missing.join(', ')}。请先在应用配置里加上并在店铺里同意。`);
     const out = await ensureDefinitions(req.ctx);
     bust(req.ctx.shop, 'setup');
+    // 给已有类型补了 / 更新了字段 → 店里已有的这类条目重写一次,把新字段带上(比如促销链接的页面模板、结束后去哪)
+    const touched = new Set((out.updated || []).map((u) => u.type));
+    if (touched.size) {
+      out.resynced = await withLock(req.ctx.shop, async () => {
+        const s = load(req.ctx.shop); let n = 0;
+        for (const it of allOf(s).filter((x) => x.state === 'approved' && x.shopifyId && touched.has(TYPE_OF[x.kind]))) {
+          try { await syncItem(req.ctx, s, it); n++; } catch (e) { it.syncError = String(e.message || e); }
+        }
+        replace(req.ctx.shop, s);
+        return n;
+      });
+    }
     update(req.ctx.shop, (s) => appendLog(s, { action: 'setup', kind: 'system', title: '建内容类型',
       note: `新建 ${out.created.length} 个${out.existing.length ? `,已存在 ${out.existing.length} 个` : ''}${out.errors.length ? `,失败 ${out.errors.length} 个` : ''}`, by: actorFor(s, req.ctx.user).name }));
     return { ...out, definitions: await definitionStatus(req.ctx) };

@@ -902,19 +902,14 @@
   // 活动页:① 活动设置(时间 / 产品 / 产品上显示什么,一眼看清)→ ② 需要留意(有问题才出现)→ ③ 网站内容(按类型分组)→ ④ 改价 → ⑤ 飞书任务
   const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接']];
   const dhm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h ${m % 60}m`; };
-  // 活动下的促销链接覆盖了哪些合集、哪些不在「参加的产品」里(2026-10-17 用户:只建了促销链接,活动页却显示没选产品)
-  function slCover(c) {
-    const links = (S.salelinks || []).filter((x) => x.campaign === c.id && x.collection?.id);
-    const inScope = new Set((c.collections || []).map((x) => numId(x.id)));
-    const seen = new Set(); const missing = [];
-    for (const x of links) { const k = numId(x.collection.id); if (!inScope.has(k) && !seen.has(k)) { seen.add(k); missing.push(x.collection); } }
-    return { links, missing, cols: new Set(links.map((x) => numId(x.collection.id))).size };
-  }
+  // 活动下的促销链接(2026-10-19 起自动算参加:主题判断产品出现在这个活动的某条进行中的促销链接里 → 显示徽章)
+  const campLinks = (c) => (S.salelinks || []).filter((x) => x.campaign === c.id && x.collection?.id);
   function slCoverHtml(c) {
-    const v = slCover(c); if (!v.links.length) return '';
-    return `<span class="hubset__cover"><span>促销链接 ${v.links.length} 条,覆盖 ${v.cols} 个合集${v.missing.length
-      ? `;其中 <b>${v.missing.length}</b> 个不在参加的产品里(${v.missing.slice(0, 3).map((x) => esc(x.title)).join('、')}${v.missing.length > 3 ? ' 等' : ''}),这些产品不显示徽章和倒计时</span>
-        <button type="button" class="btn btn-sm" data-hubaddcols="${c.id}">把这 ${v.missing.length} 个合集加进参加的产品</button>` : ',都已经在参加的产品里</span>'}</span>`;
+    const links = campLinks(c); if (!links.length) return '';
+    const live = links.filter((x) => status(x) === 'live');
+    const noScope = !(c.collections?.length || c.tags?.length || c.products?.length);
+    return `<span class="hubset__cover"><span>${noScope ? '' : '另外,'}<b>${links.length}</b> 条促销链接里的产品自动带上${live.length < links.length ? `(现在进行中 ${live.length} 条)` : ''}:
+      顾客打开链接会看到的产品(打折的,按每条链接的有货 / 最低折扣条件)都显示这个活动的徽章,点徽章去那条链接。加、改、删促销链接马上跟着变。</span></span>`;
   }
   function hubSettingsHtml(c) {
     const w = win(c); const t = now(); const s = status(c); const st = scopeTotal(c);
@@ -923,16 +918,24 @@
     const left = s === 'live' ? (w.end != null ? `还剩 ${relSpan(w.end - t)}` : '进行中') : w.start != null && w.start > t ? `${relSpan(w.start - t)}后开始` : s === 'ended' ? '已结束' : '';
     const cd = cdOf(c);
     const cdText = w.end != null ? dhm(w.end - Math.max(t, w.start ?? t)) : '';
-    const shows = noScope ? '<span class="muted">没选产品,产品上不显示</span>' : c.badge || (c.countdown && w.end != null)
+    const hasProducts = !noScope || campLinks(c).length;
+    const shows = !hasProducts ? '<span class="muted">没选产品,产品上不显示</span>' : c.badge || (c.countdown && w.end != null)
       ? `<div class="hubset__pv">${cdPdpHtml(c, c.badge, c.countdown && w.end != null ? `hubcd-${c.id}` : null, cdText)}</div>`
-      : '<span class="muted">不显示徽章和倒计时</span>';
-    const item = (k, main, sub) => `<div class="hubset__i"><span class="hubset__k">${k}</span>${main}<span class="muted hubset__s">${sub}</span></div>`;
+      : '<span class="muted">徽章和倒计时都关着</span>';
+    // 常用设置直接在这里改,改了马上保存(2026-10-19 用户:要打开活动设置才看得到有没有开徽章 / 倒计时)
+    const quick = `<div class="qset" data-qcamp="${c.id}">
+      <label class="qset__r"><span>徽章文字</span><input class="inp inp--sm" data-q="badge" value="${esc(c.badge || '')}" placeholder="留空 = 不显示徽章" maxlength="40"/></label>
+      <label class="qset__r qset__ck"><span>倒计时</span><span class="tgl tgl--sm"><input type="checkbox" data-q="countdown" ${c.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span class="muted">${c.countdown ? '开着' : '关着'}${c.countdown && w.end == null ? '(活动没有结束时间,不会显示)' : ''}</span></span></label>
+      <div class="qset__r"><span>样式</span><div class="seg seg--sm">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-qsty="${k}" class="${cd.key === k ? 'is-active' : ''}">${x.name}</button>`).join('')}</div></div>
+      <label class="qset__r"><span>优先级</span><input class="inp inp--sm inp--num" type="number" data-q="priority" value="${esc(c.priority ?? 0)}"/><span class="muted">同一产品在几个活动里时,大的显示</span></label>
+    </div>`;
+    const item = (k, main, sub, extra = '') => `<div class="hubset__i"><span class="hubset__k">${k}</span>${main}${sub ? `<span class="muted hubset__s">${sub}</span>` : ''}${extra}</div>`;
     return `<section class="panel hubset">
       <div class="panel__h"><h3>活动设置</h3><button class="btn btn-primary btn-sm" type="button" data-open="${c.id}">修改活动设置</button></div>
       <div class="hubset__g">
         ${item('时间', `<b>${w.start != null ? fDT(w.start) : '立即'} → ${w.end != null ? fDT(w.end) : '不结束'}</b>`, `${span}${left ? ' · ' + left : ''}`)}
-        ${item('参加的产品', `<b>${noScope ? '没选产品' : `${st.total}${st.unknown ? '+' : ''} 个产品`}</b>`, `${noScope ? '参加的产品 = 显示活动徽章和倒计时的产品' : campScope(c, false, '<br>')}${slCoverHtml(c)}`)}
-        ${item('产品上显示', shows, `${CD_STY[cd.key].name}${c.countdown ? ' · 有倒计时' : ' · 没开倒计时'}${c.priority ? ` · 优先级 ${esc(c.priority)}` : ''}`)}
+        ${item('参加的产品', `<b>${noScope ? (campLinks(c).length ? '促销链接里的产品' : '没选产品') : `${st.total}${st.unknown ? '+' : ''} 个产品`}</b>`, `${noScope ? (campLinks(c).length ? '没另外选合集 / 标签 / 产品' : '参加的产品 = 显示活动徽章和倒计时的产品') : campScope(c, false, '<br>')}${slCoverHtml(c)}`)}
+        ${item('产品上显示', shows, '', `${quick}<span class="qset__hint">改了马上保存${c.state === 'approved' ? ',网站马上生效' : '(活动还是草稿,批准后才上网站)'};颜色、倒计时文案在「修改活动设置」里</span>`)}
       </div>
     </section>`;
   }
@@ -1277,9 +1280,24 @@
     }));
   }
 
+  // 活动页「产品上显示」里的常用设置:改了马上保存(已批准的直接生效,草稿照旧存草稿)
+  function wireQuick(c) {
+    const box = $('#cp-root [data-qcamp]'); if (!box) return;
+    const save = async (values, msg) => {
+      box.classList.add('is-busy');
+      const r = await act({ type: 'save', mode: c.state === 'approved' ? 'publish' : 'draft', kind: 'campaign', id: c.id, values });
+      if (r) toast(msg + (c.state === 'approved' ? ' · 网站马上生效' : ' · 活动还是草稿'));
+      else renderCampaigns();
+    };
+    box.querySelector('[data-q="badge"]').addEventListener('change', (e) => save({ badge: e.target.value.trim() }, e.target.value.trim() ? `徽章改成「${e.target.value.trim()}」` : '已关掉徽章'));
+    box.querySelector('[data-q="badge"]').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+    box.querySelector('[data-q="countdown"]').addEventListener('change', (e) => save({ countdown: e.target.checked }, e.target.checked ? '已打开倒计时' : '已关掉倒计时'));
+    box.querySelector('[data-q="priority"]').addEventListener('change', (e) => save({ priority: +e.target.value || 0 }, `优先级改成 ${+e.target.value || 0}`));
+    box.querySelectorAll('[data-qsty]').forEach((b) => b.addEventListener('click', () => { if (!b.classList.contains('is-active')) save({ countdownStyle: b.dataset.qsty }, `样式改成「${CD_STY[b.dataset.qsty].name}」`); }));
+  }
   function renderCampaigns() {
     const hubC = cpHub && camp(cpHub);
-    if (hubC) { $('#cp-root').innerHTML = hubHtml(hubC); if (!hubPrice.at || now() - hubPrice.at > 30000) loadHubPrice(); return; }
+    if (hubC) { $('#cp-root').innerHTML = hubHtml(hubC); wireQuick(hubC); if (!hubPrice.at || now() - hubPrice.at > 30000) loadHubPrice(); return; }
     cpHub = null;
     const rows = S.campaigns.filter((c) => inTab(c, cpF.st)).sort((a, b) => RANK[status(a)] - RANK[status(b)] || (a.start ?? 0) - (b.start ?? 0));
     const card = (c) => {
@@ -2247,7 +2265,9 @@
       b.disabled = true; b.textContent = '创建中…';
       try {
         const r = await api('POST', '/api/schedule/setup', { by: me().name });
-        toast(r.errors.length ? `建好 ${r.created.length} 个,失败 ${r.errors.length} 个:${r.errors[0].message}` : `已建好 ${r.created.length} 个内容类型`, !r.errors.length);
+        const upd = (r.updated || []).length;
+        toast(r.errors.length ? `建好 ${r.created.length} 个,失败 ${r.errors.length} 个:${r.errors[0].message}`
+          : [r.created.length ? `已建好 ${r.created.length} 个内容类型` : '', upd ? `已给 ${upd} 个类型补上新字段` : '', r.resynced ? `店里已有的 ${r.resynced} 条重新写了一次(带上新字段)` : ''].filter(Boolean).join(';') || '都是最新的,不用补', !r.errors.length);
       } catch (err) { toast('创建失败:' + err.message, false); }
       if (MODE === 'live') { try { await load(); renderAll(); } catch (e) { /* 下面照样刷新连接面板 */ } }
       renderConn(true);
@@ -2790,7 +2810,7 @@
         <div class="pv-card__title">${esc(prod?.title || v.products?.[0]?.title || 'DZOFILM VESPID 2 Prime 4 Lens Set')}</div>
         <div class="pv-card__price"><s>£5,899.00</s> £4,999.00</div>
       </div>` : ''}
-      <p class="muted pv-scope">${hasScope ? `活动期间,${campScope(v)} 的产品在产品页和产品卡上显示${v.badge ? '这个徽章' : ''}${v.countdown ? (v.badge ? '和' : '') + '倒计时' : ''};活动结束自动消失。` : '还没选产品:产品页不会显示任何东西,这个活动只用来让挂在它下面的 Banner / 顶栏同时上下线。'}</p>
+      <p class="muted pv-scope">${hasScope ? `活动期间,${campScope(v)} 的产品在产品页和产品卡上显示${v.badge ? '这个徽章' : ''}${v.countdown ? (v.badge ? '和' : '') + '倒计时' : ''};活动结束自动消失。` : ((S.salelinks || []).some((x) => x.campaign === v.id) ? '没另外选产品:挂在这个活动下的促销链接里的产品(打折的,按链接条件)会显示这个徽章。' : '还没选产品:产品页不会显示任何东西,这个活动只用来让挂在它下面的 Banner / 顶栏同时上下线。')}</p>
       ${bn.length ? `<div class="pv-label">挂在活动下的 Banner</div><div class="pv-bns">${bn.map((b) => `<span class="pv-bn" data-pop="${b.id}">${slideHtml(b, { w: 300 })}</span>`).join('')}</div>` : ''}
       ${tb.length ? `<div class="pv-label">挂在活动下的顶栏</div>${tb.map((t) => topbarHtml(tbMsg(t, cst), { style: cst })).join('<div style="height:6px"></div>')}` : ''}`;
   }
@@ -3429,16 +3449,6 @@
     if (o && o.closest('.section')) { const x = byId(o.dataset.open); if (x) openEditor(x.kind, x.id); return; }
     const n = e.target.closest('[data-new]');
     if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : n.dataset.tbpreset ? { tbpreset: n.dataset.tbpreset } : undefined); return; }
-    const ac = e.target.closest('[data-hubaddcols]');
-    if (ac) {
-      const c = camp(ac.dataset.hubaddcols); if (!c) return;
-      const add = slCover(c).missing.map(({ id, title, handle }) => ({ id, title, handle }));
-      if (!add.length) return;
-      ac.disabled = true;
-      act({ type: 'save', mode: c.state === 'approved' ? 'publish' : 'draft', kind: 'campaign', id: c.id, values: { collections: [...(c.collections || []), ...add] } })
-        .then((r) => { if (r) toast(`已把 ${add.length} 个合集加进参加的产品 —— 这些产品${c.state === 'approved' ? '现在' : '在活动生效后'}会显示活动徽章和倒计时`); else ac.disabled = false; });
-      return;
-    }
     const hb = e.target.closest('[data-hub]');
     if (hb) { openHub(hb.dataset.hub); return; }
     if (e.target.closest('[data-hubback]')) { cpHub = null; renderCampaigns(); return; }

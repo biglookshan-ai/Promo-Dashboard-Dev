@@ -160,6 +160,7 @@ export const DEFINITIONS = [
       t('ends_at', '结束', 'date_time', { description: '设了「结束后去哪」时,主题按这个时间判断链接结束了没有' }),
       t('after_end', '结束后去哪', 'single_line_text_field', { description: '空 = 不跳转;collection = 跳回合集原来的页面;url = 跳到 after_end_url' }),
       t('after_end_url', '结束后跳到的链接', 'single_line_text_field'),
+      t('view', '页面模板', 'single_line_text_field', { description: '?view= 后面那段;产品卡上的活动徽章点了去这条链接时用' }),
     ],
   },
 ];
@@ -317,6 +318,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       in_stock: it.inStock ? 'true' : 'false', min_discount: String(Math.max(0, Math.round(Number(it.minDiscount) || 0))),
       limit: String(Math.max(0, Math.round(Number(it.limit) || 0))), sort: str(it.sort), title: str(it.heading),
       after_end: ['collection', 'url'].includes(it.afterEnd) ? it.afterEnd : '', after_end_url: it.afterEnd === 'url' ? str(it.afterEndUrl).trim() : '',
+      view: str(it.view).trim(),
     });
   }
   if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });
