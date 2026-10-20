@@ -21,6 +21,7 @@
 - 阶段 3:73 个产品的 `offer_*` 按日期并入活动、`promotion_tag` 并入活动、清理 `product_activity_event`(写产品数据,单独问用户)。
 
 ## 🏁 最近完成
+- **修(主题):顶栏打开页面先闪 1–2 秒蓝绿色**(2026-10-20,用户说一直都有):顶栏是自定义元素,脚本 DOMContentLoaded 后才注册,注册前是 inline,底色只画在文字上,露出后面 header 区块的 #517876;根元素加 `display: block` 已推正式主题(记录 docs/releases/2026-10-20-topbar-flash)
 - **修:Banner 上传图片失败**(2026-10-19):上传后等 Shopify 处理完的那一步查 `node { fileStatus }` 报「fileStatus doesn't exist on type Node」→ 改成 `... on File { fileStatus }`(图其实已经进了文件库,只是 app 拿不回来);本地假店不校验查询所以之前没测出来
 - **促销链接里直接排产品顺序**(2026-10-19 用户:合集排序显示整个合集的产品,排不了促销链接里只显示打折的那些):
   - 促销链接编辑器右边的产品卡片可以拖动排序;点序号输入「移到第几位」;每张卡有「置顶」;「全部按排序规则」一键清掉
