@@ -110,6 +110,7 @@
   }
 
   // 所有改动都走这里:演示模式在本地跑规则,正式模式交给服务器
+  let lastActErr = ''; // 最近一次保存失败的原因(编辑器里标到对应的字段上)
   async function act(action) {
     try {
       if (MODE === 'demo') {
@@ -124,6 +125,7 @@
       else if (v.larkErrors?.length) toast('已保存,但飞书通知没发出去:' + v.larkErrors[0], false);
       return v;
     } catch (e) {
+      lastActErr = e.message || String(e);
       toast(e.message || String(e), false);
       return null;
     }
@@ -184,11 +186,11 @@
   // 上线中 → 现在排第几;已排期 / 待审核 → 上线那一刻会排第几
   function bannerPos(b) {
     const s = status(b);
-    if (s === 'live') return { n: liveBannersAt(now()).indexOf(b) + 1, future: false };
+    if (s === 'live') return { n: liveBannersAt(now()).findIndex((x) => x.id === b.id) + 1, future: false }; // 按 id 比(编辑器里传进来的是复制出来的对象)
     if (['scheduled', 'pending', 'waiting'].includes(s)) {
       const t = Math.max(now(), win(b).start ?? now()) + 1000;
-      const set = [...liveBannersAt(t).filter((x) => x !== b), b].sort(byOrder);
-      return { n: set.indexOf(b) + 1, future: true, at: win(b).start };
+      const set = [...liveBannersAt(t).filter((x) => x.id !== b.id), b].sort(byOrder);
+      return { n: set.findIndex((x) => x.id === b.id) + 1, future: true, at: win(b).start };
     }
     return null;
   }
@@ -535,6 +537,17 @@
   }
   const isActive = (name) => !!document.getElementById('section-' + name)?.classList.contains('is-active');
 
+  // 总览顶部:进行中 / 快开始的活动(点了进活动页)
+  function campStripHtml() {
+    const t = now();
+    const live = S.campaigns.filter((c) => status(c) === 'live').sort((a, b) => (win(a).end ?? Infinity) - (win(b).end ?? Infinity));
+    const soon = S.campaigns.filter((c) => status(c) === 'scheduled' && (win(c).start ?? Infinity) - t <= 14 * DAY).sort((a, b) => win(a).start - win(b).start);
+    if (!live.length && !soon.length) return '';
+    const chip = (c, txt) => `<button type="button" class="campchip" data-hub="${c.id}">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : ''}<b>${esc(c.name)}</b><span class="muted">${txt}</span></button>`;
+    return `<section class="panel campstrip"><div class="panel__h"><h3>活动</h3><button class="linkbtn" data-go="campaigns" type="button">全部活动 ›</button></div>
+      <div class="campstrip__g">${live.map((c) => chip(c, win(c).end != null ? `还剩 ${relSpan(win(c).end - t)}` : '进行中')).join('')}
+        ${soon.map((c) => chip(c, `${relSpan(win(c).start - t)}后开始`)).join('')}</div></section>`;
+  }
   function renderOverview() {
     const items = all(); const t = now(); const in7 = t + 7 * DAY;
     const liveN = items.filter((x) => status(x) === 'live' && !x.isDefault).length;
@@ -605,14 +618,19 @@
       </div>`).join('') : empty('接下来 14 天没有上线 / 下线变化');
 
     $('#ov-root').innerHTML = `
-      ${pageHead('总览', '网站现在长什么样、接下来会发生什么')}
+      ${pageHead('总览', '今天网站上有什么、接下来会变什么')}
       <div class="stats">
         ${stat(liveN, '上线中', 'stat--ok', 'banners')}
         ${stat(soonN, '7 天内上线', '', 'overview')}
         ${stat(endN, '7 天内到期', endN ? 'stat--warn' : '', 'overview')}
         ${team() || pendN ? stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews') : ''}
       </div>
-      ${alertsHtml(['banner', 'topbar', 'campaign', 'tbstyle', 'pmodule'])}
+      ${campStripHtml()}
+      ${alertsHtml(['banner', 'topbar', 'campaign', 'tbstyle', 'pmodule', 'pin', 'salelink', 'callout'])}
+      <section class="panel">
+        <div class="panel__h"><h3>接下来 14 天</h3><span class="muted">会自动上线 / 下线的内容,按天排好</span></div>
+        <div class="evdays">${evHtml}</div>
+      </section>
       <div id="pv-root"></div>
       <section class="panel">
         <div class="gtbar">
@@ -645,10 +663,7 @@
           <span class="muted">鼠标移到一行上看大图和详情 · 条的端点淡出 = 超出这段时间或没有结束时间</span>
         </div>
       </section>
-      <section class="panel">
-        <div class="panel__h"><h3>接下来 14 天</h3><span class="muted">会自动上线 / 下线的内容,按天排好</span></div>
-        <div class="evdays">${evHtml}</div>
-      </section>`;
+`;
     $('#ov-active').addEventListener('change', (e) => { ov.onlyActive = e.target.checked; renderOverview(); });
     $$('#ov-zoom button').forEach((b) => b.addEventListener('click', () => { ov.zoom = b.dataset.zoom; ov.offset = 0; renderOverview(); }));
     $$('#ov-root [data-nav]').forEach((b) => b.addEventListener('click', () => { ov.offset = +b.dataset.nav ? ov.offset + +b.dataset.nav : 0; renderOverview(); }));
@@ -682,6 +697,59 @@
     const r = await act({ type: 'order', kind, ids });
     if (r?.message) toast(r.message); else renderAll();
   }
+
+  // ================= 列表页统一模板(2026-10-20 改版)=================
+  // 页面 = 页头 + (可选)预览 / 时间轴面板 + 工具条(状态筛选 + 搜索 + 右边按钮)+ 统一的内容行 itemRow
+  const pageF = { banners: { st: 'live', q: '' }, topbar: { st: 'live', q: '' }, campaigns: { st: 'live', q: '' } };
+  const fOf = (pg) => (pageF[pg] ||= { st: '', q: '' });
+  const qOk = (x, q) => !q || [titleOf(x), x.name, x.title, x.text, x.slug, x.collection?.title, x.badge].some((v) => String(v || '').toLowerCase().includes(q.trim().toLowerCase()));
+  const pMatch = (pg, x) => { const f = fOf(pg); return inTab(x, f.st) && qOk(x, f.q); };
+  const ptoolHtml = (pg, list, right = '', { ph = '搜索名称' } = {}) => { const f = fOf(pg);
+    return `<div class="ptool" data-ptool="${pg}"><div class="ftabs">${tabsHtml(list.filter((x) => qOk(x, f.q)), f.st)}</div>
+      <input class="inp inp--sm ptool__q" data-pq="${pg}" placeholder="${esc(ph)}" value="${esc(f.q)}"/>${right ? `<div class="ptool__r">${right}</div>` : ''}</div>`; };
+  const PAGE_RENDER = () => ({ banners: renderBanners, topbar: renderTopbar, tbstyle: renderTopbar, pmodules: renderPmodules, pins: renderPins, salelinks: renderSaleLinks, callouts: renderCallouts, campaigns: renderCampaigns });
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest?.('[data-ptool] .ftab'); if (!t) return;
+    const pg = t.closest('[data-ptool]').dataset.ptool; fOf(pg).st = t.dataset.st; PAGE_RENDER()[pg]?.();
+  });
+  document.addEventListener('input', (e) => {
+    const i = e.target.closest?.('[data-pq]'); if (!i) return;
+    const pg = i.dataset.pq; fOf(pg).q = i.value; PAGE_RENDER()[pg]?.();
+    const n = $(`[data-pq="${pg}"]`); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } // 重画后光标留在搜索框
+  });
+  // 行首的小图
+  function rowThumb(x) {
+    const img = (u, tall) => `<span class="irow__thumb${tall ? ' irow__thumb--tall' : ''}" style="background-image:url('${esc(thumb(u, 160))}')"></span>`;
+    if (x.kind === 'banner') return x.image ? img(x.image, true) : '<span class="irow__thumb irow__thumb--tall">🖼</span>';
+    if (x.kind === 'topbar') return `<span class="irow__thumb" style="background:${esc(activeStyle().bg || '#3B4041')};color:${esc(activeStyle().color || '#fff')}">${esc(x.emoji || '📣')}</span>`;
+    if (x.kind === 'tbstyle') return `<span class="irow__thumb" style="background:${esc(x.bg)};color:${esc(x.color)};font-size:12px;font-weight:600">${esc(x.decoLeft || 'Aa')}</span>`;
+    if (x.kind === 'pmodule') { const c = pmColors(x); return `<span class="irow__thumb" style="background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)};font-size:13px;font-weight:700" title="${(x.tabs || []).length} 个页签">${(x.tabs || []).length}</span>`; }
+    if (x.kind === 'pin' || x.kind === 'salelink') { const p = (x.products || []).find((y) => y?.image); return p ? img(p.image) : `<span class="irow__thumb">${x.kind === 'pin' ? I.sort : '🔗'}</span>`; }
+    if (x.kind === 'callout') return coImg(x) ? img(coImg(x)) : '<span class="irow__thumb">💡</span>';
+    if (x.kind === 'campaign') { const b = S.banners.find((y) => y.campaign === x.id && y.image); return b ? img(b.image, true) : `<span class="irow__thumb" style="background:#fdf0e7;color:#b0480f">${I.flag}</span>`; }
+    return '<span class="irow__thumb"></span>';
+  }
+  // 一条内容一行:小图 | 名称 + 说明 | 时间 | 状态 | 操作(复制)
+  function itemRow(x, o = {}) {
+    const w = win(x);
+    const when = o.when ?? (w.start == null && w.end == null ? '长期显示' : `${w.start != null ? fDT(w.start) : '立即'}<em>→ ${w.end != null ? fDT(w.end) : '不结束'}</em>`);
+    const follow = w.via ? `<span class="kchip kchip--campaign">跟随「${esc(w.via.name)}」</span>` : '';
+    const flags = `${endingTag(x)}${syncTag(x)}${x.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${x.state === 'rejected' ? `<span class="tag tag--danger" title="${esc(x.rejectNote || '')}">已退回</span>` : ''}`;
+    return `<div class="irow ${status(x) === 'ended' ? 'is-dim' : ''} ${o.kid ? 'is-kid' : ''}" data-pop="${x.id}" ${o.attrs || ''}>
+      <span class="irow__lead">${o.lead || ''}${o.thumb ?? rowThumb(x)}</span>
+      <button class="irow__main" type="button" ${o.noOpen ? '' : o.mainAttr || `data-open="${x.id}"`}>
+        <span class="irow__t"><span class="irow__name">${esc(o.title ?? titleOf(x))}</span>${o.tags || ''}</span>
+        <span class="irow__s">${follow}${o.sub || ''}${flags}</span>
+      </button>
+      <span class="irow__when">${when}</span>
+      ${o.badge ?? badge(x)}
+      <span class="irow__act">${o.act || ''}${o.noDup ? '' : `<button class="btn btn-sm btn-ghost" data-dup="${x.id}" type="button" title="复制一份出来改" aria-label="复制">${I.copy}</button>`}</span>
+      ${o.extra ? `<div class="irow__extra">${o.extra}</div>` : ''}
+    </div>`;
+  }
+  const ilistHtml = (rows, emptyText, attrs = '') => `<div class="ilist" ${attrs}>${rows.join('') || `<div class="empty">${esc(emptyText)}</div>`}</div>`;
+  // 一页里分几类(顶栏:公告 / 样式;首页模块:促销 / 推荐)
+  const subTabsHtml = (key, cur, opts) => `<div class="ptabs"><div class="seg">${opts.map(([k, l, n]) => `<button type="button" data-${key}="${k}" class="${cur === k ? 'is-active' : ''}">${l}${n != null ? ` <span class="seg__n">${n}</span>` : ''}</button>`).join('')}</div></div>`;
 
   // ================= Banner =================
   const bnF = { st: 'live', tag: '', at: null };
@@ -732,48 +800,52 @@
     if (editing) wireOrderDrag('#bn-ocs', 'banner', renderBannerOrder);
   }
   function renderBanners() {
-    const chips = [['', '全部类型'], ['new', '新品'], ['sale', '促销'], ['event', '活动'], ['none', '无角标']]
-      .map(([k, l]) => `<button class="fchip ${bnF.tag === k ? 'is-active' : ''}" data-tag="${k}" type="button">${l}</button>`).join('');
-    const rows = S.banners.filter((b) => inTab(b, bnF.st) && (!bnF.tag || b.tag === bnF.tag)).sort(byStatusThenOrder);
-    const card = (b) => `<button class="bcard ${status(b) === 'ended' ? 'is-dim' : ''}" data-open="${b.id}" type="button">
-      <span class="bcard__slide">${slideHtml(b, { w: 600 })}${posChip(b)}${badge(b)}</span>
-      <span class="bcard__body">
-        <b class="bcard__t">${esc(b.title || '未命名')}</b>
-        <span class="bcard__when">${I.clock}<span>${winText(b)}</span></span>
-        ${endingTag(b)}${syncTag(b)}
-        ${b.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
-        ${b.state === 'rejected' ? `<span class="tag tag--danger">已退回:${esc(b.rejectNote || '')}</span>` : ''}
-      </span>
-    </button>`;
-
+    const TAGC = [['', '全部角标'], ['new', '新品'], ['sale', '促销'], ['event', '活动'], ['none', '无角标']];
+    const rows = S.banners.filter((b) => pMatch('banners', b) && (!bnF.tag || b.tag === bnF.tag)).sort(byStatusThenOrder);
     $('#bn-root').innerHTML = `
-      ${pageHead('Banner', `首页轮播图,和前台同比例显示(电脑 ${S.site.slide.w}×${S.site.slide.h} · 手机 ${S.site.slide.mw}×${S.site.slide.mh})。每张独立排期,也可以跟随活动。`, `<button class="btn btn-primary" data-new="banner" type="button">${I.plus}新建 Banner</button>`)}
+      ${pageHead('首页 Banner', `首页轮播,到时间自动上下线。竖图 ${S.site.slide.w}×${S.site.slide.h}(手机 ${S.site.slide.mw}×${S.site.slide.mh})。`, `<button class="btn btn-primary" data-new="banner" type="button">${I.plus}新建 Banner</button>`)}
       ${alertsHtml(['banner'])}
       <section class="panel" id="bn-order"></section>
-      <div class="fbar"><div class="ftabs">${tabsHtml(S.banners, bnF.st)}</div><div class="fchips">${chips}</div></div>
-      <div class="bgrid">${rows.map(card).join('') || empty('没有符合条件的 Banner')}</div>`;
+      ${ptoolHtml('banners', S.banners, `<select class="sel sel--sm" data-bntag aria-label="角标">${TAGC.map(([k, l]) => `<option value="${k}" ${bnF.tag === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, { ph: '搜索标题' })}
+      ${ilistHtml(rows.map((b) => itemRow(b, { title: b.title || '未命名 Banner', sub: `<span class="kchip">${esc(TAGCN[b.tag] || '无角标')}</span>${posChip(b)}` })), '没有符合条件的 Banner')}`;
     renderBannerOrder();
-    $$('#bn-root .ftab').forEach((b) => b.addEventListener('click', () => { bnF.st = b.dataset.st; renderBanners(); }));
-    $$('#bn-root .fchip').forEach((b) => b.addEventListener('click', () => { bnF.tag = b.dataset.tag; renderBanners(); }));
+    $('#bn-root [data-bntag]')?.addEventListener('change', (e) => { bnF.tag = e.target.value; renderBanners(); });
   }
 
   // ================= 顶栏 =================
-  let tbAt = null; let tbTimer = null; let tbIdx = 0; const tbF = { st: 'live' };
+  let tbAt = null; let tbTimer = null; let tbIdx = 0; const tbF = { view: 'msg' };
   function renderTopbar() {
     const at = tbAt ?? now();
     const points = tlPoints(['topbar', 'tbstyle']);
     const liveAt = S.topbar.filter((t) => status(t, at) === 'live').sort(byOrder);
     const styleAt = activeStyle(at);
     const editing = !!ord.topbar;
-    const rows = editing ? ord.topbar.map((id) => S.topbar.find((t) => t.id === id)).filter(Boolean) : S.topbar.filter((t) => inTab(t, tbF.st)).sort(byStatusThenOrder);
-    const styles = [...S.tbstyles].sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0) || byStatusThenOrder(a, b));
+    const view = editing ? 'msg' : tbF.view;
     const pend = S.pendingOrder && S.pendingOrder.kind === 'topbar';
+    const rows = editing ? ord.topbar.map((id) => S.topbar.find((t) => t.id === id)).filter(Boolean) : S.topbar.filter((t) => pMatch('topbar', t)).sort(byStatusThenOrder);
+    const styles = S.tbstyles.filter((x) => x.isDefault || pMatch('tbstyle', x)).sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0) || byStatusThenOrder(a, b));
+    const msgList = `
+      ${editing ? `<div class="ptool"><b>调整轮播顺序</b><span class="muted">拖动左边的把手换位置,点「保存顺序」才生效</span>
+          <div class="ptool__r"><button class="btn btn-sm" data-tbord="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-tbord="save" type="button">保存顺序</button></div></div>`
+        : ptoolHtml('topbar', S.topbar, `<button class="btn btn-sm" data-tbord="edit" type="button" ${pend ? 'disabled' : ''}>${I.sort}调整轮播顺序</button>`, { ph: '搜索公告文字' })}
+      ${pend ? `<div class="note note--warn">${esc(who(S.pendingOrder.by))} 提交了新的顶栏顺序,等审核中。</div>` : ''}
+      ${ilistHtml(rows.map((t, i) => itemRow(t, { noOpen: editing, noDup: editing, attrs: editing ? `draggable="true" data-ord="${t.id}"` : '',
+        lead: editing ? `<span class="irow__grip">${I.grip}</span><span class="irow__n">${i + 1}</span>` : '',
+        sub: `<span class="kchip">${esc(t.category || '公告')}</span>${t.link ? `<span class="mono">${esc(t.link)}</span>` : ''}` })), '没有这个状态的公告', 'id="tb-list"')}`;
+    const styleList = `
+        <div class="tbpresets"><span class="muted">用节日模板新建:</span>${Object.entries(TB_PRESETS).map(([k, x]) => `<button class="tbpreset" type="button" data-new="tbstyle" data-tbpreset="${k}"><span class="tbpreset__bar" style="background:${x.v.bg};color:${x.v.color}">${fxHtml(x.v.effect, x.v.accent)}<span>${x.v.decoLeft} Aa ${x.v.decoRight}</span></span><b>${x.label}</b></button>`).join('')}</div>
+      ${ptoolHtml('tbstyle', S.tbstyles.filter((x) => !x.isDefault), '', { ph: '搜索样式名' })}
+      ${ilistHtml(styles.map((x) => itemRow(x, { noDup: x.isDefault,
+        tags: x.isDefault ? '<span class="tag">默认</span>' : '',
+        sub: `${x.effect && x.effect !== 'none' ? `<span class="kchip">${esc(EFFECT[x.effect] || x.effect)}</span>` : ''}<span class="mono">${esc(x.bg)} · ${esc(x.color)}</span>`,
+        when: x.isDefault ? '<em>一直生效</em>没有别的样式时用' : undefined,
+        badge: x.isDefault ? '<span class="stb stb--live"><span class="dot"></span>默认</span>' : undefined })), '没有这个状态的样式')}`;
     $('#tb-root').innerHTML = `
-      ${pageHead('顶栏公告', '网站最上方轮播的一行字。公告和「样式」分开管:公告决定说什么,样式决定长什么样(节日可以自动换装)。',
+      ${pageHead('顶栏', '网站最上方的一行公告,和它的样式(节日可以自动换装)。',
         `<button class="btn" data-new="tbstyle" type="button">${I.plus}新建样式</button><button class="btn btn-primary" data-new="topbar" type="button">${I.plus}新建公告</button>`)}
       ${alertsHtml(['topbar', 'tbstyle'])}
       <section class="panel">
-        <div class="panel__h"><h3>预览顶栏</h3>
+        <div class="panel__h"><h3>网站上的顶栏</h3>
           <span class="muted">看哪一刻:<b>${tbAt == null ? '现在' : `${fDT(at)} · ${relDay(at)}`}</b>
             <button class="btn btn-sm btn-ghost" id="tb-prev" type="button" aria-label="上一条">${I.left}</button><button class="btn btn-sm btn-ghost" id="tb-next" type="button" aria-label="下一条">${I.right}</button></span></div>
         ${tlHtml('tb', points, tbAt)}
@@ -788,31 +860,8 @@
         <div class="tbnow__style">这一刻的样式:<b>${esc(styleAt.name || '默认样式')}</b> · 底色 <span class="mono">${esc(styleAt.bg)}</span> · 文字 <span class="mono">${esc(styleAt.color)}</span>${styleAt.effect && styleAt.effect !== 'none' ? ` · 特效 ${esc(EFFECT[styleAt.effect] || styleAt.effect)}` : ''}${styleAt.decoLeft || styleAt.decoRight ? ` · 装饰 ${esc(styleAt.decoLeft || '')}${esc(styleAt.decoRight || '')}` : ''}
           ${styleAt.id ? `<button class="linkbtn" data-open="${styleAt.id}" type="button">去编辑样式</button>` : ''}</div>
       </section>
-      <section class="panel">
-        <div class="panel__h"><h3>样式(节日主题)</h3><span class="muted">到了时间自动换装,结束后回到默认样式;同时有多个时,优先级高的生效</span></div>
-        <div class="tbpresets"><span class="muted">用节日模板新建:</span>${Object.entries(TB_PRESETS).map(([k, x]) => `<button class="tbpreset" type="button" data-new="tbstyle" data-tbpreset="${k}"><span class="tbpreset__bar" style="background:${x.v.bg};color:${x.v.color}">${fxHtml(x.v.effect, x.v.accent)}<span>${x.v.decoLeft} Aa ${x.v.decoRight}</span></span><b>${x.label}</b></button>`).join('')}</div>
-        <div class="tbstyles">${styles.map((x) => `<button class="tbs" data-open="${x.id}" data-pop="${x.id}" type="button">
-          <span class="tbs__bar" style="background:${esc(x.bg)};color:${esc(x.color)}">${fxHtml(x.effect, x.accent)}<span>${esc(x.decoLeft || '')} Aa ${esc(x.decoRight || '')}</span></span>
-          <span class="tbs__b"><b>${esc(x.name)}</b>${x.isDefault ? '<span class="tag">默认</span>' : badge(x)}</span>
-          <span class="tbs__w">${x.isDefault ? '没有其他样式生效时使用' : winText(x)}</span>
-        </button>`).join('')}</div>
-      </section>
-      <div class="fbar"><div class="ftabs">${editing ? '<b class="fbar__t">调整轮播顺序</b>' : tabsHtml(S.topbar, tbF.st)}</div>
-        <span class="muted">${editing ? `拖动左侧把手换位置,点「保存顺序」才生效 <button class="btn btn-sm" data-tbord="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-tbord="save" type="button">${canOrd('topbar') ? '保存顺序' : '提交顺序审核'}</button>`
-          : `<button class="btn btn-sm" data-tbord="edit" type="button" ${pend ? 'disabled' : ''}>${I.sort}调整顺序</button>`}</span></div>
-      ${pend ? `<div class="note note--warn">${esc(who(S.pendingOrder.by))} 提交了新的顶栏顺序,等审核中。</div>` : ''}
-      <section class="panel">
-        <div class="tblist" id="tb-list">${rows.map((t, i) => `
-          <div class="tbrow ${status(t) === 'ended' ? 'is-dim' : ''}" ${editing ? `draggable="true" data-ord="${t.id}"` : ''} data-pop="${t.id}">
-            <span class="tbrow__grip">${editing ? I.grip : ''}</span>
-            ${editing ? `<span class="tbrow__n">${i + 1}</span>` : ''}
-            <button class="tbrow__main" ${editing ? '' : `data-open="${t.id}"`} type="button">
-              <span class="tbrow__txt">${esc(titleOf(t))}</span>
-              <span class="tbrow__meta"><span class="kchip">${esc(t.category || '')}</span>${I.clock}${winText(t)}${t.link ? ` · <span class="mono">${esc(t.link)}</span>` : ''}</span>
-            </button>
-            ${endingTag(t)}${syncTag(t)}${t.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${badge(t)}
-          </div>`).join('') || '<p class="muted">没有这个状态的公告</p>'}</div>
-      </section>`;
+      ${subTabsHtml('tbview', view, [['msg', '公告', S.topbar.length], ['style', '节日样式', S.tbstyles.length]])}
+      ${view === 'msg' ? msgList : styleList}`;
     const show = () => {
       const el = $('#tb-msg'); if (!el) return;
       if (!liveAt.length) { el.innerHTML = '<span class="tbar__empty">这一天顶栏没有内容</span>'; return; }
@@ -823,7 +872,7 @@
     $('#tb-prev').addEventListener('click', () => { tbIdx--; show(); });
     $('#tb-next').addEventListener('click', () => { tbIdx++; show(); });
     wireTimeline('tb', points, () => tbAt, (v) => { tbAt = v; renderTopbar(); });
-    $$('#tb-root .ftab').forEach((b) => b.addEventListener('click', () => { tbF.st = b.dataset.st; renderTopbar(); }));
+    $$('#tb-root [data-tbview]').forEach((b) => b.addEventListener('click', () => { tbF.view = b.dataset.tbview; renderTopbar(); }));
     $$('#tb-root [data-tbord]').forEach((b) => b.addEventListener('click', () => {
       const a = b.dataset.tbord;
       if (a === 'edit') { ord.topbar = ordPipeline('topbar').map((x) => x.id); renderTopbar(); }
@@ -838,7 +887,7 @@
   // ================= 活动总控台 =================
   // 一个活动下面所有「网站要更新的东西」:网站内容(Banner / 顶栏 / 首页模块 / 合集置顶)+ 改价;具体要求和分工在关联的飞书任务里
   let cpHub = null; // 正在看的活动 id
-  const openHub = (id) => { cpHub = id; hubDay = null; hubPrice.at = 0; showSection('campaigns'); renderCampaigns(); window.scrollTo(0, 0); };
+  const openHub = (id) => { cpHub = id; hubDay = null; hubTab = 'ov'; hubPrice.at = 0; showSection('campaigns'); renderCampaigns(); window.scrollTo(0, 0); };
   let hubPrice = { plans: null, err: '', at: 0 };
   async function loadHubPrice() {
     if (MODE !== 'live' || !(window.cgpCanSee && window.cgpCanSee('price'))) { hubPrice = { plans: null, err: '', at: now() }; return; }
@@ -1000,6 +1049,7 @@
     </div>`;
   }
   let hubDay = null; // 主活动时间轴上选中的日子(null = 现在)
+  let hubTab = 'ov'; // 活动页现在看哪一页:概览 / 网站内容 / 改价 / 飞书任务
   function familyHtml(c) {
     const kids = kidsOf(c);
     const fam = [c, ...kids];
@@ -1058,6 +1108,22 @@
     }
     const checks = consistencyChecks(c, canPrice ? (hubPrice.plans || undefined) : null);
     const links = c.larkLinks || [];
+    const hubOv = `      ${hubSettingsHtml(c)}
+      ${parentC(c) ? '' : familyHtml(c)}
+      ${checks.length ? `<section class="panel hubsec hubsec--warn"><div class="panel__h"><h3>⚠️ 需要留意</h3><span class="muted">文案里的折扣对不上实际改价、时间和活动不一致</span></div>
+        <div class="hchecks">${checks.map((x) => `<div class="hcheck hcheck--${x.level}">${x.level === 'warn' ? '⚠️' : 'ℹ️'} <span>${esc(x.text)}</span>${x.id ? `<button type="button" class="linkbtn" data-open="${x.id}">去改</button>` : x.price ? `<button type="button" class="linkbtn" data-price="${x.price}">去改</button>` : ''}</div>`).join('')}</div></section>` : ''}
+`;
+    const hubWeb = `      <section class="panel hubsec"><div class="panel__h"><h3>网站上跟着活动变的</h3><span class="muted">跟随活动时间的:活动开始自动上线、结束自动下线</span></div>
+        ${groups || '<p class="muted">还没有。活动期间想让首页 Banner、顶栏、首页商品模块、合集排序也跟着换,就在下面加。</p>'}
+        <div class="hubsec__add">${adds}</div></section>
+`;
+    const hubPriceSec = `      <section class="panel hubsec"><div class="panel__h"><h3>改价</h3><span class="muted">${canPrice ? '到点自动改价、到期自动恢复' : '改价信息保密,只有定价同事和管理员能看'}</span></div>
+        <div class="hrows">${canPrice ? priceRows || `<p class="muted">${hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…'}</p>` : '<p class="muted">你没有改价页的权限</p>'}</div>
+        ${canPrice ? `<div class="hubsec__add"><button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button></div>` : ''}</section>
+`;
+    const hubLark = `      <section class="panel hubsec"><div class="panel__h"><h3>关联的飞书任务</h3><span class="muted">具体要求、设计、文案放在飞书任务里</span></div>
+        ${links.length ? `<div class="larklinks">${links.map((l) => `<a class="larklink" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="larklink__ico">✓</span><span class="larklink__b"><b>${esc(l.label || '飞书任务')}</b><span class="muted">${/task_?list|tasklist/i.test(l.url) ? '任务清单' : '任务'}${larkTaskGuid(l.url) ? '' : ' · 链接里没找到任务编号'}</span></span><span class="larklink__go">↗</span></a>`).join('')}</div>`
+          : `<p class="muted">还没关联(可不填)。<button type="button" class="linkbtn" data-open="${c.id}">在活动设置里贴飞书任务链接</button></p>`}</section>`;
     return `
       <button class="btn btn-ghost btn-back" type="button" data-hubback>← 全部活动</button>
       <div class="hubhead">
@@ -1065,19 +1131,8 @@
           ${parentC(c) ? `<div class="hubparent">子活动 · 属于主活动 <button type="button" class="linkbtn" data-hub="${parentC(c).id}">${esc(parentC(c).name)} ›</button><span class="muted">徽章自动比主活动优先</span></div>` : ''}</div>
       </div>
       ${prog}
-      ${hubSettingsHtml(c)}
-      ${parentC(c) ? '' : familyHtml(c)}
-      ${checks.length ? `<section class="panel hubsec hubsec--warn"><div class="panel__h"><h3>⚠️ 需要留意</h3><span class="muted">文案里的折扣对不上实际改价、时间和活动不一致</span></div>
-        <div class="hchecks">${checks.map((x) => `<div class="hcheck hcheck--${x.level}">${x.level === 'warn' ? '⚠️' : 'ℹ️'} <span>${esc(x.text)}</span>${x.id ? `<button type="button" class="linkbtn" data-open="${x.id}">去改</button>` : x.price ? `<button type="button" class="linkbtn" data-price="${x.price}">去改</button>` : ''}</div>`).join('')}</div></section>` : ''}
-      <section class="panel hubsec"><div class="panel__h"><h3>网站上跟着活动变的</h3><span class="muted">跟随活动时间的:活动开始自动上线、结束自动下线</span></div>
-        ${groups || '<p class="muted">还没有。活动期间想让首页 Banner、顶栏、首页商品模块、合集排序也跟着换,就在下面加。</p>'}
-        <div class="hubsec__add">${adds}</div></section>
-      <section class="panel hubsec"><div class="panel__h"><h3>改价</h3><span class="muted">${canPrice ? '到点自动改价、到期自动恢复' : '改价信息保密,只有定价同事和管理员能看'}</span></div>
-        <div class="hrows">${canPrice ? priceRows || `<p class="muted">${hubPrice.err ? esc(hubPrice.err) : hubPrice.plans ? '还没有改价计划' : '加载中…'}</p>` : '<p class="muted">你没有改价页的权限</p>'}</div>
-        ${canPrice ? `<div class="hubsec__add"><button type="button" class="btn btn-sm" data-pricenew="${c.id}">${I.plus}改价计划</button></div>` : ''}</section>
-      <section class="panel hubsec"><div class="panel__h"><h3>关联的飞书任务</h3><span class="muted">具体要求、设计、文案放在飞书任务里</span></div>
-        ${links.length ? `<div class="larklinks">${links.map((l) => `<a class="larklink" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="larklink__ico">✓</span><span class="larklink__b"><b>${esc(l.label || '飞书任务')}</b><span class="muted">${/task_?list|tasklist/i.test(l.url) ? '任务清单' : '任务'}${larkTaskGuid(l.url) ? '' : ' · 链接里没找到任务编号'}</span></span><span class="larklink__go">↗</span></a>`).join('')}</div>`
-          : `<p class="muted">还没关联(可不填)。<button type="button" class="linkbtn" data-open="${c.id}">在活动设置里贴飞书任务链接</button></p>`}</section>`;
+      ${subTabsHtml('hubtab', hubTab, [['ov', '概览'], ['web', '网站内容', content.length], ['price', '改价', canPrice ? plans.length : null], ['lark', '飞书任务', links.length]])}
+      ${hubTab === 'ov' ? hubOv : hubTab === 'web' ? hubWeb : hubTab === 'price' ? hubPriceSec : hubLark}`;
   }
 
   // ================= 促销链接(合集 ?onsale=<后缀>)=================
@@ -1172,18 +1227,16 @@
   function renderCallouts() {
     const root = $('#co-root'); if (!root) return;
     const need = MODE === 'live' && S.setup && S.setup.coReady === false;
-    const list = [...(S.callouts || [])].sort((a, b) => (RANK[status(a)] ?? 9) - (RANK[status(b)] ?? 9) || (b.priority ?? 0) - (a.priority ?? 0));
+    const list = (S.callouts || []).filter((x) => pMatch('callouts', x)).sort((a, b) => (RANK[status(a)] ?? 9) - (RANK[status(b)] ?? 9) || (b.priority ?? 0) - (a.priority ?? 0));
     root.innerHTML = `
-      ${pageHead('产品页推广', '在一批产品的产品页(价格 / 活动徽章下面)自动加一张推广小卡片,比如镜头页「Turn this manual lens into a Sony autofocus lens → Smart Fusion」。按合集 / 标签 / 品牌 / 指定产品选放在哪里,以后新上架的产品进了合集就自动带上;一个产品同时符合几张时只显示优先级最高的那张。',
+      ${pageHead('产品页推广', '在一批产品的产品页(价格 / 活动徽章下面)自动加一张推广小卡片,按条件选放在哪些产品上;一个产品只显示优先级最高的那张。',
         need ? '' : `<button class="btn btn-primary" data-new="callout" type="button">${I.plus}新建推广块</button>`)}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
       ${alertsHtml(['callout'])}
-      ${list.length ? `<div class="sllist">${list.map((x) => `<div class="slrow corow">
-          <button class="slrow__main" type="button" data-open="${x.id}"><span class="slrow__h"><b>${esc(titleOf(x))}</b>${badge(x)}<span class="muted">优先级 ${esc(x.priority ?? 0)}</span></span>
-            <span class="muted">${I.clock}${esc(winText(x))}</span><span class="corow__scope">放在:${esc(coScopeText(x))}</span></button>
-          <span class="corow__pv">${coCardHtml(x)}</span>
-          <button class="btn btn-sm btn-ghost" data-dup="${x.id}" type="button" title="复制一份出来改">${I.copy}复制</button></div>`).join('')}</div>`
-        : (need ? '' : empty('还没有推广块。点右上角新建:写一句标题、选推广的产品(图片和链接自动用它的),再选放在哪些产品上。'))}`;
+      ${ptoolHtml('callouts', S.callouts || [], '', { ph: '搜索名称或标题' })}
+      ${ilistHtml(list.map((x) => itemRow(x, { tags: `<span class="tag">优先级 ${esc(x.priority ?? 0)}</span>`, sub: `放在:${esc(coScopeText(x))}`,
+        extra: `<span class="corow__pv">${coCardHtml(x)}</span>` })),
+        need ? '' : (S.callouts || []).length ? '没有符合条件的推广块' : '还没有推广块。点右上角新建:写一句标题、选推广的产品(图片和链接自动用它的),再选放在哪些产品上。')}`;
   }
   // ---- 编辑器 ----
   const coPromoHtml = () => `${ed.promo ? `<span class="chip chip--p">${ed.promo.image ? `<img src="${esc(ed.promo.image)}" alt="">` : ''}<span class="chip__t">${esc(ed.promo.title)}</span>${linkPair('products', ed.promo)}<button type="button" class="chip__x" data-co="unpromo" aria-label="移除">${I.x}</button></span>` : '<span class="muted">还没选</span>'}
@@ -1191,7 +1244,7 @@
   const coImgSrcHtml = (v) => (v.image ? `<span class="coimg" style="background-image:url('${esc(thumb(v.image, 120))}')"></span><span>用上传的图</span><button type="button" class="btn btn-sm btn-ghost" data-co="noimg">改回用产品主图</button>`
     : `<span class="muted">${v.promo ? '用推广产品的主图' : '没有图(选了推广的产品就用它的主图)'}</span>`);
   function coFormHtml(it) {
-    const sec = (n, title, hint, body) => `<div class="edsec"><div class="edsec__h"><span class="edsec__n">${n}</span>${title}${hint ? `<em>${hint}</em>` : ''}</div>${body}</div>`;
+    const sec = edSec;
     return `
       ${sec(1, '卡片内容', '产品页上显示的是英文,右边是预览', `
         ${fld('名称(后台看的)', inp('name', it.name, '如:Smart Fusion · 手动镜头'))}
@@ -1309,47 +1362,49 @@
     const root = $('#sl-root'); if (!root) return;
     const need = MODE === 'live' && S.setup && S.setup.slReady === false;
     const groups = new Map();
-    for (const x of S.salelinks || []) {
+    for (const x of (S.salelinks || []).filter((y) => pMatch('salelinks', y))) {
       const k = x.collection ? numId(x.collection.id) : '?';
       if (!groups.has(k)) groups.set(k, { title: x.collection?.title || '(没选合集)', handle: x.collection?.handle || '', list: [] });
       groups.get(k).list.push(x);
     }
     const rows = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title));
     root.innerHTML = `
-      ${pageHead('促销链接', '给合集做一条只显示打折产品的链接,比如 /collections/dzofilm?onsale=autumn。可以只显示有货的、置顶几个产品、限制数量、换排序;放进 Banner、邮件、社媒都行。链接发出去以后还能改设置;没生效时退回「这个合集所有打折的产品」。',
+      ${pageHead('促销链接', '给合集做一条只显示打折产品的链接(比如 /collections/dzofilm?onsale=autumn),放进 Banner、邮件、社媒都行;发出去以后还能改设置。',
         need ? '' : `<button class="btn btn-primary" data-new="salelink" type="button">${I.plus}新建促销链接</button>`)}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
-      <div class="note">💡 不用保存也能用:任何合集链接后面加 <b class="mono">?onsale</b>,就只显示这个合集里打折的产品(顺序和合集平时一样)。</div>
+      <div class="note note--sm">💡 不用保存也能用:任何合集链接后面加 <b class="mono">?onsale</b>,就只显示这个合集里打折的产品(顺序和合集平时一样)。</div>
       ${alertsHtml(['salelink'])}
-      ${rows.length ? rows.map((g) => `<section class="panel"><div class="panel__h"><h3>${esc(g.title)}</h3>${g.handle ? `<span class="muted mono">/collections/${esc(g.handle)}</span>` : ''}</div>
-        <div class="sllist">${g.list.sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0)).map((x) => `<div class="slrow">
-          <button class="slrow__main" type="button" data-open="${x.id}"><span class="slrow__h"><b>${esc(titleOf(x))}</b>${badge(x)}${slTags(x)}</span>
-            <span class="muted">${I.clock}${esc(winText(x))}${x.heading ? ` · 标题「${esc(x.heading)}」` : ''}</span></button>
-          ${copyBox(slUrl(x), `slu-${x.id}`)}</div>`).join('')}</div></section>`).join('')
-        : (need ? '' : empty('还没有促销链接。点右上角新建一条:选合集、起个后缀,右边会实时显示这条链接会出现哪些产品。'))}`;
+      ${ptoolHtml('salelinks', S.salelinks || [], '', { ph: '搜索名称、后缀或合集' })}
+      ${rows.length ? rows.map((g) => `<div class="ilist"><div class="ilist__grp"><b>${esc(g.title)}</b>${g.handle ? `<span class="muted mono">/collections/${esc(g.handle)}</span>` : ''}</div>
+        ${g.list.sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0)).map((x) => itemRow(x, { tags: slTags(x),
+          sub: x.heading ? `标题「${esc(x.heading)}」` : '', extra: copyBox(slUrl(x), `slu-${x.id}`) })).join('')}</div>`).join('')
+        : (need ? '' : empty((S.salelinks || []).length ? '没有符合条件的促销链接' : '还没有促销链接。点右上角新建一条:选合集、起个后缀,右边会实时显示这条链接会出现哪些产品。'))}`;
   }
   // ---- 编辑器 ----
   function slFormHtml(it) {
     const c = sl?.collection || it.collection;
-    return `${fld('名称', inp('name', it.name, '如:DZOFiLM Autumn Deals'), '给自己人看的名字;后缀没改过会跟着它自动生成')}
+    return `${edSec(1, '链接', '', `${fld('名称', inp('name', it.name, '如:DZOFiLM Autumn Deals'), '给自己人看的名字;后缀没改过会跟着它自动生成')}
       <div class="fld"><span>合集</span><div class="rowin" id="sl-coll">${slCollHtml(c)}</div></div>
       ${fld('链接后缀', `<input class="inp mono" name="slug" value="${esc(it.slug || '')}" placeholder="如:autumn" ${it.slug ? 'data-touched="1"' : ''}/>`, '?onsale= 后面那段:小写字母、数字、横线;同一个合集里不能重复')}
       <div class="fld"><span>页面模板 <em>?view= 后面那段:用主题里单独排版的促销页(比如 sale);留空 = 合集原来的版面</em></span>
         <input class="inp mono" name="view" list="sl-views" value="${esc(it.view || '')}" placeholder="留空 = 合集原来的版面,或填 sale"/><datalist id="sl-views"></datalist>
         <em id="sl-viewinfo"></em></div>
       <div class="fld"><span>完整链接 <em>保存并生效后,这个链接才会按下面的设置显示</em></span><div id="sl-url"></div></div>
-      <label class="tgl"><input type="checkbox" name="inStock" ${it.inStock ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示有货的</b><span class="muted">预订(Pre Order)和缺货的不显示,和前台卡片上的「In Stock」一致</span></span></label>
+`)}
+      ${edSec(2, '显示哪些产品', '', `      <label class="tgl"><input type="checkbox" name="inStock" ${it.inStock ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示有货的</b><span class="muted">预订(Pre Order)和缺货的不显示,和前台卡片上的「In Stock」一致</span></span></label>
       <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
         ${fld('最多显示几个', `<input class="inp" type="number" min="0" name="limit" value="${esc(it.limit ?? '')}" placeholder="不限"/>`, '按下面的排法取前面几个')}</div>
       ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和合集平时一样」= 合集页默认的 Featured 顺序(包括生效中的合集排序清单)。顾客自己选了 Sort by 就按他选的')}
-      <div class="fld"><span>固定位置的产品 <em>拖动产品卡片排序:右边直接拖,或点「放大排序」铺满整个窗口来排;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span>
-        <div class="rowin"><button type="button" class="btn btn-sm btn-primary" data-sl="big">⤢ 放大排序</button></div><div id="sl-pins"></div></div>
       ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
-      ${timeBlock(it, 'salelink')}
+`)}
+      ${edSec(3, '产品顺序', '拖动产品卡片调整顾客看到的顺序', `      <div class="fld"><span>固定位置的产品 <em>拖动产品卡片排序:右边直接拖,或点「放大排序」铺满整个窗口来排;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span>
+        <div class="rowin"><button type="button" class="btn btn-sm btn-primary" data-sl="big">⤢ 放大排序</button></div><div id="sl-pins"></div></div>
+`)}
+      ${edSec(4, '什么时候显示', '', `${timeBlock(it, 'salelink')}
       <div class="fld"><span>结束后去哪 <em>时间到了(或跟随的活动结束)以后,顾客再打开这条链接会怎样</em></span>
         <select class="sel" name="afterEnd">${SL.AFTER_END.map(([k, l]) => `<option value="${k}" ${(it.afterEnd || '') === k ? 'selected' : ''}>${k ? l : '不跳转(显示这个合集所有打折的产品)'}</option>`).join('')}</select>
         <input class="inp mono" name="afterEndUrl" id="sl-afterurl" value="${esc(it.afterEndUrl || '')}" placeholder="/collections/black-friday 或 https://…" ${it.afterEnd === 'url' ? '' : 'hidden'}/>
-        <em>不跳转:链接照样能打开,显示这个合集所有打折的产品(短链接 ?view= 还会用这个模板的版面)。跳回合集:回到这个合集原来的页面。暂停中的链接不跳转。</em></div>`;
+        <em>不跳转:链接照样能打开,显示这个合集所有打折的产品(短链接 ?view= 还会用这个模板的版面)。跳回合集:回到这个合集原来的页面。暂停中的链接不跳转。</em></div>`)}`;
   }
   const slCollHtml = (c) => `${c ? `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}</span>` : '<span class="muted">还没选</span>'}
     <button type="button" class="btn btn-sm" data-sl="coll">${c ? '换一个合集' : '选择合集'}</button>`;
@@ -1498,7 +1553,7 @@
     const T = pnAt ?? now();
     const points = tlPoints(['pin']);
     const groups = new Map();
-    for (const p of S.pins || []) {
+    for (const p of (S.pins || []).filter((x) => pMatch('pins', x))) {
       const cid = p.collection ? numId(p.collection.id) : '?';
       if (!groups.has(cid)) groups.set(cid, { cid, title: p.collection?.title || '(没选合集)', list: [] });
       groups.get(cid).list.push(p);
@@ -1506,16 +1561,12 @@
     for (const g of groups.values()) g.list.sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0));
     const rows = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title));
     const card = (p) => {
-      const on = status(p, T) === 'live';
-      const prods = p.products || [];
-      return `<div class="pnrow ${on ? 'is-on' : ''}">
-        <button class="pnrow__main" type="button" data-open="${p.id}" data-pop="${p.id}">
-          <span class="pnrow__h"><b>${esc(titleOf(p))}</b>${badgeAt(p, T)}${p.fullOrder ? '<span class="tag tag--accent">完全按清单顺序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">倒计时</span>' : ''}</span>
-          <span class="pnrow__w">${I.clock}${esc(winText(p))}</span>
-          <span class="pnrow__ps">${prods.slice(0, 8).map((x, i) => `<span class="pnrow__p" title="${esc(x.title)}"><span class="pnrow__n">${i + 1}</span>${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 8 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}${prods.length ? '' : '<span class="muted">还没加产品</span>'}</span>
-        </button>
-        <span class="pnrow__acts"><button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button></span>
-      </div>`;
+      const prods = (p.products || []).filter(Boolean);
+      return itemRow(p, { badge: badgeAt(p, T),
+        tags: `${p.fullOrder ? '<span class="tag tag--accent">完全按清单顺序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">倒计时</span>' : ''}`,
+        sub: `${prods.length} 个产品排在前面${(p.hidden || []).length ? ` · ${(p.hidden || []).length} 个不显示` : ''}`,
+        act: `<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
+        extra: prods.length ? `<span class="pnrow__ps">${prods.slice(0, 10).map((x, i) => `<span class="pnrow__p" title="${esc(x.title)}"><span class="pnrow__n">${i + 1}</span>${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 10 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}</span>` : '' });
     };
     $('#pn-root').innerHTML = `
       ${pageHead('合集排序', '让合集页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
@@ -1528,14 +1579,15 @@
         ${tlHtml('pn', points, pnAt)}
         ${tlChanges(points, pnAt)}
       </section>
+      ${ptoolHtml('pins', S.pins || [], '', { ph: '搜索清单或合集' })}
       ${rows.length ? rows.map((g) => {
         const act = activePin(g.cid, T);
         // 首页哪些模块页签也吃这个合集(同名的只说一次)
         const used = [...new Set(modTabsUsing(g.cid).map((u) => `${MODULE_CN[u.v.module]}·${tabLabel(u.t)}`))];
         const cs = (S.colState || {})[String(g.cid)];
         const sf = (S.sortFlags || {})[String(g.cid)];
-        return `<section class="panel pngroup">
-          <div class="panel__h"><h3>${esc(g.title)}${MODE === 'live' && g.cid !== '?' ? ` <button class="btn btn-sm pn-hist" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本 / 回滚</button>` : ''}</h3>
+        return `<div class="ilist pngroup">
+          <div class="ilist__grp"><b>${esc(g.title)}</b>${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本 / 回滚</button></span>` : ''}
             <span class="muted">${act ? `这一刻按「${esc(titleOf(act))}」排${act.onlyListed ? ',而且只显示清单里的产品' : ''}` : '这一刻没有清单生效,按合集原来的顺序'}
               ${used.length ? ` · 首页${used.slice(0, 3).map((u) => `「${esc(u)}」`).join('')}${used.length > 3 ? '等' : ''}页签也用这个合集` : ''}</span></div>
           ${cs ? (cs.hold
@@ -1553,9 +1605,9 @@
                 : `只有开始时间最晚的「${esc(titleOf(act))}」会用上,它结束后才轮到别的。不需要的可以暂停或删掉。`}</div>`;
           })()}
           ${sf ? `<div class="note note--ok">合集页现在<b>完全按清单顺序</b>显示(「${esc(sf.pinName || '')}」生效期间),结束自动恢复原来的排序方式。</div>` : ''}
-          <div class="pnlist">${g.list.map(card).join('')}</div>
-        </section>`;
-      }).join('') : (need ? '' : empty('还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
+          ${g.list.map(card).join('')}
+        </div>`;
+      }).join('') : (need ? '' : empty((S.pins || []).length ? '没有符合条件的清单' : '还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
     wireTimeline('pn', points, () => pnAt, (v) => { pnAt = v; renderPins(); });
     // 立即执行一次:不用等定时器那一分钟,而且把「做了什么 / 为什么没做」直接说出来
     $('#pn-run')?.addEventListener('click', async (e) => {
@@ -1620,43 +1672,33 @@
   }
   function renderCampaigns() {
     const hubC = cpHub && camp(cpHub);
-    if (hubC) { $('#cp-root').innerHTML = hubHtml(hubC); wireQuick(hubC); if (!hubPrice.at || now() - hubPrice.at > 30000) loadHubPrice(); return; }
+    if (hubC) { $('#cp-root').innerHTML = hubHtml(hubC); $$('#cp-root [data-hubtab]').forEach((b) => b.addEventListener('click', () => { hubTab = b.dataset.hubtab; renderCampaigns(); })); if (hubTab === 'ov') wireQuick(hubC); if (!hubPrice.at || now() - hubPrice.at > 30000) loadHubPrice(); return; }
     cpHub = null;
-    // 子活动排在它的主活动后面(按主活动的状态 / 时间排组,组里主活动在前、子活动按开始时间)
+    // 子活动排在它的主活动下面(按主活动的状态 / 时间排组,组里主活动在前、子活动按开始时间)
     const rootOf = (c) => parentC(c) || c;
-    const rows = S.campaigns.filter((c) => inTab(c, cpF.st)).sort((a, b) => { const ra = rootOf(a), rb = rootOf(b);
+    const rows = S.campaigns.filter((c) => pMatch('campaigns', c)).sort((a, b) => { const ra = rootOf(a), rb = rootOf(b);
       return RANK[status(ra)] - RANK[status(rb)] || (ra.start ?? 0) - (rb.start ?? 0) || String(ra.id).localeCompare(String(rb.id)) || (a === ra ? -1 : b === rb ? 1 : (a.start ?? 0) - (b.start ?? 0)); });
-    const card = (c) => {
-      const bn = S.banners.filter((b) => b.campaign === c.id), tb = S.topbar.filter((t) => t.campaign === c.id), sty = S.tbstyles.filter((t) => t.campaign === c.id);
-      const st = scopeTotal(c);
-      const zero = [...(c.collections || []).filter((x) => colCount(x) === 0).map((x) => x.title), ...(c.tags || []).filter((t) => tagCount(t) === 0)];
+    const row = (c) => {
       const pc = parentC(c); const kids = core.childrenOf(c.id, S.campaigns);
-      return `<button class="ccard ${status(c) === 'ended' ? 'is-dim' : ''} ${pc ? 'ccard--kid' : ''}" data-hub="${c.id}" type="button">
-        ${pc ? `<span class="ccard__parent">↳ 子活动 · 属于「${esc(pc.name)}」</span>` : kids.length ? `<span class="ccard__parent ccard__parent--main">主活动 · ${kids.length} 个子活动</span>` : ''}
-        <span class="ccard__top"><b>${esc(c.name)}</b>${badge(c)}</span>
-        <span class="ccard__when">${I.clock}${winText(c)}</span>
-        ${endingTag(c)}${syncTag(c)}
-        <span class="ccard__row"><span class="muted">产品</span><span class="ccard__v ccard__v--col">${campScope(c, false, '<br>')}<br><span class="muted">合计${st.exact ? '' : '约'} <b>${st.total}${st.unknown ? '+' : ''}</b> 个${st.exact ? '(已去重)' : st.overlap ? '(可能有重叠)' : ''}</span></span></span>
-        ${zero.length ? `<span class="tag tag--danger">⚠️ ${esc(zero.join('、'))} 里没有产品</span>` : ''}
-        <span class="ccard__row"><span class="muted">徽章</span><span class="ccard__v">${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : '<span class="muted">无徽章</span>'}${c.countdown ? '<span class="tag">倒计时</span>' : ''}</span></span>
-        <span class="ccard__row"><span class="muted">包含</span><span class="ccard__v">${bn.length} 张 Banner · ${tb.length} 条顶栏${sty.length ? ` · ${sty.length} 个顶栏样式` : ''}${(S.salelinks || []).filter((x) => x.campaign === c.id).length ? ` · ${(S.salelinks || []).filter((x) => x.campaign === c.id).length} 条促销链接` : ''}${(c.larkLinks || []).length ? ` · ${c.larkLinks.length} 个飞书任务` : ''}</span></span>
-        ${bn.length ? `<span class="ccard__thumbs">${bn.map((b) => `<span class="ccard__t">${slideHtml(b, { w: 200 })}</span>`).join('')}</span>` : ''}
-      </button>`;
+      const st = scopeTotal(c);
+      const nContent = HUB_KINDS.reduce((n, [k]) => n + listOf(k).filter((x) => x.campaign === c.id).length, 0);
+      const noScope = !(c.collections?.length || c.tags?.length || c.products?.length);
+      return itemRow(c, { kid: !!pc,
+        tags: `${kids.length ? `<span class="tag tag--accent">主活动 · ${kids.length} 个子活动</span>` : ''}${c.badge ? `<span class="pbadge">${esc(c.badge)}</span>` : ''}${c.countdown ? '<span class="tag">倒计时</span>' : ''}`,
+        sub: `${pc ? `<span class="kchip kchip--campaign">↳ 属于「${esc(pc.name)}」</span>` : ''}${noScope ? (campLinks(c).length ? '促销链接里的产品' : '没选产品') : `${st.total}${st.unknown ? '+' : ''} 个产品`} · ${nContent} 项网站内容`,
+        mainAttr: `data-hub="${c.id}"`, act: `<button class="btn btn-sm btn-ghost" type="button" data-open="${c.id}">设置</button>` });
     };
-    const tabs = [['live', '进行中'], ['scheduled', '已排期'], ['draft', '草稿'], ['ended', '已结束'], ['', '全部']]
-      .map(([k, l]) => `<button class="ftab ${cpF.st === k ? 'is-active' : ''}" data-st="${k}" type="button">${l}<span>${S.campaigns.filter((c) => inTab(c, k)).length}</span></button>`).join('');
     $('#cp-root').innerHTML = `
-      ${pageHead('活动(促销)', '有时间段的促销:选好参加的产品(合集 / 标签 / 手动指定),产品页和搜索 / 合集页的产品卡自动显示徽章和倒计时;挂在活动下的 Banner / 顶栏 / 顶栏样式和它同时上线、同时结束。',
+      ${pageHead('活动', '有时间段的促销:选好参加的产品,产品页和产品卡自动显示徽章和倒计时;挂在活动下的 Banner / 顶栏 / 首页模块等和它同时上线、同时结束。',
         `<button class="btn btn-primary" data-new="campaign" type="button">${I.plus}新建活动</button>`)}
       ${alertsHtml(['campaign'])}
-      <div class="fbar"><div class="ftabs">${tabs}</div>${S.catalogFetchedAt ? `<span class="muted">产品数取自前台,更新于 ${fDT(new Date(S.catalogFetchedAt).getTime())}</span>` : ''}</div>
-      <div class="cgrid">${rows.map(card).join('') || empty('没有这个状态的活动')}</div>
+      ${ptoolHtml('campaigns', S.campaigns, S.catalogFetchedAt ? `<span class="muted">产品数取自前台,更新于 ${fDT(new Date(S.catalogFetchedAt).getTime())}</span>` : '', { ph: '搜索活动名或徽章' })}
+      ${ilistHtml(rows.map(row), '没有这个状态的活动')}
       <section class="panel lookup">
         <div class="panel__h"><h3>查一个产品在哪些活动里</h3><span class="muted">Shopify 的产品页上看不到这个,在这里查</span></div>
         <div class="rowin"><input class="inp" id="lk-q" placeholder="粘贴产品链接、handle 或 id,比如 https://www.cinegearpro.co.uk/products/…"/><button class="btn btn-sm btn-primary" id="lk-go" type="button">查</button></div>
         <div id="lk-out"></div>
       </section>`;
-    $$('#cp-root .ftab').forEach((b) => b.addEventListener('click', () => { cpF.st = b.dataset.st; renderCampaigns(); }));
     const go = async () => {
       const q = $('#lk-q').value.trim(); const out = $('#lk-out'); if (!q) return;
       if (MODE !== 'live') { out.innerHTML = '<p class="muted">演示模式查不了(要读产品的合集和标签)。切到正式数据后,这里会列出这个产品参加的活动,以及是因为哪个合集 / 标签 / 单独指定参加的。</p>'; return; }
@@ -1744,37 +1786,36 @@
   }
 
   const pmActiveTab = {};
+  const pmF = { mod: 'sale' };
   function renderPmodules() {
     const root = $('#pm-root'); if (!root) return;
     const needSetup = MODE === 'live' && S.setup && S.setup.pmReady === false;
-    const panel = (mod) => {
-      const list = pmList(mod).sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0) || RANK[status(a)] - RANK[status(b)] || (win(a).start ?? 0) - (win(b).start ?? 0));
-      const cur = activeVersion(mod);
-      const at = pmActiveTab[mod] || 0;
-      return `<section class="panel pm">
-        <div class="panel__h"><h3>${MODULE_CN[mod]}</h3>
-          <span class="muted">${cur ? `现在显示:<b>${esc(cur.name)}</b>${cur.isDefault ? '(平时版本)' : ''}` : '现在显示:主题编辑器里的设置(还没导入平时版本)'}
-          <button class="btn btn-sm btn-primary" data-new="pmodule" data-module="${mod}" type="button" ${needSetup ? 'disabled' : ''}>${I.plus}新建版本</button></span></div>
-        ${cur ? `<div class="pm__now" data-pmnow="${mod}">${moduleHtml(cur, { activeTab: at })}</div>` : ''}
-        <div class="pm__list">${list.map((m) => `<div class="pmrow-w"><button class="pmrow ${status(m) === 'ended' ? 'is-dim' : ''}" data-open="${m.id}" data-pop="${m.id}" type="button">
-          ${miniThumb(m)}
-          <span class="pmrow__b"><b>${esc(m.name || '未命名版本')}</b>${m.isDefault ? '<span class="tag">平时版本</span>' : ''}${cur === m ? '<span class="tag tag--ok">正在显示</span>' : ''}
-            <span class="pmrow__w">${m.isDefault ? '没有别的版本生效时显示' : `${I.clock}${winText(m)}`}</span>
-            <span class="pmrow__tabs">${(m.tabs || []).map((t) => `<span class="chip chip--sm">${esc(tabLabel(t))}</span>`).join('')}</span></span>
-          ${endingTag(m)}${syncTag(m)}${m.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${badge(m)}
-        </button><button class="btn btn-sm btn-ghost pmrow__dup" data-dup="${m.id}" type="button" title="${m.isDefault ? '从平时版本复制一个新版本出来改' : '复制这个版本'}">${I.copy}复制</button></div>`).join('') || empty('还没有版本。先在「设置 → 店铺连接」点「从主题导入」把现在的配置导进来当平时版本。')}</div>
-      </section>`;
-    };
+    const mod = pmF.mod;
+    const list = pmList(mod).filter((m) => m.isDefault || pMatch('pmodules', m))
+      .sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0) || RANK[status(a)] - RANK[status(b)] || (win(a).start ?? 0) - (win(b).start ?? 0));
+    const cur = activeVersion(mod);
+    const at = pmActiveTab[mod] || 0;
     root.innerHTML = `
-      ${pageHead('首页商品模块', '首页的促销模块和推荐 / 新品模块。每个模块有一个「平时版本」,到时间整套换成别的版本(标题 + 页签),结束自动回到平时版本;同一时间有多个版本时,优先级高的生效。')}
+      ${pageHead('首页商品模块', '首页的促销模块和推荐 / 新品模块。到时间整套换成别的版本(标题 + 页签),结束自动回到平时版本。',
+        `<button class="btn btn-primary" data-new="pmodule" data-module="${mod}" type="button" ${needSetup ? 'disabled' : ''}>${I.plus}新建${MODULE_CN[mod]}版本</button>`)}
       ${needSetup ? '<div class="note note--warn">店里还缺这个功能用的 2 个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补上,再点「从主题导入」把两个模块现在的配置导进来当平时版本。</div>' : ''}
       ${alertsHtml(['pmodule'])}
-      ${panel('sale')}${panel('feature')}`;
+      ${subTabsHtml('pmmod', mod, [['sale', MODULE_CN.sale, pmList('sale').length], ['feature', MODULE_CN.feature, pmList('feature').length]])}
+      <section class="panel pm">
+        <div class="panel__h"><h3>网站上现在的样子</h3><span class="muted">${cur ? `正在显示:<b>${esc(cur.name)}</b>${cur.isDefault ? '(平时版本)' : ''}` : '还没有版本,首页用主题编辑器里的设置'}</span></div>
+        ${cur ? `<div class="pm__now" data-pmnow="${mod}">${moduleHtml({ ...cur, tabs: (cur.tabs || []).filter((t) => tabOn(t)) }, { activeTab: at })}</div>` : ''}
+      </section>
+      ${ptoolHtml('pmodules', pmList(mod).filter((m) => !m.isDefault), '', { ph: '搜索版本名' })}
+      ${ilistHtml(list.map((m) => itemRow(m, { title: m.name || '未命名版本',
+        tags: `${m.isDefault ? '<span class="tag">平时版本</span>' : ''}${cur === m ? '<span class="tag tag--ok">正在显示</span>' : ''}`,
+        sub: (m.tabs || []).map((t) => `<span class="chip chip--sm">${esc(tabLabel(t))}${t.campaign ? ' ⏱' : ''}</span>`).join(''),
+        when: m.isDefault ? '<em>没有别的版本生效时</em>平时版本' : undefined })), '没有这个状态的版本')}`;
+    $$('#pm-root [data-pmmod]').forEach((b) => b.addEventListener('click', () => { pmF.mod = b.dataset.pmmod; renderPmodules(); }));
     // 页签切换(只换预览)+ 取真实产品
     $$('#pm-root [data-pmnow]').forEach((box) => {
-      const mod = box.dataset.pmnow; const cur = activeVersion(mod);
-      box.addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (!t) return; pmActiveTab[mod] = +t.dataset.pmtab; renderPmodules(); });
-      loadTabPreview((cur.tabs || [])[pmActiveTab[mod] || 0], renderPmodules);
+      const m2 = box.dataset.pmnow; const c2 = activeVersion(m2); const tabs = (c2.tabs || []).filter((t) => tabOn(t));
+      box.addEventListener('click', (e) => { const t = e.target.closest('[data-pmtab]'); if (!t) return; pmActiveTab[m2] = +t.dataset.pmtab; renderPmodules(); });
+      loadTabPreview(tabs[pmActiveTab[m2] || 0], renderPmodules);
     });
   }
 
@@ -2738,6 +2779,25 @@
     return { ...baseIt, id: rid('c-'), name: '', start: pc?.start ?? dayStart(3), end: pc?.end ?? dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10, parent: pc ? pc.id : null };
   }
   const fld = (label, html, hint = '') => `<label class="fld"><span>${label}</span>${html}${hint ? `<em>${hint}</em>` : ''}</label>`;
+  // 保存失败时把错误标到对应的字段上(2026-10-20 改版:以前只弹一句红字,不知道是哪一项)
+  const ERR_FIELD = [
+    [/图片/, '[name="image"]'], [/公告文字/, '[name="text"]'], [/名称/, '[name="name"]'], [/标题/, '[name="title"]'],
+    [/开始时间|开始/, '[name="start"]'], [/结束时间|晚于开始/, '[name="end"]'], [/选合集|请选合集|要排序的合集/, '#sl-coll, #wx-box'], [/后缀/, '[name="slug"]'],
+    [/页面模板/, '[name="view"]'], [/结束后要跳到/, '[name="afterEndUrl"]'], [/徽章链接/, '[name="badgeLinkUrl"]'], [/链接/, '[name="link"]'],
+    [/页签/, '#ed-tabs'], [/倒计时颜色/, '#cd-bg'], [/放在哪些产品|条件/, '#ed-scope'], [/推广的产品/, '#co-promo'], [/排在前面的产品/, '#wx-box'], [/模块/, '#ed-module'],
+  ];
+  function showFormErr(msg) {
+    const f = $('#ed-form'); if (!f || !msg) return;
+    $$('#ed-form .is-err').forEach((x) => x.classList.remove('is-err')); $$('#ed-form .fld__err, #ed-form .ed-err').forEach((x) => x.remove());
+    f.insertAdjacentHTML('afterbegin', `<div class="note note--danger ed-err">${esc(msg)}</div>`);
+    const sel = (ERR_FIELD.find(([re]) => re.test(msg)) || [])[1];
+    const el = sel && f.querySelector(sel);
+    const box = el && (el.closest('.fld') || el.closest('.edsec') || el);
+    if (box) { box.classList.add('is-err'); box.insertAdjacentHTML('beforeend', `<span class="fld__err">${esc(msg)}</span>`); box.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    else f.scrollTo?.({ top: 0 });
+  }
+  // 编辑器统一分段(2026-10-20 改版):① 内容 → … → 最后一段「什么时候显示」
+  const edSec = (n, title, hint, body) => `<div class="edsec"><div class="edsec__h"><span class="edsec__n">${n}</span>${title}${hint ? `<em>${hint}</em>` : ''}</div>${body}</div>`;
   const inp = (name, v, ph = '') => `<input class="inp" name="${name}" value="${esc(v ?? '')}" placeholder="${esc(ph)}"/>`;
 
   function timeBlock(it, kind) {
@@ -2745,7 +2805,7 @@
     const mode = kind !== 'campaign' && it.campaign && it.start == null && it.end == null ? 'campaign'
       : it.start == null && it.end == null ? 'long' : 'range';
     const opts = kind === 'campaign' ? [['range', '设定时间']] : [['long', '长期显示'], ['range', '设定时间'], ['campaign', '跟随活动']];
-    return `<div class="fld"><span>什么时候显示</span>
+    return `<div class="fld">
       <div class="seg" id="ed-mode" ${opts.length < 2 ? 'hidden' : ''}>${opts.map(([k, l]) => `<button type="button" data-mode="${k}" class="${mode === k ? 'is-active' : ''}">${l}</button>`).join('')}</div>
       <div class="tm tm--range" ${mode === 'range' ? '' : 'hidden'}>
         <label>开始<input class="inp" type="datetime-local" name="start" value="${toInput(it.start)}"/></label>
@@ -2970,13 +3030,13 @@
   }
   function wxFormHtml(it) {
     if (it.kind === 'pin') {
-      return `${fld('名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}
-        ${timeBlock(it, 'pin')}
-        <div id="wx-box">${pinBoxHtml()}</div>
-        <div class="pg__opts">
+      return `${edSec(1, '清单', '', fld('名称', inp('name', it.name, '如:Flash Sale 第 1 天')))}
+        ${edSec(2, '合集和顺序', '拖动卡片调整顺序', `<div id="wx-box">${pinBoxHtml()}</div>`)}
+        ${edSec(3, '产品上显示什么', '', `<div class="pg__opts">
           <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>这些产品显示倒计时</b><span class="muted">产品页和搜索 / 合集页的产品卡上都显示,倒数到这份清单结束(Flash 每天那一组用),到期自动消失</span></span></label>
           ${fld('徽章文字', inp('badge', it.badge, '如:Flash Deal · 今日限时'), '可留空;和倒计时一起显示在产品页和产品卡上')}
-        </div>`;
+        </div>`)}
+        ${edSec(4, '什么时候显示', '', timeBlock(it, 'pin'))}`;
     }
     return '';
   }
@@ -3032,58 +3092,62 @@
       const p = it.state !== 'new' ? bannerPos(it) : null;
       return `
         ${p ? `<div class="note">${p.future ? `上线后在首页轮播排 <b>第 ${p.n} 张</b>` : `现在在首页轮播排 <b>第 ${p.n} 张</b>`}。要换位置,去 Banner 页点「调整顺序」。</div>` : ''}
-        <div class="fld"><span>图片</span>
+        ${edSec(1, '图片', `竖图 ${S.site.slide.w}×${S.site.slide.h}`, `<div class="fld">
           <div class="imgpick" id="ed-imgs">${imgs.map((b) => `<button type="button" class="imgpick__i ${b.image === it.image ? 'is-on' : ''}" data-img="${esc(b.image)}" data-imgid="${esc(b.imageId || '')}" style="background-image:url('${esc(thumb(b.image, 200))}')"></button>`).join('')}</div>
           <div class="rowin"><input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/>
             ${MODE === 'live' ? '<label class="btn btn-sm upl">上传新图<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>' : ''}</div>
           <input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
           <em>竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。${MODE === 'live' ? '上传的图存进 Shopify 文件库;也可以从上面已有的图里选。' : '演示时从现有图片里选;正式数据里可以直接上传。'}</em>
         </div>
-        ${fld('标题', inp('title', it.title, '如:DZOFILM Arles Zoom'))}
+`)}
+        ${edSec(2, '文字和按钮', '都可以留空', `${fld('标题', inp('title', it.title, '如:DZOFILM Arles Zoom'))}
         ${fld('副标题', inp('subtitle', it.subtitle, '如:UP TO 30% OFF'))}
         ${fld('描述', inp('description', it.description))}
         <div class="fld2">${fld('按钮 1 文字', inp('button1_text', it.button1_text))}${fld('按钮 1 链接', inp('button1_url', it.button1_url, '/collections/…'))}</div>
         <div class="fld2">${fld('按钮 2 文字', inp('button2_text', it.button2_text))}${fld('按钮 2 链接', inp('button2_url', it.button2_url))}</div>
         <div class="fld2">${fld('按钮 1 视频(可不填)', inp('button1_video', it.button1_video, 'YouTube / Vimeo 链接'), '填了 = 点按钮弹出视频,不跳转链接')}${fld('按钮 2 视频(可不填)', inp('button2_video', it.button2_video, 'YouTube / Vimeo 链接'), '比如「Watch Video」按钮')}</div>
         ${fld('角标 / 类型', `<div class="seg" id="ed-tag">${Object.entries(TAGCN).map(([k, l]) => `<button type="button" data-tag="${k}" class="${it.tag === k ? 'is-active' : ''}">${l}</button>`).join('')}</div>`, '卡片左上角的 New / Sale / Event')}
-        ${timeBlock(it, 'banner')}`;
+`)}
+        ${edSec(3, '什么时候显示', '', timeBlock(it, 'banner'))}`;
     }
     if (it.kind === 'topbar') {
       return `
-        <div class="fld2 fld2--emoji">${fld('Emoji', inp('emoji', it.emoji))}${fld('文字', inp('text', it.text, '如:Free UK Delivery on orders over £100'))}</div>
+        ${edSec(1, '公告', '', `<div class="fld2 fld2--emoji">${fld('Emoji', inp('emoji', it.emoji))}${fld('文字', inp('text', it.text, '如:Free UK Delivery on orders over £100'))}</div>
         ${fld('链接', inp('link', it.link, '点击跳转,可留空'))}
         ${fld('分类', `<select class="sel" name="category">${['公告', '促销', '新品', '服务', '节日'].map((c) => `<option ${it.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select>`, '只用于后台筛选,前台不显示')}
         <div class="note">外观(底色、节日特效)在「顶栏 → 样式」里统一设置,到时间自动换装。</div>
-        ${timeBlock(it, 'topbar')}`;
+`)}
+        ${edSec(2, '什么时候显示', '', timeBlock(it, 'topbar'))}`;
     }
     if (it.kind === 'tbstyle') {
       const color = (n, v, l) => `<label class="clr"><input type="color" name="${n}" value="${esc(v)}"/><span>${l}</span>${hexBox(v)}</label>`;
       return `
-        <div class="fld"><span>从节日模板开始 <em>一键填好颜色、特效和装饰,填好后还能再改</em></span><div class="rowin">${Object.entries(TB_PRESETS).map(([k, x]) => `<button type="button" class="btn btn-sm" data-tbfill="${k}">${x.label}</button>`).join('')}</div></div>
+        ${edSec(1, '样式', '', `<div class="fld"><span>从节日模板开始 <em>一键填好颜色、特效和装饰,填好后还能再改</em></span><div class="rowin">${Object.entries(TB_PRESETS).map(([k, x]) => `<button type="button" class="btn btn-sm" data-tbfill="${k}">${x.label}</button>`).join('')}</div></div>
         ${fld('样式名称', inp('name', it.name, '如:圣诞节 / Black Friday'))}
         <div class="fld"><span>颜色</span><div class="clrs">${color('bg', it.bg, '底色')}${color('color', it.color, '文字')}${color('accent', it.accent || '#f5d06f', '点缀(链接 / 箭头)')}</div></div>
         ${fld('特效', `<div class="seg" id="ed-effect">${Object.entries(EFFECT).map(([k, l]) => `<button type="button" data-effect="${k}" class="${(it.effect || 'none') === k ? 'is-active' : ''}">${l}</button>`).join('')}</div>`, '轻量的动画,只在顶栏这一条里,不影响页面其他地方')}
         <div class="fld2">${fld('公告前的装饰', inp('decoLeft', it.decoLeft, '如:🎄'))}${fld('公告后的装饰', inp('decoRight', it.decoRight, '如:🎅'))}</div>
-        ${it.isDefault ? '' : fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '两个样式时间重叠时,数字大的生效')}
-        ${timeBlock(it, 'tbstyle')}`;
+`)}
+        ${edSec(2, '什么时候显示', '', `${timeBlock(it, 'tbstyle')}${it.isDefault ? '' : fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '两个样式时间重叠时,数字大的生效')}`)}`;
     }
     if (it.kind === 'pmodule') {
       const color = (n, v, l) => `<label class="clr"><input type="color" name="${n}" value="${esc(v || '#000000')}"/><span>${l}</span>${hexBox(v || '#000000')}</label>`;
       return `
-        <div class="fld"><span>哪个模块</span><div class="seg" id="ed-module">${Object.entries(MODULE_CN).map(([k, l]) => `<button type="button" data-module="${k}" class="${it.module === k ? 'is-active' : ''}" ${it.isDefault ? 'disabled' : ''}>${l}</button>`).join('')}</div></div>
+        ${edSec(1, '版本', '', `<div class="fld"><span>哪个模块</span><div class="seg" id="ed-module">${Object.entries(MODULE_CN).map(([k, l]) => `<button type="button" data-module="${k}" class="${it.module === k ? 'is-active' : ''}" ${it.isDefault ? 'disabled' : ''}>${l}</button>`).join('')}</div></div>
         ${fld('版本名(后台看的)', inp('name', it.name, '如:Black Friday 2026'))}
         <div class="fld"><span>首页标题 <em>两段,第二段一般用彩色</em></span>
           <div class="fld2">${inp('title', it.title, '第一段,如:Black Friday')}${inp('title2', it.title2, '第二段,如:Deals')}</div>
           <div class="clrs">${color('titleColor', it.titleColor, '第一段颜色')}${color('title2Color', it.title2Color, '第二段颜色')}${color('tabActiveBg', it.tabActiveBg, '页签高亮底色')}${color('tabActiveText', it.tabActiveText, '页签高亮文字')}</div></div>
-        <div class="fld"><span>页签 <em>按这个顺序显示;到时间整套替换现在的页签</em></span><div id="ed-tabs">${tabsEditorHtml()}</div></div>
-        ${it.isDefault ? '' : fld('优先级', `<input class="inp" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '同一时间有几个版本都生效时,数字大的显示')}
-        ${it.isDefault ? '<div class="fld"><span>什么时候显示</span><em>平时版本一直有效:没有别的版本生效时就显示它。</em></div>' : timeBlock(it, 'pmodule')}`;
+`)}
+        ${edSec(2, '页签', '按这个顺序显示;到时间整套替换现在的页签', `<div id="ed-tabs">${tabsEditorHtml()}</div>`)}
+        ${edSec(3, '什么时候显示', '', it.isDefault ? '<p class="muted">平时版本一直有效:没有别的版本生效时就显示它。</p>'
+          : `${timeBlock(it, 'pmodule')}${fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '同一时间有几个版本都生效时,数字大的显示')}`)}`;
     }
     // 活动设置:1 活动(名称 / 时间)→ 2 参加的产品 → 3 产品上显示什么(徽章 / 倒计时 / 样式)→ 4 飞书任务;挂在活动下的内容在活动页里管
     const attached = HUB_KINDS.flatMap(([k]) => listOf(k).filter((x) => x.campaign === it.id)).length;
-    const sec = (n, title, hint, body) => `<div class="edsec"><div class="edsec__h"><span class="edsec__n">${n}</span>${title}${hint ? `<em>${hint}</em>` : ''}</div>${body}</div>`;
+    const sec = edSec;
     return `
-      ${sec(1, '活动', '', `${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}${parentFldHtml(it)}${timeBlock(it, 'campaign')}`)}
+      ${sec(1, '活动', '', `${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}${parentFldHtml(it)}`)}
       ${sec(2, '参加的产品', '在任一合集里、带任一标签、或单独指定的产品都算', `<div class="scope" id="ed-scope">${scopeHtml()}</div>
         <p class="muted edsec__hint">点「后台↗ / 前台↗」可以核对具体是哪些产品。</p>`)}
       ${sec(3, '产品上显示什么', '产品页、搜索 / 合集页的产品卡、首页商品模块都按这里显示,右边是预览', `
@@ -3102,7 +3166,8 @@
             <label class="clr2">文字 <input type="color" id="cd-fg" value="${esc(fg)}"/>${hexBox(fg)}</label>`)(it.countdownBg || (CD_STY[it.countdownStyle]?.bg !== 'transparent' && CD_STY[it.countdownStyle]?.bg) || '#ffefef', it.countdownColor || CD_STY[it.countdownStyle || 'classic'].fg)}
             <button type="button" class="btn btn-sm" data-cdreset="1" ${it.countdownBg || it.countdownColor ? '' : 'hidden'}>用默认颜色</button></div></div>
         <div id="cp-prio">${prioFldHtml(!!it.parent, it.priority)}</div>`)}
-      ${sec(4, '关联的飞书任务', '可不填 · 具体要求、设计、文案放在飞书任务里', `
+      ${sec(4, '什么时候', '徽章和倒计时在这段时间里显示,挂在活动下的内容也跟着这段时间', timeBlock(it, 'campaign'))}
+      ${sec(5, '关联的飞书任务', '可不填 · 具体要求、设计、文案放在飞书任务里', `
         <div id="ed-lark">${larkEdHtml()}</div>
         <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字,如「设计」(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div>`)}
       ${it.state === 'new' ? '<div class="note">保存后会打开这个活动的页面,在那里加 Banner、顶栏、首页商品模块、合集置顶、促销链接和改价。</div>'
@@ -3442,6 +3507,10 @@
     const refreshPv = () => {
       const v = readForm(base);
       $('#ed-pv').innerHTML = previewHtml(v);
+      { // 主按钮写清楚什么时候生效:「保存 · 马上上线」/「保存 · 10/24 上线」(已上线的是「保存修改」)
+        const pb = $('#drawer [data-act="publish"]');
+        if (pb && !live && !pb.disabled) { const w = win({ ...v, kind: base.kind }); const st = w.start; pb.textContent = st != null && st > now() ? `保存 · ${fDT(st)} 上线` : '保存 · 马上上线'; }
+      }
       if (v.kind === 'callout' && $('#co-imgsrc')) $('#co-imgsrc').innerHTML = coImgSrcHtml(v);
       if (v.kind === 'pmodule') loadTabPreview(v.tabs[pvTab], () => { if ($('#ed-pv') && edTabs) $('#ed-pv').innerHTML = previewHtml(readForm(base)); });
       // 代码框跟着色块走;正在输入的那个框只要和色块一致就不打断(别把用户敲到一半的写法改掉)
@@ -3473,6 +3542,7 @@
       if ($('#cd-fg') && !(onlyUnset && (ed.cdFg ?? base.countdownColor))) $('#cd-fg').value = p.fg;
     };
     f.addEventListener('input', (e) => {
+      { const er = e.target.closest?.('.is-err'); if (er) { er.classList.remove('is-err'); er.querySelector('.fld__err')?.remove(); if (!$('#ed-form .is-err')) $('#ed-form .ed-err')?.remove(); } } // 改了就去掉这一项的错误提示
       if (e.target.dataset?.rv != null && (e.inputType === 'insertReplacementText' || e.inputType == null)) { // 推广块条件:从下拉里点选的直接加上
         const i = +e.target.dataset.rv; const r = ed.rules[i]; const val = e.target.value;
         if (r && ({ vendor: coOpts?.vendors, type: coOpts?.types, tag: coOpts?.tags }[r.f] || []).includes(val)) { coAddVal(i, val); return; }
@@ -3844,13 +3914,13 @@
         return;
       }
       const v = readForm(base);
-      if (kindOfAct !== 'draft') { const err = validate(v); if (err) return toast(err, false); }
+      if (kindOfAct !== 'draft') { const err = validate(v); if (err) { showFormErr(err); return toast(err, false); } }
       const mode = kindOfAct; // draft / submit / publish
       const values = { ...v }; if (isNew) values.id = it.id;
       busy(true); btn.textContent = MODE === 'live' && mode === 'publish' ? '写进店铺中…' : btn.textContent;
       r = await act({ type: 'save', mode, kind: it.kind, id: it.id, isNew, values });
       busy(false);
-      if (!r) return;
+      if (!r) { showFormErr(lastActErr); return; }
       closeDrawer();
       if (isNew && it.kind === 'campaign' && byId(it.id)) openHub(it.id); // 新建的活动:直接进活动页继续加内容
       if (mode === 'publish') {
@@ -3969,7 +4039,7 @@
     const o = e.target.closest('[data-open]');
     if (o && o.closest('.section')) { const x = byId(o.dataset.open); if (x) openEditor(x.kind, x.id); return; }
     const n = e.target.closest('[data-new]');
-    if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.parent ? { parent: n.dataset.parent } : n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : n.dataset.tbpreset ? { tbpreset: n.dataset.tbpreset } : undefined); return; }
+    if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.module ? { module: n.dataset.module } : n.dataset.parent ? { parent: n.dataset.parent } : n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : n.dataset.tbpreset ? { tbpreset: n.dataset.tbpreset } : undefined); return; }
     const hd = e.target.closest('[data-hday]'); // 主活动时间轴:点日期看那天网站上的组合
     if (hd && hd.closest('.section')) { hubDay = hd.dataset.hday === 'now' ? null : +hd.dataset.hday + 12 * HOUR; renderCampaigns(); return; }
     const hb = e.target.closest('[data-hub]');
@@ -3997,6 +4067,17 @@
   document.addEventListener('dragstart', hidePop);
   $('#drawer-mask').addEventListener('click', closeDrawer);
   // 历史记录页:点开才去读(不跟着每次刷新一起读)
+  // 左侧导航收起 / 展开(2026-10-20 改版):记在这台电脑上;窗口窄(< 900px)默认收起
+  (() => {
+    let saved = null; try { saved = localStorage.getItem('cgp-nav-mini'); } catch { /* 无痕模式 */ }
+    document.body.classList.toggle('nav-mini', saved != null ? saved === '1' : window.innerWidth < 900);
+    $('#nav-fold')?.addEventListener('click', () => {
+      const on = !document.body.classList.contains('nav-mini'); document.body.classList.toggle('nav-mini', on);
+      try { localStorage.setItem('cgp-nav-mini', on ? '1' : '0'); } catch { /* 无痕模式 */ }
+    });
+    // 收起时鼠标停在图标上显示名字
+    $$('#modnav .modnav__item').forEach((b) => { if (!b.title) b.title = b.querySelector('span')?.textContent.trim() || ''; });
+  })();
   document.querySelector('#modnav [data-section="history"]')?.addEventListener('click', () => loadHistoryPage());
   // 我的工作:点开时画一遍,顺便读改价计划(一分钟内不重复读)
   document.querySelector('#modnav [data-section="mywork"]')?.addEventListener('click', () => { renderMyWork(); loadMwPrice(); });
