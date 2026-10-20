@@ -2782,7 +2782,7 @@
   // 保存失败时把错误标到对应的字段上(2026-10-20 改版:以前只弹一句红字,不知道是哪一项)
   const ERR_FIELD = [
     [/图片/, '[name="image"]'], [/公告文字/, '[name="text"]'], [/名称/, '[name="name"]'], [/标题/, '[name="title"]'],
-    [/开始时间|开始/, '[name="start"]'], [/结束时间|晚于开始/, '[name="end"]'], [/选合集|请选合集|要排序的合集/, '#sl-coll, #wx-box'], [/后缀/, '[name="slug"]'],
+    [/开始时间|开始/, '[name="start"]'], [/结束时间|晚于开始/, '[name="end"]'], [/选合集|请选合集|要排序的合集/, '#sl-coll, #wx-coll > .fld'], [/后缀/, '[name="slug"]'],
     [/页面模板/, '[name="view"]'], [/结束后要跳到/, '[name="afterEndUrl"]'], [/徽章链接/, '[name="badgeLinkUrl"]'], [/链接/, '[name="link"]'],
     [/页签/, '#ed-tabs'], [/倒计时颜色/, '#cd-bg'], [/放在哪些产品|条件/, '#ed-scope'], [/推广的产品/, '#co-promo'], [/排在前面的产品/, '#wx-box'], [/模块/, '#ed-module'],
   ];
@@ -2842,7 +2842,7 @@
   let wx = null; // 编辑中的列表数据:置顶的合集和产品、设计稿、物料素材
   let wxPlans = null; // 能导入的改价计划(按需加载)
   function wxPlansHtml() {
-    if (wxPlans == null) return '<button type="button" class="btn btn-sm" data-wx="loadplans">看看有哪些改价计划</button>';
+    if (wxPlans == null) return ''; // 还没点工具条上的「从改价计划导入」
     if (!wxPlans.length) return '<span class="muted">还没有改价计划</span>';
     return `<div class="results">${wxPlans.map((p) => `<div class="result"><b style="flex:1">${esc(p.name)}</b>
       <span class="muted">${p.n} 个产品 · ${p.when}</span><button type="button" class="btn btn-sm" data-wx="useplan" data-id="${esc(p.id)}">用它的产品</button></div>`).join('')}</div>`;
@@ -2930,7 +2930,7 @@
       <span class="pg__acts"><button type="button" data-wx="totop" data-i="${i}" title="排到第 1 位">置顶</button><button type="button" data-wx="hide" data-i="${i}" title="这段时间不显示它">不显示</button></span>
     </div>`;
   }
-  function pinBoxHtml() {
+  function pinBoxHtml(part) { // part = 'coll':只要「合集」那一行(放在第 1 段);不传 = 顺序那一段
     const realMode = realModeOf(); const realMember = realMemberOf();
     const d = wxAll && !wxAll.error ? wxDiff() : { added: new Set(), moved: new Set(), removed: [], origPos: new Map() };
     const ids = wx.order.map(pidOf);
@@ -2946,17 +2946,21 @@
     if (!realMode && wxAll && !wxAll.demo && prefix > 50) warns.push(`前台排序最多能固定前 50 个位置,你现在排到了第 ${prefix} 位 —— 第 51 位以后的调整前台不会生效。`);
     if (!realMember && wxAll && !wxAll.demo && wx.hidden.length > 50) warns.push(`前台排序最多能隐藏 50 个产品,你现在隐藏了 ${wx.hidden.length} 个。`);
     if (realMember && removeN > 100) warns.push(`要临时移出合集的产品有 ${removeN} 个(超过 100 个)—— 这份清单会改用前台排序,不动店里的合集。`);
+    // 合集这一行:几个短标签说清现在的方式,长说明收进「怎么生效?」(2026-10-20 改版)
+    const how = (txt) => `<details class="hint"><summary>怎么生效?</summary><div>${txt}</div></details>`;
     const colNote = !wx.collection ? '' : wxBusy ? '<em>正在读这个合集现在的顺序…</em>'
       : wxAll?.error ? `<em class="warn">读不到这个合集的产品:${esc(wxAll.error)}</em>`
-        : wxAll?.demo ? `<em class="warn">演示模式:下面是<b>随便凑的示例产品,不是「${esc(wxAll.title)}」真正的成员</b> —— 演示模式读不到店里的合集。切到正式数据(设置 → 店铺连接)后,这里会列出这个合集现在真正的产品和顺序。</em>`
-          : wxAll ? `<em>${!wxAll.manualOk
-            ? `这个合集现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的合集调顺序,所以这份清单<b>用前台排序</b>:后台里的顺序不会变,顾客看到的合集页和首页模块按你排的显示。
-              想让后台也变,在 Shopify 后台把这个合集的排序改成「手动」(带条件的合集也可以)。${S.themePin === false ? '<b class="warn">正在用的主题还没装上前台排序的代码(现在只装在测试主题上),顾客暂时看不到效果。</b>' : ''}`
+        : wxAll?.demo ? `<div class="pgcol"><span class="tag tag--warn">演示:示例产品</span>${how(`演示模式读不到店里的合集,下面是<b>随便凑的示例产品,不是「${esc(wxAll.title)}」真正的成员</b>。切到正式数据(设置 → 店铺连接)后,这里会列出这个合集现在真正的产品和顺序。`)}</div>`
+          : wxAll ? `<div class="pgcol">${!wxAll.manualOk || !canWrite() || (realMember && removeN > 100) ? `<span class="tag tag--warn">只在前台排(后台顺序不变)</span>` : '<span class="tag tag--ok">到点真的改店里的合集</span>'}
+              ${!wxAll.manualOk && S.themePin === false ? '<span class="tag tag--danger">正在用的主题还没装前台排序代码</span>' : ''}
+              <span class="tag">共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(只列出前 ${wxAll.products.length} 个)` : ''}</span>
+              ${wxAll.takenBy ? `<span class="tag tag--accent">现在由「${esc(wxAll.takenBy.pinName || '')}」接管</span>` : ''}
+              ${how(`${!wxAll.manualOk
+            ? `这个合集现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的合集调顺序,所以这份清单<b>用前台排序</b>:后台里的顺序不会变,顾客看到的合集页和首页模块按你排的显示。想让后台也变,在 Shopify 后台把这个合集的排序改成「手动」(带条件的合集也可以)。`
             : !canWrite() ? '手动排序的合集,但 app 现在<b>没有「改产品 / 合集」的权限</b> —— 先用前台排序;装上权限后就会真的改店里的合集。'
               : wxAll.selectionOk ? '带条件的合集,排序方式是「手动」—— 到点会<b>真的</b>改店里的合集:顺序照网格,合集外的产品加进「单独加的产品」、不显示的加进「排除」名单,<b>你设的条件不动</b>;结束自动撤掉、顺序还原。'
                 : wxAll.automated ? `带条件的合集,排序方式是「手动」—— 到点会<b>真的</b>按网格里的顺序改店里的合集,结束自动还原;单个产品的加 / 移出交给前台${wxAll.needsNewApi ? '(把 API 版本升到 2026-07 后,app 就能直接改这个合集的「单独加的产品 / 排除」名单)' : wxAll.sharedSource ? '(这个合集的条件来源是共享的,app 不碰)' : ''}。`
-                : '手动合集 —— 到点会<b>真的</b>按网格里的顺序改店里的合集(包括加 / 移出产品),结束自动还原。'}共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(太多了,只列出前 ${wxAll.products.length} 个)` : ''}${wxAll.takenBy ? ` · 现在由「${esc(wxAll.takenBy.pinName || '')}」接管着,网格里的对比基准是接管前的原样` : ''}
-              ${MODE === 'live' ? ' · <button type="button" class="linkbtn" data-wx="hist">看这个合集的历史版本 / 回滚</button>' : ''}</em>` : '';
+                : '手动合集 —— 到点会<b>真的</b>按网格里的顺序改店里的合集(包括加 / 移出产品),结束自动还原。'}${wxAll.takenBy ? `<br>网格里的对比基准是被「${esc(wxAll.takenBy.pinName || '')}」接管前的原样。` : ''}存的时候只记你动过的部分,没动的照原来的顺序。`)}</div>` : '';
     const sum = OD.diffSummary(d);
     // 搜索引擎在合集页默认「手动前 N 个 + 其余新到旧」:没开「完全按我排的顺序」时,网格第 (前缀 + N) 位以后前台会按新到旧
     const rule = wxAll?.sortRule || { off: false, pinManual: 12, pinNew: 0 };
@@ -2965,35 +2969,37 @@
     const grid = wx.order.map((p, i) => {
       const cut = wx.onlyN != null && i >= wx.onlyN;
       const line = wx.onlyN != null && i === wx.onlyN ? `<div class="pg__cutline">—— 只显示前 ${wx.onlyN} 个,下面的这段时间不显示 ——</div>`
-        : newestFrom != null && i === newestFrom ? `<div class="pg__cutline pg__cutline--new">—— 前台从这里开始按「新到旧」显示,不是网格里的顺序(合集页默认只照手动顺序显示前 ${rule.pinManual} 个)· 打开上面的「完全按我排的顺序」就一模一样 ——</div>` : '';
+        : newestFrom != null && i === newestFrom ? `<div class="pg__cutline pg__cutline--new">—— 前台从这里开始按新到旧显示(合集页默认只照顺序显示前 ${rule.pinManual} 个;打开「完全按我排的顺序」就一致)——</div>` : '';
       return line + wxCard(p, i, d, cut);
     }).join('');
-    return `<div class="fld"><span>合集</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
-        <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button></div>${colNote}</div>
-      ${window.cgpCanSee && window.cgpCanSee('price') && MODE === 'live' ? `<div class="fld"><span>从改价计划导入 <em>Flash 当天改价的那批产品,一键放到最前面</em></span>
-        <div id="wx-plans">${wxPlansHtml()}</div></div>` : ''}
-      ${!wx.collection ? '<p class="muted">选了合集之后,这里会用网格列出合集里现在的全部产品,可以随便拖到任意位置。</p>'
+    const canPlans = window.cgpCanSee && window.cgpCanSee('price') && MODE === 'live';
+    const stat = (cls, label, n) => (n ? `<span class="pgstat"><i class="lg ${cls}"></i>${label} ${n}</span>` : '');
+    const changed = d.added.size + d.moved.size + removeN;
+    const collHtml = `<div class="fld"><span>合集</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
+        <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button>
+        ${wx.collection && wxAll && !wxAll.demo && !wxAll.error && MODE === 'live' ? `<button type="button" class="btn btn-sm btn-ghost" data-wx="hist">${I.clock}历史版本 / 回滚</button>` : ''}</div>${colNote}</div>`;
+    if (part === 'coll') return collHtml;
+    return `${!wx.collection ? '<p class="muted">先在上面选合集,这里会列出合集里现在的全部产品,可以拖到任意位置。</p>'
         : wxBusy ? `<div class="pg">${Array.from({ length: 10 }, () => '<div class="pg__card pg__card--ph"><span class="pg__img"></span><span class="pg__t"></span><span class="pg__pr"></span></div>').join('')}</div>` : `
-      <div class="pg__bar">
-        <div class="pg__legend"><span class="lg lg--new"></span>新加 <span class="lg lg--moved"></span>换了位置 <span class="lg lg--cut"></span>这段时间不显示 <span class="lg"></span>没动
-          <b class="pg__sum">${esc(sum)}</b></div>
-        <div class="pg__tools">
+      <div class="pgtool">
+        <div class="pgtool__l">${changed ? `${stat('lg--new', '新加', d.added.size)}${stat('lg--moved', '换了位置', d.moved.size)}${stat('lg--cut', '不显示', removeN)}` : '<span class="muted">顺序还没动</span>'}</div>
+        <div class="pgtool__r">
+          <input class="inp inp--sm" id="wx-q" placeholder="找产品(不打乱顺序)" value="${esc(wxQ)}"/>
           ${viewToggleHtml()}
-          <input class="inp inp--sm" id="wx-q" placeholder="找产品(不会打乱顺序)" value="${esc(wxQ)}"/>
           <button type="button" class="btn btn-sm" data-wx="pickprod">${I.plus}添加产品</button>
+          ${canPlans ? '<button type="button" class="btn btn-sm" data-wx="loadplans" title="Flash 当天改价的那批产品,一键放到最前面">从改价计划导入</button>' : ''}
           ${sum !== '顺序没变' ? '<button type="button" class="btn btn-sm btn-ghost" data-wx="reset" title="撤销所有调整,回到原来的顺序">全部撤销</button>' : ''}
         </div>
       </div>
-      <label class="tgl pg__only"><input type="checkbox" id="wx-only" ${wx.onlyN != null ? 'checked' : ''}/><span class="tgl__ui"></span>
-        <span><b>只显示前 <input class="inp inp--xs" id="wx-onlyn" type="number" min="1" max="${Math.max(1, wx.order.length)}" value="${wx.onlyN ?? Math.max(1, Math.min(prefix || 5, wx.order.length))}" ${wx.onlyN != null ? '' : 'disabled'}/> 个</b>
-          <span class="muted">比如 Flash Sale:合集里放着所有候选产品,每天只显示当天这一组;后面的这段时间不显示</span></span></label>
-      <label class="tgl pg__only"><input type="checkbox" id="wx-full" ${wx.fullOrder || nativeAll ? 'checked' : ''} ${nativeAll ? 'disabled' : ''}/><span class="tgl__ui"></span>
-        <span><b>生效期间完全按我排的顺序显示</b><span class="muted">${nativeAll
-          ? '这个合集本来就完全按合集顺序显示,不用开'
-          : `合集页默认${rule.pinNew ? `先放最新 ${rule.pinNew} 个、再` : ''}只照手动顺序显示前 ${rule.pinManual} 个,其余按新到旧;打开后这份清单生效期间完全按网格里的顺序(顾客自己选别的排序时照常),清单结束自动恢复。只改这个合集,不影响别的合集`}${rule.byPin ? `(现在由「${esc(rule.byPin)}」临时打开着)` : ''}</span></span></label>
+      ${canPlans ? `<div id="wx-plans">${wxPlansHtml()}</div>` : ''}
+      <div class="pgopts">
+        <label class="tgl tgl--sm" title="比如 Flash Sale:合集里放着所有候选产品,每天只显示当天这一组;后面的这段时间不显示"><input type="checkbox" id="wx-only" ${wx.onlyN != null ? 'checked' : ''}/><span class="tgl__ui"></span>
+          <span>只显示前 <input class="inp inp--xs" id="wx-onlyn" type="number" min="1" max="${Math.max(1, wx.order.length)}" value="${wx.onlyN ?? Math.max(1, Math.min(prefix || 5, wx.order.length))}" ${wx.onlyN != null ? '' : 'disabled'}/> 个</span></label>
+        <label class="tgl tgl--sm" title="${nativeAll ? '这个合集本来就完全按合集顺序显示,不用开' : `合集页默认${rule.pinNew ? `先放最新 ${rule.pinNew} 个、再` : ''}只照手动顺序显示前 ${rule.pinManual} 个,其余按新到旧;打开后这份清单生效期间完全按网格里的顺序(顾客自己选别的排序时照常),结束自动恢复。只改这个合集`}"><input type="checkbox" id="wx-full" ${wx.fullOrder || nativeAll ? 'checked' : ''} ${nativeAll ? 'disabled' : ''}/><span class="tgl__ui"></span>
+          <span>生效期间完全按我排的顺序${nativeAll ? '<span class="muted">(这个合集本来就是)</span>' : rule.byPin ? `<span class="muted">(现在由「${esc(rule.byPin)}」打开着)</span>` : ''}</span></label>
+      </div>
       ${!wx.fullOrder && !nativeAll && rule.pinNew ? `<div class="note note--warn note--sm">这个合集前台默认会把最新的 ${rule.pinNew} 个产品放最前,和网格的顺序不完全一样 —— 打开「完全按我排的顺序」就一模一样。</div>` : ''}
       ${warns.map((w) => `<div class="note note--warn note--sm">${w}</div>`).join('')}
-      <p class="muted pg__tip">拖动卡片到任意位置;或点左上角的序号直接输入要移到第几位。存的时候只记你动过的部分,没动的照原来的顺序。</p>
       <div class="pg${pgCls()}" id="pg">${grid || '<p class="muted">这个合集里还没有产品</p>'}</div>
       ${wx.hidden.length ? `<div class="pg__hidh">这段时间不显示的产品(${wx.hidden.length} 个)<em>只在这份清单生效时藏起来,结束自动恢复</em></div>
         <div class="pg pg--hidden${pgCls()}">${wx.hidden.map((p, i) => `<div class="pg__card is-cut">
@@ -3030,8 +3036,8 @@
   }
   function wxFormHtml(it) {
     if (it.kind === 'pin') {
-      return `${edSec(1, '清单', '', fld('名称', inp('name', it.name, '如:Flash Sale 第 1 天')))}
-        ${edSec(2, '合集和顺序', '拖动卡片调整顺序', `<div id="wx-box">${pinBoxHtml()}</div>`)}
+      return `${edSec(1, '清单', '', `${fld('名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}<div id="wx-coll">${pinBoxHtml('coll')}</div>`)}
+        ${edSec(2, '顺序', '拖动卡片排序,或点序号输入第几位', `<div id="wx-box">${pinBoxHtml()}</div>`)}
         ${edSec(3, '产品上显示什么', '', `<div class="pg__opts">
           <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>这些产品显示倒计时</b><span class="muted">产品页和搜索 / 合集页的产品卡上都显示,倒数到这份清单结束(Flash 每天那一组用),到期自动消失</span></span></label>
           ${fld('徽章文字', inp('badge', it.badge, '如:Flash Deal · 今日限时'), '可留空;和倒计时一起显示在产品页和产品卡上')}
@@ -3681,6 +3687,7 @@
       const box = $('#wx-box'); if (!box) return;
       const had = document.activeElement?.id === 'wx-q';
       box.innerHTML = pinBoxHtml();
+      const cb = $('#wx-coll'); if (cb) cb.innerHTML = pinBoxHtml('coll');
       const pb = $('#wx-plans'); if (pb) pb.innerHTML = wxPlansHtml();
       if (had) { const q = $('#wx-q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
       refreshPv();

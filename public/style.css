@@ -1664,3 +1664,26 @@ textarea.inp { min-height: 64px; line-height: 1.5; }
 #section-price .pr-tabs button { border: none; background: none; border-radius: 6px; padding: 5px 12px; font-size: var(--fs-sm); color: var(--text-2); }
 #section-price .pr-tabs button.is-on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(16, 17, 22, .1); border: none; }
 #section-price .pr-empty { background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 40px 20px; font-size: var(--fs-sm); }
+
+/* 合集排序编辑器(2026-10-20 改版):合集一行 + 工具条 + 显示方式 */
+.pgcol { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+details.hint { display: inline-block; font-size: var(--fs-xs); color: var(--text-3); }
+details.hint > summary { cursor: pointer; list-style: none; color: var(--accent); }
+details.hint > summary::-webkit-details-marker { display: none; }
+details.hint[open] { display: block; flex-basis: 100%; }
+details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); line-height: 1.55; }
+.pgtool { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+.pgtool__l { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: var(--fs-sm); }
+.pgtool__l .muted { margin: 0; }
+.pgtool__r { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pgtool__r .inp { width: 170px; }
+.pgstat { display: inline-flex; align-items: center; gap: 5px; font-weight: 500; }
+.pgopts { display: flex; gap: 8px 20px; flex-wrap: wrap; align-items: center; padding: 8px 12px; margin-bottom: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
+.pgopts .tgl { font-size: var(--fs-sm); align-items: center; }
+.pgopts .tgl__ui { margin-top: 0; }
+.pgopts .inp--xs { width: 56px; padding: 1px 6px; min-height: 24px; display: inline-block; margin: 0 3px; }
+.pgopts .tgl > span:last-child { flex-direction: row; align-items: center; gap: 4px; white-space: nowrap; }
+.pgopts .tgl input.inp--xs { position: static; opacity: 1; pointer-events: auto; }
+.pgopts .tgl input.inp--xs:disabled { opacity: .5; }
+#wx-plans:empty { display: none; }
+#wx-plans { margin-bottom: 10px; }
