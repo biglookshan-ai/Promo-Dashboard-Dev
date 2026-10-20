@@ -1129,6 +1129,16 @@
     try { await navigator.clipboard.writeText(el.value); toast('链接已复制'); }
     catch { el.focus(); el.select(); try { if (!document.execCommand('copy')) throw new Error(); toast('链接已复制'); } catch { toast('已选中链接,按 Ctrl/⌘ + C 复制', false); } }
   }
+  // ---- 产品网格 / 列表两种看法(2026-10-20 用户:合集置顶的编辑和历史版本都要能切成列表,默认网格;记在这台电脑上)----
+  let pgView = (() => { try { return localStorage.getItem('cgp-pg-view') === 'list' ? 'list' : 'grid'; } catch { return 'grid'; } })();
+  const pgCls = () => (pgView === 'list' ? ' pg--list' : '');
+  const viewToggleHtml = () => `<span class="vtog" role="group" aria-label="显示方式"><button type="button" data-pgview="grid" class="${pgView === 'grid' ? 'is-on' : ''}">▦ 网格</button><button type="button" data-pgview="list" class="${pgView === 'list' ? 'is-on' : ''}">☰ 列表</button></span>`;
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest?.('[data-pgview]'); if (!b) return;
+    e.preventDefault(); pgView = b.dataset.pgview; try { localStorage.setItem('cgp-pg-view', pgView); } catch { /* 无痕模式等 */ }
+    $$('.pg').forEach((g) => g.classList.toggle('pg--list', pgView === 'list'));
+    $$('[data-pgview]').forEach((x) => x.classList.toggle('is-on', x.dataset.pgview === pgView));
+  }, true);
   document.addEventListener('click', (e) => { const c = e.target.closest?.('[data-copy]'); if (c) { e.preventDefault(); e.stopPropagation(); copyText(c.dataset.copy); } }, true);
 
   // ================= 产品页推广块(2026-10-19 用户:镜头页自动加「变成索尼自动对焦 → Smart Fusion」,不用一个个产品去加) =================
@@ -1853,6 +1863,32 @@
   }
 
   // 单条内容的全部版本:左边版本列表,右边「这一版 vs 现在」逐项对比;复制成新的 / 回滚(回滚照常走审批)
+  // 历史版本里的产品卡片:看「这一版」的顺序(标出现在在第几位 / 现在没有)或者切到「现在」的顺序(标出这一版在第几位)
+  let histSide = 'ver';
+  function histCardsHtml(vals, curVals, kind) {
+    const side = curVals ? histSide : 'ver';
+    const A = (side === 'ver' ? vals : curVals) || {}; const B = (side === 'ver' ? curVals : vals) || null;
+    const other = side === 'ver' ? '现在' : '这一版';
+    const card = (p, i, list, extra = '') => {
+      const j = list ? list.findIndex((x) => numId(x.id) === numId(p.id)) : i;
+      const cls = extra || (!list ? '' : j < 0 ? 'is-new' : j !== i ? 'is-moved' : '');
+      return `<div class="pg__card ${cls}"><span class="pg__pos">${i + 1}</span>
+        <span class="pg__img">${p.image ? `<img src="${esc(thumb(p.image, 240))}" alt="" loading="lazy">` : ''}</span>
+        <span class="pg__t" title="${esc(p.title || '')}">${esc(p.title || `(产品 ${numId(p.id)})`)}</span>
+        <span class="pg__m">${!list ? '' : j < 0 ? `<span class="pg__b pg__b--new">${other}没有</span>` : j !== i ? `<span class="pg__b pg__b--moved">${other} #${j + 1}</span>` : ''}</span></div>`;
+    };
+    const P = (A.products || []).filter(Boolean); const H = (A.hidden || []).filter(Boolean); const BP = B ? (B.products || []).filter(Boolean) : null;
+    const gone = BP ? BP.filter((x) => !P.some((p) => numId(p.id) === numId(x.id)) && !H.some((p) => numId(p.id) === numId(x.id))) : []; // 移到「不显示」的不重复列
+    const title = kind === 'salelink' ? '固定位置的产品' : '排在前面的产品';
+    return `<div class="histcards">
+      <div class="hist__bar"><b>${title}</b>${curVals ? `<span class="seg seg--sm"><button type="button" data-hside="ver" class="${side === 'ver' ? 'is-active' : ''}">这一版的顺序</button><button type="button" data-hside="cur" class="${side === 'cur' ? 'is-active' : ''}">现在的顺序</button></span>` : ''}
+        ${viewToggleHtml()}</div>
+      ${B ? `<div class="pg__legend"><span class="lg lg--moved"></span>${other}在别的位置 <span class="lg lg--new"></span>${other}没有 <span class="lg"></span>位置一样</div>` : ''}
+      <div class="pg pg--ro${pgCls()}">${P.map((p, i) => card(p, i, BP)).join('') || '<p class="muted">(空)</p>'}</div>
+      ${gone.length ? `<div class="pg__hidh">${other}有、${side === 'ver' ? '这一版' : '现在'}没有的(${gone.length} 个)</div><div class="pg pg--ro pg--hidden${pgCls()}">${gone.map((p, i) => card(p, i, null, 'is-cut')).join('')}</div>` : ''}
+      ${H.length ? `<div class="pg__hidh">这段时间不显示的产品(${H.length} 个)</div><div class="pg pg--ro pg--hidden${pgCls()}">${H.map((p, i) => card(p, i, null, 'is-cut')).join('')}</div>` : ''}
+    </div>`;
+  }
   async function openItemHistory(id) {
     hidePop();
     $('#drawer').innerHTML = `<div class="drawer__h"><div><b>历史版本</b> <span class="muted" id="ih-title"></span></div>
@@ -1880,10 +1916,14 @@
       const diffKeys = curVals ? keys.filter((k) => !same(v.values[k], curVals[k])) : [];
       const rows = (curVals ? keys : Object.keys(v.values).filter((k) => FIELD[k])).map((k) => {
         const d = curVals && diffKeys.includes(k);
-        return `<tr class="${d ? 'is-diff' : ''}"><td>${FIELD[k]}</td><td>${showVal(k, v.values[k])}</td>${curVals ? `<td>${showVal(k, curVals[k])}</td>` : ''}</tr>`;
+        const pv = (x) => (['pin', 'salelink'].includes(kind) && ['products', 'hidden'].includes(k) ? ((x || []).length ? `${x.length} 个产品(看上面的卡片)` : '<span class="muted">(空)</span>') : showVal(k, x));
+        return `<tr class="${d ? 'is-diff' : ''}"><td>${FIELD[k]}</td><td>${pv(v.values[k])}</td>${curVals ? `<td>${pv(curVals[k])}</td>` : ''}</tr>`;
       }).join('');
+      // 合集置顶清单 / 促销链接:产品按顺序画成卡片(和编辑器一样能切网格 / 列表),标出和现在的不同
+      const cards = ['pin', 'salelink'].includes(kind) ? histCardsHtml(v.values, curVals, kind) : '';
       $('#ih-pv').innerHTML = `<div class="hist__h"><b>${esc(fDT(v.at))} 那一版</b> <span class="muted">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}${v.note ? ` · ${esc(v.note)}` : ''}</span></div>
         <p class="muted">那时的状态:${esc(STATE_CN[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.deleted ? ' · 这一版之后被删除了' : ''}${curVals ? ` · <b>${diffKeys.length ? `和现在有 ${diffKeys.length} 处不一样(标黄的行)` : '和现在一模一样'}</b>` : ''}</p>
+        ${cards}
         <table class="rvdiff ihdiff"><thead><tr><th>字段</th><th>这一版</th>${curVals ? '<th>现在</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
         ${v.pending ? `<p class="muted" style="margin-top:12px">这一版还有一个<b>等审批的修改</b>(那时线上还是上面的内容):</p>
           <table class="rvdiff ihdiff"><tbody>${Object.entries(v.pending).filter(([k]) => FIELD[k]).map(([k, x]) => `<tr><td>${FIELD[k]}</td><td>${showVal(k, x)}</td></tr>`).join('')}</tbody></table>` : ''}`;
@@ -1914,6 +1954,7 @@
       };
     };
     $$('#ih-list .hist__i').forEach((b) => b.addEventListener('click', () => show(+b.dataset.i)));
+    $('#ih-pv').addEventListener('click', (e) => { const h = e.target.closest('[data-hside]'); if (!h) return; histSide = h.dataset.hside; const on = $('#ih-list .hist__i.is-on'); show(on ? +on.dataset.i : 0); });
     show(Math.min(1, r.versions.length - 1)); // 默认看上一版(和现在比最有用)
   }
 
@@ -2877,6 +2918,7 @@
         <div class="pg__legend"><span class="lg lg--new"></span>新加 <span class="lg lg--moved"></span>换了位置 <span class="lg lg--cut"></span>这段时间不显示 <span class="lg"></span>没动
           <b class="pg__sum">${esc(sum)}</b></div>
         <div class="pg__tools">
+          ${viewToggleHtml()}
           <input class="inp inp--sm" id="wx-q" placeholder="找产品(不会打乱顺序)" value="${esc(wxQ)}"/>
           <button type="button" class="btn btn-sm" data-wx="pickprod">${I.plus}添加产品</button>
           ${sum !== '顺序没变' ? '<button type="button" class="btn btn-sm btn-ghost" data-wx="reset" title="撤销所有调整,回到原来的顺序">全部撤销</button>' : ''}
@@ -2892,9 +2934,9 @@
       ${!wx.fullOrder && !nativeAll && rule.pinNew ? `<div class="note note--warn note--sm">这个合集前台默认会把最新的 ${rule.pinNew} 个产品放最前,和网格的顺序不完全一样 —— 打开「完全按我排的顺序」就一模一样。</div>` : ''}
       ${warns.map((w) => `<div class="note note--warn note--sm">${w}</div>`).join('')}
       <p class="muted pg__tip">拖动卡片到任意位置;或点左上角的序号直接输入要移到第几位。存的时候只记你动过的部分,没动的照原来的顺序。</p>
-      <div class="pg" id="pg">${grid || '<p class="muted">这个合集里还没有产品</p>'}</div>
+      <div class="pg${pgCls()}" id="pg">${grid || '<p class="muted">这个合集里还没有产品</p>'}</div>
       ${wx.hidden.length ? `<div class="pg__hidh">这段时间不显示的产品(${wx.hidden.length} 个)<em>只在这份清单生效时藏起来,结束自动恢复</em></div>
-        <div class="pg pg--hidden">${wx.hidden.map((p, i) => `<div class="pg__card is-cut">
+        <div class="pg pg--hidden${pgCls()}">${wx.hidden.map((p, i) => `<div class="pg__card is-cut">
           <span class="pg__img">${p.image ? `<img src="${esc(thumb(p.image, 240))}" alt="" loading="lazy">` : ''}</span>
           <span class="pg__t">${esc(p.title)}</span>
           ${priceRow(p)}
@@ -3540,7 +3582,7 @@
         autoScroll(ev.clientY);
         const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('#pg .pg__card[data-pg]');
         if (!over) { clearDrop(); d.target = null; return; }
-        const r = over.getBoundingClientRect(); const after = ev.clientX > r.left + r.width / 2;
+        const r = over.getBoundingClientRect(); const after = over.closest('.pg--list') ? ev.clientY > r.top + r.height / 2 : ev.clientX > r.left + r.width / 2; // 列表模式按上半 / 下半
         if (d.target !== over || d.after !== after) { clearDrop(); over.classList.add(after ? 'drop-after' : 'drop-before'); d.target = over; d.after = after; }
       };
       const up = () => {
@@ -3877,7 +3919,8 @@
       $('#hist-pv').innerHTML = `<div class="hist__h"><b>${esc(fmtAt(r.version.at))} 那一版</b> <span class="muted">${esc(r.version.why || '')}</span></div>
         <div class="pg__legend"><span class="lg lg--new"></span>会加回合集 <span class="lg lg--moved"></span>会换位置 <span class="lg lg--cut"></span>后来才加的(不删) <span class="lg"></span>不变
           <b class="pg__sum">${same ? '和现在一模一样' : `回滚会:${esc(OD.diffSummary(d))}`}</b></div>
-        <div class="pg pg--ro">${target.map(card).join('')}</div>`;
+        <div class="hist__bar">${viewToggleHtml()}</div>
+        <div class="pg pg--ro${pgCls()}">${target.map(card).join('')}</div>`;
       if (!same && isApprover()) {
         $('#hist-acts').innerHTML = '<button class="btn btn-primary" id="hist-rb" type="button">回滚到这个版本</button>';
         $('#hist-rb').onclick = async (e) => {

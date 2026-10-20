@@ -155,6 +155,8 @@ function run(input, action, actor, now) {
       }
       if (it.isDefault && mode !== 'publish' && mode !== 'submit') fail('默认样式只能直接保存或提交修改');
       const v = pick(values);
+      // 产品 / 合集列表里的空项(异常数据)去掉,免得页面画不出来
+      for (const k of ['products', 'hidden', 'exProducts', 'collections']) if (Array.isArray(v[k])) v[k] = v[k].filter((x) => x && typeof x === 'object' && x.id != null);
       const merged = { ...it, ...v };
       if (mode !== 'draft') { const err = validate(merged); if (err) fail(err); }
       if (kind === 'pmodule' && merged.isDefault && list.some((x) => x !== it && x.isDefault && x.module === merged.module)) fail('这个模块已经有平时版本了');

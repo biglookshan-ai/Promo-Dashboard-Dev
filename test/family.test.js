@@ -66,3 +66,11 @@ test('删除主活动:子活动变回独立;有页签跟随的活动不能删', 
   const r3 = applyAction(d3, { type: 'save', mode: 'publish', kind: 'campaign', id: 'dzo', values: { badge: 'EBF' } }, admin);
   assert.ok(r3.effects.some((e) => e.type === 'sync' && e.id === 'pm1'));
 });
+
+test('保存时去掉产品列表里的空项', () => {
+  const d = { banners: [], topbar: [], tbstyles: [], pmodules: [], salelinks: [], callouts: [], log: [], staff: [], campaigns: [],
+    pins: [{ id: 'p1', kind: 'pin', state: 'approved', name: 'x', collection: { id: 1 }, products: [{ id: 1 }], hidden: [] }] };
+  const r = applyAction(d, { type: 'save', mode: 'publish', kind: 'pin', id: 'p1', values: { products: [null, { id: 2, title: 'a' }, 'x'], hidden: [null] } }, { id: 'a', name: 'A', role: 'approver' });
+  assert.deepEqual(r.doc.pins[0].products.map((p) => p.id), [2]);
+  assert.deepEqual(r.doc.pins[0].hidden, []);
+});
