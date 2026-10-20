@@ -105,6 +105,9 @@ export const DEFINITIONS = [
       t('limit', '最多显示几个', 'number_integer', { description: '0 = 不限' }),
       t('shop_all_url', 'Shop All 链接', 'single_line_text_field'),
       t('shop_all_text', 'Shop All 文字', 'single_line_text_field'),
+      // 2026-10-20:页签只在某个活动期间显示(活动下线时店里是草稿,引用读出来是空 → 主题把页签藏起来)
+      t('campaign', '只在这个活动期间显示', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
+      t('campaign_only', '跟随活动', 'boolean', { description: 'true = 只在上面那个活动上线中时显示' }),
     ],
   },
   {
@@ -300,7 +303,7 @@ const coRulesOut = (rules) => (Array.isArray(rules) ? rules : []).filter((r) => 
   .map((r) => ({ f: r.f, n: !!r.n, v: r.f === 'collection' ? r.v.map((c) => ({ id: Number(String(c.id).split('/').pop()), handle: c.handle || '', title: c.title || '' })) : r.v.map(String) }));
 
 // win = 有效时间窗(跟随活动的已换算成活动的时间),campaignGid = 所属活动的 Shopify id(没有就空)
-export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaignGid = '', tabGids = [] } = {}) {
+export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaignGid = '', tabGids = [], prio } = {}) {
   const f = {};
   if (it.kind === 'campaign') {
     Object.assign(f, {
@@ -308,7 +311,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       collections: list((it.collections || []).map((c) => toGid('Collection', c.id)).filter(Boolean)),
       tags: list(it.tags || []),
       products: list((it.products || []).map((p) => toGid('Product', p.id)).filter(Boolean)),
-      badge_text: str(it.badge), show_countdown: it.countdown ? 'true' : 'false', priority: str(it.priority ?? 0),
+      badge_text: str(it.badge), show_countdown: it.countdown ? 'true' : 'false', priority: str(prio ?? it.priority ?? 0), // prio = 实际优先级(子活动自动比主活动高,见 schedule-core effPriority)
       badge_link: it.badgeLink === 'none' ? 'none' : String(it.badgeLink || '').trim(),
       countdown_style: str(it.countdownStyle), countdown_label: str(it.countdownLabel), countdown_bg: hex(it.countdownBg), countdown_color: hex(it.countdownColor),
     });
@@ -370,9 +373,9 @@ const UPSERT = `mutation($handle: MetaobjectHandleInput!, $metaobject: Metaobjec
     metaobjectUpsert(handle: $handle, metaobject: $metaobject) { metaobject { id handle capabilities { publishable { status } } } userErrors { field message code } } }`;
 const errText = (errs) => errs.map((e) => `${(e.field || []).join('.')} ${e.message}`.trim()).join('; ');
 
-export async function upsertItem(ctx, it, { status, win, campaignGid, tabGids } = {}, gql = graphql) {
+export async function upsertItem(ctx, it, { status, win, campaignGid, tabGids, prio } = {}, gql = graphql) {
   const handle = { type: TYPE_OF[it.kind], handle: handleFor(it) };
-  const fields = fieldsFor(it, { win, campaignGid, tabGids });
+  const fields = fieldsFor(it, { win, campaignGid, tabGids, prio });
   const send = (fs) => gql(ctx, UPSERT, { handle, metaobject: { fields: fs, capabilities: { publishable: { status } } } }).then((d) => d.metaobjectUpsert);
   let r = await send(fields);
   // 空值(没有副标题、没挂活动、没结束时间…)我们传的是空字符串,用来清空。
@@ -396,7 +399,7 @@ export async function upsertItem(ctx, it, { status, win, campaignGid, tabGids } 
 
 // 首页商品模块的一个页签(不开 publishable,跟着模块版本上下线)。tab 存在模块版本的 tabs 数组里。
 export const tabHandle = (tab) => `cgp-tab-${String(tab.id).toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
-export function tabFields(tab) {
+export function tabFields(tab, { campaignGid = '' } = {}) {
   const f = {
     title: str(tab.title), source: tab.source === 'products' ? 'products' : 'collection',
     collection: tab.source === 'products' ? '' : str(toGid('Collection', tab.collection?.id)),
@@ -404,17 +407,28 @@ export function tabFields(tab) {
     only_discounted: tab.onlyDiscounted ? 'true' : 'false', sort_by_discount: tab.sortByDiscount ? 'true' : 'false',
     newest_first: tab.newestFirst ? 'true' : 'false', show_countdown: tab.countdown ? 'true' : 'false',
     limit: String(Math.max(0, Math.round(Number(tab.limit ?? 20)) || 0)), shop_all_url: str(tab.shopAllUrl), shop_all_text: str(tab.shopAllText),
+    // 跟随的活动还没写进店里(没批准)→ 引用是空的,campaign_only 照样 true = 先藏着
+    campaign: tab.campaign ? str(campaignGid) : '', campaign_only: tab.campaign ? 'true' : 'false',
   };
   return Object.entries(f).map(([key, value]) => ({ key, value }));
 }
-export async function upsertTab(ctx, tab, gql = graphql) {
+export async function upsertTab(ctx, tab, gql = graphql, { campaignGid = '' } = {}) {
   const handle = { type: 'cgp_product_tab', handle: tabHandle(tab) };
-  const fields = tabFields(tab);
+  const fields = tabFields(tab, { campaignGid });
   const send = (fs) => gql(ctx, UPSERT, { handle, metaobject: { fields: fs } }).then((d) => d.metaobjectUpsert);
   let r = await send(fields);
   if (r.userErrors?.length && fields.some((x) => x.value === '')) {
     const retry = await send(fields.filter((x) => x.value !== ''));
     if (!retry.userErrors?.length) r = retry;
+  }
+  // 店里的页签类型还没补建新字段(campaign / campaign_only):先不写这些,照常保存(设置页会提示补建)
+  if (r.userErrors?.length) {
+    const keys = new Set(fields.map((x) => x.key));
+    const bad = new Set(r.userErrors.flatMap((e) => [...(e.field || []), ...(String(e.message || '').match(/[a-z][a-z0-9_]+/g) || [])]).filter((k) => keys.has(k)));
+    if (bad.size && bad.size < keys.size) {
+      const retry = await send(fields.filter((x) => !bad.has(x.key) && x.value !== ''));
+      if (!retry.userErrors?.length) { console.warn(`[upsertTab] ${handle.handle} 店里缺字段 ${[...bad].join(', ')},先不写(去设置里补建)`); r = retry; }
+    }
   }
   if (r.userErrors?.length) throw new Error(`页签「${tab.title || ''}」:${errText(r.userErrors)}`);
   return r.metaobject.id;

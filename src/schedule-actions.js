@@ -5,7 +5,7 @@
 // doc 结构:{ banners, topbar, tbstyles, campaigns, pendingOrder, log, staff: [{id,name,role}] }
 // actor:{ id, name, role: 'approver' | 'editor' }
 // 返回 { doc, effects, message }。effects 交给服务器执行(写 Shopify / 发飞书),浏览器演示模式忽略。
-import { itemStatus, campaignIndex } from './schedule-core.js';
+import { itemStatus, campaignIndex, childrenOf } from './schedule-core.js';
 import { SLUG_RE, SALE_SORTS, VIEW_RE, AFTER_END, AFTER_URL_RE } from './sale-link.js';
 
 export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins', salelink: 'salelinks', callout: 'callouts' };
@@ -29,7 +29,9 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   // 活动徽章点了去哪:'' = 自动(促销链接 / 参加的第一个合集);'none' = 不能点;/… 或 https://… = 指定链接
   'badgeLink',
   // 产品页推广块:推广的产品、链接文字、品牌、排除的产品 / 标签(其余沿用 title / text / link / image / collections / tags / products / priority)
-  'promo', 'linkText', 'vendors', 'exProducts', 'exTags', 'rules'];
+  'promo', 'linkText', 'vendors', 'exProducts', 'exTags', 'rules',
+  // 主活动 / 子活动:活动属于哪个主活动(活动 id;只有一层)
+  'parent'];
 export const COUNTDOWN_STYLES = ['classic', 'pill', 'dark', 'minimal'];
 
 export class ActionError extends Error {}
@@ -127,6 +129,7 @@ export function applyOrder(doc, kind, ids) {
 // 每个通知都带上是谁做的(私信时不发给做这件事的人自己)
 export function applyAction(input, action, actor, now = Date.now()) {
   const r = run(input, action, actor, now);
+  familySyncs(input, r);
   r.effects.forEach((e) => { if (e.type === 'notify') e.actor = actor?.id || null; });
   return r;
 }
@@ -155,6 +158,13 @@ function run(input, action, actor, now) {
       const merged = { ...it, ...v };
       if (mode !== 'draft') { const err = validate(merged); if (err) fail(err); }
       if (kind === 'pmodule' && merged.isDefault && list.some((x) => x !== it && x.isDefault && x.module === merged.module)) fail('这个模块已经有平时版本了');
+      if (kind === 'campaign' && merged.parent) { // 主活动 / 子活动只有一层
+        const p = doc.campaigns.find((x) => x.id === merged.parent) || fail('选的主活动不存在了(可能刚被删掉),请刷新');
+        if (p.id === it.id) fail('不能选自己当主活动');
+        if (p.parent) fail(`「${p.name}」本身是子活动,不能再当主活动`);
+        if (childrenOf(it.id, doc.campaigns).length) fail('这个活动下面已经有子活动了(它是主活动),不能再挂到别的主活动下面');
+      }
+      if (kind === 'pmodule') for (const t of merged.tabs || []) if (t.campaign && !doc.campaigns.some((c) => c.id === t.campaign)) fail(`页签「${t.title || ''}」跟随的活动不存在了,请重新选`);
       // 同一个合集的促销链接后缀不能重复(不同合集可以同名)
       if (kind === 'salelink' && merged.slug && merged.collection?.id && list.some((x) => x !== it && x.slug === merged.slug && String(x.collection?.id).split('/').pop() === String(merged.collection.id).split('/').pop())) fail(`这个合集已经有后缀叫「${merged.slug}」的促销链接了,换一个`);
       const approved = it.state === 'approved';
@@ -269,8 +279,10 @@ function run(input, action, actor, now) {
       if (!['draft', 'rejected', 'ended'].includes(s)) fail('只能删除草稿、被退回或已结束的内容');
       if (!canApprove(actor, doc, it) && it.by !== actor.id && it.owner !== actor.id) fail('只能删除自己建的 / 自己负责的内容');
       if (it.kind === 'campaign' && followersOf(doc, it.id).length) fail('还有 Banner / 顶栏挂在这个活动下,先把它们改成别的时间方式');
+      if (it.kind === 'campaign' && tabsFollowing(doc, it.id).length) { const x = tabsFollowing(doc, it.id)[0]; fail(`首页商品模块「${titleOf(x.m)}」的页签「${x.t.title || ''}」只在这个活动期间显示,先把它改成一直显示或跟随别的活动`); }
       const list = L(it.kind); list.splice(list.indexOf(it), 1);
       addLog(doc, now, 'delete', it, '', actor);
+      if (it.kind === 'campaign') for (const ch of childrenOf(it.id, doc.campaigns)) { ch.parent = null; if (ch.state === 'approved') effects.push({ type: 'sync', id: ch.id }); } // 子活动变回独立活动
       if (it.shopifyId) effects.push({ type: 'remove', shopifyId: it.shopifyId });
       for (const tab of it.tabs || []) if (tab.shopifyId) effects.push({ type: 'remove', shopifyId: tab.shopifyId });
       return { doc, effects, message: '已删除' };
@@ -297,6 +309,11 @@ function run(input, action, actor, now) {
       }
       // 留下的内容如果关联着被删的活动(自己有时间的那种),去掉关联;已上线的重写一次店里的条目
       const gone = new Set(items.filter((x) => x.kind === 'campaign').map((x) => x.id));
+      for (const id of gone) {
+        const tf = tabsFollowing(doc, id).filter(({ m }) => !sel.has(m.id));
+        if (tf.length) fail(`首页商品模块「${titleOf(tf[0].m)}」的页签「${tf[0].t.title || ''}」只在被删的活动期间显示,先把页签改掉或者一起勾上`);
+      }
+      for (const ch of doc.campaigns) if (gone.has(ch.parent)) { ch.parent = null; if (ch.state === 'approved') effects.push({ type: 'sync', id: ch.id }); } // 子活动变回独立活动
       for (const x of allOf(doc)) {
         if (!gone.has(x.campaign)) continue;
         x.campaign = null;
@@ -330,6 +347,28 @@ function run(input, action, actor, now) {
   }
   return { doc, effects, message };
 }
+
+// 主活动 / 子活动:一个活动要重写进店里时,同一家(主活动 + 所有子活动,改前改后两家都算)也重写一遍
+// —— 子活动的实际优先级按兄弟排名算,一个变了别的可能跟着变;页签跟随这些活动的首页模块也重写(活动第一次写进店里才有 id 可引用)
+function familySyncs(input, r) {
+  const doc = r.doc; if (!doc?.campaigns) return;
+  const ids = new Set(r.effects.filter((e) => e.type === 'sync').map((e) => e.id));
+  const touched = doc.campaigns.filter((c) => ids.has(c.id));
+  if (!touched.length) return;
+  const roots = new Set();
+  for (const c of touched) {
+    roots.add(c.parent || c.id);
+    const old = (input.campaigns || []).find((x) => x.id === c.id); if (old?.parent) roots.add(old.parent);
+  }
+  const fam = doc.campaigns.filter((x) => roots.has(x.id) || roots.has(x.parent));
+  const famIds = new Set([...fam.map((x) => x.id), ...touched.map((x) => x.id)]);
+  for (const x of fam) if (x.state === 'approved' && !ids.has(x.id)) { r.effects.push({ type: 'sync', id: x.id }); ids.add(x.id); }
+  for (const m of doc.pmodules || []) {
+    if (m.state === 'approved' && !ids.has(m.id) && (m.tabs || []).some((t) => t.campaign && famIds.has(t.campaign))) { r.effects.push({ type: 'sync', id: m.id }); ids.add(m.id); }
+  }
+}
+// 首页商品模块里跟随这个活动的页签(删活动前要先改掉)
+const tabsFollowing = (doc, campaignId) => (doc.pmodules || []).flatMap((m) => (m.tabs || []).filter((t) => t.campaign === campaignId).map((t) => ({ m, t })));
 
 // 挂在活动下、跟随活动时间的内容
 export const followersOf = (doc, campaignId) =>

@@ -490,7 +490,8 @@
     const style = activeStyle(T);
     const msgs = S.topbar.filter((x) => status(x, T) === 'live').sort(byOrder);
     const bns = S.banners.filter((b) => status(b, T) === 'live').sort(byOrder);
-    const mods = ['sale', 'feature'].map((m) => ({ m, v: activeVersion(m, T) })).filter((x) => x.v);
+    // 页签跟随活动的:这一刻活动没在进行就不显示(和主题一样)
+    const mods = ['sale', 'feature'].map((m) => ({ m, v: activeVersion(m, T) })).filter((x) => x.v).map(({ m, v }) => ({ m, v: { ...v, tabs: (v.tabs || []).filter((t) => tabOn(t, T)) } }));
     const pins = (S.pins || []).filter((p) => status(p, T) === 'live');
     const root = $('#pv-root'); if (!root) return;
     root.innerHTML = `
@@ -837,7 +838,7 @@
   // ================= 活动总控台 =================
   // 一个活动下面所有「网站要更新的东西」:网站内容(Banner / 顶栏 / 首页模块 / 合集置顶)+ 改价;具体要求和分工在关联的飞书任务里
   let cpHub = null; // 正在看的活动 id
-  const openHub = (id) => { cpHub = id; hubPrice.at = 0; showSection('campaigns'); renderCampaigns(); window.scrollTo(0, 0); };
+  const openHub = (id) => { cpHub = id; hubDay = null; hubPrice.at = 0; showSection('campaigns'); renderCampaigns(); window.scrollTo(0, 0); };
   let hubPrice = { plans: null, err: '', at: 0 };
   async function loadHubPrice() {
     if (MODE !== 'live' || !(window.cgpCanSee && window.cgpCanSee('price'))) { hubPrice = { plans: null, err: '', at: now() }; return; }
@@ -934,7 +935,7 @@
         <input class="inp inp--sm mono" data-q="blurl" value="${esc(blMode(c.badgeLink) === 'url' ? c.badgeLink : '')}" placeholder="/collections/dzofilm?view=bfcm-dzo" ${blMode(c.badgeLink) === 'url' ? '' : 'hidden'}/></div>
       <label class="qset__r qset__ck"><span>倒计时</span><span class="tgl tgl--sm"><input type="checkbox" data-q="countdown" ${c.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span class="muted">${c.countdown ? '开着' : '关着'}${c.countdown && w.end == null ? '(活动没有结束时间,不会显示)' : ''}</span></span></label>
       <div class="qset__r"><span>样式</span><div class="seg seg--sm">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-qsty="${k}" class="${cd.key === k ? 'is-active' : ''}">${x.name}</button>`).join('')}</div></div>
-      <label class="qset__r"><span>优先级</span><input class="inp inp--sm inp--num" type="number" data-q="priority" value="${esc(c.priority ?? 0)}"/><span class="muted">同一产品在几个活动里时,大的显示</span></label>
+      <label class="qset__r"><span>${parentC(c) ? '子活动顺序' : '优先级'}</span><input class="inp inp--sm inp--num" type="number" data-q="priority" value="${esc(c.priority ?? 0)}"/><span class="muted">${parentC(c) ? '已经自动比主活动优先;只在同一产品在几个子活动里时用,大的显示' : '同一产品在几个活动里时,大的显示;子活动自动比它优先'}</span></label>
     </div>`;
     const item = (k, main, sub, extra = '') => `<div class="hubset__i"><span class="hubset__k">${k}</span>${main}${sub ? `<span class="muted hubset__s">${sub}</span>` : ''}${extra}</div>`;
     return `<section class="panel hubset">
@@ -946,6 +947,90 @@
       </div>
     </section>`;
   }
+  // ================= 主活动 / 子活动(2026-10-20) =================
+  // 活动可以选「属于哪个主活动」(只有一层)。子活动的徽章自动比主活动优先(实际优先级见 /lib/schedule-core.js effPriority);
+  // 主活动的活动页有一条时间轴:主活动 + 所有子活动 + 同时在跑的其他活动,点某一天看那天网站上的组合。
+  const parentC = (c) => core.parentOf(c, S.campaigns);
+  const kidsOf = (c) => core.childrenOf(c.id, S.campaigns).sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0));
+  const effPrio = (c) => core.effPriority(c, S.campaigns);
+  const tabOn = (t, T = now()) => core.tabVisible(t, core.campaignIndex(S.campaigns), T);
+  const ukDay0 = (ms) => fromInput(toInput(ms).slice(0, 10) + 'T00:00');
+  const ukAddDays = (ms, n) => { const [y, m, d] = toInput(ms).slice(0, 10).split('-').map(Number); return fromInput(new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10) + 'T00:00'); };
+  const prioFldHtml = (isChild, val) => fld(isChild ? '子活动之间的顺序' : '优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(val ?? 10)}"/>`,
+    isChild ? '子活动的徽章总是比主活动优先,不用管这个数字;只有同一个产品同时在几个子活动里时才看它:数字大的优先,一样就开始晚的优先'
+      : '一个产品同时在几个活动里时,显示数字大的那个活动的徽章和倒计时;下面挂了子活动的话,子活动自动比它优先');
+  // 活动设置里「属于哪个主活动」
+  function parentFldHtml(it) {
+    const kids = core.childrenOf(it.id, S.campaigns);
+    if (kids.length) return `<div class="fld"><span>主活动 / 子活动</span><em>这是主活动,下面有 ${kids.length} 个子活动:${kids.map((k) => esc(k.name)).join('、')}。子活动的徽章自动比它优先。</em></div>`;
+    const opts = S.campaigns.filter((x) => x.id !== it.id && !x.parent && (status(x) !== 'ended' || x.id === it.parent))
+      .sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0));
+    return `<label class="fld"><span>属于哪个主活动 <em>比如 DZO Early BF 属于 Black Friday 2026;可不选</em></span>
+      <select class="sel" name="parent"><option value="">不属于(独立活动)</option>${opts.map((x) => `<option value="${x.id}" ${it.parent === x.id ? 'selected' : ''}>${esc(x.name)} · ${esc(winText(x))}</option>`).join('')}</select>
+      <em>选了之后:同一个产品同时在主活动和这个活动里时,自动显示这个活动的徽章(不用调优先级);在主活动的页面上能看到所有子活动的时间轴。</em></label>`;
+  }
+  // 首页商品模块页签「什么时候显示」的选项:一直显示 / 只在某个活动期间(主活动下面缩进列出子活动)
+  function tabCampOpts(sel) {
+    const ok = (x) => status(x) !== 'ended' || x.id === sel;
+    const tops = S.campaigns.filter((x) => !x.parent || !parentC(x)).sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0));
+    const opt = (x, kid) => `<option value="${x.id}" ${sel === x.id ? 'selected' : ''}>${kid ? '  ↳ ' : ''}只在「${esc(x.name)}」期间 · ${esc(winText(x))}</option>`;
+    return `<option value="">一直显示(跟着这个版本)</option>${tops.map((x) => (ok(x) ? opt(x, false) : '') + kidsOf(x).filter(ok).map((k) => opt(k, true)).join('')).join('')}`;
+  }
+  // 那一刻网站上的组合(主活动时间轴下面)
+  function compAtHtml(T) {
+    const style = activeStyle(T);
+    const msgs = S.topbar.filter((x) => status(x, T) === 'live').sort(byOrder);
+    const mods = ['sale', 'feature'].map((m) => ({ m, v: activeVersion(m, T) })).filter((x) => x.v);
+    const camps = S.campaigns.filter((x) => status(x, T) === 'live').sort((a, b) => effPrio(b) - effPrio(a));
+    const links = (S.salelinks || []).filter((x) => status(x, T) === 'live');
+    const cos = (S.callouts || []).filter((x) => status(x, T) === 'live');
+    const row = (k, v) => `<div class="hfc__r"><span class="hfc__k">${k}</span><span class="hfc__v">${v}</span></div>`;
+    const btn = (x, label) => `<button type="button" class="hfc__i" data-open="${x.id}">${label}</button>`;
+    return `<div class="hfc">
+      <div class="hfc__h">${hubDay == null ? '现在' : `${fDate(T)} 中午`}网站上 <em>${hubDay == null ? '点时间轴上的日期看别的日子' : '<button type="button" class="linkbtn" data-hday="now">回到现在</button>'}</em></div>
+      ${row('顶栏样式', style.id ? btn(style, esc(style.name || '默认样式')) : '默认样式')}
+      ${row('顶栏公告', msgs.length ? msgs.map((x) => btn(x, esc(titleOf(x)))).join('') : '<span class="muted">没有</span>')}
+      ${mods.map(({ m, v }) => row(`首页${MODULE_CN[m]}`, `${btn(v, esc(v.isDefault ? '平时版本' : v.name))}<span class="hfc__tabs">${(v.tabs || []).map((t) => {
+        const on = tabOn(t, T); const fc = t.campaign && camp(t.campaign);
+        return `<span class="hfc__tab ${on ? '' : 'is-off'}" title="${fc ? `只在「${esc(fc.name)}」期间显示` : '一直显示'}">${esc(tabLabel(t))}${fc ? ' ⏱' : ''}</span>`; }).join('')}</span>`)).join('')}
+      ${row('产品徽章', camps.length ? `${camps.map((x) => `<span class="hfc__camp">${btn(x, esc(x.name))}${x.badge ? `<span class="pbadge">${esc(x.badge)}</span>` : '<span class="muted">无徽章</span>'}${x.parent ? '<span class="tag">子活动</span>' : ''}</span>`).join('')}
+        <em class="hfc__note">同一个产品在几个活动里时,显示排在前面的那个</em>` : '<span class="muted">没有进行中的活动</span>')}
+      ${row('促销链接', links.length ? links.map((x) => btn(x, esc(titleOf(x)))).join('') : '<span class="muted">没有</span>')}
+      ${cos.length ? row('产品页推广', cos.map((x) => btn(x, esc(titleOf(x)))).join('')) : ''}
+    </div>`;
+  }
+  let hubDay = null; // 主活动时间轴上选中的日子(null = 现在)
+  function familyHtml(c) {
+    const kids = kidsOf(c);
+    const fam = [c, ...kids];
+    const ws = fam.map(win);
+    const s0 = ukAddDays(ukDay0(Math.min(...ws.map((w) => w.start ?? now()))), -1);
+    const e0 = ukAddDays(ukDay0(Math.max(...ws.map((w) => w.end ?? (w.start ?? now()) + 14 * DAY))), 2);
+    const others = S.campaigns.filter((x) => !fam.includes(x) && !fam.includes(parentC(x)) && !['draft', 'rejected'].includes(status(x))
+      && (win(x).start ?? -Infinity) < e0 && (win(x).end ?? Infinity) > s0).slice(0, 4);
+    const span = e0 - s0; const pct = (ms) => ((Math.min(Math.max(ms, s0), e0) - s0) / span) * 100;
+    const days = []; for (let d = s0; d < e0; d = ukAddDays(d, 1)) days.push(d);
+    const every = days.length > 45 ? 7 : days.length > 20 ? 2 : 1;
+    const T = hubDay ?? now();
+    const bar = (x, kind) => { const w = win(x); const a = pct(w.start ?? s0), b = pct(w.end ?? e0);
+      return `<div class="hft__row hft__row--${kind}"><button type="button" class="hft__name" data-hub="${x.id}">${kind === 'kid' ? '↳ ' : ''}${esc(x.name)}${badge(x)}</button>
+        <div class="hft__track"><button type="button" class="hft__bar hft__bar--${kind} hft__bar--${status(x)}" data-hub="${x.id}" style="left:${a}%;width:${Math.max(0.8, b - a)}%" title="${esc(x.name)} · ${esc(winText(x))}">${x.badge ? esc(x.badge) : ''}</button></div></div>`; };
+    const sel = ukDay0(T);
+    return `<section class="panel hubsec hubfam">
+      <div class="panel__h"><h3>子活动 <span class="muted">${kids.length} 个</span></h3><span class="muted">子活动的徽章自动比主活动优先;点日期看那天网站上是什么组合</span>
+        <button type="button" class="btn btn-sm" data-new="campaign" data-parent="${c.id}">${I.plus}新建子活动</button></div>
+      ${kids.length ? '' : '<p class="muted">还没有子活动。比如 Black Friday 2026 下面放 DZO Early BF、Thypoch Early BF、Cyber Monday;已有的活动在它的设置里选「属于哪个主活动」就能挂过来。</p>'}
+      <div class="hft">
+        <div class="hft__row hft__row--head"><span class="hft__name"></span><div class="hft__track hft__days">${days.map((d, i) => `<button type="button" class="hft__day ${d === sel ? 'is-sel' : ''} ${d === ukDay0(now()) ? 'is-today' : ''}" data-hday="${d}" style="left:${pct(d)}%;width:${pct(ukAddDays(d, 1)) - pct(d)}%" title="${esc(fDate(d))}">${i % every === 0 ? esc(fMD(d)) : ''}</button>`).join('')}</div></div>
+        ${bar(c, 'main')}${kids.map((k) => bar(k, 'kid')).join('')}
+        ${others.length ? `<div class="hft__sep">同时在跑的其他活动</div>${others.map((x) => bar(x, 'other')).join('')}` : ''}
+        <div class="hft__now" style="left:calc(var(--hft-name) + (100% - var(--hft-name)) * ${pct(now()) / 100})"></div>
+        ${hubDay != null ? `<div class="hft__selband" style="left:calc(var(--hft-name) + (100% - var(--hft-name)) * ${pct(sel) / 100});width:calc((100% - var(--hft-name)) * ${(pct(ukAddDays(sel, 1)) - pct(sel)) / 100})"></div>` : ''}
+      </div>
+      ${compAtHtml(T)}
+    </section>`;
+  }
+
   function hubHtml(c) {
     const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
     const content = HUB_KINDS.flatMap(([k]) => mine(k));
@@ -976,10 +1061,12 @@
     return `
       <button class="btn btn-ghost btn-back" type="button" data-hubback>← 全部活动</button>
       <div class="hubhead">
-        <div><h2>${esc(c.name)} ${badge(c)}</h2>${endingTag(c)}${syncTag(c)}</div>
+        <div><h2>${esc(c.name)} ${badge(c)}</h2>${endingTag(c)}${syncTag(c)}
+          ${parentC(c) ? `<div class="hubparent">子活动 · 属于主活动 <button type="button" class="linkbtn" data-hub="${parentC(c).id}">${esc(parentC(c).name)} ›</button><span class="muted">徽章自动比主活动优先</span></div>` : ''}</div>
       </div>
       ${prog}
       ${hubSettingsHtml(c)}
+      ${parentC(c) ? '' : familyHtml(c)}
       ${checks.length ? `<section class="panel hubsec hubsec--warn"><div class="panel__h"><h3>⚠️ 需要留意</h3><span class="muted">文案里的折扣对不上实际改价、时间和活动不一致</span></div>
         <div class="hchecks">${checks.map((x) => `<div class="hcheck hcheck--${x.level}">${x.level === 'warn' ? '⚠️' : 'ℹ️'} <span>${esc(x.text)}</span>${x.id ? `<button type="button" class="linkbtn" data-open="${x.id}">去改</button>` : x.price ? `<button type="button" class="linkbtn" data-price="${x.price}">去改</button>` : ''}</div>`).join('')}</div></section>` : ''}
       <section class="panel hubsec"><div class="panel__h"><h3>网站上跟着活动变的</h3><span class="muted">跟随活动时间的:活动开始自动上线、结束自动下线</span></div>
@@ -1525,12 +1612,17 @@
     const hubC = cpHub && camp(cpHub);
     if (hubC) { $('#cp-root').innerHTML = hubHtml(hubC); wireQuick(hubC); if (!hubPrice.at || now() - hubPrice.at > 30000) loadHubPrice(); return; }
     cpHub = null;
-    const rows = S.campaigns.filter((c) => inTab(c, cpF.st)).sort((a, b) => RANK[status(a)] - RANK[status(b)] || (a.start ?? 0) - (b.start ?? 0));
+    // 子活动排在它的主活动后面(按主活动的状态 / 时间排组,组里主活动在前、子活动按开始时间)
+    const rootOf = (c) => parentC(c) || c;
+    const rows = S.campaigns.filter((c) => inTab(c, cpF.st)).sort((a, b) => { const ra = rootOf(a), rb = rootOf(b);
+      return RANK[status(ra)] - RANK[status(rb)] || (ra.start ?? 0) - (rb.start ?? 0) || String(ra.id).localeCompare(String(rb.id)) || (a === ra ? -1 : b === rb ? 1 : (a.start ?? 0) - (b.start ?? 0)); });
     const card = (c) => {
       const bn = S.banners.filter((b) => b.campaign === c.id), tb = S.topbar.filter((t) => t.campaign === c.id), sty = S.tbstyles.filter((t) => t.campaign === c.id);
       const st = scopeTotal(c);
       const zero = [...(c.collections || []).filter((x) => colCount(x) === 0).map((x) => x.title), ...(c.tags || []).filter((t) => tagCount(t) === 0)];
-      return `<button class="ccard ${status(c) === 'ended' ? 'is-dim' : ''}" data-hub="${c.id}" type="button">
+      const pc = parentC(c); const kids = core.childrenOf(c.id, S.campaigns);
+      return `<button class="ccard ${status(c) === 'ended' ? 'is-dim' : ''} ${pc ? 'ccard--kid' : ''}" data-hub="${c.id}" type="button">
+        ${pc ? `<span class="ccard__parent">↳ 子活动 · 属于「${esc(pc.name)}」</span>` : kids.length ? `<span class="ccard__parent ccard__parent--main">主活动 · ${kids.length} 个子活动</span>` : ''}
         <span class="ccard__top"><b>${esc(c.name)}</b>${badge(c)}</span>
         <span class="ccard__when">${I.clock}${winText(c)}</span>
         ${endingTag(c)}${syncTag(c)}
@@ -1627,7 +1719,7 @@
       : Array.from({ length: 5 }, () => '<span class="pmv__card pmv__card--ph"><span class="pmv__img"></span><span class="pmv__t"></span></span>').join('');
     return `<div class="pmv ${small ? 'pmv--sm' : ''}" ${pm ? `data-pm="${pm}"` : ''}>
       <div class="pmv__h">${v.title ? `<span style="color:${esc(c.titleColor)}">${esc(v.title)}</span>` : ''}${v.title2 ? `<span style="color:${esc(c.title2Color)}">${esc(v.title2)}</span>` : ''}${!v.title && !v.title2 ? '<span class="muted">(没有标题)</span>' : ''}</div>
-      <div class="pmv__tabs">${tabs.map((x, i) => `<span class="pmv__tab" data-pmtab="${i}" style="${i === activeTab ? `background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}` : ''}">${esc(tabLabel(x))}</span>`).join('')}</div>
+      <div class="pmv__tabs">${tabs.map((x, i) => `<span class="pmv__tab ${x.campaign && !tabOn(x, at ?? now()) ? 'is-off' : ''}" data-pmtab="${i}" style="${i === activeTab ? `background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}` : ''}" ${x.campaign ? `title="只在「${esc(camp(x.campaign)?.name || '某个活动')}」期间显示${tabOn(x, at ?? now()) ? '' : '(这一刻不显示)'}"` : ''}>${esc(tabLabel(x))}${x.campaign ? ' ⏱' : ''}</span>`).join('')}</div>
       ${small ? '' : `<div class="pmv__grid">${cards}</div>
       <div class="pmv__foot">${t ? `${tabSummary(t)}${cached ? ` · 现在符合条件的有 ${cached.shown}${cached.approx ? '+' : ''} 个` : MODE === 'live' ? ' · 正在取产品…' : ' · <b>示例产品</b>(演示模式画的是真实产品的图和名字,价格是编的;切到正式数据就是这个页签真正会出现的产品)'}` : ''}
         ${pin ? `<div class="pmv__pinnote">这一刻这个合集按「<b>${esc(titleOf(pin))}</b>」排:${(pin.products || []).length} 个产品置顶${pin.onlyListed ? ',而且只显示这些' : ''} <button class="linkbtn" data-open="${pin.id}" type="button">改清单</button></div>` : ''}</div>`}
@@ -2523,6 +2615,8 @@
            <button type="button" class="chipadd" data-tpick="products" data-i="${i}">${I.plus}选择产品</button>`}</div>
       <div class="tabed__cks">${chk(i, 'onlyDiscounted', '只显示打折的')}${chk(i, 'sortByDiscount', '按折扣从大到小')}${chk(i, 'newestFirst', '最新上架在前')}${chk(i, 'countdown', '显示活动徽章和倒计时')}</div>
       <p class="muted tabed__hint">「显示活动徽章和倒计时」:产品参加了生效中的活动就在卡片上标出来;<b>整个页签都是同一个活动时自动不显示</b>(比如全是 Autumn Sale 的就不用每张都标),混合了不同活动的照常显示。</p>
+      <div class="tabed__row"><span class="muted">什么时候显示</span><select class="sel sel--sm" data-tf="campaign" data-i="${i}">${tabCampOpts(t.campaign)}</select>
+        <span class="muted">${t.campaign ? '只在这个活动进行中时出现,没开始 / 结束了自动藏起来(比如 DZO 页签只在 DZO Early BF 期间)' : '跟着这个版本一直显示'}</span></div>
       <div class="tabed__row"><span class="muted">最多显示</span><div class="seg">${[[20, '20 个'], [0, '不限(最多 250)']].map(([n, l]) => `<button type="button" data-tlim="${n}" data-i="${i}" class="${Number(t.limit) === n ? 'is-active' : ''}">${l}</button>`).join('')}</div>
         <span class="muted">${Number(t.limit) ? '首页更轻,其余的点 Shop All 去合集页看' : '合集里符合条件的都画在首页(Shopify 一次最多 250 个)'}</span></div>
       <div class="fld2">
@@ -2599,7 +2693,8 @@
     if (kind === 'callout') return { ...baseIt, id: rid('co-'), name: '', title: '', text: '', linkText: '', link: '', promo: null, image: '', imageId: '', rules: [{ f: 'vendor', n: false, v: [] }], collections: [], tags: [], vendors: [], products: [], exProducts: [], exTags: [], priority: 10, start: null, end: null };
     if (kind === 'salelink') return { ...baseIt, id: rid('sl-'), name: '', slug: '', collection: null, products: [], inStock: false, minDiscount: null, limit: null, sort: '', heading: '', start: null, end: null };
     if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, countdown: false, badge: '', start: preset.campaign ? null : dayStart(1), end: preset.campaign ? null : dayStart(2) };
-    return { ...baseIt, id: rid('c-'), name: '', start: dayStart(3), end: dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10 };
+    const pc = preset.parent ? camp(preset.parent) : null; // 从主活动页点「新建子活动」:时间先用主活动的
+    return { ...baseIt, id: rid('c-'), name: '', start: pc?.start ?? dayStart(3), end: pc?.end ?? dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10, parent: pc ? pc.id : null };
   }
   const fld = (label, html, hint = '') => `<label class="fld"><span>${label}</span>${html}${hint ? `<em>${hint}</em>` : ''}</label>`;
   const inp = (name, v, ph = '') => `<input class="inp" name="${name}" value="${esc(v ?? '')}" placeholder="${esc(ph)}"/>`;
@@ -2946,7 +3041,7 @@
     const attached = HUB_KINDS.flatMap(([k]) => listOf(k).filter((x) => x.campaign === it.id)).length;
     const sec = (n, title, hint, body) => `<div class="edsec"><div class="edsec__h"><span class="edsec__n">${n}</span>${title}${hint ? `<em>${hint}</em>` : ''}</div>${body}</div>`;
     return `
-      ${sec(1, '活动', '', `${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}${timeBlock(it, 'campaign')}`)}
+      ${sec(1, '活动', '', `${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}${parentFldHtml(it)}${timeBlock(it, 'campaign')}`)}
       ${sec(2, '参加的产品', '在任一合集里、带任一标签、或单独指定的产品都算', `<div class="scope" id="ed-scope">${scopeHtml()}</div>
         <p class="muted edsec__hint">点「后台↗ / 前台↗」可以核对具体是哪些产品。</p>`)}
       ${sec(3, '产品上显示什么', '产品页、搜索 / 合集页的产品卡、首页商品模块都按这里显示,右边是预览', `
@@ -2964,7 +3059,7 @@
             ${((bg, fg) => `<label class="clr2">底色 <input type="color" id="cd-bg" value="${esc(bg)}"/>${hexBox(bg)}</label>
             <label class="clr2">文字 <input type="color" id="cd-fg" value="${esc(fg)}"/>${hexBox(fg)}</label>`)(it.countdownBg || (CD_STY[it.countdownStyle]?.bg !== 'transparent' && CD_STY[it.countdownStyle]?.bg) || '#ffefef', it.countdownColor || CD_STY[it.countdownStyle || 'classic'].fg)}
             <button type="button" class="btn btn-sm" data-cdreset="1" ${it.countdownBg || it.countdownColor ? '' : 'hidden'}>用默认颜色</button></div></div>
-        ${fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority)}"/>`, '一个产品同时在几个活动里时,显示数字大的那个活动的徽章和倒计时')}`)}
+        <div id="cp-prio">${prioFldHtml(!!it.parent, it.priority)}</div>`)}
       ${sec(4, '关联的飞书任务', '可不填 · 具体要求、设计、文案放在飞书任务里', `
         <div id="ed-lark">${larkEdHtml()}</div>
         <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字,如「设计」(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div>`)}
@@ -3195,6 +3290,7 @@
       v.countdownStyle = ($('#ed-cdsty .is-active') || {}).dataset?.cdsty || '';
       if (v.countdownStyle === 'classic') v.countdownStyle = '';
       v.countdownBg = ed.cdBg ?? base.countdownBg ?? ''; v.countdownColor = ed.cdFg ?? base.countdownColor ?? '';
+      v.parent = g('parent') ? g('parent').value || null : base.parent || null; // 属于哪个主活动(有子活动的主活动没有这个选项)
     }
     return v;
   }
@@ -3463,6 +3559,8 @@
       if (e.target.dataset?.tck) edTabs[+e.target.dataset.i][e.target.dataset.tck] = e.target.checked;
       if (e.target.name === 'afterEnd') { const u = $('#sl-afterurl'); if (u) { u.hidden = e.target.value !== 'url'; if (!u.hidden) u.focus(); } }
       if (e.target.name === 'badgeLinkMode') { const u = $('#ed-blurl'); if (u) { u.hidden = e.target.value !== 'url'; if (!u.hidden) u.focus(); } }
+      if (e.target.name === 'parent') { const box = $('#cp-prio'); if (box) box.innerHTML = prioFldHtml(!!e.target.value, f.querySelector('[name="priority"]')?.value); } // 子活动的「优先级」说明不一样
+      if (e.target.dataset?.tf === 'campaign') { edTabs[+e.target.dataset.i].campaign = e.target.value || ''; refreshTabs(); }
       if (e.target.id === 'asg-approver' && !live) $('#drawer .drawer__acts').innerHTML = actsHtml(mayAppr(e.target.value)); // 换了审批人:能不能直接生效跟着变
       refreshPv();
     });
@@ -3828,7 +3926,9 @@
     const o = e.target.closest('[data-open]');
     if (o && o.closest('.section')) { const x = byId(o.dataset.open); if (x) openEditor(x.kind, x.id); return; }
     const n = e.target.closest('[data-new]');
-    if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : n.dataset.tbpreset ? { tbpreset: n.dataset.tbpreset } : undefined); return; }
+    if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.parent ? { parent: n.dataset.parent } : n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : n.dataset.tbpreset ? { tbpreset: n.dataset.tbpreset } : undefined); return; }
+    const hd = e.target.closest('[data-hday]'); // 主活动时间轴:点日期看那天网站上的组合
+    if (hd && hd.closest('.section')) { hubDay = hd.dataset.hday === 'now' ? null : +hd.dataset.hday + 12 * HOUR; renderCampaigns(); return; }
     const hb = e.target.closest('[data-hub]');
     if (hb) { openHub(hb.dataset.hub); return; }
     if (e.target.closest('[data-hubback]')) { cpHub = null; renderCampaigns(); return; }

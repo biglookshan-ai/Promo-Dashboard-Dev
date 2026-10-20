@@ -49,3 +49,25 @@ export function isEndingSoon(item, campaignsById, t = Date.now()) {
 }
 
 export const campaignIndex = (campaigns = []) => new Map(campaigns.map((c) => [c.id, c]));
+
+// ---- 主活动 / 子活动(2026-10-20 用户:多个活动同时跑,比如 Black Friday 下面有 DZO / Thypoch 的 Early BF)----
+// 活动可以选「属于哪个主活动」(只有一层:主活动不能再挂到别的下面)。
+// 实际优先级(写进店里给主题比徽章用):主活动 / 独立活动 = 自己填的数字;
+//   子活动 = 主活动 + 1000 + 在兄弟里的名次(按自己填的数字从小到大、一样就按开始时间从早到晚,越靠后越优先)
+//   → 同一个产品同时在主活动和子活动里,总是显示子活动的徽章,不用手填数字;子活动之间默认开始晚的优先。
+export const CHILD_BOOST = 1000;
+export const parentOf = (c, campaigns = []) => (c?.parent ? campaigns.find((x) => x.id === c.parent && !x.parent) || null : null);
+export const childrenOf = (id, campaigns = []) => campaigns.filter((x) => x.parent === id);
+export function effPriority(c, campaigns = []) {
+  const p = parentOf(c, campaigns);
+  if (!p) return Number(c?.priority) || 0;
+  const sibs = childrenOf(p.id, campaigns)
+    .sort((a, b) => (Number(a.priority) || 0) - (Number(b.priority) || 0) || (a.start ?? 0) - (b.start ?? 0) || String(a.id).localeCompare(String(b.id)));
+  return (Number(p.priority) || 0) + CHILD_BOOST + sibs.findIndex((x) => x.id === c.id) + 1;
+}
+// 首页商品模块的页签可以「只在某个活动期间显示」:那个活动此刻上线中才显示(和主题同一套:活动下线 = 店里是草稿,页签藏起来)
+export function tabVisible(tab, campaignsById, t = Date.now()) {
+  if (!tab?.campaign) return true;
+  const c = campaignsById.get(tab.campaign);
+  return !!c && itemStatus(c, campaignsById, t) === 'live';
+}

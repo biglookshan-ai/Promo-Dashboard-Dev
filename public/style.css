@@ -1416,3 +1416,46 @@ button.slcard__n:hover { background: var(--accent); }
 .qset__hint { display: block; margin-top: 8px; font-size: 11.5px; color: var(--text-3); }
 
 .qset__r .sel--sm { flex: 0 0 auto; }
+
+/* ---------- 主活动 / 子活动(2026-10-20) ---------- */
+.ccard--kid { border-left: 3px solid var(--accent); }
+.ccard__parent { font-size: 11.5px; color: var(--accent); font-weight: 600; }
+.ccard__parent--main { color: var(--text-2); }
+.hubparent { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; margin-top: 4px; }
+.hubfam .panel__h { flex-wrap: wrap; gap: 8px; }
+.hubfam .panel__h .btn { margin-left: auto; }
+.hft { --hft-name: 190px; position: relative; margin: 8px 0 14px; }
+.hft__row { display: grid; grid-template-columns: var(--hft-name) minmax(0, 1fr); align-items: center; min-height: 30px; }
+.hft__row--head { min-height: 26px; }
+.hft__name { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px 0 0; border: 0; background: none; text-align: left; font: inherit; font-size: 12.5px; color: var(--text); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hft__row--main .hft__name { font-weight: 700; }
+.hft__row--kid .hft__name { padding-left: 10px; }
+.hft__row--other .hft__name { color: var(--text-3); }
+.hft__track { position: relative; height: 24px; border-radius: 6px; background: var(--surface-2, #f6f6f8); }
+.hft__days { background: none; height: 26px; }
+.hft__day { position: absolute; top: 0; bottom: 0; border: 0; border-left: 1px solid var(--border); background: none; padding: 0 0 0 3px; font: inherit; font-size: 10.5px; color: var(--text-3); text-align: left; cursor: pointer; white-space: nowrap; overflow: visible; }
+.hft__day:hover { background: var(--accent-soft); }
+.hft__day.is-today { color: #c62a2f; font-weight: 700; }
+.hft__day.is-sel { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.hft__bar { position: absolute; top: 3px; bottom: 3px; border: 0; border-radius: 5px; padding: 0 6px; font: inherit; font-size: 11px; color: #fff; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; background: #5b6472; }
+.hft__bar--main { background: #2f3640; }
+.hft__bar--kid { background: var(--accent); }
+.hft__bar--other { background: #c9ccd3; color: #444; }
+.hft__bar--ended { opacity: .45; } .hft__bar--draft, .hft__bar--pending, .hft__bar--waiting { opacity: .6; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.18) 0 6px, transparent 6px 12px); }
+.hft__sep { margin: 8px 0 2px; font-size: 11.5px; color: var(--text-3); }
+.hft__now { position: absolute; top: 0; bottom: 0; width: 2px; background: #e5484d; pointer-events: none; }
+.hft__selband { position: absolute; top: 0; bottom: 0; background: rgba(51, 92, 255, .10); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); pointer-events: none; }
+.hfc { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fff; }
+.hfc__h { font-weight: 700; font-size: 13.5px; margin-bottom: 6px; }
+.hfc__h em { font-weight: 400; font-style: normal; color: var(--text-3); margin-left: 8px; font-size: 12px; }
+.hfc__r { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
+.hfc__k { color: var(--text-3); }
+.hfc__v { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.hfc__i { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.hfc__i:hover { text-decoration: underline; }
+.hfc__tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.hfc__tab { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--surface-2, #f1f1f4); }
+.hfc__tab.is-off { text-decoration: line-through; color: var(--text-3); background: none; border: 1px dashed var(--border); }
+.hfc__camp { display: inline-flex; align-items: center; gap: 4px; }
+.hfc__note { flex-basis: 100%; font-style: normal; font-size: 11.5px; color: var(--text-3); }
+.pmv__tab.is-off { opacity: .45; border-style: dashed; }

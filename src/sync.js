@@ -1,7 +1,7 @@
 // 执行动作带出来的「副作用」:写 Shopify 条目 / 更新轮播位置 / 删除条目 / 发飞书。
 // 每个店铺一把锁:动作 + 副作用 + 定时器一轮都排队执行,避免两个请求交错把对方的改动覆盖掉。
 import { load, replace } from './schedule-store.js';
-import { desiredPublishStatus, effectiveWindow, campaignIndex } from './schedule-core.js';
+import { desiredPublishStatus, effectiveWindow, campaignIndex, effPriority } from './schedule-core.js';
 import { findItem, LIST, titleOf } from './schedule-actions.js';
 import { upsertItem, upsertTab, setPosition, removeEntry, TYPE_OF } from './metaobjects.js';
 import { createImageFromUrl } from './files.js';
@@ -33,10 +33,20 @@ export async function syncItem(ctx, state, it, { gql = graphql, now = Date.now()
   // 首页商品模块:先把每个页签写成条目,版本再按顺序引用它们;去掉的页签把店里的条目也删掉
   let tabGids = [];
   if (it.kind === 'pmodule') {
-    for (const tab of it.tabs || []) { tab.shopifyId = await upsertTab(ctx, tab, gql); tabGids.push(tab.shopifyId); }
+    for (const tab of it.tabs || []) {
+      // 页签跟随活动:活动已批准但还没写进店里就先写,拿到它的 id 才能引用
+      let tabCampaignGid = '';
+      if (tab.campaign) {
+        const c = camps.get(tab.campaign);
+        if (c && c.state === 'approved' && !c.shopifyId) await syncItem(ctx, state, c, { gql, now, seen });
+        tabCampaignGid = c?.state === 'approved' ? c.shopifyId || '' : '';
+      }
+      tab.shopifyId = await upsertTab(ctx, tab, gql, { campaignGid: tabCampaignGid }); tabGids.push(tab.shopifyId);
+    }
   }
   const status = desiredPublishStatus(it, camps, now);
-  const r = await upsertItem(ctx, it, { status, win: effectiveWindow(it, camps), campaignGid, tabGids }, gql);
+  const prio = it.kind === 'campaign' ? effPriority(it, state.campaigns) : undefined; // 子活动自动比主活动优先
+  const r = await upsertItem(ctx, it, { status, win: effectiveWindow(it, camps), campaignGid, tabGids, prio }, gql);
   Object.assign(it, { shopifyId: r.id, syncedStatus: r.status, syncedAt: now, syncError: null });
   if (it.kind === 'pmodule') {
     for (const old of (it.syncedTabIds || []).filter((x) => !tabGids.includes(x))) await removeEntry(ctx, old, gql).catch(() => {});
