@@ -1757,3 +1757,11 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .pg.pg--list .pg__t { min-height: 0; -webkit-line-clamp: 2; }
 .pg--list .pg__m { margin-top: 0; }
 .pset__tgls .tgl .muted { white-space: normal; }
+/* 设置段收紧(2026-10-21 用户:倒计时和徽章文字左右排,不用一个功能一行) */
+.pset__row { padding: 10px 0; }
+.pset__two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; align-items: start; }
+.pset__inp { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pset__inp > span { flex: none; font-size: var(--fs-sm); font-weight: 600; }
+.pset__inp .inp { flex: 1; min-width: 0; }
+.pg__stocknote { font-size: var(--fs-xs); margin: -4px 0 8px; }
+@media (max-width: 860px) { .pset__two { grid-template-columns: 1fr; } }

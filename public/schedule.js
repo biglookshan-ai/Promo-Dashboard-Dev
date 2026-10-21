@@ -3074,7 +3074,7 @@
   const gbp = (x) => `£${Number(x).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const priceRow = (p) => (p.price == null ? '' : `<span class="pg__pr">${p.compareAt ? `<s>${gbp(p.compareAt)}</s>` : ''}<b class="${p.compareAt ? 'is-sale' : ''}">${gbp(p.price)}</b>${p.from ? '<em>起</em>' : ''}</span>`);
   async function loadWxAll(redraw) {
-    const c = wx.collection; wxAll = null; wxBase = []; wxQ = ''; wxPosEdit = null; wxStock = {};
+    const c = wx.collection; wxAll = null; wxBase = []; wxQ = ''; wxPosEdit = null; wxStock = {}; wxStockNote = '';
     if (!c) return redraw && redraw();
     if (MODE !== 'live') { // 演示模式读不到店里的合集成员,只能拿演示目录凑一组让人试手感(界面上会写明不是真的)
       const seed = [...(c.handle || c.title || '')].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
@@ -3127,7 +3127,7 @@
   const realModeOf = () => !!(wxAll?.manualOk && canWrite());
   const realMemberOf = () => !!((wxAll?.membershipOk || wxAll?.selectionOk) && canWrite());
   // 产品卡上的库存:各仓库可售(available)数量,所有款式加起来,只列有货的仓库(UK:1 EU:2);不跟踪库存的不显示。网格画好后再补,不拖慢打开
-  let wxStock = {}; let wxStockBusy = false;
+  let wxStock = {}; let wxStockBusy = false; let wxStockNote = ''; // 读库存的提示(没权限 / 仓库名要加权限)
   const STOCK_ORDER = ['UK', 'EU'];
   const stockRank = (l) => { const i = STOCK_ORDER.indexOf(l); return i === -1 ? 99 : i; };
   function stockHtml(id) {
@@ -3144,11 +3144,15 @@
     wxStockBusy = true;
     try {
       if (MODE === 'live' && !wxAll.demo) {
-        for (let i = 0; i < ids.length; i += 250) Object.assign(wxStock, (await api('POST', '/api/schedule/products-stock', { ids: ids.slice(i, i + 250) })).stock || {});
+        for (let i = 0; i < ids.length; i += 250) {
+          const r = await api('POST', '/api/schedule/products-stock', { ids: ids.slice(i, i + 250) });
+          Object.assign(wxStock, r.stock || {});
+          wxStockNote = r.noNames ? '库存里的「仓1 / 仓2」是仓库编号:要显示 UK / EU 这样的仓库名,app 还要加「read_locations」权限' : '';
+        }
       } else { // 演示:按产品 id 编一个数,只为看样子
         for (const id of ids) { const h = [...id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7); wxStock[id] = { tracked: true, by: { UK: h % 5, EU: (h >> 4) % 3 } }; }
       }
-    } catch { /* 读不到库存(比如没有权限)就不显示 */ }
+    } catch (e) { wxStockNote = `库存读不到:${e.message}`; }
     for (const id of ids) if (!(id in wxStock)) wxStock[id] = null; // 读过了,别再读
     wxStockBusy = false;
     if (wx) redraw();
@@ -3220,12 +3224,14 @@
         ${wx.collection && wxAll && !wxAll.demo && !wxAll.error && MODE === 'live' ? `<button type="button" class="btn btn-sm btn-ghost" data-wx="hist">${I.clock}历史版本 / 回滚</button>` : ''}</div>${colNote}</div>`;
     if (part === 'coll') return collHtml;
     if (part === 'opts') return !wx.collection ? '<span class="muted">先选合集</span>' : wxBusy || !wxAll ? '<span class="muted">读取中…</span>' : `
+      <div class="pset__two">
       <label class="tgl"><input type="checkbox" id="wx-only" ${wx.onlyN != null ? 'checked' : ''}/><span class="tgl__ui"></span>
         <span><b>只显示前 <input class="inp inp--xs" id="wx-onlyn" type="number" min="1" max="${Math.max(1, wx.order.length)}" value="${wx.onlyN ?? Math.max(1, Math.min(prefix || 5, wx.order.length))}" ${wx.onlyN != null ? '' : 'disabled'}/> 个产品</b>
-        <span class="muted">后面的这段时间不显示。比如 Flash Sale:合集里放着所有候选产品,每天只显示当天那一组</span></span></label>
+        <span class="muted">后面的这段时间不显示(Flash 每天一组用)</span></span></label>
       <label class="tgl"><input type="checkbox" id="wx-full" ${wx.fullOrder || nativeAll ? 'checked' : ''} ${nativeAll ? 'disabled' : ''}/><span class="tgl__ui"></span>
         <span><b>完全按我排的顺序</b><span class="muted">${nativeAll ? '默认设置已经是完全按顺序,不用开'
-          : `打开后,这份清单生效期间整个合集页都照下面的顺序;不开就按默认设置,只有前 ${rule.pinManual} 个照顺序`}${rule.byPin ? `。现在由「${esc(rule.byPin)}」打开着` : ''}</span></span></label>
+          : `整个合集页照下面的顺序;不开只有前 ${rule.pinManual} 个照顺序`}${rule.byPin ? `(现在由「${esc(rule.byPin)}」打开着)` : ''}</span></span></label>
+      </div>
       ${!wx.fullOrder && !nativeAll && rule.pinNew ? `<div class="note note--warn note--sm">这个合集前台默认会把最新的 ${rule.pinNew} 个产品放最前,和下面的顺序不完全一样 —— 打开「完全按我排的顺序」就一模一样。</div>` : ''}`;
     return `${!wx.collection ? '<p class="muted">先在上面选合集,这里会列出合集里现在的全部产品,可以拖到任意位置。</p>'
         : wxBusy ? `<div class="pg">${Array.from({ length: 10 }, () => '<div class="pg__card pg__card--ph"><span class="pg__img"></span><span class="pg__t"></span><span class="pg__pr"></span></div>').join('')}</div>` : `
@@ -3240,6 +3246,7 @@
         </div>
       </div>
       ${canPlans ? `<div id="wx-plans">${wxPlansHtml()}</div>` : ''}
+      ${wxStockNote ? `<p class="muted pg__stocknote">${esc(wxStockNote)}</p>` : ''}
       ${warns.map((w) => `<div class="note note--warn note--sm">${w}</div>`).join('')}
       <div class="pg${pgCls()}" id="pg">${grid || '<p class="muted">这个合集里还没有产品</p>'}</div>
       ${wx.hidden.length ? `<div class="pg__hidh">这段时间不显示的产品(${wx.hidden.length} 个)<em>只在这份清单生效时藏起来,结束自动恢复</em></div>
@@ -3283,9 +3290,9 @@
         ${edSec(2, '设置', '', `<div class="pset">
           ${row('默认设置', '合集自己的,没有清单生效时', '<div id="wx-cs"><span class="muted">先选合集</span></div>')}
           ${row('这份清单生效时', '', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
-          ${row('产品卡上', '产品页、搜索和合集页', `<div class="pset__tgls">
-            <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到这份清单结束(Flash 每天那一组用),到期自动消失</span></span></label>
-            ${fld('徽章文字', inp('badge', it.badge, '如:Flash Deal · 今日限时'), '可留空;和倒计时一起显示')}</div>`)}
+          ${row('产品卡上', '产品页、搜索和合集页', `<div class="pset__two">
+            <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到这份清单结束,到期自动消失</span></span></label>
+            <label class="pset__inp"><span>徽章文字</span>${inp('badge', it.badge, '可留空,如:Flash Deal · 今日限时')}</label></div>`)}
         </div>`)}
         ${edSec(3, '什么时候显示', '', timeBlock(it, 'pin'))}
         ${edSec(4, '顺序', '拖动卡片排序,或点序号输入第几位', `<div id="wx-box">${pinBoxHtml()}</div>`)}`;

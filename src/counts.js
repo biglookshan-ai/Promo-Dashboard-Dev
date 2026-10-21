@@ -202,6 +202,14 @@ export async function collectionProducts(ctx, id, gql = graphql) {
 // 产品卡上的库存(合集排序网格):每个产品在各仓库的可售(available)数量,所有款式加起来。要 read_inventory(Location 也只要这个权限)。
 // 仓库名字缩成短标签:名字里有 UK / EU 等字样就用它,否则按国家词猜,再不行取第一个词。两分钟内同一个产品不重复读。
 const stockCache = new Map(); // `${shop}:${产品id}` → { at, v }
+// 仓库名字(Location.name)还要 read_locations 权限(2026-10-21 线上报 ACCESS_DENIED):没有就只读仓库 id,按 id 从小到大叫「仓1 / 仓2」
+const noLocName = new Map(); // 没有 read_locations 的店 → 发现的时间(30 分钟后再试一次,权限补上就自动换回仓库名)
+const noNames = (shop) => noLocName.has(shop) && Date.now() - noLocName.get(shop) < 30 * 60_000;
+const locIds = new Map(); // 店 → 见过的仓库 id(编号用)
+const locNo = (shop, id) => { const sorted = [...(locIds.get(shop) || [])].sort((a, b) => Number(String(a).split('/').pop()) - Number(String(b).split('/').pop()));
+  return `仓${sorted.indexOf(id) + 1}`; };
+const STOCK_Q = (withName) => `query($q: String!, $after: String) { productVariants(first: 50, after: $after, query: $q) { nodes { product { id }
+  inventoryItem { tracked inventoryLevels(first: 6) { nodes { location { id${withName ? ' name' : ''} } quantities(names: ["available"]) { quantity } } } } } pageInfo { hasNextPage endCursor } } }`;
 export const locLabel = (name) => {
   const s = String(name || '');
   const m = s.match(/\b(UK|GB|EU|US|USA|HK|CN|DE|NL|FR|IE)\b/i); if (m) return m[1].toUpperCase() === 'GB' ? 'UK' : m[1].toUpperCase();
@@ -220,23 +228,34 @@ export async function productsStock(ctx, ids, gql = graphql) {
     const q = chunk.map((n) => `product_id:${n}`).join(' OR ');
     let after = null;
     for (let page = 0; page < 20; page++) {
-      const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { productVariants(first: 50, after: $after, query: $q) { nodes { product { id }
-        inventoryItem { tracked inventoryLevels(first: 6) { nodes { location { id name } quantities(names: ["available"]) { quantity } } } } } pageInfo { hasNextPage endCursor } } }`, { q, after });
+      let d;
+      try { d = await gqlRetry(ctx, gql, STOCK_Q(!noNames(shop)), { q, after }); }
+      catch (e) {
+        if (noNames(shop) || !/read_locations|denied for name/i.test(e.message)) throw e;
+        noLocName.set(shop, Date.now()); d = await gqlRetry(ctx, gql, STOCK_Q(false), { q, after });
+      }
       for (const v of d.productVariants.nodes) {
         const s = stock[String(v.product?.id || '').split('/').pop()];
         if (!s || !v.inventoryItem?.tracked) continue;
         s.tracked = true;
         for (const lv of v.inventoryItem.inventoryLevels?.nodes || []) {
-          const l = locLabel(lv.location?.name);
-          s.by[l] = (s.by[l] || 0) + Math.max(0, Number(lv.quantities?.[0]?.quantity) || 0);
+          const n = Math.max(0, Number(lv.quantities?.[0]?.quantity) || 0);
+          if (lv.location?.name) { const l = locLabel(lv.location.name); s.by[l] = (s.by[l] || 0) + n; continue; }
+          // 没有仓库名:先按 id 记,全部读完再编号(编号要等见过所有仓库才稳定)
+          const L = locIds.get(shop) || new Set(); L.add(lv.location?.id); locIds.set(shop, L);
+          (s.raw ||= {})[lv.location?.id] = (s.raw[lv.location?.id] || 0) + n;
         }
       }
       if (!d.productVariants.pageInfo.hasNextPage) break;
       after = d.productVariants.pageInfo.endCursor;
     }
-    for (const n of chunk) stockCache.set(`${shop}:${n}`, { at: now, v: stock[n] });
+    for (const n of chunk) {
+      const s = stock[n];
+      if (s.raw) { for (const [id, q] of Object.entries(s.raw)) { const l = locNo(shop, id); s.by[l] = (s.by[l] || 0) + q; } delete s.raw; }
+      stockCache.set(`${shop}:${n}`, { at: now, v: s });
+    }
   }
-  return { stock };
+  return { stock, noNames: noNames(shop) };
 }
 
 // 按 id 取产品的名字和图(历史版本里有的产品现在可能已经不在合集里了)

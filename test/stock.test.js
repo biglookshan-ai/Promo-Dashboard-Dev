@@ -34,3 +34,21 @@ test('按产品把各款式的可售数量加起来;不跟踪库存的标出来;
   await productsStock({ shop: 'test-stock' }, ['11', '22', '33'], gql);
   assert.equal(calls, 1);
 });
+
+test('没有 read_locations(读不到仓库名):退回只读仓库 id,按 id 从小到大叫「仓1 / 仓2」', async () => {
+  const qs = [];
+  const gql = async (ctx, q) => {
+    qs.push(q);
+    if (/location \{ id name \}/.test(q)) throw new Error('GraphQL errors: [{"message":"Access denied for name field. Required access: `read_locations` access scope"}]');
+    return { productVariants: { nodes: [
+      { product: { id: 'gid://shopify/Product/7' }, inventoryItem: { tracked: true, inventoryLevels: { nodes: [
+        { location: { id: 'gid://shopify/Location/900' }, quantities: [{ quantity: 2 }] },
+        { location: { id: 'gid://shopify/Location/50' }, quantities: [{ quantity: 1 }] }] } } }], pageInfo: { hasNextPage: false } } };
+  };
+  const r = await productsStock({ shop: 'no-loc-scope' }, ['7'], gql);
+  assert.equal(r.noNames, true);
+  assert.deepEqual(r.stock['7'], { tracked: true, by: { '仓2': 2, '仓1': 1 } });
+  // 之后直接用不带名字的查询,不再先撞一次错
+  await productsStock({ shop: 'no-loc-scope' }, ['8'], gql);
+  assert.ok(!/id name/.test(qs.at(-1)));
+});
