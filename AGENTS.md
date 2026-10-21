@@ -64,7 +64,7 @@
   一页里有两类东西用 `subTabsHtml`(如顶栏的公告 / 节日样式、首页模块的促销 / 推荐)。别再新写 xxrow / xxcard 列表。
 - **编辑器**:`formHtml` 里用 `edSec(序号, 标题, 提示, 内容)` 分段,顺序 = 内容 → 作用范围 → 产品上显示什么 → **「什么时候显示」永远最后一段**(`timeBlock` 自己不再带标题)。
   **例外:合集排序(置顶清单)编辑器**(2026-10-21 用户要求「设置都放上面,下面就是改顺序显示全部产品」):① 清单(名称 + 合集)→ ② 设置(默认设置 / 这份清单生效时 / 产品卡上,`.pset` 左标签右内容)→ ③ 什么时候显示 → ④ 顺序(网格放最后)。
-  合集排序网格的产品卡:一行最多 4 个、标题最多 4 行、草稿写「Draft」、库存「UK:1 EU:2」(`POST /api/schedule/products-stock`;2026-10-21 用户:**不读仓库**,读店里已同步好的款式字段 `custom.uk_inventory`(UK Inventory → UK)、`custom.es_inventory`(后台叫 EW Inventory → 显示 EU),和主题 `stock-logic-compute.liquid` 同一组;所有款式加起来、只列有货的、全 0 =「无库存」、没这两个字段 = 不显示;只要 read_products)。
+  合集排序网格的产品卡:一行最多 4 个、标题最多 4 行、草稿写「Draft」、库存「UK:1 EW:2」(`POST /api/schedule/products-stock`;2026-10-21 用户:**不读仓库**,读店里已同步好的款式字段 `custom.uk_inventory`(UK Inventory → UK)、`custom.es_inventory`(EW Inventory → EW,用户要和后台名字一样),和主题 `stock-logic-compute.liquid` 同一组;所有款式加起来、只列有货的、全 0 =「无库存」、没这两个字段 = 不显示;只要 read_products)。
   主按钮文案自动写成「保存 · 马上上线 / 保存 · 10/24 上线」(已上线的是「保存修改」);保存出错用 `showFormErr` 标到字段上(`ERR_FIELD` 按错误文字找字段,新加校验文字记得补映射)。
 - **说明文字**:页面上只留一句话;长解释放字段提示(`fld` 第三个参数)或折叠起来。
 

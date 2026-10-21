@@ -200,11 +200,11 @@ export async function collectionProducts(ctx, id, gql = graphql) {
     total, products, truncated: more || (total != null && total > products.length) };
 }
 // 产品卡上的库存(合集排序网格):读店里已经同步好的款式字段(2026-10-21 用户:不用读仓库)——
-//   custom.uk_inventory(后台叫 UK Inventory)→ UK;custom.es_inventory(后台叫 EW Inventory,External Warehouse)→ EU
+//   custom.uk_inventory(后台叫 UK Inventory)→ UK;custom.es_inventory(后台叫 EW Inventory,External Warehouse)→ EW(和后台名字一样)
 //   和主题 snippets/stock-logic-compute.liquid 读的是同一组字段。每个产品把所有款式加起来;负数当 0;一个款式都没有这两个字段 = 不显示。
 //   只要 read_products。两分钟内同一个产品不重复读。
 const stockCache = new Map(); // `${shop}:${产品id}` → { at, v }
-export const STOCK_FIELDS = [['uk_inventory', 'UK'], ['es_inventory', 'EU']];
+export const STOCK_FIELDS = [['uk_inventory', 'UK'], ['es_inventory', 'EW']];
 const STOCK_Q = `query($q: String!, $after: String) { productVariants(first: 100, after: $after, query: $q) { nodes { product { id }
   ${STOCK_FIELDS.map(([k]) => `${k}: metafield(namespace: "custom", key: "${k}") { value }`).join(' ')} } pageInfo { hasNextPage endCursor } } }`;
 export async function productsStock(ctx, ids, gql = graphql) {
