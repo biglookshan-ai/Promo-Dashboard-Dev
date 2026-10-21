@@ -278,7 +278,8 @@ function run(input, action, actor, now) {
       const it = findItem(doc, action.id) || fail('找不到这条内容');
       if (it.isDefault) fail('默认样式不能删除');
       const s = itemStatus(it, campaignIndex(doc.campaigns), now);
-      if (!['draft', 'rejected', 'ended'].includes(s)) fail('只能删除草稿、被退回或已结束的内容');
+      // 2026-10-21 用户:暂停了的也要能删(暂停 = 已经不在网站上显示,删掉不影响前台)
+      if (!['draft', 'rejected', 'ended', 'paused'].includes(s)) fail('只能删除草稿、被退回、已暂停或已结束的内容(正在上线的先暂停)');
       if (!canApprove(actor, doc, it) && it.by !== actor.id && it.owner !== actor.id) fail('只能删除自己建的 / 自己负责的内容');
       if (it.kind === 'campaign' && followersOf(doc, it.id).length) fail('还有 Banner / 顶栏挂在这个活动下,先把它们改成别的时间方式');
       if (it.kind === 'campaign' && tabsFollowing(doc, it.id).length) { const x = tabsFollowing(doc, it.id)[0]; fail(`首页商品模块「${titleOf(x.m)}」的页签「${x.t.title || ''}」只在这个活动期间显示,先把它改成一直显示或跟随别的活动`); }

@@ -195,3 +195,11 @@ test('批量清理:管理员能删任何状态(上线中也行),连同店里的�
   assert.deepEqual(r.ids, ['c1', 'b2', 'b1', 'pin-1']);
   assert.equal(r.doc.log.filter((l) => l.action === 'delete').length, 4);
 });
+
+test('暂停了的内容也能删(2026-10-21 用户要求);正在上线的不能删', () => {
+  const live = applyAction(doc({ banners: [banner({ shopifyId: 'gid://9' })] }), { type: 'pause', id: 'b1' }, approver, T).doc;
+  const r = applyAction(live, { type: 'delete', id: 'b1' }, approver, T);
+  assert.equal(r.doc.banners.length, 0);
+  assert.ok(r.effects.some((e) => e.type === 'remove' && e.shopifyId === 'gid://9'));
+  assert.throws(() => applyAction(doc({ banners: [banner()] }), { type: 'delete', id: 'b1' }, approver, T), /正在上线的先暂停/);
+});

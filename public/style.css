@@ -1800,3 +1800,5 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .pblk--time .tm--campaign .sel { min-width: 260px; }
 .pblk--time .tz { flex-basis: 100%; margin: 0; }
 @media (max-width: 860px) { .pgrid2 { grid-template-columns: 1fr; } .pdef { flex-direction: column; align-items: stretch; } }
+.irow--pin { cursor: pointer; }
+.irow--pin:hover { background: #f7f8fa; }

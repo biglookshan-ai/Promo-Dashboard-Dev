@@ -1783,7 +1783,7 @@
       return itemRow(p, { badge: badgeAt(p, T), thumb: '', cls: 'irow--pin',
         tags: `${p.fullOrder ? '<span class="tag tag--accent">完全按清单顺序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">倒计时</span>' : ''}`,
         sub: `${prods.length} 个产品排在前面${(p.hidden || []).length ? ` · ${(p.hidden || []).length} 个不显示` : ''}`,
-        act: `<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
+        act: `${['draft', 'rejected', 'ended', 'paused'].includes(status(p)) ? `<button class="btn btn-sm btn-ghost btn-danger-t" type="button" data-pindel="${p.id}" title="删除这份清单(不影响别的清单和合集本身)">删除</button>` : ''}<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
         extra: prods.length ? `<span class="pnrow__ps">${prods.slice(0, 14).map((x) => `<span class="pnrow__p" title="${esc(x.title)}">${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 14 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}</span>` : '' });
     };
     $('#pn-root').innerHTML = `
@@ -1843,6 +1843,18 @@
     });
     $$('#pn-root [data-colhist]').forEach((b) => b.addEventListener('click', () => openColHistory(b.dataset.colhist, b.dataset.title)));
     $$('#pn-root [data-pnmore]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.pnmore; if (pnOpen.has(k)) pnOpen.delete(k); else pnOpen.add(k); renderPins(); }));
+    // 整行都能点开编辑(按钮、链接照常;标题那块本来就能点,交给全局的 data-open)
+    $$('#pn-root .irow--pin').forEach((r) => r.addEventListener('click', (e) => {
+      if (e.target.closest('button, a, input, select, [data-open]')) return;
+      const x = byId(r.dataset.pop); if (x) openEditor(x.kind, x.id);
+    }));
+    $$('#pn-root [data-pindel]').forEach((b) => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认删除'; b.classList.add('btn-danger'); setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = '删除'; b.classList.remove('btn-danger'); } }, 4000); return; }
+      b.disabled = true;
+      const r = await act({ type: 'delete', id: b.dataset.pindel });
+      if (r?.message) toast(r.message);
+    }));
     $$('#pn-root [data-colhold], #pn-root [data-colrelease]').forEach((b) => b.addEventListener('click', async () => {
       const release = 'colrelease' in b.dataset;
       b.disabled = true;
@@ -3746,7 +3758,7 @@
       return h;
     };
     const acts = actsHtml(approver);
-    const canDelete = !isNew && !it.isDefault && ['draft', 'rejected', 'ended'].includes(s);
+    const canDelete = !isNew && !it.isDefault && ['draft', 'rejected', 'ended', 'paused'].includes(s);
     const notes = [];
     if (endingSoon(it)) notes.push(`<div class="note note--warn">⚠️ ${relDay(win(it).end)}(${fDT(win(it).end)})自动下架。要继续显示就把结束时间往后改${win(it).via ? '(它跟随活动,要改活动的结束时间)' : ''}。</div>`);
     if (it.pendingChange) notes.push(`<div class="note note--warn">${esc(who(it.pendingChange.by))} 提交了修改,正在等「${esc(apprName(it))}」审批。${approver ? '去「审核」页批准后才会替换线上版本。' : '批准前线上保持原来的版本。'}</div>`);
