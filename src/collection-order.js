@@ -16,6 +16,7 @@ import { diffOrder } from './order-diff.js';
 import { NEW_COLLECTIONS } from './shopify.js';
 
 export const nid = (x) => String(x ?? '').split('/').pop();
+const pnm = (pin) => pin.name || '未命名清单'; // 清单可以不起名字:提示和记录里别出现「」
 const gid = (id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/Collection/${id}`);
 const pgid = (id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/Product/${id}`);
 
@@ -199,7 +200,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
       // 排序方式不是「手动」→ Shopify 不让调顺序,不写店里,交给主题前台排
       if (!col.manualOk) {
         if (st) { delete state.colState[cid]; }
-        if (pin) rep.skipped.push({ collection: cid, title: col.title, pin: pin.name, why: `sort:${col.sortOrder}`, automated: col.automated });
+        if (pin) rep.skipped.push({ collection: cid, title: col.title, pin: pnm(pin), why: `sort:${col.sortOrder}`, automated: col.automated });
         continue;
       }
       const via = st?.via !== undefined ? st.via : col.via;
@@ -226,8 +227,8 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
             // 调顺序在 Shopify 那边是异步任务(job),刚写完的几分钟内读到旧顺序很正常 —— 先等等,不算有人改过
             if (now - (st.at || 0) < 3 * 60_000) continue;
             st.hold = 'manual'; st.holdAt = now;                // 有人在后台改过 → 暂停接管,不覆盖
-            record(cid, col.ids, { why: '有人在 Shopify 后台改过顺序', title: col.title, pin: pin.name });
-            rep.holds.push({ collection: cid, title: col.title, reason: 'manual', pin: pin.name, fresh: true }); // 刚发现的才记日志
+            record(cid, col.ids, { why: '有人在 Shopify 后台改过顺序', title: col.title, pin: pnm(pin) });
+            rep.holds.push({ collection: cid, title: col.title, reason: 'manual', pin: pnm(pin), fresh: true }); // 刚发现的才记日志
             continue;
           }
         }
@@ -241,10 +242,10 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
         const wantAdded = ops ? pinnedIds.filter((id) => !hide.has(id) && (prevAdded.includes(id) || !cur.has(id))) : [];
         const wantRemoved = ops ? [...hide].filter((id) => (cur.has(id) || prevRemoved.includes(id)) && !wantAdded.includes(id)) : [];
         if (wantRemoved.length > MAX_REMOVE) { // 要移出去太多(「只显示清单里的」碰上大合集)→ 不动店里的合集,交给前台处理
-          rep.skipped.push({ collection: cid, title: col.title, pin: pin.name, why: 'too-many', n: wantRemoved.length });
+          rep.skipped.push({ collection: cid, title: col.title, pin: pnm(pin), why: 'too-many', n: wantRemoved.length });
           continue;
         }
-        if (!st) record(cid, col.ids, { why: 'app 接管前的原样', title: col.title, pin: pin.name });
+        if (!st) record(cid, col.ids, { why: 'app 接管前的原样', title: col.title, pin: pnm(pin) });
         const toInclude = wantAdded.filter((id) => !prevAdded.includes(id));
         const toUninclude = prevAdded.filter((id) => !wantAdded.includes(id));
         const toExclude = wantRemoved.filter((id) => !prevRemoved.includes(id));
@@ -259,12 +260,12 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
         const mv = movesFor(col2.ids, target);
         await reorder(ctx, cid, mv, gql);
         const pendingNow = !settled(wantAdded, wantRemoved, col2.ids);
-        state.colState[cid] = { collection: cid, title: col.title, pinId: pin.id, pinName: pin.name, signature: sig(pin),
+        state.colState[cid] = { collection: cid, title: col.title, pinId: pin.id, pinName: pnm(pin), signature: sig(pin),
           snapshot, snapAt: st?.snapAt || now, via, srcId: st?.srcId || col.srcId || null, removed: wantRemoved, added: wantAdded,
           wrote: d.pinned, at: now, ...(pendingNow ? { pending: changed ? now : (st?.pending || now) } : {}) };
-        record(cid, d.order, { why: `按「${pin.name}」排`, title: col.title, pin: pin.name });
+        record(cid, d.order, { why: `按「${pnm(pin)}」排`, title: col.title, pin: pnm(pin) });
         // 「换位置」只算原来就在合集里、被挪动的(新加进来的那几个单独算)
-        rep.applied.push({ collection: cid, title: col.title, pin: pin.name, moved: mv.filter((m) => !toInclude.includes(nid(m.id))).length,
+        rep.applied.push({ collection: cid, title: col.title, pin: pnm(pin), moved: mv.filter((m) => !toInclude.includes(nid(m.id))).length,
           removed: toExclude.length, added: toInclude.length, back: toUnexclude.length, front, via, pending: pendingNow });
       } else {
         // 没有清单生效了 → 还原:排除的放回来、我们加进去的拿掉、顺序照快照
@@ -331,10 +332,10 @@ export async function alignSortFlags(ctx, state, { now = Date.now(), gql, rep })
         if (!d.collection) continue;
         const mf = d.collection.metafield;
         if (!mf || mf.value !== 'true') await setSortOff(ctx, cid, 'true', 'boolean', gql);
-        state.sortFlags[cid] = { prev: mf ? { value: mf.value, type: mf.type } : null, pinId: pin.id, pinName: pin.name, title: d.collection.title, at: now };
-        rep.sortOn.push({ collection: cid, title: d.collection.title, pin: pin.name, already: mf?.value === 'true' });
+        state.sortFlags[cid] = { prev: mf ? { value: mf.value, type: mf.type } : null, pinId: pin.id, pinName: pnm(pin), title: d.collection.title, at: now };
+        rep.sortOn.push({ collection: cid, title: d.collection.title, pin: pnm(pin), already: mf?.value === 'true' });
       } else if (pin && fl) { // 换成另一份同样勾了的清单接着用(比如 Flash 第 1 天 → 第 2 天):不重复记「改之前」
-        Object.assign(fl, { pinId: pin.id, pinName: pin.name });
+        Object.assign(fl, { pinId: pin.id, pinName: pnm(pin) });
       } else if (!pin && fl) { // 结束了:恢复成改之前的样子
         if (fl.prev) await setSortOff(ctx, cid, fl.prev.value, fl.prev.type, gql); else await deleteSortOff(ctx, cid, gql);
         delete state.sortFlags[cid];

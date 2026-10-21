@@ -14,7 +14,7 @@ import { graphql } from './shopify.js';
 import { actorOf, pagesOf, isAdmin } from './members.js';
 import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
-import { listColSorts, applyColSort } from './col-sort-shop.js';
+import { listColSorts, readColSort, applyColSort } from './col-sort-shop.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
 import { diffOrder, diffSummary } from './order-diff.js';
 import { loadItemHistory, recordAction, changedKeys, pruneItemHistory } from './item-history.js';
@@ -371,6 +371,11 @@ export function scheduleRouter() {
     if (req.query.fresh) bust(req.ctx.shop, 'colsorts');
     const rows = await cached(req.ctx.shop, 'colsorts', 60_000, () => listColSorts(req.ctx, graphql));
     return { collections: withFlags(rows, load(req.ctx.shop)), at: Date.now() };
+  }));
+  r.get('/col-sort', wrap(async (req) => {
+    const row = await readColSort(req.ctx, String(req.query.id || ''), graphql);
+    if (!row) throw new ActionError('找不到这个合集');
+    return { collection: withFlags([row], load(req.ctx.shop))[0] };
   }));
   r.post('/col-sort', wrap((req) => withLock(req.ctx.shop, async () => {
     const s = load(req.ctx.shop);

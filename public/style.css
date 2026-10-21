@@ -1713,3 +1713,15 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .cs-links .muted { margin: 0; }
 .irow__when.cs-mode { white-space: normal; max-width: 260px; color: var(--text); font-weight: 500; }
 .irow__when.cs-mode.is-def { color: var(--text-3); font-weight: 400; }
+/* 置顶清单编辑器里就地改「合集页平时怎么排」 */
+.csin { margin: 8px 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.csin > summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; cursor: pointer; list-style: none; font-size: var(--fs-sm); }
+.csin > summary::-webkit-details-marker { display: none; }
+.csin__l { color: var(--text-3); font-size: var(--fs-xs); }
+.csin__v { font-weight: 600; }
+.csin__go { margin-left: auto; color: var(--accent); }
+.csin__go::after { content: '改 ›'; }
+.csin[open] .csin__go::after { content: '收起'; }
+.csin__b { padding: 10px 12px 12px; border-top: 1px solid var(--border); background: var(--surface); border-radius: 0 0 var(--radius) var(--radius); }
+.csin__f { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+.csin__f .muted { margin: 0; font-size: var(--fs-xs); }
