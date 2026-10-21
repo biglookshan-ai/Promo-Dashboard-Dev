@@ -1725,3 +1725,35 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .csin__b { padding: 10px 12px 12px; border-top: 1px solid var(--border); background: var(--surface); border-radius: 0 0 var(--radius) var(--radius); }
 .csin__f { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
 .csin__f .muted { margin: 0; font-size: var(--fs-xs); }
+
+/* 合集排序编辑器 2026-10-21:设置都在上面(.pset),网格放最后;产品卡一行最多 4 个、标题多给几行、库存、细边框 */
+.pset { display: flex; flex-direction: column; }
+.pset__row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+.pset__row:first-child { border-top: none; padding-top: 2px; }
+.pset__k { font-size: var(--fs-sm); font-weight: 600; color: var(--text); padding-top: 3px; }
+.pset__k em { display: block; font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--text-3); margin-top: 2px; }
+.pset__v { min-width: 0; }
+.pset__v > .muted { margin: 0; font-size: var(--fs-sm); }
+.pset__tgls { display: flex; flex-direction: column; gap: 12px; }
+.pset__tgls .fld { margin: 0; }
+.pset__tgls .note { margin: 0; }
+.tgl input.inp--xs { position: static; opacity: 1; pointer-events: auto; width: 60px; min-height: 26px; padding: 1px 6px; display: inline-block; margin: 0 4px; }
+.tgl input.inp--xs:disabled { opacity: .5; }
+.pset .csin { margin: 0; }
+@media (max-width: 720px) { .pset__row { grid-template-columns: 1fr; gap: 8px; } }
+
+.pg { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 860px) { .pg { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .pg { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.pg__card { border: 1px solid var(--border); padding: 10px; }
+.pg__card.is-new { border: 1px solid #e5484d; box-shadow: none; }
+.pg__card.is-moved { border: 1px dashed #e5484d; }
+.pg__img { aspect-ratio: 4 / 3; }
+.pg__t { font-size: var(--fs-sm); line-height: 1.35; height: auto; min-height: 2.7em; -webkit-line-clamp: 4; }
+.pg__b--draft { background: #f1f1f3; color: #6b6b72; letter-spacing: .02em; }
+.pg__stock { font-size: var(--fs-xs); font-weight: 600; color: var(--ok); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pg__stock.is-out { color: var(--text-3); font-weight: 400; }
+.pg__m { margin-top: auto; }
+.pg.pg--list .pg__t { min-height: 0; -webkit-line-clamp: 2; }
+.pg--list .pg__m { margin-top: 0; }
+.pset__tgls .tgl .muted { white-space: normal; }

@@ -199,6 +199,46 @@ export async function collectionProducts(ctx, id, gql = graphql) {
     needsNewApi: manualOk && !!ruleSet && !NEW_COLLECTIONS, sharedSource: manualOk && !!ruleSet && NEW_COLLECTIONS && !srcId, sortRule,
     total, products, truncated: more || (total != null && total > products.length) };
 }
+// 产品卡上的库存(合集排序网格):每个产品在各仓库的可售(available)数量,所有款式加起来。要 read_inventory(Location 也只要这个权限)。
+// 仓库名字缩成短标签:名字里有 UK / EU 等字样就用它,否则按国家词猜,再不行取第一个词。两分钟内同一个产品不重复读。
+const stockCache = new Map(); // `${shop}:${产品id}` → { at, v }
+export const locLabel = (name) => {
+  const s = String(name || '');
+  const m = s.match(/\b(UK|GB|EU|US|USA|HK|CN|DE|NL|FR|IE)\b/i); if (m) return m[1].toUpperCase() === 'GB' ? 'UK' : m[1].toUpperCase();
+  if (/united kingdom|england|britain|london|scotland|wales/i.test(s)) return 'UK';
+  if (/europe|netherlands|holland|germany|ireland|france|spain|italy|poland|belgium/i.test(s)) return 'EU';
+  return s.split(/\s+/)[0].slice(0, 10) || '仓库';
+};
+export async function productsStock(ctx, ids, gql = graphql) {
+  const shop = ctx.shop || ''; const now = Date.now();
+  const nums = [...new Set((ids || []).map((x) => String(x).split('/').pop()).filter((x) => /^\d+$/.test(x)))].slice(0, 300);
+  const stock = {}; const need = [];
+  for (const n of nums) { const c = stockCache.get(`${shop}:${n}`); if (c && now - c.at < 120_000) stock[n] = c.v; else need.push(n); }
+  for (let i = 0; i < need.length; i += 40) {
+    const chunk = need.slice(i, i + 40);
+    for (const n of chunk) stock[n] = { tracked: false, by: {} };
+    const q = chunk.map((n) => `product_id:${n}`).join(' OR ');
+    let after = null;
+    for (let page = 0; page < 20; page++) {
+      const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { productVariants(first: 50, after: $after, query: $q) { nodes { product { id }
+        inventoryItem { tracked inventoryLevels(first: 6) { nodes { location { id name } quantities(names: ["available"]) { quantity } } } } } pageInfo { hasNextPage endCursor } } }`, { q, after });
+      for (const v of d.productVariants.nodes) {
+        const s = stock[String(v.product?.id || '').split('/').pop()];
+        if (!s || !v.inventoryItem?.tracked) continue;
+        s.tracked = true;
+        for (const lv of v.inventoryItem.inventoryLevels?.nodes || []) {
+          const l = locLabel(lv.location?.name);
+          s.by[l] = (s.by[l] || 0) + Math.max(0, Number(lv.quantities?.[0]?.quantity) || 0);
+        }
+      }
+      if (!d.productVariants.pageInfo.hasNextPage) break;
+      after = d.productVariants.pageInfo.endCursor;
+    }
+    for (const n of chunk) stockCache.set(`${shop}:${n}`, { at: now, v: stock[n] });
+  }
+  return { stock };
+}
+
 // 按 id 取产品的名字和图(历史版本里有的产品现在可能已经不在合集里了)
 export async function productsInfo(ctx, ids, gql = graphql) {
   const out = [];

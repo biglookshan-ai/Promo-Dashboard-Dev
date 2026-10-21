@@ -147,6 +147,15 @@ function gql(query, v) {
     colMembers.set(`${c.id}`, ids);
     return { collectionUpdate: { collection: { id: v.c.id }, job: { id: 'job-src', done: true }, userErrors: [] } };
   }
+  // 合集排序网格的库存:按产品 id 编两个仓库的可售数量(有的为 0、有的不跟踪库存)
+  if (q.includes('productVariants(first: 50') && q.includes('inventoryLevels')) {
+    const ids = [...String(v.q || '').matchAll(/product_id:(\d+)/g)].map((m) => m[1]);
+    const nodes = ids.map((id) => { const h = [...id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+      return { product: { id: `gid://shopify/Product/${id}` }, inventoryItem: { tracked: h % 7 !== 0, inventoryLevels: { nodes: [
+        { location: { id: 'gid://shopify/Location/1', name: 'CineGearPro UK Warehouse' }, quantities: [{ quantity: h % 4 === 0 ? 0 : h % 6 }] },
+        { location: { id: 'gid://shopify/Location/2', name: 'EU Warehouse (Netherlands)' }, quantities: [{ quantity: (h >> 3) % 3 }] }] } } }; });
+    return { productVariants: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } };
+  }
   const pr = priceGql(q, v); if (pr !== undefined) return pr; // 改价模块的查询(scripts/fake-price-shop.mjs)
   if (q.includes('accessScopes')) return { currentAppInstallation: { accessScopes: SCOPES.map((handle) => ({ handle })) } };
   if (q.includes('primaryDomain')) return { shop: { name: 'CineGearPro(测试)', myshopifyDomain: SHOP, primaryDomain: { url: 'https://www.cinegearpro.co.uk' } }, currentAppInstallation: { app: { handle: 'promo-dashboard-dev' } } };

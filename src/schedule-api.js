@@ -8,7 +8,7 @@ import { schedulerInfo, logColReport } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
 import { uploadImage } from './files.js';
-import { scopeCounts, calloutScope, calloutOptions, productCampaigns, tabProducts, collectionProducts, productsInfo } from './counts.js';
+import { scopeCounts, calloutScope, calloutOptions, productCampaigns, tabProducts, collectionProducts, productsInfo, productsStock } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 import { actorOf, pagesOf, isAdmin } from './members.js';
@@ -483,6 +483,8 @@ export function scheduleRouter() {
 
   // ---- 按 id 取产品的名字、图、价格(合集排序网格里不在合集中的产品用)----
   r.get('/products-info', wrap(async (req) => ({ products: await productsInfo(req.ctx, String(req.query.ids || '').split(',').filter(Boolean).slice(0, 250)) })));
+  // ---- 合集排序网格:产品在各仓库的可售数量(没有 read_inventory 权限就报错,页面上不显示库存)----
+  r.post('/products-stock', wrap(async (req) => productsStock(req.ctx, (req.body?.ids || []).slice(0, 300))));
 
   // ---- 合集顺序的历史版本 / 回滚 ----
   r.get('/col-history', wrap((req) => {
