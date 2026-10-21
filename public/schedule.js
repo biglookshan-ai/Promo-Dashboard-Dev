@@ -735,7 +735,7 @@
     const when = o.when ?? (w.start == null && w.end == null ? '长期显示' : `${w.start != null ? fDT(w.start) : '立即'}<em>→ ${w.end != null ? fDT(w.end) : '不结束'}</em>`);
     const follow = w.via ? `<span class="kchip kchip--campaign">跟随「${esc(w.via.name)}」</span>` : '';
     const flags = `${endingTag(x)}${syncTag(x)}${x.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}${x.state === 'rejected' ? `<span class="tag tag--danger" title="${esc(x.rejectNote || '')}">已退回</span>` : ''}`;
-    return `<div class="irow ${status(x) === 'ended' ? 'is-dim' : ''} ${o.kid ? 'is-kid' : ''}" data-pop="${x.id}" ${o.attrs || ''}>
+    return `<div class="irow ${status(x) === 'ended' ? 'is-dim' : ''} ${o.kid ? 'is-kid' : ''} ${o.cls || ''}" data-pop="${x.id}" ${o.attrs || ''}>
       <span class="irow__lead">${o.lead || ''}${o.thumb ?? rowThumb(x)}</span>
       <button class="irow__main" type="button" ${o.noOpen ? '' : o.mainAttr || `data-open="${x.id}"`}>
         <span class="irow__t"><span class="irow__name">${esc(o.title ?? titleOf(x))}</span>${o.tags || ''}</span>
@@ -1536,6 +1536,7 @@
   // ================= 合集排序(置顶清单) =================
   // 按合集分组:每个合集下面是按时间排好的清单(Flash 每天一份)。可以「复制成下一天」,不用重填。
   let pnAt = null; // 预览看哪一刻
+  const pnOpen = new Set(); // 展开了全部记录的合集
   // 合集 id 有时是数字、有时是 gid(选择器给的),一律按末尾数字比
   const pinsOf = (cid) => (S.pins || []).filter((p) => p.collection && numId(p.collection.id) === numId(cid));
   // 这一刻这个合集生效的清单(同时有几份时,开始晚的赢 —— 和主题里的规则一致)
@@ -1769,15 +1770,21 @@
       if (!groups.has(cid)) groups.set(cid, { cid, title: p.collection?.title || '(没选合集)', list: [] });
       groups.get(cid).list.push(p);
     }
-    for (const g of groups.values()) g.list.sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0));
+    // 每个合集里排先后:这一刻生效的 → 其他上线中 → 快开始的 → 待审核 / 草稿 → 暂停 → 结束(后两类新的在前)
+    const PR = { live: 0, pending: 1, waiting: 1, scheduled: 2, draft: 3, rejected: 3, paused: 4, ended: 5 };
+    for (const g of groups.values()) {
+      const act = activePin(g.cid, T);
+      g.list.sort((a, b) => (b === act) - (a === act) || PR[status(a, T)] - PR[status(b, T)]
+        || (['paused', 'ended'].includes(status(a, T)) ? (win(b).start ?? 0) - (win(a).start ?? 0) : (win(a).start ?? 0) - (win(b).start ?? 0)));
+    }
     const rows = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title));
     const card = (p) => {
       const prods = (p.products || []).filter(Boolean);
-      return itemRow(p, { badge: badgeAt(p, T),
+      return itemRow(p, { badge: badgeAt(p, T), thumb: '', cls: 'irow--pin',
         tags: `${p.fullOrder ? '<span class="tag tag--accent">完全按清单顺序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">倒计时</span>' : ''}`,
         sub: `${prods.length} 个产品排在前面${(p.hidden || []).length ? ` · ${(p.hidden || []).length} 个不显示` : ''}`,
         act: `<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
-        extra: prods.length ? `<span class="pnrow__ps">${prods.slice(0, 10).map((x, i) => `<span class="pnrow__p" title="${esc(x.title)}"><span class="pnrow__n">${i + 1}</span>${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 10 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}</span>` : '' });
+        extra: prods.length ? `<span class="pnrow__ps">${prods.slice(0, 14).map((x) => `<span class="pnrow__p" title="${esc(x.title)}">${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 14 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}</span>` : '' });
     };
     $('#pn-root').innerHTML = `
       ${pageHead('合集排序', '让合集页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
@@ -1798,26 +1805,27 @@
         const used = [...new Set(modTabsUsing(g.cid).map((u) => `${MODULE_CN[u.v.module]}·${tabLabel(u.t)}`))];
         const cs = (S.colState || {})[String(g.cid)];
         const sf = (S.sortFlags || {})[String(g.cid)];
+        const open = pnOpen.has(g.cid);
+        const rest = g.list.slice(1);
+        const restSum = Object.entries(rest.reduce((m, p) => { const k = ST[status(p, T)] || status(p, T); m[k] = (m[k] || 0) + 1; return m; }, {})).map(([k, n]) => `${k} ${n}`).join(' · ');
+        const live = g.list.filter((p) => status(p, T) === 'live');
+        const st0 = (p) => win(p).start ?? 0;
         return `<div class="ilist pngroup">
-          <div class="ilist__grp"><b>${esc(g.title)}</b>${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本 / 回滚</button></span>` : ''}
-            <span class="muted">${act ? `这一刻按「${esc(titleOf(act))}」排${act.onlyListed ? ',而且只显示清单里的产品' : ''}` : '这一刻没有清单生效,按合集原来的顺序'}
-              ${used.length ? ` · 首页${used.slice(0, 3).map((u) => `「${esc(u)}」`).join('')}${used.length > 3 ? '等' : ''}页签也用这个合集` : ''}</span></div>
-          ${cs ? (cs.hold
-    ? `<div class="note note--warn">有人在 Shopify 后台手动改过这个合集的顺序,<b>app 已经停手</b>,不会覆盖别人的改动。
-        <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按清单重新排</button>
-        <button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">就用现在的,别管了</button></div>`
-    : `<div class="note note--ok">店里这个合集现在<b>真的</b>按「${esc(pinNm(cs))}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了合集` : ''} · 结束会自动还原成接管前的顺序。</div>`) : ''}
-          ${(() => { // 同一个合集这一刻有几份清单同时生效:只有开始时间最晚的那份会用上
-            const live = g.list.filter((p) => status(p, T) === 'live');
-            if (live.length < 2) return '';
-            const st0 = (p) => win(p).start ?? 0;
-            const tie = live.filter((p) => st0(p) === st0(act)).length > 1;
-            return `<div class="note note--warn">这一刻有 ${live.length} 份清单同时生效:${live.map((p) => `「${esc(titleOf(p))}」`).join('、')}。
-              ${tie ? '它们的开始时间一样(比如都是「长期显示」),<b>前台和店里可能各用一份,顺序会打架</b> —— 请暂停不用的那份,或者给它们设不同的开始时间。'
-                : `只有开始时间最晚的「${esc(titleOf(act))}」会用上,它结束后才轮到别的。不需要的可以暂停或删掉。`}</div>`;
-          })()}
-          ${sf ? `<div class="note note--ok">合集页现在<b>完全按清单顺序</b>显示(「${esc(pinNm(sf))}」生效期间),结束自动恢复原来的排序方式。</div>` : ''}
-          ${g.list.map(card).join('')}
+          <div class="ilist__grp pngrp"><b>${esc(g.title)}</b>
+            ${cs && !cs.hold ? `<span class="tag tag--ok" title="店里这个合集现在真的按「${esc(pinNm(cs))}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了合集` : ''};结束会自动还原成接管前的顺序">店里已按清单排好</span>` : ''}
+            ${sf ? `<span class="tag tag--accent" title="「${esc(pinNm(sf))}」生效期间合集页完全按清单顺序显示,结束自动恢复默认设置">完全按清单顺序</span>` : ''}
+            ${!act ? '<span class="muted">这一刻没有清单生效</span>' : ''}
+            ${used.length ? `<span class="muted" title="${esc(used.map((u) => `首页「${u}」`).join('、'))}也用这个合集">首页${esc(used[0])}${used.length > 1 ? ` 等 ${used.length} 个页签` : ''}也用</span>` : ''}
+            ${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm btn-ghost" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本</button></span>` : ''}</div>
+          ${cs?.hold ? `<div class="note note--warn note--sm">有人在 Shopify 后台手动改过这个合集的顺序,<b>app 已经停手</b>,不会覆盖别人的改动。
+              <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按清单重新排</button>
+              <button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">就用现在的,别管了</button></div>` : ''}
+          ${live.length > 1 ? `<div class="note note--warn note--sm">这一刻有 ${live.length} 份清单同时生效,${live.filter((p) => st0(p) === st0(act)).length > 1
+            ? '而且开始时间一样,<b>前台和店里可能各用一份,顺序会打架</b> —— 请暂停不用的那份,或者给它们设不同的开始时间。'
+            : `只有开始最晚的「${esc(titleOf(act))}」会用上。不需要的可以暂停或删掉。`}</div>` : ''}
+          ${(open ? g.list : g.list.slice(0, 1)).map(card).join('')}
+          ${rest.length ? `<button type="button" class="pnmore" data-pnmore="${esc(String(g.cid))}">${open ? `收起<svg class="ico pnmore__i is-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`
+            : `显示全部 ${g.list.length} 条调整记录<span class="muted">(${esc(restSum)})</span><svg class="ico pnmore__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`}</button>` : ''}
         </div>`;
       }).join('') : (need ? '' : empty((S.pins || []).length ? '没有符合条件的清单' : '还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
     wireTimeline('pn', points, () => pnAt, (v) => { pnAt = v; renderPins(); });
@@ -1834,6 +1842,7 @@
       b.disabled = false; b.textContent = old2;
     });
     $$('#pn-root [data-colhist]').forEach((b) => b.addEventListener('click', () => openColHistory(b.dataset.colhist, b.dataset.title)));
+    $$('#pn-root [data-pnmore]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.pnmore; if (pnOpen.has(k)) pnOpen.delete(k); else pnOpen.add(k); renderPins(); }));
     $$('#pn-root [data-colhold], #pn-root [data-colrelease]').forEach((b) => b.addEventListener('click', async () => {
       const release = 'colrelease' in b.dataset;
       b.disabled = true;
@@ -3005,7 +3014,7 @@
     f.insertAdjacentHTML('afterbegin', `<div class="note note--danger ed-err">${esc(msg)}</div>`);
     const sel = (ERR_FIELD.find(([re]) => re.test(msg)) || [])[1];
     const el = sel && f.querySelector(sel);
-    const box = el && (el.closest('.fld') || el.closest('.edsec') || el);
+    const box = el && (el.closest('.fld') || el.closest('.pset__row') || el.closest('.edsec') || el);
     if (box) { box.classList.add('is-err'); box.insertAdjacentHTML('beforeend', `<span class="fld__err">${esc(msg)}</span>`); box.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
     else f.scrollTo?.({ top: 0 });
   }
@@ -3283,18 +3292,18 @@
   }
   function wxFormHtml(it) {
     if (it.kind === 'pin') {
-      // 2026-10-21 用户:设置都放上面,最下面只放全部产品的顺序(网格)—— 所以这里「什么时候显示」不是最后一段
+      // 2026-10-21 用户:合集的默认设置和合集放在一起;清单自己的设置只有三项(产品排序 / 产品卡 / 显示时间);最下面只放全部产品的顺序
       const row = (k, sub, v) => `<div class="pset__row"><div class="pset__k">${k}${sub ? `<em>${sub}</em>` : ''}</div><div class="pset__v">${v}</div></div>`;
-      return `${edSec(1, '清单', '', `${fld('名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}<div id="wx-coll">${pinBoxHtml('coll')}</div>`)}
-        ${edSec(2, '设置', '', `<div class="pset">
-          ${row('默认设置', '合集自己的,没有清单生效时', '<div id="wx-cs"><span class="muted">先选合集</span></div>')}
-          ${row('这份清单生效时', '', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
-          ${row('产品卡上', '产品页、搜索和合集页', `<div class="pset__two">
+      return `${edSec(1, '清单与合集', '', `${fld('清单名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}<div id="wx-coll">${pinBoxHtml('coll')}</div>
+          ${fld('合集的默认设置', '<div id="wx-cs"><span class="muted">先选合集</span></div>', '合集自己的设置:没有清单生效时,合集页就这样排。和这份清单分开保存')}`)}
+        ${edSec(2, '清单设置', '', `<div class="pset">
+          ${row('产品排序', '这份清单生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
+          ${row('产品卡', '产品页、搜索和合集页', `<div class="pset__two">
             <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到这份清单结束,到期自动消失</span></span></label>
             <label class="pset__inp"><span>徽章文字</span>${inp('badge', it.badge, '可留空,如:Flash Deal · 今日限时')}</label></div>`)}
+          ${row('显示时间', '', timeBlock(it, 'pin'))}
         </div>`)}
-        ${edSec(3, '什么时候显示', '', timeBlock(it, 'pin'))}
-        ${edSec(4, '顺序', '拖动卡片排序,或点序号输入第几位', `<div id="wx-box">${pinBoxHtml()}</div>`)}`;
+        ${edSec(3, '顺序', '拖动卡片排序,或点序号输入第几位', `<div id="wx-box">${pinBoxHtml()}</div>`)}`;
     }
     return '';
   }
