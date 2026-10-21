@@ -14,6 +14,7 @@ import { graphql } from './shopify.js';
 import { actorOf, pagesOf, isAdmin } from './members.js';
 import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
+import { listColSorts, applyColSort } from './col-sort-shop.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
 import { diffOrder, diffSummary } from './order-diff.js';
 import { loadItemHistory, recordAction, changedKeys, pruneItemHistory } from './item-history.js';
@@ -360,6 +361,32 @@ export function scheduleRouter() {
     else { delete st.hold; delete st.signature; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个合集的顺序(下一轮按清单重排)', by: a.name }); }
     replace(req.ctx.shop, s);
     return { ok: true };
+  })));
+
+  // ---- 合集页「平时」的默认排序(规则 src/col-sort.js):全部合集的设置 + 改一个 ----
+  // 清单「生效期间完全按我排的顺序」正开着的合集,店里的 cgp_sort_off 是清单临时设的 → 列表里换回平时的值(flag.prev),并标出被哪份清单临时改着
+  const withFlags = (rows, s) => rows.map((c) => { const fl = (s.sortFlags || {})[c.id];
+    return fl ? { ...c, off: fl.prev?.value === 'true', offSet: !!fl.prev, held: fl.pinName || '置顶清单' } : c; });
+  r.get('/col-sorts', wrap(async (req) => {
+    if (req.query.fresh) bust(req.ctx.shop, 'colsorts');
+    const rows = await cached(req.ctx.shop, 'colsorts', 60_000, () => listColSorts(req.ctx, graphql));
+    return { collections: withFlags(rows, load(req.ctx.shop)), at: Date.now() };
+  }));
+  r.post('/col-sort', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const a = actorFor(s, req.ctx.user);
+    if (a.role !== 'approver') throw new ActionError('只有管理员能改合集的默认排序');
+    const { id, ...want } = req.body || {};
+    if (!id) throw new ActionError('还没选合集');
+    let r2;
+    try { r2 = await applyColSort(req.ctx, id, want, { gql: graphql, state: s }); } catch (e) { throw new ActionError(e.message); }
+    if (r2.changed) {
+      appendLog(s, { action: 'edit', kind: 'pin', title: r2.title, by: a.name,
+        note: `合集页平时的排序:${r2.before} → ${r2.after}${r2.sortChanged ? `(Shopify 后台的排序方式「${r2.sortChanged.from}」→「${r2.sortChanged.to}」)` : ''}${r2.held ? `;「${r2.row.held}」生效期间仍临时完全按清单顺序,结束后用新的` : ''}` });
+      replace(req.ctx.shop, s);
+      bust(req.ctx.shop, 'colsorts');
+    }
+    return r2;
   })));
 
   // ---- 合集排序:立即跑一次(不用等定时器那一分钟),顺便把结果说清楚 ----

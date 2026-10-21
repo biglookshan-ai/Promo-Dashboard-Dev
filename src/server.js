@@ -52,7 +52,7 @@ app.get('/', sendIndex);
 app.get('/index.html', sendIndex);
 app.use(express.static(path.join(ROOT, 'public')));
 // 浏览器和服务器共用的排期规则(只放行这两个纯函数文件)
-for (const f of ['schedule-core.js', 'schedule-actions.js', 'order-diff.js', 'sale-link.js']) {
+for (const f of ['schedule-core.js', 'schedule-actions.js', 'order-diff.js', 'sale-link.js', 'col-sort.js']) {
   app.get(`/lib/${f}`, (req, res) => res.type('text/javascript').sendFile(path.join(ROOT, 'src', f)));
 }
 for (const f of ['price-core.js', 'price-actions.js']) {

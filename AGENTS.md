@@ -131,6 +131,13 @@
   (主题里写死,每个合集可以用合集字段 `custom.cgp_sort_off` / `cgp_pin_manual` / `cgp_pin_new` 改,线上主题已经认)。清单勾了它,生效期间 app 把这个合集的
   `custom.cgp_sort_off` 设成 true,结束 / 暂停 / 删除 / 取消勾选时恢复成改之前的值(原来没有就删掉)——`alignSortFlags`,记在 `state.sortFlags`。
   **不改主题、不改别的合集**。连着两份都勾了的清单(Flash 第 1 天 → 第 2 天)中间不恢复。编辑器没开时会在网格第(前缀 + 12)位画一条「前台从这里开始按新到旧」的线。
+  **合集默认排序**(2026-10-21,合集排序页的子页「合集默认排序」):每个合集「平时」(没有清单生效、顾客没选别的 Sort by)怎么排,三种 ——
+  前 N 个按手动顺序 + 其余新到旧(默认 12,可改,0 = 全部新到旧)/ 完全按手动顺序 / 完全按 Shopify 的自动排序(畅销 / 最新 / 价格 / 字母)。
+  规则 `src/col-sort.js`(纯函数,浏览器经 `/lib/col-sort.js` 共用),写店铺 `src/col-sort-shop.js`(`GET /api/schedule/col-sorts` 全部合集、`POST /api/schedule/col-sort` 改一个,只有管理员)。
+  写的只有:合集字段 `custom.cgp_sort_off`(boolean)、`custom.cgp_pin_manual`(number_integer;等于 12 就删掉回默认),以及**合集的排序方式 `sortOrder`**
+  (用户 2026-10-21 同意:选「完全按手动」时后台改成手动、选自动排序时写回选的那种;「前 N 个」后台不是手动时可勾选一起改成手动)。`cgp_pin_new` 只显示不改。主题不用改(早就在读这几个字段)。
+  ⛔ 和清单的「生效期间完全按我排的顺序」共用 `cgp_sort_off`:那个开关开着(`state.sortFlags[合集]`)时,改平时设置**不写字段**,只改 `flag.prev`(清单结束后恢复成新的);
+  app 正在真的改这个合集的顺序(`state.colState[合集]`)时不许改成自动排序(否则排不了、结束也还原不了)。
   调试用:合集排序页有「立即执行一次」(`POST /api/schedule/col-run`,管理员),直接把 applied / skipped / holds / failures 翻成人话。
   ⛔ 有人在 Shopify 后台手动改过顺序(我们排最前的那几个不在最前了)→ **暂停接管**,绝不覆盖别人的改动;界面上给「按清单重新排 / 就用现在的」两个按钮(`POST /api/schedule/col-hold`)。
   ⛔ **合集 / 产品 id 有时是数字、有时是 gid**(Shopify 资源选择器给 gid,种子数据和主题导入给数字)—— 比较一律用 `numId()` 取末尾数字,直接 `===` 会静默漏掉(2026-10-12 踩过:置顶清单对不上首页页签)。
@@ -164,6 +171,6 @@
 
 ### ⛔ 注意
 
-- 写操作只限:建 `cgp_*` 内容类型、写 / 切换 `cgp_*` 条目、上传 Banner 图片。**别碰产品、主题、别的 app 的数据**;新增任何其他 mutation 前先和用户确认设计。
+- 写操作只限:建 `cgp_*` 内容类型、写 / 切换 `cgp_*` 条目、上传 Banner 图片;合集排序 / 改价模块各自写的那几样(见上面各节,合集默认排序会写合集字段 `custom.cgp_*` 和合集排序方式)。**别碰产品、主题、别的 app 的数据**;新增任何其他 mutation 前先和用户确认设计。
 - 主题扫描**只读**,绝不改主题文件。
 - Railway 的 App URL 必须是公网域名(`*.up.railway.app`),别填 `*.railway.internal`(内网,Shopify 解析不到)。

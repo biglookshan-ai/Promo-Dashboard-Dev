@@ -82,7 +82,10 @@ const SCOPES = args.has('--no-scopes') ? ['read_products', 'read_themes', 'read_
 // 合集成员(有状态):排期系统真的改合集顺序时,改的就是这里 —— 第一次用到时按合集 handle 的关键词凑一组
 const colMembers = new Map();
 const colMeta = new Map(); // 合集字段(custom.cgp_sort_off 等):`${合集id}:${key}` → { value, type }
+const colSortOrder = new Map(); // 合集的排序方式被 app 改过:合集id → sortOrder(没改过 = 按 handle 猜,见下面)
 const colOf = (id) => cat.collections.find((x) => `gid://shopify/Collection/${x.id}` === String(id));
+// 排序方式:app 改过的用改过的;否则 clearance 按最畅销(只能前台排),其余手动
+const sortOrderOf = (c) => colSortOrder.get(String(c.id)) || (/clearance/.test(c.handle || '') ? 'BEST_SELLING' : 'MANUAL');
 function membersOf(c) {
   const key = `${c.id}`;
   if (!colMembers.has(key)) {
@@ -114,6 +117,20 @@ function gql(query, v) {
   if (q.includes('metafieldsDelete') && v.m?.[0]?.ownerId?.includes('/Collection/')) {
     for (const m of v.m) colMeta.delete(`${m.ownerId.split('/').pop()}:${m.key}`);
     return { metafieldsDelete: { deletedMetafields: v.m.map((m) => ({ key: m.key })), userErrors: [] } };
+  }
+  // 合集页平时的默认排序:改合集的排序方式(collectionUpdate → sortOrder)
+  if (q.includes('collectionUpdate') && (v.c?.sortOrder) && colOf(v.c.id)) {
+    colSortOrder.set(String(colOf(v.c.id).id), v.c.sortOrder);
+    return { collectionUpdate: { collection: { id: v.c.id, sortOrder: v.c.sortOrder }, userErrors: [] } };
+  }
+  // 全部合集的排序设置(合集排序 → 合集默认排序)
+  if (q.includes('collections(first: 100') && q.includes('cgp_pin_manual')) {
+    const start = v.after ? Number(v.after) : 0;
+    const all = [...cat.collections].sort((a, b) => a.title.localeCompare(b.title));
+    const nodes = all.slice(start, start + 100).map((c) => { const meta = (k) => colMeta.get(`${c.id}:${k}`) || null;
+      return { id: `gid://shopify/Collection/${c.id}`, title: c.title, handle: c.handle, sortOrder: sortOrderOf(c), productsCount: { count: membersOf(c).length }, image: null, // 和 collection(id) 那个假接口同一套成员
+        sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new') }; });
+    return { collections: { nodes, pageInfo: { hasNextPage: start + 100 < all.length, endCursor: String(start + 100) } } };
   }
   // 带条件的合集:改它的「单独加的产品 / 排除」名单(API 2026-07 的 collectionUpdate → sourcesToUpdate)
   if (q.includes('collectionUpdate') && v.c?.sourcesToUpdate && colOf(v.c.id)) {
@@ -204,13 +221,13 @@ function gql(query, v) {
     // 本地试三种情况:clearance = 带条件 + 按最畅销排(只能前台排);cinediskpro-sale = 带条件 + 手动排序(Shopify 2026 新版合集,顺序能真的改);
     // 其余 = 纯手动合集(顺序和加减产品都能真的改)
     const automated = /clearance|cinediskpro-sale/.test(c.handle || '');
-    const manualSort = !/clearance/.test(c.handle || '');
+    const manualSort = sortOrderOf(c) === 'MANUAL';
     const first = Number((q.match(/products\(first: (\d+)/) || [])[1] || 60);
     const start = v.after ? Number(v.after) : 0;
     const nodes = all.slice(start, start + first);
     const sources = automated ? [{ __typename: 'CollectionConditionsSource', id: `gid://shopify/CollectionConditionsSource/${c.id}`, shareable: false, inclusion: { conditions: [{ __typename: 'CollectionSourceInclusionCondition' }] } }] : [];
     const meta = (k) => colMeta.get(`${c.id}:${k}`) || null;
-    return { collection: { id: `gid://shopify/Collection/${c.id}`, title: c.title, sortOrder: manualSort ? 'MANUAL' : 'BEST_SELLING', ruleSet: automated ? { appliedDisjunctively: false } : null, sources,
+    return { collection: { id: `gid://shopify/Collection/${c.id}`, title: c.title, handle: c.handle, image: null, sortOrder: sortOrderOf(c), ruleSet: automated ? { appliedDisjunctively: false } : null, sources,
       metafield: meta('cgp_sort_off'), sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new'),
       productsCount: { count: all.length }, products: { nodes, pageInfo: { hasNextPage: start + first < all.length, endCursor: String(start + first) } } } };
   }
@@ -284,7 +301,7 @@ http.createServer((req, res) => {
       res.writeHead(c ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ page: pg, pages: Math.max(1, Math.ceil(all.length / per)), total: all.length, products }));
     }
-    if (req.url === '/__state') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ defs: Object.keys(store.defs), objects: Object.values(store.objects) }, null, 1)); }
+    if (req.url === '/__state') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ defs: Object.keys(store.defs), objects: Object.values(store.objects), colMeta: Object.fromEntries(colMeta), colSortOrder: Object.fromEntries(colSortOrder) }, null, 1)); }
     if (req.url === '/__upload') { res.writeHead(201); return res.end(); }
     // GET /__cols 看现在「店里」各合集的顺序(只列被动过的)
     if (req.url.startsWith('/__cols')) {

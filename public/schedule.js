@@ -55,7 +55,7 @@
   //   live —— 在 Shopify 后台里打开且已建好内容类型。数据在服务器,动作走 /api/schedule/act,
   //           服务器按同一份规则(/lib/schedule-actions.js)检查权限并写进店铺。
   let MODE = 'demo';
-  let core = null, A = null, OD = null, SL = null; // 共用规则模块,启动时加载(OD = 合集顺序对比 / 压缩;SL = 促销链接)
+  let core = null, A = null, OD = null, SL = null, CS = null; // 共用规则模块,启动时加载(OD = 合集顺序对比 / 压缩;SL = 促销链接;CS = 合集默认排序)
   let liveSetup = null; // 在后台里打开但还没建好时,记下连接状态
   const FORCE_DEMO = 'cgp-force-demo';
   const save = () => { if (MODE === 'demo') localStorage.setItem(DEMO_KEY, JSON.stringify(S)); };
@@ -1548,7 +1548,156 @@
     for (const v of S.pmodules || []) for (const t of v.tabs || []) if (t.source !== 'products' && t.collection && numId(t.collection.id) === numId(cid)) out.push({ v, t });
     return out;
   }
+  // ================= 合集默认排序(合集页「平时」怎么排;规则在 /lib/col-sort.js,和服务器同一份)=================
+  // 没有置顶清单生效、顾客也没选别的 Sort by 时,搜索引擎在合集页默认怎么排。三种:
+  //   前 N 个按手动顺序 + 其余新到旧(默认 12)/ 完全按手动顺序 / 完全按 Shopify 的自动排序(畅销 / 最新 / 价格…)
+  // 写合集字段 custom.cgp_sort_off、cgp_pin_manual,以及合集的排序方式(POST /api/schedule/col-sort,只有管理员)
+  let pnView = 'pins';                // 合集排序页:置顶清单 / 合集默认排序
+  const csF = { f: '', q: '' };       // 筛选:'' 全部 / custom 单独设过 / def 用默认 / auto 后台不是手动
+  let csRows = null, csErr = '', csBusy = false;
+  async function loadColSorts(fresh) {
+    if (csBusy) return; csBusy = true; csErr = '';
+    try {
+      if (MODE === 'live') csRows = (await api('GET', `/api/schedule/col-sorts${fresh ? '?fresh=1' : ''}`)).collections;
+      else { // 演示:用示例合集,改动只存在这台电脑
+        const saved = S.demoColSort || {};
+        csRows = (S.collections || []).map((c) => ({ id: numId(c.id), title: c.title, handle: c.handle, sortOrder: /clearance/.test(c.handle || '') ? 'BEST_SELLING' : 'MANUAL',
+          count: c.count ?? null, image: null, off: false, offSet: false, pinManual: null, pinNew: 0, ...(saved[numId(c.id)] || {}) }))
+          .sort((a, b) => a.title.localeCompare(b.title));
+      }
+    } catch (e) { csErr = e.message; }
+    csBusy = false;
+    if (pnView === 'defsort') renderPins();
+  }
+  const csPins = (cid) => (S.pins || []).filter((p) => p.collection && numId(p.collection.id) === String(cid) && ['live', 'scheduled'].includes(status(p)));
+  const csQ = (c) => !csF.q || `${c.title} ${c.handle}`.toLowerCase().includes(csF.q.trim().toLowerCase());
+  const CS_TABS = [['', '全部', () => true], ['custom', '单独设过', (c) => !CS.isDefault(c)], ['def', '用默认', (c) => CS.isDefault(c)], ['auto', '后台不是「手动」', (c) => c.sortOrder !== 'MANUAL']];
+  function csRowHtml(c) {
+    const def = CS.isDefault(c); const pins = csPins(c.id).length;
+    return `<div class="irow">
+      <span class="irow__lead">${c.image ? `<span class="irow__thumb" style="background-image:url('${esc(thumb(c.image, 160))}')"></span>` : `<span class="irow__thumb">${I.sort}</span>`}</span>
+      <button class="irow__main" type="button" data-csopen="${esc(c.id)}">
+        <span class="irow__t"><span class="irow__name">${esc(c.title)}</span>${def ? '' : '<span class="tag tag--accent">单独设过</span>'}${c.held ? `<span class="tag tag--ok" title="这份清单生效期间合集页暂时完全按清单顺序,结束后回到这里的设置">「${esc(c.held)}」生效中</span>` : ''}</span>
+        <span class="irow__s">后台排序:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}${pins ? ` · ${pins} 份置顶清单` : ''}</span>
+      </button>
+      <span class="irow__when cs-mode${def ? ' is-def' : ''}">${esc(CS.describe(c))}</span>
+      <span></span>
+      <span class="irow__act">${MODE === 'live' && c.handle ? linkPair('collections', c) : ''}<button class="btn btn-sm" type="button" data-csopen="${esc(c.id)}">设置</button></span>
+    </div>`;
+  }
+  function renderColSorts() {
+    let body;
+    if (!csRows) body = csErr ? `<div class="note note--danger">读不到合集:${esc(csErr)} <button class="btn btn-sm" data-csre type="button">再试一次</button></div>` : '<div class="empty">正在读店里的全部合集…</div>';
+    else {
+      const inQ = csRows.filter(csQ);
+      const fn = (CS_TABS.find(([k]) => k === csF.f) || CS_TABS[0])[2];
+      body = `<div class="ptool"><div class="ftabs">${CS_TABS.map(([k, l, f]) => { const n = inQ.filter(f).length;
+          return k === 'auto' && !n && csF.f !== 'auto' ? '' : `<button class="ftab ${csF.f === k ? 'is-active' : ''}" data-csf="${k}" type="button">${l}<span>${n}</span></button>`; }).join('')}</div>
+        <input class="inp inp--sm ptool__q" id="cs-q" placeholder="搜索合集" value="${esc(csF.q)}"/>
+        <div class="ptool__r"><button class="btn btn-sm btn-ghost" data-csre type="button" title="重新读店里现在的设置">刷新</button></div></div>
+        ${ilistHtml(inQ.filter(fn).map(csRowHtml), csRows.length ? '没有符合条件的合集' : '店里还没有合集')}`;
+    }
+    $('#pn-root').innerHTML = `
+      ${pageHead('合集排序', '合集页平时(没有置顶清单生效时)默认怎么排,每个合集可以单独设。')}
+      ${subTabsHtml('pnview', pnView, [['pins', '置顶清单', (S.pins || []).length], ['defsort', '合集默认排序']])}
+      <div class="note note--sm">💡 没单独设过的合集都用默认:<b>前 ${CS.DEFAULT_N} 个按手动顺序,其余按新到旧</b>(新品自动往前)。只管顾客没选别的 Sort by 时的顺序;生效中的置顶清单永远优先。${MODE === 'demo' ? '演示模式用的是示例合集,改动只存在这台电脑。' : ''}</div>
+      ${body}`;
+    wirePnView();
+    $$('#pn-root [data-csf]').forEach((b) => b.addEventListener('click', () => { csF.f = b.dataset.csf; renderPins(); }));
+    $$('#pn-root [data-csre]').forEach((b) => b.addEventListener('click', () => { csRows = null; renderPins(); loadColSorts(true); }));
+    $$('#pn-root [data-csopen]').forEach((b) => b.addEventListener('click', () => openColSort(b.dataset.csopen)));
+    $('#cs-q')?.addEventListener('input', (e) => {
+      csF.q = e.target.value; renderPins();
+      const n = $('#cs-q'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+    });
+  }
+  function wirePnView() {
+    $$('#pn-root [data-pnview]').forEach((b) => b.addEventListener('click', () => {
+      pnView = b.dataset.pnview;
+      if (pnView === 'defsort' && !csRows) loadColSorts();
+      renderPins();
+    }));
+  }
+  function openColSort(id) {
+    const c = (csRows || []).find((x) => x.id === String(id)); if (!c) return;
+    hidePop();
+    const m0 = CS.modeOf(c);
+    const st = { mode: m0.mode, n: m0.n, sortOrder: CS.AUTO_SORTS.includes(c.sortOrder) ? c.sortOrder : 'BEST_SELLING', toManual: false };
+    const pins = csPins(c.id);
+    const taken = (S.colState || {})[c.id];
+    const canEdit = isApprover() && canWrite();
+    const want = () => ({ mode: st.mode, n: Number(st.n), sortOrder: st.sortOrder, toManual: st.toManual });
+    $('#drawer').innerHTML = `<div class="drawer__h"><div><span class="kchip">合集排序</span> <b>${esc(c.title)} · 合集页平时怎么排</b></div>
+        <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button></div>
+      <div class="drawer__b drawer__b--cs"><div>
+        ${edSec(1, '怎么排', '顾客没选别的 Sort by 时,合集页默认的顺序', '<div class="csopts" id="cs-opts"></div><div class="csnotes" id="cs-notes"></div>')}
+        ${edSec(2, '顾客会看到', '', `<div class="cspv" id="cs-pv"></div>
+          <div class="cs-links">${MODE === 'live' && c.handle ? linkPair('collections', c) : ''}<span class="muted">Shopify 后台的排序方式:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}</span></div>`)}
+      </div></div>
+      <div class="drawer__f"><span class="muted">${canEdit ? '保存后马上生效,前台合集页刷新就能看到' : !isApprover() ? '只有管理员能改合集的默认排序' : 'app 还没有「改产品 / 合集」的权限,改不了'}</span>
+        <div class="drawer__acts"><button class="btn" data-act="close" type="button">取消</button><button class="btn btn-primary" id="cs-save" type="button">保存</button></div></div>`;
+    $('#drawer').hidden = false; $('#drawer-mask').hidden = false; document.body.classList.add('no-scroll');
+    $('#drawer').onclick = (e) => { if (e.target.closest('[data-act="close"]')) closeDrawer(); };
+    const plan = () => { try { return { p: CS.planSort(c, want()) }; } catch (e) { return { err: e.message }; } };
+    const drawOpts = () => {
+      const opt = (k, title, sub, extra = '') => `<label class="csopt ${st.mode === k ? 'is-on' : ''}"><input type="radio" name="csmode" value="${k}" ${st.mode === k ? 'checked' : ''}/>
+        <span class="csopt__b"><b>${title}</b><em>${sub}</em>${st.mode === k && extra ? `<span class="csopt__x">${extra}</span>` : ''}</span></label>`;
+      $('#cs-opts').innerHTML = `
+        ${opt('top', `前 ${st.mode === 'top' ? 'N' : CS.DEFAULT_N} 个按手动顺序,其余按新到旧`, `默认。排在最前的几个照手动顺序固定住,后面的按上架时间,新品自动往前`,
+          `前 <input class="inp inp--xs" id="cs-n" type="number" min="0" max="${CS.MAX_N}" value="${esc(String(st.n))}"/> 个按手动顺序
+           ${Number(st.n) !== CS.DEFAULT_N ? `<button type="button" class="linkbtn" id="cs-n12">恢复默认 ${CS.DEFAULT_N}</button>` : ''}<span class="muted">填 0 = 全部按新到旧</span>`)}
+        ${opt('manual', '完全按手动顺序', '整个合集都照你排的顺序(Shopify 后台拖的顺序)')}
+        ${opt('shopify', '完全按 Shopify 的自动排序', '比如按畅销、最新上架、价格',
+          `按 <select class="inp inp--sm" id="cs-so">${CS.AUTO_SORTS.map((k) => `<option value="${k}" ${st.sortOrder === k ? 'selected' : ''}>${CS.SORT_CN[k]}</option>`).join('')}</select> 排`)}`;
+    };
+    const drawRest = () => {
+      const { p, err } = plan();
+      const from = CS.sortCn(c.sortOrder); const notManual = c.sortOrder !== 'MANUAL';
+      const blocked = !!(taken && p?.ops.sortOrder && p.ops.sortOrder !== 'MANUAL');
+      const notes = [];
+      if (st.mode === 'top' && notManual) notes.push(`<div class="note note--warn note--sm">这个合集后台现在按「${from}」排${st.toManual ? '。' : `,所以「前 ${esc(String(st.n))} 个」是${from}的前几个,不是你排的。`}
+        <label class="ck"><input type="checkbox" id="cs-tomanual" ${st.toManual ? 'checked' : ''}/>同时把后台排序方式改成「手动」</label></div>`);
+      if (p?.ops.sortOrder === 'MANUAL') notes.push(`<div class="note note--warn note--sm">保存时会把 Shopify 后台的排序方式从「${from}」改成「手动」。起始顺序由 Shopify 决定,改完到前台看一眼;要调就在 Shopify 后台拖,或新建置顶清单。</div>`);
+      else if (p?.ops.sortOrder && !blocked) notes.push(`<div class="note note--warn note--sm">保存时会把 Shopify 后台的排序方式从「${from}」改成「${CS.sortCn(p.ops.sortOrder)}」。</div>`);
+      if (st.mode === 'shopify' && pins.length && !blocked) notes.push(`<div class="note note--sm">这个合集有 ${pins.length} 份置顶清单。后台不是「手动」排序时,清单只能在前台排(店里的顺序不会被改)。</div>`);
+      if (blocked) notes.push(`<div class="note note--danger note--sm">这个合集的顺序现在由「${esc(taken.pinName || '置顶清单')}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了 —— 等这份清单结束后再改。</div>`);
+      if (c.held) notes.push(`<div class="note note--ok note--sm">「${esc(c.held)}」生效期间,合集页暂时完全按清单顺序;这里改的是平时的规则,清单结束后就用新的。</div>`);
+      $('#cs-notes').innerHTML = notes.join('');
+      $('#cs-pv').innerHTML = `<div><span class="muted">现在</span>${esc(CS.describe(c))}</div>
+        <div class="${p?.changed ? 'is-chg' : ''}"><span class="muted">保存后</span>${err ? `<span class="cs-err">${esc(err)}</span>` : p.changed ? esc(CS.describe(p.after)) : '和现在一样'}</div>`;
+      $('#cs-save').disabled = !canEdit || !!err || !p?.changed || blocked;
+    };
+    drawOpts(); drawRest();
+    const body = $('#drawer .drawer__b--cs');
+    body.addEventListener('change', (e) => {
+      const t = e.target;
+      if (t.name === 'csmode') { st.mode = t.value; drawOpts(); drawRest(); if (st.mode === 'top') $('#cs-n')?.focus(); return; }
+      if (t.id === 'cs-so') { st.sortOrder = t.value; drawRest(); return; }
+      if (t.id === 'cs-tomanual') { st.toManual = t.checked; drawRest(); return; }
+      if (t.id === 'cs-n') { drawOpts(); drawRest(); }
+    });
+    body.addEventListener('input', (e) => { if (e.target.id === 'cs-n') { st.n = e.target.value; drawRest(); } });
+    body.addEventListener('click', (e) => { if (e.target.id === 'cs-n12') { st.n = CS.DEFAULT_N; drawOpts(); drawRest(); } });
+    $('#cs-save').onclick = async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = '保存中…';
+      try {
+        if (MODE === 'live') {
+          const r = await api('POST', '/api/schedule/col-sort', { id: c.id, ...want() });
+          Object.assign(c, r.row, { id: c.id });
+          toast(r.changed ? `「${r.title}」合集页平时:${r.after}${r.sortChanged ? `(后台排序改成「${r.sortChanged.to}」)` : ''}` : '没有改动');
+          closeDrawer(); await load(); renderAll();
+        } else {
+          const { after } = CS.planSort(c, want());
+          Object.assign(c, after, { offSet: after.off });
+          (S.demoColSort ||= {})[c.id] = { sortOrder: c.sortOrder, off: c.off, offSet: c.offSet, pinManual: c.pinManual, pinNew: c.pinNew }; save();
+          toast(`演示:「${c.title}」合集页平时${CS.describe(after)}(只存在这台电脑)`);
+          closeDrawer(); renderPins();
+        }
+      } catch (err) { toast(err.message, false); b.disabled = false; b.textContent = '保存'; }
+    };
+  }
   function renderPins() {
+    if (pnView === 'defsort') return renderColSorts();
     const need = MODE === 'live' && S.setup && S.setup.pinReady === false;
     const T = pnAt ?? now();
     const points = tlPoints(['pin']);
@@ -1571,6 +1720,7 @@
     $('#pn-root').innerHTML = `
       ${pageHead('合集排序', '让合集页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
         need ? '' : `${MODE === 'live' && isApprover() ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶清单</button>`)}
+      ${subTabsHtml('pnview', pnView, [['pins', '置顶清单', (S.pins || []).length], ['defsort', '合集默认排序']])}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
       <div class="note note--sm">💡 只想排<b>促销链接里</b>的顺序(只显示打折产品的那页)?打开那条促销链接,右边的产品直接拖就行,不用在这里排整个合集。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
       ${alertsHtml(['pin'])}
@@ -1609,6 +1759,7 @@
         </div>`;
       }).join('') : (need ? '' : empty((S.pins || []).length ? '没有符合条件的清单' : '还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
     wireTimeline('pn', points, () => pnAt, (v) => { pnAt = v; renderPins(); });
+    wirePnView();
     // 立即执行一次:不用等定时器那一分钟,而且把「做了什么 / 为什么没做」直接说出来
     $('#pn-run')?.addEventListener('click', async (e) => {
       const b = e.currentTarget; const old2 = b.textContent; b.disabled = true; b.textContent = '执行中…';
@@ -2954,6 +3105,7 @@
           : wxAll ? `<div class="pgcol">${!wxAll.manualOk || !canWrite() || (realMember && removeN > 100) ? `<span class="tag tag--warn">只在前台排(后台顺序不变)</span>` : '<span class="tag tag--ok">到点真的改店里的合集</span>'}
               ${!wxAll.manualOk && S.themePin === false ? '<span class="tag tag--danger">正在用的主题还没装前台排序代码</span>' : ''}
               <span class="tag">共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(只列出前 ${wxAll.products.length} 个)` : ''}</span>
+              ${wxAll.sortRule ? `<span class="tag" title="合集页平时(没有清单生效时)的排序,在「合集排序 → 合集默认排序」里改">平时:${esc(CS.describe({ sortOrder: wxAll.sortOrder, off: wxAll.sortRule.off, pinManual: wxAll.sortRule.pinManual, pinNew: wxAll.sortRule.pinNew }))}</span>` : ''}
               ${wxAll.takenBy ? `<span class="tag tag--accent">现在由「${esc(wxAll.takenBy.pinName || '')}」接管</span>` : ''}
               ${how(`${!wxAll.manualOk
             ? `这个合集现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的合集调顺序,所以这份清单<b>用前台排序</b>:后台里的顺序不会变,顾客看到的合集页和首页模块按你排的显示。想让后台也变,在 Shopify 后台把这个合集的排序改成「手动」(带条件的合集也可以)。`
@@ -4121,7 +4273,7 @@
   // 启动:加载共用规则 → 判断模式 → 加载数据 → 画页面
   (async () => {
     try {
-      [core, A, OD, SL] = await Promise.all([import('./lib/schedule-core.js'), import('./lib/schedule-actions.js'), import('./lib/order-diff.js'), import('./lib/sale-link.js')]);
+      [core, A, OD, SL, CS] = await Promise.all([import('./lib/schedule-core.js'), import('./lib/schedule-actions.js'), import('./lib/order-diff.js'), import('./lib/sale-link.js'), import('./lib/col-sort.js')]);
       await window.CGP_AUTH; // 飞书登录门(没开飞书 / 演示预览时直接放行)
       MODE = await detectMode();
       if (MODE === 'demo') await load();

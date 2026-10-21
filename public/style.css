@@ -1687,3 +1687,29 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .pgopts .tgl input.inp--xs:disabled { opacity: .5; }
 #wx-plans:empty { display: none; }
 #wx-plans { margin-bottom: 10px; }
+
+/* 合集默认排序(合集排序 → 合集默认排序,2026-10-21) */
+.drawer__b--cs { grid-template-columns: minmax(0, 720px); justify-content: center; }
+.csopts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.csopt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
+.csopt:hover { border-color: var(--border-strong); }
+.csopt.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.csopt input[type="radio"] { margin: 3px 0 0; accent-color: var(--accent); flex: none; }
+.csopt__b { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.csopt__b b { font-size: var(--fs-md); font-weight: 600; }
+.csopt__b em { font-style: normal; font-size: var(--fs-xs); color: var(--text-3); }
+.csopt__x { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-size: var(--fs-sm); color: var(--text); }
+.csopt__x .inp--xs { width: 64px; min-height: 28px; padding: 2px 8px; }
+.csopt__x .inp--sm { width: auto; }
+.csopt__x .muted { margin: 0 0 0 4px; font-size: var(--fs-xs); }
+.csnotes .note { margin: 0 0 8px; }
+.csnotes .ck { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-weight: 500; cursor: pointer; }
+.cspv { display: grid; gap: 6px; margin-bottom: 10px; }
+.cspv > div { display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; border-radius: var(--radius); background: var(--surface-2); font-size: var(--fs-sm); }
+.cspv .muted { margin: 0; flex: none; width: 44px; font-size: var(--fs-xs); }
+.cspv > .is-chg { background: var(--accent-soft); font-weight: 600; }
+.cs-err { color: var(--danger); }
+.cs-links { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; font-size: var(--fs-xs); }
+.cs-links .muted { margin: 0; }
+.irow__when.cs-mode { white-space: normal; max-width: 260px; color: var(--text); font-weight: 500; }
+.irow__when.cs-mode.is-def { color: var(--text-3); font-weight: 400; }
