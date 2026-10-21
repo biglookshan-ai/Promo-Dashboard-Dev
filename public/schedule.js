@@ -3232,7 +3232,7 @@
         ${wx.collection && wxAll && !wxAll.demo && !wxAll.error && MODE === 'live' ? `<button type="button" class="btn btn-sm btn-ghost" data-wx="hist">${I.clock}历史版本 / 回滚</button>` : ''}</div>${colNote}</div>`;
     if (part === 'coll') return collHtml;
     if (part === 'opts') return !wx.collection ? '<span class="muted">先选合集</span>' : wxBusy || !wxAll ? '<span class="muted">读取中…</span>' : `
-      <div class="pset__two">
+      <div class="pset__tgls">
       <label class="tgl"><input type="checkbox" id="wx-only" ${wx.onlyN != null ? 'checked' : ''}/><span class="tgl__ui"></span>
         <span><b>只显示前 <input class="inp inp--xs" id="wx-onlyn" type="number" min="1" max="${Math.max(1, wx.order.length)}" value="${wx.onlyN ?? Math.max(1, Math.min(prefix || 5, wx.order.length))}" ${wx.onlyN != null ? '' : 'disabled'}/> 个产品</b>
         <span class="muted">后面的这段时间不显示(Flash 每天一组用)</span></span></label>
@@ -3292,17 +3292,21 @@
   }
   function wxFormHtml(it) {
     if (it.kind === 'pin') {
-      // 2026-10-21 用户:合集的默认设置和合集放在一起;清单自己的设置只有三项(产品排序 / 产品卡 / 显示时间);最下面只放全部产品的顺序
-      const row = (k, sub, v) => `<div class="pset__row"><div class="pset__k">${k}${sub ? `<em>${sub}</em>` : ''}</div><div class="pset__v">${v}</div></div>`;
-      return `${edSec(1, '清单与合集', '', `${fld('清单名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}<div id="wx-coll">${pinBoxHtml('coll')}</div>
-          ${fld('合集的默认设置', '<div id="wx-cs"><span class="muted">先选合集</span></div>', '合集自己的设置:没有清单生效时,合集页就这样排。和这份清单分开保存')}`)}
-        ${edSec(2, '清单设置', '', `<div class="pset">
-          ${row('产品排序', '这份清单生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
-          ${row('产品卡', '产品页、搜索和合集页', `<div class="pset__two">
-            <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到这份清单结束,到期自动消失</span></span></label>
-            <label class="pset__inp"><span>徽章文字</span>${inp('badge', it.badge, '可留空,如:Flash Deal · 今日限时')}</label></div>`)}
-          ${row('显示时间', '', timeBlock(it, 'pin'))}
-        </div>`)}
+      // 2026-10-21 用户:合集的默认设置和合集放在一起;清单自己的设置只有三项(产品排序 / 产品卡 / 显示时间);最下面只放全部产品的顺序。
+      // 尽量两栏排,别浪费横向空间
+      const blk = (h, sub, v, cls = '') => `<div class="pblk ${cls}"><div class="pblk__h">${h}${sub ? `<em>${sub}</em>` : ''}</div>${v}</div>`;
+      return `${edSec(1, '清单与合集', '', `<div class="pgrid2">
+            ${fld('清单名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}
+            <div id="wx-coll">${pinBoxHtml('coll')}</div>
+          </div>
+          <div class="pdef"><span class="pdef__k">合集默认设置<em>合集自己的,没有清单生效时这样排;改了马上生效</em></span><div id="wx-cs"><span class="muted">先选合集</span></div></div>`)}
+        ${edSec(2, '清单设置', '', `<div class="pgrid2">
+            ${blk('产品排序', '这份清单生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
+            ${blk('产品卡', '产品页、搜索和合集页', `<div class="pset__tgls">
+              <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到这份清单结束,到期自动消失</span></span></label>
+              <label class="pset__inp"><span>徽章文字</span>${inp('badge', it.badge, '可留空,如:Flash Deal · 今日限时')}</label></div>`)}
+          </div>
+          ${blk('显示时间', '', timeBlock(it, 'pin'), 'pblk--time')}`)}
         ${edSec(3, '顺序', '拖动卡片排序,或点序号输入第几位', `<div id="wx-box">${pinBoxHtml()}</div>`)}`;
     }
     return '';

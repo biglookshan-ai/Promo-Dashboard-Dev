@@ -1781,3 +1781,22 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .pnmore .muted { margin: 0; font-size: var(--fs-xs); }
 .pnmore__i { width: 14px; height: 14px; }
 .pnmore__i.is-up { transform: rotate(180deg); }
+/* 合集排序编辑器再收紧(2026-10-21 用户:还有空间浪费,能两栏就两栏) */
+.pgrid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 28px; align-items: start; }
+.pgrid2 > .fld, .pgrid2 #wx-coll > .fld { margin-bottom: 10px; }
+.pdef { display: flex; align-items: center; gap: 14px; padding-top: 10px; margin-bottom: 12px; border-top: 1px solid var(--border); }
+.pdef__k { flex: 0 0 auto; max-width: 210px; font-size: var(--fs-sm); font-weight: 600; }
+.pdef__k em { display: block; font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--text-3); margin-top: 2px; }
+.pdef #wx-cs { flex: 1; min-width: 0; }
+.pblk { min-width: 0; margin-bottom: 12px; }
+.pblk__h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; font-size: var(--fs-sm); font-weight: 600; }
+.pblk__h em { font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--text-3); }
+.pblk--time { padding-top: 12px; border-top: 1px solid var(--border); }
+.pblk--time .fld { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0; }
+.pblk--time .tm { margin: 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.pblk--time .tm[hidden] { display: none; }
+.pblk--time .tm--range label { flex-direction: row; align-items: center; gap: 6px; }
+.pblk--time .tm--range .inp { width: 200px; }
+.pblk--time .tm--campaign .sel { min-width: 260px; }
+.pblk--time .tz { flex-basis: 100%; margin: 0; }
+@media (max-width: 860px) { .pgrid2 { grid-template-columns: 1fr; } .pdef { flex-direction: column; align-items: stretch; } }
