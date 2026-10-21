@@ -3126,16 +3126,16 @@
   const canWrite = () => !(MODE === 'live' && S.setup && S.setup.canWriteProducts === false);
   const realModeOf = () => !!(wxAll?.manualOk && canWrite());
   const realMemberOf = () => !!((wxAll?.membershipOk || wxAll?.selectionOk) && canWrite());
-  // 产品卡上的库存:各仓库可售(available)数量,所有款式加起来,只列有货的仓库(UK:1 EU:2);不跟踪库存的不显示。网格画好后再补,不拖慢打开
-  let wxStock = {}; let wxStockBusy = false; let wxStockNote = ''; // 读库存的提示(没权限 / 仓库名要加权限)
+  // 产品卡上的库存:店里同步好的款式字段 UK Inventory / EW Inventory(显示成 UK / EU),所有款式加起来,只列有货的(UK:1 EU:2);没有这两个字段的不显示。网格画好后再补,不拖慢打开
+  let wxStock = {}; let wxStockBusy = false; let wxStockNote = ''; // 读不到库存时的提示
   const STOCK_ORDER = ['UK', 'EU'];
   const stockRank = (l) => { const i = STOCK_ORDER.indexOf(l); return i === -1 ? 99 : i; };
   function stockHtml(id) {
     const s = wxStock[String(id)];
     if (!s || !s.tracked) return '';
     const parts = Object.entries(s.by || {}).filter(([, n]) => n > 0).sort(([a], [b]) => stockRank(a) - stockRank(b) || a.localeCompare(b));
-    return parts.length ? `<span class="pg__stock" title="各仓库可售数量(所有款式加起来)">${parts.map(([l, n]) => `${esc(l)}:${n}`).join(' ')}</span>`
-      : '<span class="pg__stock is-out" title="各仓库可售数量都是 0">无库存</span>';
+    return parts.length ? `<span class="pg__stock" title="UK = UK Inventory、EU = EW Inventory(款式字段,所有款式加起来)">${parts.map(([l, n]) => `${esc(l)}:${n}`).join(' ')}</span>`
+      : '<span class="pg__stock is-out" title="UK Inventory 和 EW Inventory 都是 0">无库存</span>';
   }
   async function wxStockTick(redraw) {
     if (wxStockBusy || !wx || !wxAll || wxAll.error || wxBusy) return;
@@ -3146,8 +3146,7 @@
       if (MODE === 'live' && !wxAll.demo) {
         for (let i = 0; i < ids.length; i += 250) {
           const r = await api('POST', '/api/schedule/products-stock', { ids: ids.slice(i, i + 250) });
-          Object.assign(wxStock, r.stock || {});
-          wxStockNote = r.noNames ? '库存里的「仓1 / 仓2」是仓库编号:要显示 UK / EU 这样的仓库名,app 还要加「read_locations」权限' : '';
+          Object.assign(wxStock, r.stock || {}); wxStockNote = '';
         }
       } else { // 演示:按产品 id 编一个数,只为看样子
         for (const id of ids) { const h = [...id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7); wxStock[id] = { tracked: true, by: { UK: h % 5, EU: (h >> 4) % 3 } }; }

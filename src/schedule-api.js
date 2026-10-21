@@ -483,7 +483,7 @@ export function scheduleRouter() {
 
   // ---- 按 id 取产品的名字、图、价格(合集排序网格里不在合集中的产品用)----
   r.get('/products-info', wrap(async (req) => ({ products: await productsInfo(req.ctx, String(req.query.ids || '').split(',').filter(Boolean).slice(0, 250)) })));
-  // ---- 合集排序网格:产品在各仓库的可售数量(没有 read_inventory 权限就报错,页面上不显示库存)----
+  // ---- 合集排序网格:产品的库存(款式字段 UK Inventory / EW Inventory,所有款式加起来)----
   r.post('/products-stock', wrap(async (req) => productsStock(req.ctx, (req.body?.ids || []).slice(0, 300))));
 
   // ---- 合集顺序的历史版本 / 回滚 ----

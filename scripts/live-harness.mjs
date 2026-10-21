@@ -147,16 +147,11 @@ function gql(query, v) {
     colMembers.set(`${c.id}`, ids);
     return { collectionUpdate: { collection: { id: v.c.id }, job: { id: 'job-src', done: true }, userErrors: [] } };
   }
-  // 合集排序网格的库存:按产品 id 编两个仓库的可售数量(有的为 0、有的不跟踪库存)
-  if (q.includes('productVariants(first: 50') && q.includes('inventoryLevels')) {
-    // 和正式店一样:没有 read_locations 时读仓库名字被拒(整个查询报错)
-    if (/location \{ id name \}/.test(q) && !SCOPES.includes('read_locations')) throw new Error('Access denied for name field. Required access: `read_locations` access scope or `read_markets_home` access scope.');
+  // 合集排序网格的库存:款式字段 custom.uk_inventory / es_inventory,按产品 id 编个数(有的为 0、有的没有这两个字段)
+  if (q.includes('productVariants(first: 100') && q.includes('uk_inventory')) {
     const ids = [...String(v.q || '').matchAll(/product_id:(\d+)/g)].map((m) => m[1]);
-    const named = /location \{ id name \}/.test(q);
-    const nodes = ids.map((id) => { const h = [...id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
-      return { product: { id: `gid://shopify/Product/${id}` }, inventoryItem: { tracked: h % 7 !== 0, inventoryLevels: { nodes: [
-        { location: { id: 'gid://shopify/Location/1', ...(named ? { name: 'CineGearPro UK Warehouse' } : {}) }, quantities: [{ quantity: h % 4 === 0 ? 0 : h % 6 }] },
-        { location: { id: 'gid://shopify/Location/2', ...(named ? { name: 'EU Warehouse (Netherlands)' } : {}) }, quantities: [{ quantity: (h >> 3) % 3 }] }] } } }; });
+    const nodes = ids.map((id) => { const h = [...id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7); const has = h % 7 !== 0;
+      return { product: { id: `gid://shopify/Product/${id}` }, uk_inventory: has ? { value: String(h % 4 === 0 ? 0 : h % 6) } : null, es_inventory: has ? { value: String((h >> 3) % 3) } : null }; });
     return { productVariants: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } };
   }
   const pr = priceGql(q, v); if (pr !== undefined) return pr; // 改价模块的查询(scripts/fake-price-shop.mjs)

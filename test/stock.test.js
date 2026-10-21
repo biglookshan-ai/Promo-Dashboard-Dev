@@ -1,29 +1,23 @@
-// 合集排序网格的库存:各仓库可售数量,所有款式加起来
+// 合集排序网格的库存:读款式字段 custom.uk_inventory(UK)/ custom.es_inventory(后台叫 EW Inventory,显示成 EU),所有款式加起来
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { locLabel, productsStock } from '../src/counts.js';
+import { productsStock } from '../src/counts.js';
 
-test('仓库名字缩成短标签', () => {
-  assert.equal(locLabel('CineGearPro UK Warehouse'), 'UK');
-  assert.equal(locLabel('EU Warehouse (Netherlands)'), 'EU');
-  assert.equal(locLabel('London Showroom'), 'UK');
-  assert.equal(locLabel('Rotterdam - Netherlands'), 'EU');
-  assert.equal(locLabel('GB Main'), 'UK');
-  assert.equal(locLabel('Shenzhen Office'), 'Shenzhen');
-});
+const V = (pid, uk, es) => ({ product: { id: `gid://shopify/Product/${pid}` },
+  uk_inventory: uk == null ? null : { value: String(uk) }, es_inventory: es == null ? null : { value: String(es) } });
 
-test('按产品把各款式的可售数量加起来;不跟踪库存的标出来;负数当 0', async () => {
-  const L = (name, n) => ({ location: { id: name, name }, quantities: [{ quantity: n }] });
-  const V = (pid, tracked, levels) => ({ product: { id: `gid://shopify/Product/${pid}` }, inventoryItem: { tracked, inventoryLevels: { nodes: levels } } });
+test('按产品把各款式的 UK / EW 库存加起来;负数当 0;两个字段都没有 = 不显示', async () => {
   let calls = 0;
   const gql = async (ctx, q, v) => {
     calls++;
+    assert.match(q, /namespace: "custom", key: "uk_inventory"/);
+    assert.match(q, /namespace: "custom", key: "es_inventory"/);
+    assert.doesNotMatch(q, /location|inventoryLevels/); // 不读仓库(不需要 read_locations / read_inventory)
     assert.match(v.q, /product_id:11 OR product_id:22 OR product_id:33/);
     return { productVariants: { nodes: [
-      V(11, true, [L('UK Warehouse', 1), L('EU Warehouse', 2)]),
-      V(11, true, [L('UK Warehouse', 3), L('EU Warehouse', -1)]),
-      V(22, false, [L('UK Warehouse', 5)]),
-      V(33, true, [L('UK Warehouse', 0), L('EU Warehouse', 0)]),
+      V(11, 1, 2), V(11, 3, -1),
+      V(22, null, null),
+      V(33, 0, 0),
     ], pageInfo: { hasNextPage: false } } };
   };
   const { stock } = await productsStock({ shop: 'test-stock' }, ['11', 'gid://shopify/Product/22', '33', 'x'], gql);
@@ -35,20 +29,10 @@ test('按产品把各款式的可售数量加起来;不跟踪库存的标出来;
   assert.equal(calls, 1);
 });
 
-test('没有 read_locations(读不到仓库名):退回只读仓库 id,按 id 从小到大叫「仓1 / 仓2」', async () => {
-  const qs = [];
-  const gql = async (ctx, q) => {
-    qs.push(q);
-    if (/location \{ id name \}/.test(q)) throw new Error('GraphQL errors: [{"message":"Access denied for name field. Required access: `read_locations` access scope"}]');
-    return { productVariants: { nodes: [
-      { product: { id: 'gid://shopify/Product/7' }, inventoryItem: { tracked: true, inventoryLevels: { nodes: [
-        { location: { id: 'gid://shopify/Location/900' }, quantities: [{ quantity: 2 }] },
-        { location: { id: 'gid://shopify/Location/50' }, quantities: [{ quantity: 1 }] }] } } }], pageInfo: { hasNextPage: false } } };
-  };
-  const r = await productsStock({ shop: 'no-loc-scope' }, ['7'], gql);
-  assert.equal(r.noNames, true);
-  assert.deepEqual(r.stock['7'], { tracked: true, by: { '仓2': 2, '仓1': 1 } });
-  // 之后直接用不带名字的查询,不再先撞一次错
-  await productsStock({ shop: 'no-loc-scope' }, ['8'], gql);
-  assert.ok(!/id name/.test(qs.at(-1)));
+test('翻页:一个产品的款式分在两页也照样加起来', async () => {
+  const gql = async (ctx, q, v) => (v.after
+    ? { productVariants: { nodes: [V(5, 2, 0)], pageInfo: { hasNextPage: false } } }
+    : { productVariants: { nodes: [V(5, 1, 3)], pageInfo: { hasNextPage: true, endCursor: 'c1' } } });
+  const { stock } = await productsStock({ shop: 'test-stock-pages' }, ['5'], gql);
+  assert.deepEqual(stock['5'], { tracked: true, by: { UK: 3, EU: 3 } });
 });
