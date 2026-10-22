@@ -28,6 +28,8 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   'countdownStyle', 'countdownLabel', 'countdownBg', 'countdownColor',
   // 活动徽章点了去哪:'' = 自动(促销链接 / 参加的第一个合集);'none' = 不能点;/… 或 https://… = 指定链接
   'badgeLink',
+  // 联合推广(产品页推广的升级,2026-10-22):两边卡片 + 兼容产品合集(app 同步、也是活动页)+ 推广产品合集 + 活动页内容
+  'joint', 'lensCollection', 'promoCollection', 'promoTitle', 'promoText', 'promoLinkText', 'offer', 'lpTitle', 'lpText', 'lpImage', 'lpImageId', 'lpSteps', 'lpTerms',
   // 产品页推广块:推广的产品、链接文字、品牌、排除的产品 / 标签(其余沿用 title / text / link / image / collections / tags / products / priority)
   'promo', 'linkText', 'vendors', 'exProducts', 'exTags', 'rules',
   // 主活动 / 子活动:活动属于哪个主活动(活动 id;只有一层)
@@ -96,7 +98,15 @@ export function validate(it) {
     if (!String(it.name || '').trim()) return '请填写名称';
     if (!String(it.title || '').trim()) return '请填写标题(产品页上那一句)';
     if (it.link && !AFTER_URL_RE.test(String(it.link).trim())) return '链接不对:填站内路径(/products/…)或 https:// 开头的完整链接';
-    if (!String(it.link || '').trim() && !it.promo?.id) return '请选推广的产品,或者填一个链接';
+    if (!it.joint && !String(it.link || '').trim() && !it.promo?.id) return '请选推广的产品,或者填一个链接';
+    if (it.joint) { // 联合推广:两边卡片都链到活动页(= 兼容产品合集的页面)
+      if (!it.lensCollection?.id) return '请选兼容产品的合集(app 会把命中的产品同步进去,它也是活动页)';
+      if (!it.promoCollection?.id) return '请选推广产品的合集(比如 Smart Fusion 全系列)';
+      if (String(it.lensCollection.id).split('/').pop() === String(it.promoCollection.id).split('/').pop()) return '兼容产品合集和推广产品合集不能是同一个';
+      if (!String(it.promoTitle || '').trim()) return '请填推广产品页上那张卡片的标题';
+      const steps = it.lpSteps || [];
+      if (!Array.isArray(steps) || steps.length > 4 || steps.some((x) => !x || typeof x.t !== 'string')) return '活动页的玩法最多 4 步';
+    }
     const rules = (it.rules || []).filter((r) => (r.v || []).length);
     if (rules.length > 20) return '条件最多 20 行';
     for (const r of rules) {

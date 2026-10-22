@@ -191,6 +191,19 @@ export const DEFINITIONS = [
       t('campaign', '所属活动', 'metaobject_reference', { validations: [{ name: 'metaobject_definition_id', value: CAMPAIGN_REF }] }),
       t('starts_at', '开始(仅记录)', 'date_time'),
       t('ends_at', '结束(仅记录)', 'date_time'),
+      // 2026-10-22 联合推广:兼容产品页 ↔ 推广产品页互相推荐,两边卡片都点进活动页(= 兼容产品合集的页面,模板 collection.joint-promo)
+      t('joint', '联合推广', 'boolean', { description: '开着:兼容产品看 lens_collection、推广产品看 promo_collection,卡片都链到活动页' }),
+      t('lens_collection', '兼容产品合集(活动页)', 'collection_reference', { description: 'app 按条件自动同步进去;也是活动页' }),
+      t('promo_collection', '推广产品合集', 'collection_reference', { description: '这些产品的页面显示另一边的卡片(比如 Smart Fusion 全系列)' }),
+      t('promo_title', '推广产品页卡片 · 标题', 'single_line_text_field'),
+      t('promo_text', '推广产品页卡片 · 说明', 'single_line_text_field'),
+      t('promo_link_text', '推广产品页卡片 · 链接文字', 'single_line_text_field'),
+      t('offer', '优惠一句话', 'single_line_text_field', { description: '两边卡片和活动页都显示,比如 10% OFF Smart Fusion with a compatible lens' }),
+      t('lp_title', '活动页 · 标题', 'single_line_text_field'),
+      t('lp_text', '活动页 · 介绍', 'multi_line_text_field'),
+      t('lp_image', '活动页 · 大图', 'file_reference', { validations: [{ name: 'file_type_options', value: '["Image"]' }] }),
+      t('lp_steps', '活动页 · 玩法', 'json', { description: '[{t: 标题, d: 说明}],最多 4 步' }),
+      t('lp_terms', '活动页 · 条款', 'multi_line_text_field', { description: '一行一条' }),
     ],
   },
 ];
@@ -364,6 +377,14 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       products: gids(it.products, 'Product'), exclude_products: gids(it.exProducts, 'Product'), exclude_tags: list(it.exTags || []),
       priority: str(it.priority ?? 0),
     });
+    if (it.joint) Object.assign(f, {
+      joint: 'true', lens_collection: toGid('Collection', it.lensCollection?.id) || '', promo_collection: toGid('Collection', it.promoCollection?.id) || '',
+      promo_title: str(it.promoTitle), promo_text: str(it.promoText), promo_link_text: str(it.promoLinkText), offer: str(it.offer),
+      lp_title: str(it.lpTitle), lp_text: str(it.lpText), lp_image: str(it.lpImageId),
+      lp_steps: JSON.stringify((it.lpSteps || []).filter((x) => x && String(x.t || '').trim()).slice(0, 4).map((x) => ({ t: String(x.t).trim(), d: String(x.d || '').trim() }))),
+      lp_terms: str(it.lpTerms),
+    });
+    else Object.assign(f, { joint: 'false' });
   }
   if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });
   return Object.entries(f).map(([key, value]) => ({ key, value }));

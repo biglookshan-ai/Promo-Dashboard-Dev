@@ -1802,3 +1802,19 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 @media (max-width: 860px) { .pgrid2 { grid-template-columns: 1fr; } .pdef { flex-direction: column; align-items: stretch; } }
 .irow--pin { cursor: pointer; }
 .irow--pin:hover { background: #f7f8fa; }
+
+/* 联合推广(产品页推广的升级,2026-10-22) */
+.pv-callout__o { font-size: 11px; font-weight: 700; color: #c62a2f; letter-spacing: .01em; }
+.co-jtgl { align-self: end; margin-bottom: 14px; }
+.co-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+.co-cardf__h { font-size: var(--fs-sm); font-weight: 600; margin: 2px 0 10px; padding-bottom: 6px; border-bottom: 1px dashed var(--border); }
+.co-cardf__h em { font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--text-3); }
+.cosync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 12px; border-radius: var(--radius); background: var(--ok-soft); font-size: var(--fs-sm); }
+.cosync.is-err { background: var(--warn-soft); }
+.cosync .muted { margin: 0; }
+.lps { display: flex; flex-direction: column; gap: 6px; }
+.lps__row { display: grid; grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: center; }
+.lps__n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 700; }
+.corow__pv { display: flex; gap: 10px; flex-wrap: wrap; }
+.corow__pv .pv-callout { max-width: 420px; }
+@media (max-width: 860px) { .co-cards { grid-template-columns: 1fr; } }

@@ -97,6 +97,35 @@ export async function calloutScope(ctx, { rules = [], products = [], exProducts 
   incIds.forEach((id) => { if (!hits.has(id)) hits.set(id, null); });
   return { total: hits.size, sample: await coSample(ctx, gql, [...hits.keys()], SAMPLE), capped };
 }
+// 联合推广(2026-10-22):按条件算出**全部**命中的产品 id(同步进「兼容产品」合集用),和 calloutScope 同一套判断。
+//   exCollections = 这些合集里的产品不算(比如推广产品自己那个系列:Smart Fusion 的套装不能算进「兼容镜头」)
+export async function calloutIds(ctx, { rules = [], products = [], exProducts = [], promo = null, exCollections = [] }, gql = graphql, { cap = 3000 } = {}) {
+  const rs = coRules(rules);
+  const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), promo?.id ? numId(promo.id) : null].filter(Boolean));
+  for (const c of exCollections) {
+    let after = null;
+    for (let page = 0; page < 20; page++) {
+      const d = await gqlRetry(ctx, gql, `query($id: ID!, $after: String) { collection(id: $id) { products(first: 250, after: $after) { nodes { id } pageInfo { hasNextPage endCursor } } } }`, { id: toGid('Collection', c.id || c), after });
+      for (const p of d.collection?.products?.nodes || []) exIds.add(numId(p.id));
+      if (!d.collection?.products?.pageInfo?.hasNextPage) break;
+      after = d.collection.products.pageInfo.endCursor;
+    }
+  }
+  const ids = new Set(); let capped = false;
+  if (rs.length) {
+    const query = calloutQuery(rs);
+    let after = null; let scanned = 0;
+    do {
+      const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { products(first: 250, after: $after, query: $q, sortKey: TITLE) { nodes { id title } pageInfo { hasNextPage endCursor } } }`, { q: query, after });
+      for (const p of d.products.nodes) if (!exIds.has(numId(p.id)) && calloutTitleOk(rs, p.title)) ids.add(numId(p.id));
+      after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
+      scanned += d.products.nodes.length;
+      if (after && scanned >= cap) { capped = true; break; }
+    } while (after);
+  }
+  for (const p of products) { const id = numId(p.id || p); if (id && !exIds.has(id)) ids.add(id); }
+  return { ids: [...ids], capped };
+}
 // 前几个命中的产品(带图,给编辑器看)
 async function coSample(ctx, gql, ids, n) {
   const want = [...new Set(ids)].slice(0, n);

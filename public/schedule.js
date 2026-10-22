@@ -1204,7 +1204,7 @@
   let coRes = null; // 编辑器右边的命中结果:null 没算 / 'loading' / { total, sample, capped } / { error }
   const CO_F = { vendor: '品牌', type: '产品类型', collection: '合集', tag: '标签', title: '标题' };
   const CO_OPS = { vendor: ['是', '不是'], type: ['是', '不是'], collection: ['在', '不在'], tag: ['带', '不带'], title: ['包含', '不包含'] };
-  const coLink = (x) => String(x.link || '').trim() || (x.promo?.handle ? `/products/${x.promo.handle}` : '');
+  const coLink = (x) => (x.joint && x.lensCollection?.handle ? `/collections/${x.lensCollection.handle}` : String(x.link || '').trim() || (x.promo?.handle ? `/products/${x.promo.handle}` : ''));
   const coImg = (x) => x.image || x.promo?.image || '';
   const coRulesOf = (x) => (x.rules || []).filter((r) => (r.v || []).length);
   // 第一版的设置(合集 / 标签 / 品牌满足任一 + 排除标签)换成条件;打开编辑器时用
@@ -1222,8 +1222,11 @@
     return [main, ...extra].filter(Boolean).join(';') || '还没设置放在哪些产品';
   }
   // 产品页上那张小卡片(和主题同一个样子;列表和预览共用)
-  const coCardHtml = (x) => `<span class="pv-callout">${coImg(x) ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(coImg(x), 160))}')"></span>` : ''}<span class="pv-callout__b">
-    <span class="pv-callout__t">${esc(x.title || '(还没写标题)')}</span>${x.text ? `<span class="pv-callout__s">${esc(x.text)}</span>` : ''}${coLink(x) ? `<span class="pv-callout__m">${esc(x.linkText || 'Learn more')} →</span>` : ''}</span></span>`;
+  // side = 'b':联合推广里推广产品(比如 Smart Fusion)页面上的那张 —— 图用活动页大图(没有就不放图)
+  const coCardHtml = (x, side = 'a') => { const b = side === 'b'; const img = b ? x.lpImage || '' : coImg(x);
+    return `<span class="pv-callout">${img ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(img, 160))}')"></span>` : ''}<span class="pv-callout__b">
+    ${x.joint && x.offer ? `<span class="pv-callout__o">${esc(x.offer)}</span>` : ''}
+    <span class="pv-callout__t">${esc((b ? x.promoTitle : x.title) || '(还没写标题)')}</span>${(b ? x.promoText : x.text) ? `<span class="pv-callout__s">${esc(b ? x.promoText : x.text)}</span>` : ''}${coLink(x) ? `<span class="pv-callout__m">${esc((b ? x.promoLinkText || 'See compatible products' : x.linkText) || 'Learn more')} →</span>` : ''}</span></span>`; };
   function renderCallouts() {
     const root = $('#co-root'); if (!root) return;
     const need = MODE === 'live' && S.setup && S.setup.coReady === false;
@@ -1234,8 +1237,9 @@
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
       ${alertsHtml(['callout'])}
       ${ptoolHtml('callouts', S.callouts || [], '', { ph: '搜索名称或标题' })}
-      ${ilistHtml(list.map((x) => itemRow(x, { tags: `<span class="tag">优先级 ${esc(x.priority ?? 0)}</span>`, sub: `放在:${esc(coScopeText(x))}`,
-        extra: `<span class="corow__pv">${coCardHtml(x)}</span>` })),
+      ${ilistHtml(list.map((x) => itemRow(x, { tags: `${x.joint ? '<span class="tag tag--accent">联合推广</span>' : ''}<span class="tag">优先级 ${esc(x.priority ?? 0)}</span>`,
+        sub: x.joint ? `兼容产品:${esc(coScopeText(x))} · 推广产品:${esc(x.promoCollection?.title || '(没选)')}${coSyncLine(x) ? ` · ${coSyncLine(x)}` : ''}` : `放在:${esc(coScopeText(x))}`,
+        extra: `<span class="corow__pv">${coCardHtml(x)}${x.joint ? coCardHtml(x, 'b') : ''}</span>` })),
         need ? '' : (S.callouts || []).length ? '没有符合条件的推广块' : '还没有推广块。点右上角新建:写一句标题、选推广的产品(图片和链接自动用它的),再选放在哪些产品上。')}`;
   }
   // ---- 编辑器 ----
@@ -1243,22 +1247,66 @@
     <button type="button" class="btn btn-sm" data-pick="promo">${ed.promo ? '换一个' : '选择产品'}</button>`;
   const coImgSrcHtml = (v) => (v.image ? `<span class="coimg" style="background-image:url('${esc(thumb(v.image, 120))}')"></span><span>用上传的图</span><button type="button" class="btn btn-sm btn-ghost" data-co="noimg">改回用产品主图</button>`
     : `<span class="muted">${v.promo ? '用推广产品的主图' : '没有图(选了推广的产品就用它的主图)'}</span>`);
+  // 联合推广的两个合集(单选)
+  const CO_COLL = { lensColl: 'lensCollection', promoColl: 'promoCollection' };
+  const coCollHtml = (type) => { const c = ed[CO_COLL[type]];
+    return `${c ? `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}<button type="button" class="chip__x" data-co="un${type}" aria-label="移除">${I.x}</button></span>` : '<span class="muted">还没选</span>'}
+      <button type="button" class="btn btn-sm" data-pick="${type}">${c ? '换一个' : '选择合集'}</button>`; };
+  // 兼容产品合集最近一次同步(服务器 src/joint-sync.js:保存后马上一次,之后每小时一次)
+  const coSyncLine = (x) => { const r = (S.jointSync || {})[x.id]; if (!r) return '';
+    return r.error ? `<span class="warn">同步没成功</span>` : `合集里 ${r.count} 个产品(${fDT(r.at)} 同步)`; };
+  function coSyncHtml(it) {
+    if (MODE !== 'live') return '<p class="muted">演示模式不同步;正式数据里保存后会马上把命中的产品同步进这个合集。</p>';
+    const r = (S.jointSync || {})[it.id];
+    const canRun = it.id && byId(it.id)?.state === 'approved' && isApprover();
+    return `<div class="cosync ${r?.error ? 'is-err' : ''}">${!r ? '<span class="muted">还没同步过(保存上线后马上同步一次)</span>'
+      : r.error ? `<span>⚠️ ${esc(r.error)}</span>` : `<span>✓ ${fDT(r.at)} 同步:合集「${esc(r.collection?.title || '')}」现在 <b>${r.count}</b> 个产品(这次加了 ${r.added}、移出 ${r.removed})</span>`}
+      ${canRun ? `<button type="button" class="btn btn-sm" data-co="sync">立即同步</button>${r?.held ? '<button type="button" class="btn btn-sm btn-danger-t" data-co="syncforce">仍然同步</button>' : ''}` : ''}</div>`;
+  }
+  const LPS_DEFAULT = [{ t: 'Choose a compatible lens', d: '' }, { t: 'Add Smart Fusion to your cart', d: '' }, { t: 'Save at checkout automatically', d: '' }];
+  const lpsHtml = () => `${ed.lpSteps.map((x, i) => `<div class="lps__row"><span class="lps__n">${i + 1}</span>
+      <input class="inp" data-lps="t:${i}" value="${esc(x.t)}" placeholder="这一步的标题"/><input class="inp" data-lps="d:${i}" value="${esc(x.d)}" placeholder="一句说明(可不填)"/>
+      <button type="button" class="btn btn-sm btn-ghost" data-co="lpsdel" data-i="${i}" aria-label="删掉这一步">${I.x}</button></div>`).join('')}
+    ${ed.lpSteps.length < 4 ? `<button type="button" class="chipadd" data-co="lpsadd">${I.plus}加一步</button>` : ''}`;
   function coFormHtml(it) {
-    const sec = edSec;
+    const sec = edSec; const J = !!it.joint; let n = 0; const N = () => ++n;
     return `
-      ${sec(1, '卡片内容', '产品页上显示的是英文,右边是预览', `
-        ${fld('名称(后台看的)', inp('name', it.name, '如:Smart Fusion · 手动镜头'))}
-        ${fld('标题', inp('title', it.title, 'Turn this manual lens into a Sony autofocus lens'), '加粗的那一句')}
-        ${fld('说明(可不填)', inp('text', it.text, 'With PDMOVIE SMART FUSION + LIVE AIR 4 SMART'), '灰色小字')}
-        <div class="fld"><span>推广的产品 <em>图片和链接默认用它的</em></span><div class="rowin" id="co-promo">${coPromoHtml()}</div></div>
-        <div class="fld2">${fld('链接文字', inp('linkText', it.linkText, 'Learn more'), '留空 = Learn more')}
-          ${fld('链接(可不填)', `<input class="inp mono" name="link" value="${esc(it.link || '')}" placeholder="留空 = 推广产品的页面"/>`, '要指定款式就粘贴完整链接,如 /products/pdmovie-smart-fusion?variant=…')}</div>
+      ${sec(N(), '卡片内容', '产品页上显示的是英文,右边是预览', `
+        <div class="fld2">${fld('名称(后台看的)', inp('name', it.name, '如:Smart Fusion · 手动镜头'))}
+          <label class="tgl co-jtgl"><input type="checkbox" name="joint" ${J ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>联合推广</b><span class="muted">兼容产品和推广产品的页面互相推荐,卡片都点进活动页;搭配 KitBundle 的加购优惠</span></span></label></div>
+        <div class="${J ? 'co-cards' : ''}">
+          <div class="co-cardf">${J ? '<div class="co-cardf__h">兼容产品页上的卡片 <em>比如手动镜头的页面</em></div>' : ''}
+            ${fld('标题', inp('title', it.title, 'Turn this manual lens into a Sony autofocus lens'), '加粗的那一句')}
+            ${fld('说明(可不填)', inp('text', it.text, 'With PDMOVIE SMART FUSION + LIVE AIR 4 SMART'), '灰色小字')}
+            ${fld('链接文字', inp('linkText', it.linkText, 'Learn more'), '留空 = Learn more')}</div>
+          ${J ? `<div class="co-cardf"><div class="co-cardf__h">推广产品页上的卡片 <em>比如 Smart Fusion 的页面</em></div>
+            ${fld('标题', inp('promoTitle', it.promoTitle, 'Pair it with a compatible manual lens'), '加粗的那一句')}
+            ${fld('说明(可不填)', inp('promoText', it.promoText, 'Turn manual cine lenses into Sony AF lenses'), '灰色小字')}
+            ${fld('链接文字', inp('promoLinkText', it.promoLinkText, 'See compatible lenses'), '留空 = See compatible products')}</div>` : ''}
+        </div>
+        ${J ? fld('优惠一句话', inp('offer', it.offer, '10% OFF Smart Fusion with any compatible lens'), '两边卡片和活动页都显示。真正的折扣在 KitBundle 的加购优惠里设,数字要和这里一致') : ''}
+        <div class="fld"><span>推广的产品 <em>${J ? '兼容产品页卡片的图片默认用它的主图' : '图片和链接默认用它的'}</em></span><div class="rowin" id="co-promo">${coPromoHtml()}</div></div>
+        ${J ? '' : fld('链接(可不填)', `<input class="inp mono" name="link" value="${esc(it.link || '')}" placeholder="留空 = 推广产品的页面"/>`, '要指定款式就粘贴完整链接,如 /products/pdmovie-smart-fusion?variant=…')}
         <div class="fld"><span>图片</span><div class="rowin coimgrow"><span class="rowin" id="co-imgsrc">${coImgSrcHtml(it)}</span>
           ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>' : ''}</div>
           <input type="hidden" name="image" value="${esc(it.image || '')}"/><input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
           <em>一般不用传,直接用推广产品的主图;想换一张(比如镜头 + Smart Fusion 的合照)再上传,存进 Shopify 文件库。</em></div>`)}
-      ${sec(2, '放在哪些产品', '按条件自动算,以后新上架的产品符合条件就自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
-      ${sec(3, '什么时候显示', '', `${timeBlock(it, 'callout')}
+      ${J ? sec(N(), '两个合集', '两边各认一个合集', `<div class="fld2">
+        <div class="fld"><span>兼容产品合集 <em>也是活动页</em></span><div class="rowin" id="co-lensColl">${coCollHtml('lensColl')}</div>
+          <em>先在 Shopify 后台建一个空的「手动」合集,发布到网店,模板选 joint-promo。app 按下面的条件把产品同步进去:保存后马上一次,之后每小时一次</em></div>
+        <div class="fld"><span>推广产品合集 <em>比如 Smart Fusion 全系列</em></span><div class="rowin" id="co-promoColl">${coCollHtml('promoColl')}</div>
+          <em>这些产品的页面显示「推广产品页上的卡片」;它们不会被算进兼容产品</em></div></div>
+        <div id="co-sync">${coSyncHtml(it)}</div>`) : ''}
+      ${sec(N(), J ? '兼容产品(按条件)' : '放在哪些产品', '按条件自动算,以后新上架的产品符合条件就自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
+      ${J ? sec(N(), '活动页', '兼容产品合集页面的顶部:大图、介绍、玩法、条款;下面接着是全部兼容产品', `
+        <div class="fld2">${fld('标题', inp('lpTitle', it.lpTitle, 'Turn your manual lens into a Sony autofocus lens'))}
+          <div class="fld"><span>大图</span><div class="rowin coimgrow">${it.lpImage ? `<span class="coimg" style="background-image:url('${esc(thumb(it.lpImage, 120))}')"></span><button type="button" class="btn btn-sm btn-ghost" data-co="nolpimg">不用大图</button>` : '<span class="muted">没有大图(只显示文字)</span>'}
+            ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-upto="lpImage" hidden/></label>' : ''}</div>
+            <input type="hidden" name="lpImage" value="${esc(it.lpImage || '')}"/><input type="hidden" name="lpImageId" value="${esc(it.lpImageId || '')}"/></div></div>
+        ${fld('介绍', `<textarea class="inp" name="lpText" rows="3" placeholder="PDMOVIE Smart Fusion adds fast, accurate autofocus to manual cine lenses on Sony E-mount…">${esc(it.lpText || '')}</textarea>`, '可以写几行;空行分段')}
+        <div class="fld"><span>玩法 <em>最多 4 步</em></span><div class="lps" id="co-lps">${lpsHtml()}</div></div>
+        ${fld('条款', `<textarea class="inp" name="lpTerms" rows="4" placeholder="One discounted Smart Fusion per compatible lens in the same order.&#10;Discount applies to Smart Fusion only.">${esc(it.lpTerms || '')}</textarea>`, '一行一条,活动页上会排成列表')}`) : ''}
+      ${sec(N(), '什么时候显示', '', `${timeBlock(it, 'callout')}
         ${fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '一个产品同时符合几张推广块时,只显示数字大的那张')}`)}`;
   }
   const coSumHtml = () => {
@@ -1343,6 +1391,17 @@
   function coPreviewHtml(v) {
     const r = coRes && typeof coRes === 'object' && !coRes.error ? coRes : null;
     const prod = r?.sample?.find((p) => p.id !== v.promo?.id) || v.products?.[0] || null;
+    if (v.joint) {
+      const pdp = (title, img, card) => `<div class="pv-pdp"><div class="pv-pdp__img" ${img ? `style="background-image:url('${esc(thumb(img, 300))}')"` : ''}></div>
+        <div class="pv-pdp__info"><div class="pv-pdp__title">${esc(title)}</div><div class="pv-pdp__price">£—</div>${card}<div class="pv-pdp__btn">Add to cart</div></div></div>`;
+      return `<div class="pv-label">兼容产品页 <em>${esc(prod?.title || '比如一支手动镜头')}</em></div>
+        ${pdp(prod?.title || 'DZOFILM VESPID 2 Prime 35mm T2.1', prod?.image, coCardHtml(v))}
+        <div class="pv-label">推广产品页 <em>${esc(v.promoCollection?.title || '推广产品合集')} 里的产品</em></div>
+        ${pdp(v.promo?.title || 'PDMOVIE Smart Fusion', v.promo?.image, coCardHtml(v, 'b'))}
+        <p class="muted pv-cap">${coLink(v) ? `两张卡片都点进活动页 <a class="lk mono" href="${esc(frontUrl(coLink(v)))}" target="_blank" rel="noopener">${esc(coLink(v))}</a>` : '选了兼容产品合集后,两张卡片都点进它的页面(活动页)'}</p>
+        <div class="pv-label">兼容产品(会同步进合集)</div>
+        ${coMatchHtml(v)}`;
+    }
     return `<div class="pv-label">产品页上的样子 <em>价格 / 活动徽章下面</em></div>
       <div class="pv-pdp">
         <div class="pv-pdp__img" ${prod?.image ? `style="background-image:url('${esc(thumb(prod.image, 300))}')"` : ''}></div>
@@ -3018,7 +3077,7 @@
     [/图片/, '[name="image"]'], [/公告文字/, '[name="text"]'], [/名称/, '[name="name"]'], [/标题/, '[name="title"]'],
     [/开始时间|开始/, '[name="start"]'], [/结束时间|晚于开始/, '[name="end"]'], [/选合集|请选合集|要排序的合集/, '#sl-coll, #wx-coll > .fld'], [/后缀/, '[name="slug"]'],
     [/页面模板/, '[name="view"]'], [/结束后要跳到/, '[name="afterEndUrl"]'], [/徽章链接/, '[name="badgeLinkUrl"]'], [/链接/, '[name="link"]'],
-    [/页签/, '#ed-tabs'], [/倒计时颜色/, '#cd-bg'], [/放在哪些产品|条件/, '#ed-scope'], [/推广的产品/, '#co-promo'], [/排在前面的产品/, '#wx-box'], [/模块/, '#ed-module'],
+    [/页签/, '#ed-tabs'], [/倒计时颜色/, '#cd-bg'], [/放在哪些产品|条件/, '#ed-scope'], [/兼容产品的合集/, '#co-lensColl'], [/推广产品的合集|同一个/, '#co-promoColl'], [/推广产品页上那张卡片/, '[name="promoTitle"]'], [/玩法/, '#co-lps'], [/推广的产品/, '#co-promo'], [/排在前面的产品/, '#wx-box'], [/模块/, '#ed-module'],
   ];
   function showFormErr(msg) {
     const f = $('#ed-form'); if (!f || !msg) return;
@@ -3542,10 +3601,12 @@
     // type:collections / products / exProducts(推广块排除的产品)/ promo(推广块推广的那一个产品,单选)
     //   rule:<i>(推广块第 i 条「合集」条件的值)
     const ri = type.startsWith('rule:') ? +type.slice(5) : null;
-    const isProd = type !== 'collections' && ri == null; const single = type === 'promo';
-    const cur = () => (single ? (ed.promo ? [ed.promo] : []) : ri != null ? ed.rules[ri].v : ed[type]);
+    const c1 = CO_COLL[type]; // 联合推广的两个合集(单选)
+    const isProd = type !== 'collections' && ri == null && !c1; const single = type === 'promo' || !!c1;
+    const cur = () => (c1 ? (ed[c1] ? [ed[c1]] : []) : single ? (ed.promo ? [ed.promo] : []) : ri != null ? ed.rules[ri].v : ed[type]);
     const put = (arr) => {
-      if (single) { ed.promo = arr[arr.length - 1] || null; const el = $('#co-promo'); if (el) el.innerHTML = coPromoHtml(); $('#ed-form').dispatchEvent(new Event('change')); }
+      if (c1) { ed[c1] = arr[arr.length - 1] || null; const el = $(`#co-${type}`); if (el) el.innerHTML = coCollHtml(type); $('#ed-form').dispatchEvent(new Event('change')); }
+      else if (single) { ed.promo = arr[arr.length - 1] || null; const el = $('#co-promo'); if (el) el.innerHTML = coPromoHtml(); $('#ed-form').dispatchEvent(new Event('change')); }
       else if (ri != null) { ed.rules[ri].v = arr.map(({ id, handle, title }) => ({ id, handle, title })); refreshScope(); }
       else { ed[type] = arr; refreshScope(); }
     };
@@ -3665,6 +3726,10 @@
       v.collections = []; v.tags = []; v.vendors = []; v.exTags = []; // 第一版的字段不再用(条件都在 rules 里)
       v.products = ed.products.map(slim); v.exProducts = ed.exProducts.map(slim); v.promo = slim(ed.promo);
       v.link = String(v.link || '').trim(); if (g('priority')) v.priority = +g('priority').value || 0;
+      const slimC = (c) => (c ? { id: c.id, handle: c.handle, title: c.title } : null);
+      v.joint = !!g('joint')?.checked;
+      v.lensCollection = slimC(ed.lensCollection); v.promoCollection = slimC(ed.promoCollection);
+      v.lpSteps = ed.lpSteps.filter((x) => x.t.trim()).map((x) => ({ t: x.t.trim(), d: x.d.trim() }));
     }
     if (base.kind === 'salelink') {
       const num = (n) => { const x = Math.round(Number(g(n)?.value)); return x > 0 ? x : null; };
@@ -3726,7 +3791,9 @@
     // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
     const base = { ...it, ...(it.pendingChange && !canAppr(it) ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])],
-      co: base.kind === 'callout', vendors: [], exProducts: [...(base.exProducts || [])], exTags: [], promo: base.promo || null, rules: [], coLegacy: false };
+      co: base.kind === 'callout', vendors: [], exProducts: [...(base.exProducts || [])], exTags: [], promo: base.promo || null, rules: [], coLegacy: false,
+      lensCollection: base.lensCollection || null, promoCollection: base.promoCollection || null,
+      lpSteps: (base.lpSteps && base.lpSteps.length ? base.lpSteps : base.joint ? [] : LPS_DEFAULT).map((x) => ({ t: x.t || '', d: x.d || '' })) };
     coRes = null;
     if (ed.co) { // 推广块:条件放 ed.rules;第一版「满足任一」的设置换成条件(两种以上一起用时提示一下)
       const legacy = !coRulesOf(base).length && coLegacyRules(base).length;
@@ -3818,6 +3885,32 @@
     refreshPv();
     if (kind === 'campaign' && MODE === 'live' && !ed.counts) fetchCounts();
     const f = $('#ed-form');
+    // 推广块:开关「联合推广」/ 换了活动页大图 → 按现在填的内容重画整个表单(分段不一样)
+    const rerenderCo = () => { const v = readForm(base); f.innerHTML = `${notes.join('')}${formHtml(v)}${assignHtml(v)}`; refreshScope(); refreshPv(); };
+    if (kind === 'callout') {
+      f.addEventListener('change', (e) => {
+        if (e.target.name !== 'joint') return;
+        if (e.target.checked && !ed.lpSteps.length) ed.lpSteps = LPS_DEFAULT.map((x) => ({ ...x }));
+        rerenderCo();
+      });
+      f.addEventListener('input', (e) => { // 活动页玩法
+        const lp = e.target.dataset?.lps; if (!lp) return;
+        const [k, i] = lp.split(':'); if (ed.lpSteps[+i]) ed.lpSteps[+i][k] = e.target.value; refreshPv();
+      });
+      f.addEventListener('change', async (e) => { // 活动页大图上传(和卡片图片同一个接口:进 Shopify 文件库)
+        const to = e.target.dataset?.upto; if (!to) return;
+        const file = e.target.files?.[0]; if (!file) return;
+        if (file.size > 20 * 1024 * 1024) return toast('图片太大了(最多 20MB)', false);
+        const lab = e.target.closest('label'); lab.firstChild.textContent = '上传中…';
+        try {
+          const res = await fetch(`/api/schedule/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { ...(await window.cgpHeaders()), 'Content-Type': file.type }, body: file });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(j.error || res.statusText);
+          f.querySelector(`[name="${to}"]`).value = j.url; f.querySelector(`[name="${to}Id"]`).value = j.id;
+          rerenderCo(); toast('图片已上传到 Shopify 文件库');
+        } catch (err) { toast('上传失败:' + err.message, false); lab.firstChild.textContent = '上传图片'; }
+      });
+    }
     // 倒计时色块显示成「现在实际用的颜色」:没自定义的那个跟着样式默认色走(onlyUnset = 只改没自定义的)
     const cdPaint = (k, onlyUnset) => {
       const p = CD_STY[k] || CD_STY.classic;
@@ -4165,9 +4258,22 @@
         return;
       }
       const co = e.target.closest('[data-co]');
-      if (co) { // 推广块:不要推广的产品 / 图片改回用产品主图
-        if (co.dataset.co === 'unpromo') { ed.promo = null; $('#co-promo').innerHTML = coPromoHtml(); }
-        if (co.dataset.co === 'noimg') { f.querySelector('[name="image"]').value = ''; f.querySelector('[name="imageId"]').value = ''; }
+      if (co) { // 推广块:不要推广的产品 / 图片改回用产品主图;联合推广:两个合集、玩法、活动页大图、立即同步
+        const a = co.dataset.co;
+        if (a === 'unpromo') { ed.promo = null; $('#co-promo').innerHTML = coPromoHtml(); }
+        if (a === 'noimg') { f.querySelector('[name="image"]').value = ''; f.querySelector('[name="imageId"]').value = ''; }
+        if (a === 'unlensColl' || a === 'unpromoColl') { const t = a.slice(2); ed[CO_COLL[t]] = null; $(`#co-${t}`).innerHTML = coCollHtml(t); }
+        if (a === 'nolpimg') { f.querySelector('[name="lpImage"]').value = ''; f.querySelector('[name="lpImageId"]').value = ''; return rerenderCo(); }
+        if (a === 'lpsadd' && ed.lpSteps.length < 4) { ed.lpSteps.push({ t: '', d: '' }); $('#co-lps').innerHTML = lpsHtml(); $(`#co-lps [data-lps="t:${ed.lpSteps.length - 1}"]`)?.focus(); }
+        if (a === 'lpsdel') { ed.lpSteps.splice(+co.dataset.i, 1); $('#co-lps').innerHTML = lpsHtml(); }
+        if (a === 'sync' || a === 'syncforce') {
+          co.disabled = true; co.textContent = '同步中…';
+          api('POST', '/api/schedule/joint-sync', { id: base.id, force: a === 'syncforce' }).then((r) => {
+            S.jointSync = r.jointSync; const box = $('#co-sync'); if (box) box.innerHTML = coSyncHtml(base);
+            toast(r.rep.error ? r.rep.error : `已同步:加了 ${r.rep.added} 个、移出 ${r.rep.removed} 个,合集里现在 ${r.rep.count} 个`, !r.rep.error);
+          }).catch((err) => { toast(err.message, false); co.disabled = false; co.textContent = '立即同步'; });
+          return;
+        }
         refreshPv(); return;
       }
       const pk = e.target.closest('[data-pick]');
@@ -4213,7 +4319,8 @@
       if (mode === 'publish') {
         const saved = byId(it.id); const st2 = saved ? status(saved) : '';
         const col = colSay(r.colRep, saved?.collection?.id);
-        toast([st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`, ...col].join(' · '), !(r.colRep?.failures?.length));
+        if (r.jointRep) col.push(r.jointRep.error ? `⚠️ 兼容产品合集没同步:${r.jointRep.error}` : `🔁 兼容产品合集「${r.jointRep.collection?.title || ''}」现在 ${r.jointRep.count} 个产品(加了 ${r.jointRep.added}、移出 ${r.jointRep.removed})`);
+        toast([st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`, ...col].join(' · '), !(r.colRep?.failures?.length) && !r.jointRep?.error);
       } else toast(mode === 'submit' ? `已提交给「${apprName({ ...it, ...v })}」审批${MODE === 'live' ? ' · 已私信通知' : '(演示)'}` : '已存草稿');
     }
   }

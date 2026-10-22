@@ -15,6 +15,7 @@ import { actorOf, pagesOf, isAdmin } from './members.js';
 import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
 import { listColSorts, readColSort, applyColSort } from './col-sort-shop.js';
+import { syncJoint, isJoint } from './joint-sync.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
 import { diffOrder, diffSummary } from './order-diff.js';
 import { loadItemHistory, recordAction, changedKeys, pruneItemHistory } from './item-history.js';
@@ -88,6 +89,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
     colState: Object.fromEntries(Object.entries(state.colState || {}).map(([k, c]) => [k,
       { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, at: c.at }])),
     sortFlags: Object.fromEntries(Object.entries(state.sortFlags || {}).map(([k, f]) => [k, { pinName: f.pinName, title: f.title }])),
+    jointSync: state.jointSync || {}, // 联合推广:兼容产品合集最近一次同步的结果
     pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
     settings: { notify: state.settings.notify, approvers: state.settings.approvers || {}, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
     collections: [], products: [], tagCounts: {},
@@ -163,8 +165,36 @@ export function scheduleRouter() {
         return rep;
       });
     }
-    return { ...(await view(req, state2)), message: out.message, id: out.id, syncErrors: out.syncErrors, larkErrors: out.larkErrors, colRep };
+    // 动的是联合推广:马上把兼容产品同步进合集一次(不用等每小时的定时器)
+    let jointRep = null;
+    const coId = action.kind === 'callout' || /^co-/.test(String(action.id || out.id || '')) ? (action.id || out.id) : null;
+    if (coId && ['save', 'approve'].includes(action.type)) {
+      jointRep = await withLock(shop, async () => {
+        const s = load(shop); const it = (s.callouts || []).find((x) => x.id === coId);
+        if (!isJoint(it) || it.state !== 'approved') return null;
+        const rep = await syncJoint(req.ctx, s, it, { gql: graphql });
+        if (rep.added || rep.removed) appendLog(s, { action: 'edit', kind: 'callout', title: it.name, by: '保存后自动同步', note: `兼容产品合集「${rep.collection.title}」:加了 ${rep.added} 个、移出 ${rep.removed} 个,现在 ${rep.count} 个` });
+        replace(shop, s); state2 = s;
+        return rep;
+      });
+    }
+    return { ...(await view(req, state2)), message: out.message, id: out.id, syncErrors: out.syncErrors, larkErrors: out.larkErrors, colRep, jointRep };
   }));
+
+  // ---- 联合推广:立即同步一次兼容产品合集(force = 移出太多时确认「仍然同步」)----
+  r.post('/joint-sync', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const a = actorFor(s, req.ctx.user);
+    if (a.role !== 'approver') throw new ActionError('只有管理员能同步合集');
+    const it = (s.callouts || []).find((x) => x.id === req.body?.id);
+    if (!isJoint(it)) throw new ActionError('这条不是联合推广,或者还没选兼容产品合集');
+    if (it.state !== 'approved') throw new ActionError('先保存上线(或排期)再同步');
+    const rep = await syncJoint(req.ctx, s, it, { gql: graphql, force: !!req.body?.force });
+    appendLog(s, { action: 'edit', kind: 'callout', title: it.name, by: a.name,
+      note: rep.error ? `同步兼容产品合集没成功:${rep.error}` : `同步兼容产品合集「${rep.collection.title}」:加了 ${rep.added} 个、移出 ${rep.removed} 个,现在 ${rep.count} 个` });
+    replace(req.ctx.shop, s);
+    return { rep, jointSync: s.jointSync };
+  })));
 
   // ---- 设置 / 成员 ----
   r.post('/settings', wrap(async (req) => withLock(req.ctx.shop, async () => {
