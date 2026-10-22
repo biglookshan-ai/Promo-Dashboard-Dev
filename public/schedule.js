@@ -1295,7 +1295,7 @@
         <div class="fld"><span>兼容产品合集 <em>也是活动页</em></span><div class="rowin" id="co-lensColl">${coCollHtml('lensColl')}</div>
           <em>先在 Shopify 后台建一个空的「手动」合集,发布到网店,模板选 joint-promo。app 按下面的条件把产品同步进去:保存后马上一次,之后每小时一次</em></div>
         <div class="fld"><span>推广产品合集 <em>比如 Smart Fusion 全系列</em></span><div class="rowin" id="co-promoColl">${coCollHtml('promoColl')}</div>
-          <em>这些产品的页面显示「推广产品页上的卡片」;它们不会被算进兼容产品</em></div></div>
+          <em>这些产品的页面显示「推广产品页上的卡片」,不会被算进兼容产品。在 KitBundle 加购优惠里把它选成「打折产品」的合集,合集里所有产品、所有选项都打折</em></div></div>
         <div id="co-sync">${coSyncHtml(it)}</div>`) : ''}
       ${sec(N(), J ? '兼容产品(按条件)' : '放在哪些产品', '按条件自动算,以后新上架的产品符合条件就自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
       ${J ? sec(N(), '活动页', '兼容产品合集页面的顶部:大图、介绍、玩法、条款;下面接着是全部兼容产品', `
