@@ -1224,9 +1224,13 @@
   // 产品页上那张小卡片(和主题同一个样子;列表和预览共用)
   // side = 'b':联合推广里推广产品(比如 Smart Fusion)页面上的那张 —— 图用活动页大图(没有就不放图)
   const coCardHtml = (x, side = 'a') => { const b = side === 'b'; const img = b ? x.lpImage || '' : coImg(x);
+    if (x.joint) { // 联合推广(2026-10-23):一段话 —— 优惠一句 + 标题 + 链接文字,点开是弹窗(主题 snippets/cgp-joint-popup.liquid)
+      const dot = (t) => { t = String(t || '').trim(); return t && !/[.!?]$/.test(t) ? `${t}.` : t; };
+      return `<span class="pv-callout">${img ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(img, 160))}')"></span>` : ''}<span class="pv-callout__p">
+        ${x.offer ? `<b class="pv-callout__o">${esc(dot(x.offer))}</b> ` : ''}${esc(dot(b ? x.promoTitle : x.title) || '(还没写标题)')} <span class="pv-callout__m">${esc((b ? x.promoLinkText || 'See compatible lenses' : x.linkText || 'See the offer'))} →</span></span></span>`;
+    }
     return `<span class="pv-callout">${img ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(img, 160))}')"></span>` : ''}<span class="pv-callout__b">
-    ${x.joint && x.offer ? `<span class="pv-callout__o">${esc(x.offer)}</span>` : ''}
-    <span class="pv-callout__t">${esc((b ? x.promoTitle : x.title) || '(还没写标题)')}</span>${(b ? x.promoText : x.text) ? `<span class="pv-callout__s">${esc(b ? x.promoText : x.text)}</span>` : ''}${coLink(x) ? `<span class="pv-callout__m">${esc((b ? x.promoLinkText || 'See compatible products' : x.linkText) || 'Learn more')} →</span>` : ''}</span></span>`; };
+    <span class="pv-callout__t">${esc(x.title || '(还没写标题)')}</span>${x.text ? `<span class="pv-callout__s">${esc(x.text)}</span>` : ''}${coLink(x) ? `<span class="pv-callout__m">${esc(x.linkText || 'Learn more')} →</span>` : ''}</span></span>`; };
   function renderCallouts() {
     const root = $('#co-root'); if (!root) return;
     const need = MODE === 'live' && S.setup && S.setup.coReady === false;
@@ -1320,7 +1324,7 @@
     return `
       ${sec(N(), '卡片内容', '产品页上显示的是英文,右边是预览', `
         <div class="fld2">${fld('名称(后台看的)', inp('name', it.name, '如:Smart Fusion · 手动镜头'))}
-          <label class="tgl co-jtgl"><input type="checkbox" name="joint" ${J ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>联合推广</b><span class="muted">兼容产品和推广产品的页面互相推荐,卡片都点进活动页;搭配 KitBundle 的加购优惠</span></span></label></div>
+          <label class="tgl co-jtgl"><input type="checkbox" name="joint" ${J ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>联合推广</b><span class="muted">兼容产品和推广产品的页面互相推荐;卡片点开是弹窗,顾客在弹窗里直接加购物车,想看全部再去活动页;搭配 KitBundle 的加购优惠</span></span></label></div>
         <div class="${J ? 'co-cards' : ''}">
           <div class="co-cardf">${J ? '<div class="co-cardf__h">兼容产品页上的卡片 <em>比如手动镜头的页面</em></div>' : ''}
             ${fld('标题', inp('title', it.title, 'Turn this manual lens into a Sony autofocus lens'), '加粗的那一句')}
@@ -1447,7 +1451,7 @@
         ${pdp(prod?.title || 'DZOFILM VESPID 2 Prime 35mm T2.1', prod?.image, coCardHtml(v))}
         <div class="pv-label">推广产品页 <em>${esc(v.promoCollection?.title || '推广产品合集')} 里的产品</em></div>
         ${pdp(v.promo?.title || 'PDMOVIE Smart Fusion', v.promo?.image, coCardHtml(v, 'b'))}
-        <p class="muted pv-cap">${coLink(v) ? `两张卡片都点进活动页 <a class="lk mono" href="${esc(frontUrl(coLink(v)))}" target="_blank" rel="noopener">${esc(coLink(v))}</a>` : '选了兼容产品合集后,两张卡片都点进它的页面(活动页)'}</p>
+        <p class="muted pv-cap">${coLink(v) ? `两张卡片点开是弹窗(推广产品 / 兼容产品可直接加购物车),弹窗底部链到活动页 <a class="lk mono" href="${esc(frontUrl(coLink(v)))}" target="_blank" rel="noopener">${esc(coLink(v))}</a>` : '两张卡片点开是弹窗;选了兼容产品合集后,弹窗底部链到它的页面(活动页)'}</p>
         <div class="pv-label">兼容产品(会同步进合集)</div>
         ${coMatchHtml(v)}`;
     }

@@ -156,6 +156,10 @@
   每次同步先把推广产品合集对齐成**正好这几个**(多出来的移出,安全阀同上,结果在 `jointSync[id].promo`),再同步兼容产品(条件命中的去掉推广产品 + 推广合集成员)。
   ⛔ 老的推广块(只有 `promo`、没有 `promos`)**不动推广产品合集**,等人在新编辑器里看过、保存一次才开始管(免得上线后突然把人工放进去的产品移出)。保存时联合推广必须选至少一个推广产品。
   主题里 joint 推广块不看 rules,看 `product.collections`:在推广产品合集 → B 面(优先),在兼容产品合集 → A 面。
+  2026-10-23 主题改成「一段话卡片 + 点开弹窗」(主题仓库 snippets/cgp-joint-popup.liquid / cgp-joint-product.liquid / cgp-joint-pct.liquid,assets/cgp-joint.css / .js):
+  卡片 = 优惠一句 + 标题 + 链接文字;A 面弹窗里推广产品一行一个(选套装、直接加购物车、显示搭配价),B 面弹窗里 8 张兼容产品卡片可直接加购;弹窗底部才链到活动页。
+  **搭配价的百分比主题直接读 KitBundle 写在兼容产品上的 `custom.gift_trigger`(kind = deal)**,不读这里的 dealPct —— 两边不一致时以 KitBundle 为准(编辑器折扣行会提醒)。
+  所以「说明」(text / promo_text)现在只在弹窗里显示;编辑器右边的卡片预览已改成一段话。
 - **促销链接**(2026-10-15,`salelink` / `cgp_sale_link`):`/collections/<合集>?onsale[=<后缀>]`。规则在 `src/sale-link.js`(纯函数,浏览器经 `/lib/sale-link.js` 共用),
   **和主题 `assets/cgp-search-app.js` 的 `SALE` 必须一致**(只要打折的 → 有货 / 最低折扣 → 「和合集平时一样」或指定排序 → 置顶放最前 → 最多几个),改一边要同步另一边。
   置顶只决定顺序,不绕过打折 / 有货条件。同一个合集后缀不能重复(不同合集可以同名)。没生效时主题拿不到这条设置,`?onsale=后缀` 自动等于不带后缀。

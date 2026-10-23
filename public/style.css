@@ -1835,3 +1835,7 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 #co-promos .chip { flex-wrap: nowrap; }
 #co-promos .chip__t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #co-promos .chipadd { align-self: flex-start; }
+/* 联合推广卡片预览:一段话(和主题 snippets/cgp-joint-popup.liquid 一样) */
+.pv-callout__p { min-width: 0; font-size: 12px; line-height: 1.45; }
+.pv-callout__p .pv-callout__o { font-size: inherit; }
+.pv-callout__p .pv-callout__m { white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; }
