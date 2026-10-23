@@ -146,7 +146,11 @@
   ⛔ **合集 / 产品 id 有时是数字、有时是 gid**(Shopify 资源选择器给 gid,种子数据和主题导入给数字)—— 比较一律用 `numId()` 取末尾数字,直接 `===` 会静默漏掉(2026-10-12 踩过:置顶清单对不上首页页签)。
 - **联合推广**(2026-10-22,产品页推广 `callout` 的升级,`joint = true`):比如「Smart Fusion × 兼容手动镜头」——兼容产品页(A 面)和推广产品页(B 面)各一张卡片,都链到**活动页 = 兼容产品合集的页面**(主题模板 `collection.joint-promo` + `sections/cgp-joint-promo.liquid`:优惠一句话、标题、介绍、大图、推广产品、玩法、条款)。
   用户 2026-10-22 定:**兼容产品名单以 app 条件为准,自动同步进合集**(`src/joint-sync.js`:保存 / 批准后马上一次 + 定时器每小时一次;`POST /api/schedule/joint-sync` 立即同步);折扣**直接做 KitBundle**「加购优惠」(1 支镜头配 1 套,只给推广产品打折;KitBundle 里触发选兼容产品合集、打折产品选推广产品合集 —— 两边认同一对合集);活动页内容在这里编辑。
-  这个合集是唯一名单:A 面卡片、活动页、KitBundle 的触发条件都认它。⛔ 同步只动推广块里选的**那一个手动合集**的成员(collectionAdd/RemoveProducts),合集要先在 Shopify 后台建好(空的手动合集、发布到网店、模板选 joint-promo);
+  这个合集是唯一名单:A 面卡片、活动页、KitBundle 的触发条件都认它。⛔ 同步只动推广块里选的**那一个手动合集**的成员(collectionAdd/RemoveProducts);合集可以选已有的,也可以**在编辑器里直接新建**(2026-10-23 用户:不想去后台建;多个牌子的镜头可以共用一个兼容产品合集);
+  新建 = `src/joint-coll.js` `createJointCollection`(`POST /api/schedule/collection-create`,只有审批人):`collectionCreate` 建**空的手动合集**,兼容产品那个自动套模板 `joint-promo`,
+  然后试 `publishablePublish` 发布到「网店」—— 要 `read_publications` + `write_publications` 权限,没开就只建不发布,编辑器给后台直达链接让人勾一下「网店」(不报错);
+  折扣仍在 KitBundle 设:编辑器「折扣」一行填 %,按钮打开 KitBundle `/app/gifts/new?deal=1&pct&title&trigger=<兼容合集 gid>&reward=<推广合集 gid>`(KitBundle 预填好,人检查后保存);
+  是否生效 = `jointDealStatus` 只读兼容产品上 KitBundle 写的 `custom.gift_trigger`,找 `kind = deal` 且打折产品在推广合集里的那条(`GET /api/schedule/joint-deal?id=`),生效后按钮改成打开那条活动,不会重复建;
   带条件的合集不碰;条件一个都没命中不清空;一次要移出超过一半(且合集 ≥ 20 个)先停手,要在编辑器点「仍然同步」;推广产品合集里的产品不算进兼容产品。结果记在 `state.jointSync[推广块 id]`。
   主题里 joint 推广块不看 rules,看 `product.collections`:在推广产品合集 → B 面(优先),在兼容产品合集 → A 面。
 - **促销链接**(2026-10-15,`salelink` / `cgp_sale_link`):`/collections/<合集>?onsale[=<后缀>]`。规则在 `src/sale-link.js`(纯函数,浏览器经 `/lib/sale-link.js` 共用),
@@ -179,6 +183,6 @@
 
 ### ⛔ 注意
 
-- 写操作只限:建 `cgp_*` 内容类型、写 / 切换 `cgp_*` 条目、上传 Banner 图片;合集排序 / 改价模块各自写的那几样(见上面各节,合集默认排序会写合集字段 `custom.cgp_*` 和合集排序方式;联合推广会改它选定的那一个手动合集的成员)。**别碰产品、主题、别的 app 的数据**;新增任何其他 mutation 前先和用户确认设计。
+- 写操作只限:建 `cgp_*` 内容类型、写 / 切换 `cgp_*` 条目、上传 Banner 图片;合集排序 / 改价模块各自写的那几样(见上面各节,合集默认排序会写合集字段 `custom.cgp_*` 和合集排序方式;联合推广会改它选定的那一个手动合集的成员,也能新建空的手动合集并发布到网店)。**别碰产品、主题、别的 app 的数据**;新增任何其他 mutation 前先和用户确认设计。
 - 主题扫描**只读**,绝不改主题文件。
 - Railway 的 App URL 必须是公网域名(`*.up.railway.app`),别填 `*.railway.internal`(内网,Shopify 解析不到)。

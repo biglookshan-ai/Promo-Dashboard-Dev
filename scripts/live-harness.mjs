@@ -118,6 +118,15 @@ function gql(query, v) {
     for (const m of v.m) colMeta.delete(`${m.ownerId.split('/').pop()}:${m.key}`);
     return { metafieldsDelete: { deletedMetafields: v.m.map((m) => ({ key: m.key })), userErrors: [] } };
   }
+  // 联合推广:在 app 里建合集(假店没有「发布」权限 → 走「去后台勾网店」那条路)
+  if (q.includes('collectionCreate')) {
+    const c = v.c || {}; const id = 990000 + cat.collections.length;
+    const handle = String(c.title || 'c').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    cat.collections.push({ id, handle, title: c.title, count: 0 });
+    colMembers.set(String(id), []);
+    return { collectionCreate: { collection: { id: `gid://shopify/Collection/${id}`, title: c.title, handle }, userErrors: [] } };
+  }
+  if (q.includes('publications(') && !SCOPES.includes('read_publications')) throw new Error('Access denied for publications field. Required access: `read_publications` access scope.');
   // 合集页平时的默认排序:改合集的排序方式(collectionUpdate → sortOrder)
   if (q.includes('collectionUpdate') && (v.c?.sortOrder) && colOf(v.c.id)) {
     colSortOrder.set(String(colOf(v.c.id).id), v.c.sortOrder);

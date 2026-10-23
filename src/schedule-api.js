@@ -16,6 +16,7 @@ import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
 import { listColSorts, readColSort, applyColSort } from './col-sort-shop.js';
 import { syncJoint, isJoint } from './joint-sync.js';
+import { createJointCollection, jointDealStatus } from './joint-coll.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
 import { diffOrder, diffSummary } from './order-diff.js';
 import { loadItemHistory, recordAction, changedKeys, pruneItemHistory } from './item-history.js';
@@ -179,6 +180,29 @@ export function scheduleRouter() {
       });
     }
     return { ...(await view(req, state2)), message: out.message, id: out.id, syncErrors: out.syncErrors, larkErrors: out.larkErrors, colRep, jointRep };
+  }));
+
+  // ---- 联合推广:在 app 里直接建合集(兼容产品那个套活动页模板;能发布就发布到网店)----
+  r.post('/collection-create', wrap(async (req) => {
+    const a = actorFor(load(req.ctx.shop), req.ctx.user);
+    if (a.role !== 'approver') throw new ActionError('只有管理员能建合集');
+    let out;
+    try { out = await createJointCollection(req.ctx, { title: req.body?.title, landing: !!req.body?.landing }, graphql); }
+    catch (e) { throw new ActionError(`合集没建成:${e.message}`); }
+    await withLock(req.ctx.shop, async () => {
+      const s = load(req.ctx.shop);
+      appendLog(s, { action: 'edit', kind: 'callout', title: out.collection.title, by: a.name,
+        note: `新建合集「${out.collection.title}」${out.landing ? '(活动页模板 joint-promo)' : ''}${out.published ? ',已发布到网店' : `,还没发布到网店:${out.why}`}` });
+      replace(req.ctx.shop, s);
+    });
+    return out;
+  }));
+
+  // ---- 联合推广:KitBundle 的加购优惠有没有生效(读兼容产品上的 KitBundle 标记,只读)----
+  r.get('/joint-deal', wrap(async (req) => {
+    const it = (load(req.ctx.shop).callouts || []).find((x) => x.id === req.query.id);
+    if (!isJoint(it) || !it.promoCollection?.id) return { status: 'unknown' };
+    return jointDealStatus(req.ctx, { lensCollectionId: it.lensCollection.id, promoCollectionId: it.promoCollection.id }, graphql);
   }));
 
   // ---- 联合推广:立即同步一次兼容产品合集(force = 移出太多时确认「仍然同步」)----

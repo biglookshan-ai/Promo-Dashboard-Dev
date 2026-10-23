@@ -1818,3 +1818,13 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .corow__pv { display: flex; gap: 10px; flex-wrap: wrap; }
 .corow__pv .pv-callout { max-width: 420px; }
 @media (max-width: 860px) { .co-cards { grid-template-columns: 1fr; } }
+/* 联合推广:新建合集 + KitBundle 折扣(2026-10-23) */
+.conew { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.conew .inp { width: 260px; }
+.cosync__note { margin-top: 6px; font-size: var(--fs-xs); color: var(--ok); }
+.cosync__note.is-warn { color: #9a6700; }
+.codeal { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.codeal__pct { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 500; }
+.codeal__pct .inp--xs { width: 60px; }
+.codeal__st { flex: 1; min-width: 200px; font-size: var(--fs-sm); }
+.codeal__st .muted { margin: 0; }

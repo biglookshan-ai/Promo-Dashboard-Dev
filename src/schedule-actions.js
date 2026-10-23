@@ -29,7 +29,7 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   // 活动徽章点了去哪:'' = 自动(促销链接 / 参加的第一个合集);'none' = 不能点;/… 或 https://… = 指定链接
   'badgeLink',
   // 联合推广(产品页推广的升级,2026-10-22):两边卡片 + 兼容产品合集(app 同步、也是活动页)+ 推广产品合集 + 活动页内容
-  'joint', 'lensCollection', 'promoCollection', 'promoTitle', 'promoText', 'promoLinkText', 'offer', 'lpTitle', 'lpText', 'lpImage', 'lpImageId', 'lpSteps', 'lpTerms',
+  'joint', 'lensCollection', 'promoCollection', 'promoTitle', 'promoText', 'promoLinkText', 'offer', 'lpTitle', 'lpText', 'lpImage', 'lpImageId', 'lpSteps', 'lpTerms', 'dealPct',
   // 产品页推广块:推广的产品、链接文字、品牌、排除的产品 / 标签(其余沿用 title / text / link / image / collections / tags / products / priority)
   'promo', 'linkText', 'vendors', 'exProducts', 'exTags', 'rules',
   // 主活动 / 子活动:活动属于哪个主活动(活动 id;只有一层)
