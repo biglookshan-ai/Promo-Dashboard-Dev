@@ -59,9 +59,11 @@ async function gqlRetry(ctx, gql, query, vars) { // 逐页拉的时候可能被�
     try { return await gql(ctx, query, vars); } catch (e) { if (i >= 5 || !/THROTTLED/i.test(e.message)) throw e; await sleep(1500 * (i + 1)); }
   }
 }
-export async function calloutScope(ctx, { rules = [], products = [], exProducts = [], promo = null }, gql = graphql) {
+// 推广的产品自己不算(联合推广可以选多个 promos;普通推广块只有一个 promo)
+const promoEx = (promo, promos) => [...(Array.isArray(promos) ? promos : []), promo].filter((p) => p?.id || typeof p === 'string').map((p) => numId(p.id || p));
+export async function calloutScope(ctx, { rules = [], products = [], exProducts = [], promo = null, promos = [] }, gql = graphql) {
   const rs = coRules(rules);
-  const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), promo?.id ? numId(promo.id) : null].filter(Boolean));
+  const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), ...promoEx(promo, promos)].filter(Boolean));
   const incIds = products.map((p) => numId(p.id || p)).filter((id) => id && !exIds.has(id));
   if (!rs.length && !incIds.length) return { total: 0, sample: [], capped: false };
   const SAMPLE = 12; const CAP = 2000;
@@ -99,9 +101,9 @@ export async function calloutScope(ctx, { rules = [], products = [], exProducts 
 }
 // 联合推广(2026-10-22):按条件算出**全部**命中的产品 id(同步进「兼容产品」合集用),和 calloutScope 同一套判断。
 //   exCollections = 这些合集里的产品不算(比如推广产品自己那个系列:Smart Fusion 的套装不能算进「兼容镜头」)
-export async function calloutIds(ctx, { rules = [], products = [], exProducts = [], promo = null, exCollections = [] }, gql = graphql, { cap = 3000 } = {}) {
+export async function calloutIds(ctx, { rules = [], products = [], exProducts = [], promo = null, promos = [], exCollections = [] }, gql = graphql, { cap = 3000 } = {}) {
   const rs = coRules(rules);
-  const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), promo?.id ? numId(promo.id) : null].filter(Boolean));
+  const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), ...promoEx(promo, promos)].filter(Boolean));
   for (const c of exCollections) {
     let after = null;
     for (let page = 0; page < 20; page++) {

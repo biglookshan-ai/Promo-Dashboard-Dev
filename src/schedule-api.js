@@ -15,7 +15,7 @@ import { actorOf, pagesOf, isAdmin } from './members.js';
 import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
 import { listColSorts, readColSort, applyColSort } from './col-sort-shop.js';
-import { syncJoint, isJoint } from './joint-sync.js';
+import { syncJoint, isJoint, syncNotes } from './joint-sync.js';
 import { createJointCollection, jointDealStatus } from './joint-coll.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
 import { diffOrder, diffSummary } from './order-diff.js';
@@ -174,7 +174,7 @@ export function scheduleRouter() {
         const s = load(shop); const it = (s.callouts || []).find((x) => x.id === coId);
         if (!isJoint(it) || it.state !== 'approved') return null;
         const rep = await syncJoint(req.ctx, s, it, { gql: graphql });
-        if (rep.added || rep.removed) appendLog(s, { action: 'edit', kind: 'callout', title: it.name, by: '保存后自动同步', note: `兼容产品合集「${rep.collection.title}」:加了 ${rep.added} 个、移出 ${rep.removed} 个,现在 ${rep.count} 个` });
+        for (const x of syncNotes(rep)) appendLog(s, { action: x.failed ? 'failure' : 'edit', kind: 'callout', title: it.name, by: '保存后自动同步', note: x.note });
         replace(shop, s); state2 = s;
         return rep;
       });
@@ -214,8 +214,7 @@ export function scheduleRouter() {
     if (!isJoint(it)) throw new ActionError('这条不是联合推广,或者还没选兼容产品合集');
     if (it.state !== 'approved') throw new ActionError('先保存上线(或排期)再同步');
     const rep = await syncJoint(req.ctx, s, it, { gql: graphql, force: !!req.body?.force });
-    appendLog(s, { action: 'edit', kind: 'callout', title: it.name, by: a.name,
-      note: rep.error ? `同步兼容产品合集没成功:${rep.error}` : `同步兼容产品合集「${rep.collection.title}」:加了 ${rep.added} 个、移出 ${rep.removed} 个,现在 ${rep.count} 个` });
+    for (const x of syncNotes(rep, { all: true })) appendLog(s, { action: 'edit', kind: 'callout', title: it.name, by: a.name, note: x.note });
     replace(req.ctx.shop, s);
     return { rep, jointSync: s.jointSync };
   })));

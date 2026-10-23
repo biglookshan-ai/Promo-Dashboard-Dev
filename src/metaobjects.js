@@ -371,7 +371,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
     const gids = (arr, type) => list((arr || []).slice(0, 50).map((x) => toGid(type, x.id)).filter(Boolean));
     Object.assign(f, {
       name: str(it.name), title: str(it.title), text: str(it.text), link_text: str(it.linkText), link: str(it.link).trim(),
-      promo_product: toGid('Product', it.promo?.id) || '', image: str(it.imageId),
+      promo_product: toGid('Product', it.promo?.id || (it.joint ? it.promos?.[0]?.id : null)) || '', image: str(it.imageId), // 联合推广选了多个推广产品时用第一个
       rules: JSON.stringify(coRulesOut(it.rules)),
       collections: gids(it.collections, 'Collection'), tags: list(it.tags || []), vendors: list(it.vendors || []),
       products: gids(it.products, 'Product'), exclude_products: gids(it.exProducts, 'Product'), exclude_tags: list(it.exTags || []),

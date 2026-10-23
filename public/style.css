@@ -1828,3 +1828,10 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .codeal__pct .inp--xs { width: 60px; }
 .codeal__st { flex: 1; min-width: 200px; font-size: var(--fs-sm); }
 .codeal__st .muted { margin: 0; }
+.cosync__lines { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 260px; }
+.cosync__acts { display: inline-flex; gap: 6px; }
+/* 联合推广的推广产品(多选):一行一个,名字太长就省略 */
+#co-promos { flex-direction: column; align-items: stretch; }
+#co-promos .chip { flex-wrap: nowrap; }
+#co-promos .chip__t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#co-promos .chipadd { align-self: flex-start; }

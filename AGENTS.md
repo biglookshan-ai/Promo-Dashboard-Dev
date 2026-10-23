@@ -152,6 +152,9 @@
   折扣仍在 KitBundle 设:编辑器「折扣」一行填 %,按钮打开 KitBundle `/app/gifts/new?deal=1&pct&title&trigger=<兼容合集 gid>&reward=<推广合集 gid>`(KitBundle 预填好,人检查后保存);
   是否生效 = `jointDealStatus` 只读兼容产品上 KitBundle 写的 `custom.gift_trigger`,找 `kind = deal` 且打折产品在推广合集里的那条(`GET /api/schedule/joint-deal?id=`),生效后按钮改成打开那条活动,不会重复建;
   带条件的合集不碰;条件一个都没命中不清空;一次要移出超过一半(且合集 ≥ 20 个)先停手,要在编辑器点「仍然同步」;推广产品合集里的产品不算进兼容产品。结果记在 `state.jointSync[推广块 id]`。
+  **推广产品合集也自动管**(2026-10-23 用户:兼容的和推广的都应该自动加入):联合推广的「推广的产品」可以多选(`promos`,最多 50;第一个兼当 `promo` → metaobject `promo_product`,卡片默认图),
+  每次同步先把推广产品合集对齐成**正好这几个**(多出来的移出,安全阀同上,结果在 `jointSync[id].promo`),再同步兼容产品(条件命中的去掉推广产品 + 推广合集成员)。
+  ⛔ 老的推广块(只有 `promo`、没有 `promos`)**不动推广产品合集**,等人在新编辑器里看过、保存一次才开始管(免得上线后突然把人工放进去的产品移出)。保存时联合推广必须选至少一个推广产品。
   主题里 joint 推广块不看 rules,看 `product.collections`:在推广产品合集 → B 面(优先),在兼容产品合集 → A 面。
 - **促销链接**(2026-10-15,`salelink` / `cgp_sale_link`):`/collections/<合集>?onsale[=<后缀>]`。规则在 `src/sale-link.js`(纯函数,浏览器经 `/lib/sale-link.js` 共用),
   **和主题 `assets/cgp-search-app.js` 的 `SALE` 必须一致**(只要打折的 → 有货 / 最低折扣 → 「和合集平时一样」或指定排序 → 置顶放最前 → 最多几个),改一边要同步另一边。

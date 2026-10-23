@@ -1245,6 +1245,9 @@
   // ---- 编辑器 ----
   const coPromoHtml = () => `${ed.promo ? `<span class="chip chip--p">${ed.promo.image ? `<img src="${esc(ed.promo.image)}" alt="">` : ''}<span class="chip__t">${esc(ed.promo.title)}</span>${linkPair('products', ed.promo)}<button type="button" class="chip__x" data-co="unpromo" aria-label="移除">${I.x}</button></span>` : '<span class="muted">还没选</span>'}
     <button type="button" class="btn btn-sm" data-pick="promo">${ed.promo ? '换一个' : '选择产品'}</button>`;
+  // 联合推广:推广的产品可以选多个(2026-10-23 用户),app 自动把它们放进推广产品合集
+  const coPromosHtml = () => `${ed.promos.map((p, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span>${linkPair('products', p)}<button type="button" class="chip__x" data-rm="promos:${i}" aria-label="移除">${I.x}</button></span>`).join('')}
+    <button type="button" class="chipadd" data-pick="promos">${I.plus}选择产品</button>`;
   const coImgSrcHtml = (v) => (v.image ? `<span class="coimg" style="background-image:url('${esc(thumb(v.image, 120))}')"></span><span>用上传的图</span><button type="button" class="btn btn-sm btn-ghost" data-co="noimg">改回用产品主图</button>`
     : `<span class="muted">${v.promo ? '用推广产品的主图' : '没有图(选了推广的产品就用它的主图)'}</span>`);
   // 联合推广的两个合集(单选)
@@ -1255,7 +1258,7 @@
   const coCollHtml = (type) => { const c = ed[CO_COLL[type]]; const nf = ed.newColl?.[type]; const note = ed.collNote?.[type];
     if (nf != null) return `<div class="rowin"><span class="conew"><input class="inp inp--sm" data-conew="${type}" value="${esc(nf)}" placeholder="合集名称(前台会看到)"/>
       <button type="button" class="btn btn-sm btn-primary" data-co="mk${type}">建好并选上</button><button type="button" class="btn btn-sm btn-ghost" data-co="nonew" data-t="${type}">取消</button></span></div>
-      <em>${type === 'lensColl' ? '建成空的手动合集,自动套上活动页模板;产品由下面的条件自动同步进去' : '建成空的手动合集;建好后到 Shopify 后台把打折的产品加进去'}</em>`;
+      <em>${type === 'lensColl' ? '建成空的手动合集,自动套上活动页模板;产品由下面的条件自动同步进去' : '建成空的手动合集;下面选的推广产品保存后自动放进去'}</em>`;
     return `<div class="rowin">${c ? `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}<button type="button" class="chip__x" data-co="un${type}" aria-label="移除">${I.x}</button></span>` : '<span class="muted">还没选</span>'}
       <button type="button" class="btn btn-sm" data-pick="${type}">${c ? '换一个' : '选已有的'}</button>
       ${MODE === 'live' && isApprover() ? `<button type="button" class="btn btn-sm btn-ghost" data-co="new${type}">${I.plus}新建</button>` : ''}</div>
@@ -1294,14 +1297,18 @@
   }
   // 兼容产品合集最近一次同步(服务器 src/joint-sync.js:保存后马上一次,之后每小时一次)
   const coSyncLine = (x) => { const r = (S.jointSync || {})[x.id]; if (!r) return '';
-    return r.error ? `<span class="warn">同步没成功</span>` : `合集里 ${r.count} 个产品(${fDT(r.at)} 同步)`; };
+    return r.error || r.promo?.error ? `<span class="warn">同步没成功</span>` : `合集里 ${r.count} 个产品(${fDT(r.at)} 同步)`; };
   function coSyncHtml(it) {
-    if (MODE !== 'live') return '<p class="muted">演示模式不同步;正式数据里保存后会马上把命中的产品同步进这个合集。</p>';
+    if (MODE !== 'live') return '<p class="muted">演示模式不同步;正式数据里保存后会马上把推广产品、命中的兼容产品分别同步进两个合集。</p>';
     const r = (S.jointSync || {})[it.id];
     const canRun = it.id && byId(it.id)?.state === 'approved' && isApprover();
-    return `<div class="cosync ${r?.error ? 'is-err' : ''}">${!r ? '<span class="muted">还没同步过(保存上线后马上同步一次)</span>'
-      : r.error ? `<span>⚠️ ${esc(r.error)}</span>` : `<span>✓ ${fDT(r.at)} 同步:合集「${esc(r.collection?.title || '')}」现在 <b>${r.count}</b> 个产品(这次加了 ${r.added}、移出 ${r.removed})</span>`}
-      ${canRun ? `<button type="button" class="btn btn-sm" data-co="sync">立即同步</button>${r?.held ? '<button type="button" class="btn btn-sm btn-danger-t" data-co="syncforce">仍然同步</button>' : ''}` : ''}</div>`;
+    const line = (x, what) => (x.error ? `<span>⚠️ ${what}:${esc(x.error)}</span>`
+      : `<span>✓ ${what}「${esc(x.collection?.title || '')}」现在 <b>${x.count}</b> 个产品(这次加了 ${x.added}、移出 ${x.removed})</span>`);
+    const lines = !r ? ['<span class="muted">还没同步过(保存上线后马上同步一次,之后每小时一次)</span>']
+      : [...(r.promo ? [line(r.promo, '推广产品合集')] : it.promos?.length ? [] : ['<span class="muted">推广产品合集:这条是旧设置,在上面选好推广的产品保存后,app 才开始自动管</span>']),
+        line(r, '兼容产品合集'), `<span class="muted">${fDT(r.at)} 同步</span>`];
+    return `<div class="cosync ${r?.error || r?.promo?.error ? 'is-err' : ''}"><div class="cosync__lines">${lines.join('')}</div>
+      ${canRun ? `<span class="cosync__acts"><button type="button" class="btn btn-sm" data-co="sync">立即同步</button>${r?.held ? '<button type="button" class="btn btn-sm btn-danger-t" data-co="syncforce">仍然同步</button>' : ''}</span>` : ''}</div>`;
   }
   const LPS_DEFAULT = [{ t: 'Choose a compatible lens', d: '' }, { t: 'Add Smart Fusion to your cart', d: '' }, { t: 'Save at checkout automatically', d: '' }];
   const lpsHtml = () => `${ed.lpSteps.map((x, i) => `<div class="lps__row"><span class="lps__n">${i + 1}</span>
@@ -1325,17 +1332,18 @@
             ${fld('链接文字', inp('promoLinkText', it.promoLinkText, 'See compatible lenses'), '留空 = See compatible products')}</div>` : ''}
         </div>
         ${J ? fld('优惠一句话', inp('offer', it.offer, '10% OFF Smart Fusion with any compatible lens'), '两边卡片和活动页都显示。真正的折扣在 KitBundle 的加购优惠里设,数字要和这里一致') : ''}
-        <div class="fld"><span>推广的产品 <em>${J ? '兼容产品页卡片的图片默认用它的主图' : '图片和链接默认用它的'}</em></span><div class="rowin" id="co-promo">${coPromoHtml()}</div></div>
+        ${J ? '' : `<div class="fld"><span>推广的产品 <em>图片和链接默认用它的</em></span><div class="rowin" id="co-promo">${coPromoHtml()}</div></div>`}
         ${J ? '' : fld('链接(可不填)', `<input class="inp mono" name="link" value="${esc(it.link || '')}" placeholder="留空 = 推广产品的页面"/>`, '要指定款式就粘贴完整链接,如 /products/pdmovie-smart-fusion?variant=…')}
         <div class="fld"><span>图片</span><div class="rowin coimgrow"><span class="rowin" id="co-imgsrc">${coImgSrcHtml(it)}</span>
           ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>' : ''}</div>
           <input type="hidden" name="image" value="${esc(it.image || '')}"/><input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
           <em>一般不用传,直接用推广产品的主图;想换一张(比如镜头 + Smart Fusion 的合照)再上传,存进 Shopify 文件库。</em></div>`)}
-      ${J ? sec(N(), '合集和折扣', '两个合集可以选已有的,也可以在这里新建', `
+      ${J ? sec(N(), '合集和折扣', '两个合集可以选已有的,也可以在这里新建;里面的产品都由 app 自动放', `
         <div class="fld"><span>兼容产品合集 <em>也是活动页</em></span><div id="co-lensColl">${coCollHtml('lensColl')}</div>
           <em>app 按下面的条件把产品同步进去(保存后马上一次,之后每小时一次);多个牌子的镜头可以共用这一个合集</em></div>
-        <div class="fld"><span>推广产品合集 <em>打折的产品,比如 Smart Fusion</em></span><div id="co-promoColl">${coCollHtml('promoColl')}</div>
-          <em>合集里所有产品、所有选项都参与;它们的页面显示「推广产品页上的卡片」</em></div>
+        <div class="fld"><span>推广产品合集 <em>打折的产品,比如 Smart Fusion</em></span><div id="co-promoColl">${coCollHtml('promoColl')}</div></div>
+        <div class="fld"><span>推广的产品 <em>可以多选,比如 Smart Fusion 和它的套装</em></span><div class="chips" id="co-promos">${coPromosHtml()}</div>
+          <em>app 自动把它们放进推广产品合集(合集里多出来的会移出),所有选项都参与;它们的页面显示「推广产品页上的卡片」;第一个的主图是兼容产品页卡片的默认图</em></div>
         <div id="co-sync">${coSyncHtml(it)}</div>
         <div class="fld"><span>折扣 <em>在 KitBundle 结账时自动打,每件兼容产品配 1 件推广产品</em></span><div id="co-deal">${coDealHtml(it)}</div></div>`) : ''}
       ${sec(N(), J ? '兼容产品(按条件)' : '放在哪些产品', '按条件自动算,以后新上架的产品符合条件就自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
@@ -1396,7 +1404,7 @@
     coRes = 'loading';
     coTimer = setTimeout(async () => {
       try {
-        const r = await api('POST', '/api/schedule/callout-scope', { rules: coRulesOf(mine), products: mine.products, exProducts: mine.exProducts, promo: mine.promo });
+        const r = await api('POST', '/api/schedule/callout-scope', { rules: coRulesOf(mine), products: mine.products, exProducts: mine.exProducts, promo: mine.promo, promos: $('#ed-form [name="joint"]')?.checked ? mine.promos : [] });
         if (ed !== mine) return; coRes = r;
       } catch (e) { if (ed !== mine) return; coRes = { error: e.message || String(e) }; }
       const sum = $('#ed-scope .scope__sum'); if (sum) sum.innerHTML = coSumHtml();
@@ -3639,7 +3647,7 @@
 
   // 合集 / 产品选择器。在 Shopify 后台里打开时优先用 Shopify 自带的选择器(真实数据、可搜全店)
   async function pick(type) {
-    // type:collections / products / exProducts(推广块排除的产品)/ promo(推广块推广的那一个产品,单选)
+    // type:collections / products / exProducts(推广块排除的产品)/ promo(推广块推广的那一个产品,单选)/ promos(联合推广的推广产品,多选)
     //   rule:<i>(推广块第 i 条「合集」条件的值)
     const ri = type.startsWith('rule:') ? +type.slice(5) : null;
     const c1 = CO_COLL[type]; // 联合推广的两个合集(单选)
@@ -3701,7 +3709,7 @@
   }
   function refreshScope(fromCounts) {
     const el = $('#ed-scope'); if (!el) return;
-    if (ed.co) { fetchCoScope(); el.innerHTML = coScopeHtml(); $('#ed-form').dispatchEvent(new Event('change')); return; } // 产品页推广块
+    if (ed.co) { const pe = $('#co-promos'); if (pe) pe.innerHTML = coPromosHtml(); fetchCoScope(); el.innerHTML = coScopeHtml(); $('#ed-form').dispatchEvent(new Event('change')); return; } // 产品页推广块
     if (!fromCounts) delete ed.counts;
     el.innerHTML = scopeHtml(); $('#ed-form').dispatchEvent(new Event('change'));
     if (!fromCounts) fetchCounts();
@@ -3769,6 +3777,7 @@
       v.link = String(v.link || '').trim(); if (g('priority')) v.priority = +g('priority').value || 0;
       const slimC = (c) => (c ? { id: c.id, handle: c.handle, title: c.title } : null);
       v.joint = !!g('joint')?.checked;
+      if (v.joint) { v.promos = ed.promos.map(slim); v.promo = v.promos[0] || null; } else v.promos = []; // 联合推广:推广的产品多选,第一个兼当 promo(卡片默认图)
       v.lensCollection = slimC(ed.lensCollection); v.promoCollection = slimC(ed.promoCollection); v.dealPct = ed.dealPct || 10;
       v.lpSteps = ed.lpSteps.filter((x) => x.t.trim()).map((x) => ({ t: x.t.trim(), d: x.d.trim() }));
     }
@@ -3832,7 +3841,7 @@
     // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
     const base = { ...it, ...(it.pendingChange && !canAppr(it) ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])],
-      co: base.kind === 'callout', vendors: [], exProducts: [...(base.exProducts || [])], exTags: [], promo: base.promo || null, rules: [], coLegacy: false,
+      co: base.kind === 'callout', vendors: [], exProducts: [...(base.exProducts || [])], exTags: [], promo: base.promo || null, promos: [...(base.promos?.length ? base.promos : base.promo ? [base.promo] : [])], rules: [], coLegacy: false,
       lensCollection: base.lensCollection || null, promoCollection: base.promoCollection || null, dealPct: base.dealPct || 10, newColl: {}, collNote: {}, __it: base,
       lpSteps: (base.lpSteps && base.lpSteps.length ? base.lpSteps : base.joint ? [] : LPS_DEFAULT).map((x) => ({ t: x.t || '', d: x.d || '' })) };
     coRes = null;
@@ -3932,6 +3941,8 @@
       f.addEventListener('change', (e) => {
         if (e.target.name !== 'joint') return;
         if (e.target.checked && !ed.lpSteps.length) ed.lpSteps = LPS_DEFAULT.map((x) => ({ ...x }));
+        if (e.target.checked && !ed.promos.length && ed.promo) ed.promos = [ed.promo]; // 单个 ↔ 多个 推广产品互相带过去
+        if (!e.target.checked && !ed.promo && ed.promos.length) ed.promo = ed.promos[0];
         rerenderCo();
       });
       f.addEventListener('input', (e) => { // 新建合集的名称 / 折扣百分比
@@ -4322,8 +4333,8 @@
           api('POST', '/api/schedule/collection-create', { title, landing: t === 'lensColl' }).then((r) => {
             ed[CO_COLL[t]] = { id: r.collection.id, handle: r.collection.handle, title: r.collection.title }; delete ed.newColl[t];
             const adminUrl = `${ADMIN()}/collections/${numId(r.collection.id)}`;
-            ed.collNote[t] = r.published ? { ok: true, html: `✓ 已建好并发布到网店${t === 'promoColl' ? ` · <a class="lk" href="${esc(adminUrl)}" target="_blank" rel="noopener">去加产品↗</a>` : ''}` }
-              : { ok: false, html: `已建好 · 还没发布到网店(${esc(r.why || '')}) <a class="lk" href="${esc(adminUrl)}" target="_blank" rel="noopener">去后台勾选「网店」${t === 'promoColl' ? '、加产品' : ''}↗</a>` };
+            ed.collNote[t] = r.published ? { ok: true, html: '✓ 已建好并发布到网店,保存后 app 自动把产品放进去' }
+              : { ok: false, html: `已建好 · 还没发布到网店(${esc(r.why || '')}) <a class="lk" href="${esc(adminUrl)}" target="_blank" rel="noopener">去后台勾选「网店」↗</a>` };
             $(`#co-${t}`).innerHTML = coCollHtml(t); $('#co-deal').innerHTML = coDealHtml(base);
             toast(`合集「${r.collection.title}」已建好${r.published ? '' : ',还要在后台发布到网店'}`, r.published);
             $('#ed-form').dispatchEvent(new Event('change'));
@@ -4337,7 +4348,8 @@
           co.disabled = true; co.textContent = '同步中…';
           api('POST', '/api/schedule/joint-sync', { id: base.id, force: a === 'syncforce' }).then((r) => {
             S.jointSync = r.jointSync; const box = $('#co-sync'); if (box) box.innerHTML = coSyncHtml(base);
-            toast(r.rep.error ? r.rep.error : `已同步:加了 ${r.rep.added} 个、移出 ${r.rep.removed} 个,合集里现在 ${r.rep.count} 个`, !r.rep.error);
+            const bad = r.rep.error || r.rep.promo?.error;
+            toast(bad || `已同步${r.rep.promo ? ` · 推广产品合集现在 ${r.rep.promo.count} 个` : ''} · 兼容产品合集加了 ${r.rep.added} 个、移出 ${r.rep.removed} 个,现在 ${r.rep.count} 个`, !bad);
           }).catch((err) => { toast(err.message, false); co.disabled = false; co.textContent = '立即同步'; });
           return;
         }
@@ -4386,8 +4398,10 @@
       if (mode === 'publish') {
         const saved = byId(it.id); const st2 = saved ? status(saved) : '';
         const col = colSay(r.colRep, saved?.collection?.id);
-        if (r.jointRep) col.push(r.jointRep.error ? `⚠️ 兼容产品合集没同步:${r.jointRep.error}` : `🔁 兼容产品合集「${r.jointRep.collection?.title || ''}」现在 ${r.jointRep.count} 个产品(加了 ${r.jointRep.added}、移出 ${r.jointRep.removed})`);
-        toast([st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`, ...col].join(' · '), !(r.colRep?.failures?.length) && !r.jointRep?.error);
+        const jrep = (x, what) => (x.error ? `⚠️ ${what}没同步:${x.error}` : `🔁 ${what}「${x.collection?.title || ''}」现在 ${x.count} 个产品(加了 ${x.added}、移出 ${x.removed})`);
+        if (r.jointRep?.promo) col.push(jrep(r.jointRep.promo, '推广产品合集'));
+        if (r.jointRep) col.push(jrep(r.jointRep, '兼容产品合集'));
+        toast([st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`, ...col].join(' · '), !(r.colRep?.failures?.length) && !r.jointRep?.error && !r.jointRep?.promo?.error);
       } else toast(mode === 'submit' ? `已提交给「${apprName({ ...it, ...v })}」审批${MODE === 'live' ? ' · 已私信通知' : '(演示)'}` : '已存草稿');
     }
   }

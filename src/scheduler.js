@@ -11,7 +11,7 @@ import { getToken } from './token-store.js';
 import { withLock } from './sync.js';
 import { schedulerMessages, digestMessages, deliver, schedulerDMs, deliverDMs } from './notifier.js';
 import { alignCollections } from './collection-order.js';
-import { syncAllJoint } from './joint-sync.js';
+import { syncAllJoint, syncNotes } from './joint-sync.js';
 import { historyRecorder } from './col-history.js';
 import { graphql } from './shopify.js';
 
@@ -74,8 +74,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     if (token) {
       try {
         for (const r of await syncAllJoint({ shop, token }, state, { gql, now })) {
-          if (r.error) appendLog(state, { at: now, action: 'failure', kind: 'callout', title: r.name, note: `同步兼容产品合集:${r.error}`, by: '定时器' });
-          else if (r.added || r.removed) appendLog(state, { at: now, action: 'edit', kind: 'callout', title: r.name, note: `兼容产品合集「${r.collection.title}」:加了 ${r.added} 个、移出 ${r.removed} 个,现在 ${r.count} 个`, by: '定时器' });
+          for (const x of syncNotes(r)) appendLog(state, { at: now, action: x.failed ? 'failure' : 'edit', kind: 'callout', title: r.name, note: x.note, by: '定时器' });
         }
       } catch (e) { appendLog(state, { at: now, action: 'failure', kind: 'callout', title: '联合推广', note: String(e.message || e), by: '定时器' }); }
     }
