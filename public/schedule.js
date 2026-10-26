@@ -1719,6 +1719,7 @@
   }
   // 这个合集还没结束的促销链接(2026-10-26 用户:看不出促销链接的置顶和合集排序是什么关系)
   //   排序留空(和合集平时一样)= 链接里打折的产品沿用合集排序清单的顺序,链接自己固定的排在更前面;选了别的排序 = 不跟合集排序
+  const SL_MAX_FIXED = 50; // 促销链接最多固定前 50 个(app 只往店里写前 50 个,主题一次只读得到 50 个)
   const salesOf = (cid) => (S.salelinks || []).filter((x) => x.collection && numId(x.collection.id) === numId(cid) && !['ended', 'rejected'].includes(status(x)));
   // 置顶清单编辑器第 1 段:这个合集的促销链接各自跟不跟这份清单
   function wxSlHtml() {
@@ -1728,20 +1729,22 @@
     // 这份清单(正在编辑的样子)排在前面的产品
     const mine = wxBase.length ? OD.minimalPrefix(wxBase, wx.order.map(pidOf)) : [];
     return `<div class="slrel">${links.map((x) => {
-      const fixed = new Set((x.products || []).map((p) => numId(p.id))); const k = fixed.size;
+      const all = (x.products || []).length;
+      const fixed = new Set((x.products || []).slice(0, SL_MAX_FIXED).map((p) => numId(p.id))); const k = fixed.size; // 网站只认前 50 个
+      const over = all > SL_MAX_FIXED ? `(链接里排了 ${all} 个,但网站只认前 ${SL_MAX_FIXED} 个;第 ${SL_MAX_FIXED + 1} 个以后和其余打折产品一样按这份清单排)` : '';
       const both = mine.filter((id) => fixed.has(String(id))).length;
       return `<div class="slrel__i"><span class="slrel__t">${badge(x)}<b>${esc(titleOf(x))}</b><span class="mono muted">?onsale${x.slug ? `=${esc(x.slug)}` : ''}</span></span>
         <span class="slrel__w">${x.sort
           ? `<span class="tag">不受这份清单影响</span>链接用自己的排序「${esc(SORT_LABEL()[x.sort] || x.sort)}」${k ? `,另外自己排好了 ${k} 个` : ''},这份清单改不到它`
           : !k ? '<span class="tag tag--accent">按这份清单排</span>链接自己没排位置,所以链接里<b>打折的</b>产品按这份清单的顺序排(没打折的不会出现在链接里)'
-            : `<span class="tag tag--accent">促销链接优先</span>链接自己排好的 <b>${k} 个排最前,这份清单改不动它们</b>;链接没排到的其余打折产品,才按这份清单的顺序接在后面${both ? `(这份清单排的产品里有 ${both} 个也在链接排好的里面,在链接里按链接的位置)` : ''}`}</span>
+            : `<span class="tag tag--accent">促销链接优先</span>链接自己排好的${all > SL_MAX_FIXED ? '前' : ''} <b>${k} 个排最前,这份清单改不动它们</b>;其余打折产品,才按这份清单的顺序接在后面${over}${both ? `。这份清单排的产品里有 ${both} 个也在链接排好的里面,在链接里按链接的位置` : ''}`}</span>
         <button type="button" class="btn btn-sm btn-ghost" data-wx="opensl" data-id="${esc(x.id)}">打开</button></div>`;
     }).join('')}</div>`;
   }
   // 促销链接预览上面:顾客看到的顺序怎么来的(三层,和 sale-link.js 的 saleView 同一个顺序)
   function slSrcHtml(c, v, d, view, pinned) {
     const ap = activePin(numId(c.id));
-    const k = pinned.size;
+    const k = Math.min(pinned.size, SL_MAX_FIXED); const over = pinned.size - k;
     const follow = !v.sort;
     const apIds = new Set(follow && ap ? (ap.products || []).map((p) => numId(p.id)) : []);
     const fromList = view.list.filter((p) => apIds.has(numId(p.id)) && !pinned.has(numId(p.id))).length;
@@ -1750,7 +1753,7 @@
     const rule = r.off ? '按 Collection 后台的顺序' : CS.describe({ ...r, sortOrder: 'MANUAL' });
     const li = (n, body, cls = '') => `<li class="slsrc__i${cls}"><i>${n}</i><div>${body}</div></li>`;
     return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序(1 最优先,2 其次,3 最后)</li>
-      ${li(1, `<b>这条链接固定的</b> ${k ? `${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
+      ${li(1, `<b>这条链接固定的</b> ${k ? `${over ? '前 ' : ''}${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框${over ? `<span class="warn">;你排的第 ${SL_MAX_FIXED + 1}–${SL_MAX_FIXED + over} 个网站不认,顾客看到的是按第 2、3 层排</span>` : ''}` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
       ${li(2, follow
         ? ap ? `<b>Collection 排序清单「${esc(titleOf(ap))}」</b>里打折的 ${fromList} 个 <span class="slsrc__lg slsrc__lg--list"></span>蓝框<em>${win(ap).end != null ? `到 ${fDT(win(ap).end)} 结束,之后这一层就没有了` : '长期生效'};要改在「Collection 排序」里改 <button type="button" class="linkbtn" data-sl="openpin" data-id="${esc(ap.id)}">打开这份清单</button></em>`
           : `<b>Collection 排序清单</b> <span class="muted">这一刻没有生效的</span>${next ? `<em>「${esc(titleOf(next))}」${fDT(win(next).start)} 开始,到时这里会跟着变</em>` : ''}`
@@ -2027,8 +2030,8 @@
             ${sf ? `<span class="tag tag--accent" title="「${esc(pinNm(sf))}」生效期间 Collection 页完全按清单顺序显示,结束自动恢复默认设置">完全按清单顺序</span>` : ''}
             ${!act ? '<span class="muted">这一刻没有清单生效</span>' : ''}
             ${used.length ? `<span class="muted" title="${esc(used.map((u) => `首页「${u}」`).join('、'))}也用这个 Collection">首页${esc(used[0])}${used.length > 1 ? ` 等 ${used.length} 个页签` : ''}也用</span>` : ''}
-            ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${x.sort ? '用自己的排序,不受这里的清单影响' : (x.products || []).length ? `促销链接优先:自己排好的 ${(x.products || []).length} 个排最前,其余打折的按这里的清单` : '打折的产品按这里的清单排'}`).join('\n'))}">${slFollow.length === 1
-              ? ((slFollow[0].products || []).length ? `促销链接「${esc(titleOf(slFollow[0]))}」:自己排好的 ${(slFollow[0].products || []).length} 个优先,其余按这里的清单` : `促销链接「${esc(titleOf(slFollow[0]))}」按这里的清单排`)
+            ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${x.sort ? '用自己的排序,不受这里的清单影响' : (x.products || []).length ? `促销链接优先:自己排好的 ${Math.min((x.products || []).length, SL_MAX_FIXED)} 个排最前,其余打折的按这里的清单` : '打折的产品按这里的清单排'}`).join('\n'))}">${slFollow.length === 1
+              ? ((slFollow[0].products || []).length ? `促销链接「${esc(titleOf(slFollow[0]))}」:自己排好的 ${Math.min((slFollow[0].products || []).length, SL_MAX_FIXED)} 个优先,其余按这里的清单` : `促销链接「${esc(titleOf(slFollow[0]))}」按这里的清单排`)
               : slFollow.length ? `${slFollow.length} 条促销链接:各自排好的优先,其余按这里的清单` : `${sls.length} 条促销链接用自己的排序`}</span>` : ''}
             ${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm btn-ghost" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本</button></span>` : ''}</div>
           ${cs?.hold ? `<div class="note note--warn note--sm"><div>有人在 Shopify 后台改过这个 Collection 的顺序(「${esc(pinNm(cs))}」排在最前的产品被挪动了),<b>app 先停手</b>,没有覆盖。选一个:</div>

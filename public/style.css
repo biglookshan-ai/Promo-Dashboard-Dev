@@ -1890,3 +1890,4 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .cokit__t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cokit__rec { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted, #5d6066); white-space: nowrap; cursor: pointer; }
 .cokits > .btn { align-self: flex-start; }
+.slsrc .warn { color: var(--danger); }
