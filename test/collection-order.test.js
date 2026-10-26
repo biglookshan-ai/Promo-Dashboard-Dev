@@ -144,6 +144,44 @@ test('整轮:有人在后台手动改过 → 暂停接管,不覆盖(刚写完的
   assert.equal(r2.holds.length, 1); assert.equal(r2.applied.length, 0);
 });
 
+test('暂停后选「保留后台的改动」:清单剩下的时间不再排,结束只复原加 / 移出的产品,顺序保持人排的(2026-10-26 修:以前下一分钟又重新接管)', async () => {
+  const shop = fakeShop();
+  const p = pin({ products: [P(4), P(2)], hidden: [P(5)], start: 1000, end: 60 * 60_000 });
+  const state = stateWith(p);
+  await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  assert.deepEqual(shop.ids, ['4', '2', '1', '3']);           // 5 临时移出
+  shop.ids = ['1', '4', '2', '3'];                            // 同事把 1 拖到最前
+  await alignCollections({}, state, { now: 5 * 60_000, gql: shop.gql });
+  assert.equal(state.colState['99'].hold, 'manual');
+  // = POST /col-hold { release: true }
+  delete state.colState['99'].hold; state.colState['99'].released = 6 * 60_000;
+  const r = await alignCollections({}, state, { now: 7 * 60_000, gql: shop.gql });
+  assert.equal(r.applied.length, 0); assert.equal(r.skipped[0].why, 'released');
+  assert.deepEqual(shop.ids, ['1', '4', '2', '3']);           // 没被排回去
+  // 清单结束:5 加回来,顺序不照接管前的快照还原
+  const r2 = await alignCollections({}, state, { now: 61 * 60_000, gql: shop.gql });
+  assert.equal(r2.restored.length, 1); assert.equal(r2.restored[0].keptOrder, true);
+  assert.deepEqual(shop.ids, ['1', '4', '2', '3', '5']);
+  assert.equal(state.colState['99'], undefined);
+});
+
+test('保留后台的改动之后又改了清单内容 → 重新按清单排(以现在的顺序为底)', async () => {
+  const shop = fakeShop();
+  const p = pin({ products: [P(4)], start: 1000, end: 60 * 60_000 });
+  const state = stateWith(p);
+  await alignCollections({}, state, { now: 1500, gql: shop.gql });
+  shop.ids = ['3', '4', '1', '2', '5'];
+  await alignCollections({}, state, { now: 5 * 60_000, gql: shop.gql });
+  delete state.colState['99'].hold; state.colState['99'].released = 6 * 60_000;
+  p.products = [P(5)];                                        // 改了清单再保存
+  const r = await alignCollections({}, state, { now: 7 * 60_000, gql: shop.gql });
+  assert.equal(r.applied.length, 1);
+  assert.deepEqual(shop.ids, ['5', '3', '4', '1', '2']);
+  assert.equal(state.colState['99'].released, undefined);
+  await alignCollections({}, state, { now: 61 * 60_000, gql: shop.gql });
+  assert.deepEqual(shop.ids, ['3', '4', '1', '2', '5']);      // 结束还原成「交回后台时」的顺序
+});
+
 test('不是「手动」排序的 Collection:不动店里的,交给前台排', async () => {
   for (const o of [{ sortOrder: 'BEST_SELLING' }, { sortOrder: 'BEST_SELLING', automated: true }]) {
     const shop = fakeShop(o);

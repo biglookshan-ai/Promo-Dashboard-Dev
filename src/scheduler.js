@@ -22,7 +22,7 @@ export function logColReport(state, col, by, now = Date.now()) {
   for (const a of col.applied) appendLog(state, { at: now, action: 'up', kind: 'pin', title: a.title, by,
     note: `按「${a.pin}」排了店里的 Collection:${a.moved} 个产品换位置${a.added ? `、${a.added} 个加进 Collection` : ''}${a.removed ? `、${a.removed} 个临时移出` : ''}${a.back ? `、${a.back} 个加回来` : ''}` });
   for (const r of col.restored) appendLog(state, { at: now, action: 'down', kind: 'pin', title: r.title, by,
-    note: `「${r.pin}」结束,Collection 顺序已还原${r.added ? `(${r.added} 个产品加回 Collection)` : ''}` });
+    note: `「${r.pin}」结束,${r.keptOrder ? 'Collection 顺序保持后台改过的样子(之前选了保留)' : 'Collection 顺序已还原'}${r.added ? `(${r.added} 个产品加回 Collection)` : ''}` });
   for (const h of col.holds) if (h.fresh) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: h.title, by,
     note: '有人在 Shopify 后台手动改过这个 Collection 的顺序 —— 已暂停接管,不覆盖别人的改动' });
   for (const f of col.failures) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: f.collection || 'Collection 排序', note: f.message, by });

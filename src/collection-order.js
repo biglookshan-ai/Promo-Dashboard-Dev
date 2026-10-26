@@ -194,6 +194,8 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
     const st = state.colState[cid] || null;
     if (!pin && !st) continue;
     if (st?.hold) { rep.holds.push({ collection: cid, title: st.title, reason: st.hold, pin: st.pinName }); continue; } // 已经暂停接管的不再动
+    // 点了「保留后台的改动」(released):这份清单内容没改、还在生效 → 不再碰顺序(2026-10-26 修:以前删掉状态,下一分钟又重新接管排回去)
+    if (st?.released && pin && pin.id === st.pinId && st.signature === sig(pin)) { rep.skipped.push({ collection: cid, title: st.title, pin: st.pinName, why: 'released' }); continue; }
     try {
       const col = await readCollection(ctx, cid, gql);
       if (!col) { delete state.colState[cid]; continue; }
@@ -213,7 +215,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
           needsNewApi: !NEW_COLLECTIONS && col.automated,
         };
         const realPin = front ? { ...pin, hidden: [], onlyListed: false, products: (pin.products || []).filter((p) => col.ids.includes(nid(p.id))) } : pin;
-        const snapshot = st?.snapshot || col.ids;            // 第一次接管:先记下原始顺序
+        const snapshot = st?.released ? col.ids : (st?.snapshot || col.ids); // 第一次接管:先记下原始顺序;交回过后台的,以现在的顺序为准
         const same = st && st.pinId === pin.id && st.signature === sig(pin);
         if (same) {
           if (st.pending) {
@@ -277,15 +279,16 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
         const done = settled(undoRemoved, undoAdded, col2.ids); // 放回来的都在了、拿掉的都不在了
         if (!done && st.restoring && now - st.restoring <= SETTLE_MS) continue; // Shopify 还在算,下一轮再排
         const stillAdded = undoAdded.filter((id) => col2.ids.includes(id));
-        const back = restoreOrder(st.snapshot, col2.ids.filter((id) => !stillAdded.includes(id)));
+        // 交回过后台的(released):顺序保持人排的样子,只把临时加进 / 移出的产品复原
+        const back = st.released ? col2.ids.filter((id) => !stillAdded.includes(id)) : restoreOrder(st.snapshot, col2.ids.filter((id) => !stillAdded.includes(id)));
         const mv = movesFor(col2.ids, [...back, ...stillAdded]);
         await reorder(ctx, cid, mv, gql);
         if (!done && !st.restoring) { // 第一次还原、Shopify 还没算完:记下来,下一轮再排一次
           Object.assign(st, { restoring: now, undoAdded, undoRemoved, added: [], removed: [], pinId: null });
           continue;
         }
-        record(cid, back, { why: `「${st.pinName}」结束,还原`, title: col.title, pin: st.pinName });
-        rep.restored.push({ collection: cid, title: col.title, pin: st.pinName, moved: mv.length, added: undoRemoved.length, removed: undoAdded.length });
+        record(cid, back, { why: st.released ? `「${st.pinName}」结束(顺序之前交回给后台,只复原加 / 移出的产品)` : `「${st.pinName}」结束,还原`, title: col.title, pin: st.pinName });
+        rep.restored.push({ collection: cid, title: col.title, pin: st.pinName, moved: mv.length, added: undoRemoved.length, removed: undoAdded.length, ...(st.released ? { keptOrder: true } : {}) });
         delete state.colState[cid];
       }
     } catch (e) {

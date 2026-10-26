@@ -1676,12 +1676,16 @@
     if (!wx?.collection) return '<span class="muted">先选 Collection</span>';
     const links = salesOf(wx.collection.id);
     if (!links.length) return '<span class="muted">没有 —— 这份清单只管 Collection 本来那一页</span>';
+    // 这份清单(正在编辑的样子)排在前面的产品
+    const mine = wxBase.length ? OD.minimalPrefix(wxBase, wx.order.map(pidOf)) : [];
     return `<div class="slrel">${links.map((x) => {
-      const k = (x.products || []).length;
+      const fixed = new Set((x.products || []).map((p) => numId(p.id))); const k = fixed.size;
+      const both = mine.filter((id) => fixed.has(String(id))).length;
       return `<div class="slrel__i"><span class="slrel__t">${badge(x)}<b>${esc(titleOf(x))}</b><span class="mono muted">?onsale${x.slug ? `=${esc(x.slug)}` : ''}</span></span>
-        <span class="slrel__w">${!x.sort
-          ? `<span class="tag tag--accent">跟着这里的顺序</span>这份清单生效时,链接里<b>打折的</b>产品也照这里排${k ? `;链接自己固定的 ${k} 个排在它们前面` : ''}`
-          : `<span class="tag">不受这里影响</span>链接用自己的排序「${esc(SORT_LABEL()[x.sort] || x.sort)}」${k ? `,另外固定了 ${k} 个` : ''}`}</span>
+        <span class="slrel__w">${x.sort
+          ? `<span class="tag">不受这里影响</span>链接用自己的排序「${esc(SORT_LABEL()[x.sort] || x.sort)}」${k ? `,另外自己排好了 ${k} 个` : ''}`
+          : !k ? '<span class="tag tag--accent">跟着这里的顺序</span>这份清单生效时,链接里<b>打折的</b>产品也照这里排(没打折的不会出现在链接里)'
+            : `<span class="tag tag--accent">只影响后面的</span>链接自己排好的 <b>${k} 个位置不会被这份清单改动</b>,永远排最前;这份清单只决定排在它们后面、链接没排到的其余打折产品${mine.length ? `(清单排的 ${mine.length} 个里有 ${both} 个已经在链接排好的里面,按链接的位置)` : ''}`}</span>
         <button type="button" class="btn btn-sm btn-ghost" data-wx="opensl" data-id="${esc(x.id)}">打开</button></div>`;
     }).join('')}</div>`;
   }
@@ -1969,15 +1973,20 @@
         const st0 = (p) => win(p).start ?? 0;
         return `<div class="ilist pngroup">
           <div class="ilist__grp pngrp"><b>${esc(g.title)}</b>
-            ${cs && !cs.hold ? `<span class="tag tag--ok" title="店里这个 Collection 现在真的按「${esc(pinNm(cs))}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了 Collection` : ''};结束会自动还原成接管前的顺序">店里已按清单排好</span>` : ''}
+            ${cs?.released ? `<span class="tag" title="之前选了保留后台改过的顺序:「${esc(pinNm(cs))}」剩下的时间 app 不再排这个 Collection,结束时也不还原顺序(临时加 / 移出的产品照样复原)">顺序交给后台了</span>` : ''}
+            ${cs && !cs.hold && !cs.released ? `<span class="tag tag--ok" title="店里这个 Collection 现在真的按「${esc(pinNm(cs))}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了 Collection` : ''};结束会自动还原成接管前的顺序">店里已按清单排好</span>` : ''}
             ${sf ? `<span class="tag tag--accent" title="「${esc(pinNm(sf))}」生效期间 Collection 页完全按清单顺序显示,结束自动恢复默认设置">完全按清单顺序</span>` : ''}
             ${!act ? '<span class="muted">这一刻没有清单生效</span>' : ''}
             ${used.length ? `<span class="muted" title="${esc(used.map((u) => `首页「${u}」`).join('、'))}也用这个 Collection">首页${esc(used[0])}${used.length > 1 ? ` 等 ${used.length} 个页签` : ''}也用</span>` : ''}
-            ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${x.sort ? '用自己的排序,不跟这里' : '跟着这里的顺序(只看打折的)'}`).join('\n'))}">${slFollow.length ? `促销链接${slFollow.length === 1 ? `「${esc(titleOf(slFollow[0]))}」` : ` ${slFollow.length} 条`}也跟着这个顺序` : `${sls.length} 条促销链接用自己的排序`}</span>` : ''}
+            ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${x.sort ? '用自己的排序,不跟这里' : (x.products || []).length ? `自己排好的 ${(x.products || []).length} 个不受影响,后面其余打折的跟着这里` : '打折的产品跟着这里的顺序'}`).join('\n'))}">${slFollow.length === 1
+              ? `促销链接「${esc(titleOf(slFollow[0]))}」${(slFollow[0].products || []).length ? `排好的 ${(slFollow[0].products || []).length} 个之后` : ''}跟着这个顺序`
+              : slFollow.length ? `${slFollow.length} 条促销链接跟着这个顺序(链接自己排好的除外)` : `${sls.length} 条促销链接用自己的排序`}</span>` : ''}
             ${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm btn-ghost" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本</button></span>` : ''}</div>
-          ${cs?.hold ? `<div class="note note--warn note--sm">有人在 Shopify 后台手动改过这个 Collection 的顺序,<b>app 已经停手</b>,不会覆盖别人的改动。
-              <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按清单重新排</button>
-              <button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">就用现在的,别管了</button></div>` : ''}
+          ${cs?.hold ? `<div class="note note--warn note--sm"><div>有人在 Shopify 后台改过这个 Collection 的顺序(「${esc(pinNm(cs))}」排在最前的产品被挪动了),<b>app 先停手</b>,没有覆盖。选一个:</div>
+              <div class="holdopts"><button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按清单重新排</button><span class="muted">后台的改动会被清单盖掉,清单结束照常还原</span></div>
+              <div class="holdopts"><button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">保留后台的改动</button><span class="muted">这份清单剩下的时间不再排;结束时顺序也不还原,只把临时加 / 移出的产品复原</span></div></div>` : ''}
+          ${cs?.released && act && numId(act.id) === numId(cs.pinId) ? `<div class="note note--sm">「${esc(pinNm(cs))}」生效中,但顺序已经交给后台(之前选了保留后台的改动),app 不再排。
+              <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">改回按清单排</button></div>` : ''}
           ${live.length > 1 ? `<div class="note note--warn note--sm">这一刻有 ${live.length} 份清单同时生效,${live.filter((p) => st0(p) === st0(act)).length > 1
             ? '而且开始时间一样,<b>前台和店里可能各用一份,顺序会打架</b> —— 请暂停不用的那份,或者给它们设不同的开始时间。'
             : `只有开始最晚的「${esc(titleOf(act))}」会用上。不需要的可以暂停或删掉。`}</div>` : ''}
@@ -2018,7 +2027,7 @@
       b.disabled = true;
       try {
         await api('POST', '/api/schedule/col-hold', { collection: release ? b.dataset.colrelease : b.dataset.colhold, release });
-        await load(); renderAll(); toast(release ? '好,这个 Collection 的顺序交回给你' : '好,下一分钟按清单重新排');
+        await load(); renderAll(); toast(release ? '好,保留后台的顺序:这份清单剩下的时间不再排' : '好,下一分钟按清单重新排');
       } catch (e) { toast(e.message, false); b.disabled = false; }
     }));
     $$('#pn-root [data-pindup]').forEach((b) => b.addEventListener('click', (e) => {
@@ -3376,7 +3385,8 @@
           : wxAll ? `<div class="pgcol">${!wxAll.manualOk || !canWrite() || (realMember && removeN > 100) ? `<span class="tag tag--warn" title="Shopify 后台里这个 Collection 的顺序不会变,只在网站前台按你排的显示">只在网站前台排序</span>` : ''}
               ${!wxAll.manualOk && S.themePin === false ? '<span class="tag tag--danger">正在用的主题还没装前台排序代码</span>' : ''}
               <span class="tag">共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(只列出前 ${wxAll.products.length} 个)` : ''}</span>
-              ${wxAll.takenBy ? `<span class="tag tag--accent">现在由「${esc(pinNm(wxAll.takenBy))}」接管</span>` : ''}
+              ${wxAll.takenBy ? (wxAll.takenBy.released ? `<span class="tag" title="之前选了保留后台改过的顺序,app 不再排;改了清单内容再保存就会重新排">「${esc(pinNm(wxAll.takenBy))}」的顺序已交给后台</span>`
+                : `<span class="tag tag--accent">现在由「${esc(pinNm(wxAll.takenBy))}」接管</span>`) : ''}
               ${how(`${!wxAll.manualOk
             ? `这个 Collection 现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的 Collection 调顺序,所以这份清单<b>用前台排序</b>:后台里的顺序不会变,顾客看到的 Collection 页和首页模块按你排的显示。想让后台也变,在 Shopify 后台把这个 Collection 的排序改成「手动」(带条件的 Collection 也可以)。`
             : !canWrite() ? '手动排序的 Collection,但 app 现在<b>没有「改产品 / Collection」的权限</b> —— 先用前台排序;装上权限后就会真的改店里的 Collection。'
@@ -4462,11 +4472,11 @@
   function colSay(rep, onlyCol) { // onlyCol:只说这个合集的(保存某份清单时,别把其他合集的情况也念一遍)
     if (!rep) return [];
     if (onlyCol) { const k = numId(onlyCol); const f = (x) => !x.collection || numId(x.collection) === k; rep = { applied: rep.applied.filter(f), restored: rep.restored.filter(f), skipped: rep.skipped.filter(f), holds: rep.holds.filter(f), failures: rep.failures.filter(f), sortOn: (rep.sortOn || []).filter(f), sortOff: (rep.sortOff || []).filter(f) }; }
-    const WHY = { 'too-many': '要临时移出的产品太多,改用前台排序(店里的 Collection 不动)', 'no-scope': 'app 还没有「改产品 / Collection」的权限' };
+    const WHY = { 'too-many': '要临时移出的产品太多,改用前台排序(店里的 Collection 不动)', 'no-scope': 'app 还没有「改产品 / Collection」的权限', released: '之前选了保留后台改过的顺序,这份清单剩下的时间 app 不再排(改了清单内容再保存就会重新排)' };
     const sortWhy = (x) => `这个 Collection 的排序方式是「${SORT_CN[String(x.why).slice(5)] || String(x.why).slice(5)}」,不是「手动」→ 后台顺序没法改,只在前台按你排的显示(在 Shopify 后台把排序改成「手动」就能真的改)`;
     return [
       ...rep.applied.map((x) => `✅ 店里的「${x.title}」已按「${x.pin}」排好:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了 Collection` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}${x.front?.hidden ? `;${x.front.hidden} 个「不显示」的由前台隐藏(产品还在 Collection 里)` : ''}${x.front?.outside ? `;${x.front.outside} 个 Collection 外的产品加不进去(要先在后台单独加进 Collection)` : ''}${x.front?.needsNewApi && (x.front.hidden || x.front.outside) ? '。把 API 版本升到 2026-07,app 就能直接改带条件的 Collection' : ''}${x.pending ? ';加进 / 排除的产品 Shopify 还在后台生效中,生效后会自动把顺序排好' : ''}`),
-      ...rep.restored.map((x) => `↩️ 「${x.title}」已还原成接管前的顺序`),
+      ...rep.restored.map((x) => (x.keptOrder ? `↩️ 「${x.title}」清单结束:顺序保持后台改过的样子,临时加 / 移出的产品已复原` : `↩️ 「${x.title}」已还原成接管前的顺序`)),
       ...rep.skipped.map((x) => `⏭ ${x.title ? `「${x.title}」` : ''}${WHY[x.why] || (String(x.why || '').startsWith('sort:') ? sortWhy(x) : x.why)}`),
       ...rep.holds.map((x) => `⏸ 「${x.title}」有人在后台手动改过,app 已停手`),
       ...(rep.sortOn || []).map((x) => `📐 「${x.title}」Collection 页改成完全按清单顺序显示`),

@@ -88,7 +88,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
     pins: state.pins || [], salelinks: state.salelinks || [], callouts: state.callouts || [],
     // 哪些合集现在被真的改了顺序(含「暂停接管」);原始顺序快照留在服务器,不发给页面
     colState: Object.fromEntries(Object.entries(state.colState || {}).map(([k, c]) => [k,
-      { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, at: c.at }])),
+      { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, released: c.released || null, at: c.at }])),
     sortFlags: Object.fromEntries(Object.entries(state.sortFlags || {}).map(([k, f]) => [k, { pinName: f.pinName, title: f.title }])),
     jointSync: state.jointSync || {}, // 联合推广:兼容产品合集最近一次同步的结果
     pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
@@ -399,7 +399,7 @@ export function scheduleRouter() {
     // 合集页排序方式:如果是 app 因为清单临时打开的「完全按顺序」,编辑器要看到的是改之前的样子
     const fl = (s0.sortFlags || {})[colNid(out.id)];
     const sortRule = fl ? { ...out.sortRule, off: fl.prev?.value === 'true', byPin: fl.pinName } : out.sortRule;
-    return { ...out, sortRule, baseline: st?.snapshot || null, takenBy: st ? { pinId: st.pinId, pinName: st.pinName, hold: st.hold || null } : null };
+    return { ...out, sortRule, baseline: st?.snapshot || null, takenBy: st ? { pinId: st.pinId, pinName: st.pinName, hold: st.hold || null, released: !!st.released } : null };
   }));
 
   // ---- 合集排序:有人在后台手改过被暂停接管了,点「重新接管」清掉 ----
@@ -410,8 +410,9 @@ export function scheduleRouter() {
     const key = String(req.body?.collection || '').split('/').pop();
     const st = (s.colState || {})[key];
     if (!st) throw new ActionError('这个 Collection 现在没有被接管');
-    if (req.body?.release) { delete s.colState[key]; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '放手不管这个 Collection 的顺序(保持现在后台里的样子)', by: a.name }); }
-    else { delete st.hold; delete st.signature; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个 Collection 的顺序(下一轮按清单重排)', by: a.name }); }
+    // 保留后台的改动:不删状态(删了下一分钟会重新接管),标成 released —— 这份清单生效期间不再排,结束只复原临时加 / 移出的产品
+    if (req.body?.release) { delete st.hold; st.released = Date.now(); appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: `保留后台改过的顺序:「${st.pinName || '置顶清单'}」剩下的时间不再排这个 Collection,结束时也不还原顺序`, by: a.name }); }
+    else { delete st.hold; delete st.signature; delete st.released; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个 Collection 的顺序(下一轮按清单重排)', by: a.name }); }
     replace(req.ctx.shop, s);
     return { ok: true };
   })));

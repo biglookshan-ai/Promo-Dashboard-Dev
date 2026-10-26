@@ -1865,3 +1865,5 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .slcard.is-list { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .slgrid--big .slcard.is-list { border: 2px solid var(--accent); box-shadow: none; }
 .slcard__src { align-self: flex-start; font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 3px; color: var(--accent); background: var(--accent-soft); }
+.holdopts { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.holdopts .btn { flex: 0 0 auto; }
