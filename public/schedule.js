@@ -1211,7 +1211,7 @@
   const coLegacyRules = (x) => [(x.vendors || []).length && { f: 'vendor', n: false, v: [...x.vendors] },
     (x.collections || []).length && { f: 'collection', n: false, v: x.collections.map(({ id, handle, title }) => ({ id, handle, title })) },
     (x.tags || []).length && { f: 'tag', n: false, v: [...x.tags] }, (x.exTags || []).length && { f: 'tag', n: true, v: [...x.exTags] }].filter(Boolean);
-  const coHas = (x) => coRulesOf(x).length > 0 || [x.products, x.collections, x.tags, x.vendors].some((a) => (a || []).length);
+  const coHas = (x) => coRulesOf(x).length > 0 || (x.groups || x.ruleGroups || []).some((g) => coRulesOf(g).length) || [x.products, x.collections, x.tags, x.vendors].some((a) => (a || []).length);
   const frontUrl = (u) => (/^https:\/\//.test(u) ? u : `${S.store?.domain || ''}${u}`);
   const coRuleText = (r) => `${CO_F[r.f]}${CO_OPS[r.f][r.n ? 1 : 0]} ${r.v.map((v) => (r.f === 'collection' ? v.title : v)).join(' / ')}`;
   function coScopeText(x) {
@@ -1423,6 +1423,24 @@
     const dl = (id, arr) => `<datalist id="co-dl-${id}">${arr.map((v) => `<option value="${esc(v)}"></option>`).join('')}</datalist>`;
     return dl('vendor', o.vendors) + dl('type', o.types) + dl('tag', o.tags);
   };
+  // 联合推广的条件组(2026-10-26 用户:每个牌子的筛选方法不一样,不想每个牌子复制一份推广,改文案要改好几处):
+  //   一组 = 一个牌子的条件(组里每条都要满足),组和组之间「或」;下面的条件编辑器编辑的是当前选中的那一组(ed.rules 就是那一组的数组)
+  const coGName = (g, k) => g.name || (coRulesOf(g).find((r) => r.f === 'vendor')?.v || [])[0] || `第 ${k + 1} 组`;
+  function coGroupsHtml() {
+    if (!ed.joint || !ed.groups) return '';
+    const live = ed.groups.map((g, k) => (coRulesOf(g).length ? k : -1)).filter((k) => k >= 0);
+    const cnt = (k) => (coRes && coRes.groups && live.indexOf(k) >= 0 ? coRes.groups[live.indexOf(k)] : null);
+    const others = (S.callouts || []).filter((x) => x.id !== ed.__it?.id && (coRulesOf(x).length || coLegacyRules(x).length || (x.ruleGroups || []).length));
+    const cur = ed.groups[ed.gi] || ed.groups[0];
+    return `<div class="cogroups">
+      <div class="scope__lbl">条件组 <em>每个牌子一组(各自的筛选方法);命中任何一组就算兼容产品,文案只有一份</em></div>
+      <div class="cogtabs">${ed.groups.map((g, k) => { const n = cnt(k); return `<button type="button" class="cogtab${k === ed.gi ? ' is-on' : ''}" data-cog="${k}">${esc(coGName(g, k))}${n != null ? `<em>${n}</em>` : ''}</button>`; }).join('')}
+        <button type="button" class="chipadd" data-co="gadd">${I.plus}加一组</button>
+        ${others.length ? `<select class="sel sel--sm" data-cocopy aria-label="从别的推广块复制条件"><option value="">从别的推广块复制条件…</option>${others.map((o) => `<option value="${esc(o.id)}">${esc(o.name || o.title || o.id)}</option>`).join('')}</select>` : ''}</div>
+      <div class="cogcur"><input class="inp" data-cogname value="${esc(cur.name || '')}" placeholder="这一组的名字(比如 DZOFILM;空 = 用条件里的品牌)"/>${ed.groups.length > 1 ? '<button type="button" class="btn btn-sm btn-ghost" data-co="gdel">删掉这一组</button>' : ''}</div>
+    </div>`;
+  }
+  function coSetGroup(k) { ed.gi = Math.max(0, Math.min(k, ed.groups.length - 1)); ed.rules = ed.groups[ed.gi].rules; }
   function coScopeHtml() {
     const x = (attr) => `<button type="button" class="chip__x" ${attr} aria-label="移除">${I.x}</button>`;
     const pchip = (p, key, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span>${linkPair('products', p)}${x(`data-rm="${key}:${i}"`)}</span>`;
@@ -1437,8 +1455,8 @@
         <span class="chips">${vals}${add}</span>
         <button type="button" class="btn btn-sm btn-ghost corule__x" data-rdel="${i}" title="删掉这条条件">${I.x}</button></div>`;
     }).join('');
-    return `
-      <div class="scope__lbl">条件 <em>每一条都要满足;一条里填几个值 = 任一个就算(「不是 / 不包含」= 一个都不能有)</em></div>
+    return `${coGroupsHtml()}
+      <div class="scope__lbl">${ed.joint && ed.groups?.length > 1 ? `「${esc(coGName(ed.groups[ed.gi], ed.gi))}」这一组的条件` : '条件'} <em>每一条都要满足;一条里填几个值 = 任一个就算(「不是 / 不包含」= 一个都不能有)</em></div>
       ${rules || '<p class="muted">还没有条件。</p>'}
       <div class="coadd"><span class="muted">加一条条件:</span>${Object.entries(CO_F).map(([k, l]) => `<button type="button" class="chipadd" data-radd="${k}">${I.plus}${l}</button>`).join('')}</div>
       ${ed.coLegacy ? '<div class="note note--warn">这张是第一版的设置(Collection / 标签 / 品牌「满足任一」),已经换成上面的条件 —— 现在是「每条都要满足」,检查一下再保存。</div>' : ''}
@@ -1457,10 +1475,13 @@
     coRes = 'loading';
     coTimer = setTimeout(async () => {
       try {
-        const r = await api('POST', '/api/schedule/callout-scope', { rules: coRulesOf(mine), products: mine.products, exProducts: mine.exProducts, promo: mine.promo, promos: $('#ed-form [name="joint"]')?.checked ? mine.promos : [] });
+        const joint = !!$('#ed-form [name="joint"]')?.checked;
+        const r = await api('POST', '/api/schedule/callout-scope', { rules: coRulesOf(mine), ...(joint && mine.groups?.length > 1 ? { ruleGroups: mine.groups.map((g) => ({ name: g.name, rules: coRulesOf(g) })) } : {}),
+          products: mine.products, exProducts: mine.exProducts, promo: mine.promo, promos: joint ? mine.promos : [] });
         if (ed !== mine) return; coRes = r;
       } catch (e) { if (ed !== mine) return; coRes = { error: e.message || String(e) }; }
       const sum = $('#ed-scope .scope__sum'); if (sum) sum.innerHTML = coSumHtml();
+      const gb = $('#ed-scope .cogroups'); if (gb) gb.outerHTML = coGroupsHtml();
       $('#ed-form')?.dispatchEvent(new Event('change'));
     }, 500);
   }
@@ -1555,7 +1576,7 @@
       ${edSec(2, '显示哪些产品', '', `      <label class="tgl"><input type="checkbox" name="inStock" ${it.inStock ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示有货的</b><span class="muted">预订(Pre Order)和缺货的不显示,和前台卡片上的「In Stock」一致</span></span></label>
       <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
         ${fld('最多显示几个', `<input class="inp" type="number" min="0" name="limit" value="${esc(it.limit ?? '')}" placeholder="不限"/>`, '按下面的排法取前面几个')}</div>
-      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和 Collection 平时一样」= 跟着 Collection 本来那一页:生效中的 Collection 排序清单 → Collection 默认设置(右边「顾客看到的顺序」第 2、3 层);选别的就不看 Collection 排序。顾客自己选了 Sort by 就按他选的')}
+      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '只有没固定产品、又选「和 Collection 平时一样」时,这条链接才跟着 Collection(置顶清单 → 默认设置);固定了产品或选了别的排序,就完全按这条链接自己的,置顶清单影响不到。顾客自己选了 Sort by 就按他选的')}
       ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
 `)}
       ${edSec(3, '产品顺序', '拖动产品卡片调整顾客看到的顺序', `      <div class="fld"><span>固定位置的产品 <em>拖动产品卡片排序:右边直接拖,或点「放大排序」铺满整个窗口来排;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span>
@@ -1578,7 +1599,15 @@
     box.innerHTML = !sl?.collection ? '<span class="muted">选好 Collection、填好后缀就会出现</span>'
       : SL.SLUG_RE.test(slug) ? copyBox(u, 'sl-url-i') : '<span class="muted">后缀只能用小写字母、数字和横线</span>';
   }
+  // 固定了产品 = 独立排序,「和 Collection 平时一样」不能选(留空的自动换成折扣从大到小,和网站的算法一致)
+  function slSortSync() {
+    const el = $('#ed-form [name="sort"]'); if (!el || !sl) return;
+    const fixed = sl.products.length > 0; const o = el.querySelector('option[value=""]');
+    if (o) { o.disabled = fixed; o.textContent = fixed ? '和 Collection 平时一样(固定了产品就不能选)' : '和 Collection 平时一样(跟着置顶清单和默认设置)'; }
+    if (fixed && !el.value) el.value = 'discount';
+  }
   function redrawSl() {
+    slSortSync();
     const box = $('#sl-pins'); if (!box) return;
     box.innerHTML = `<div class="slpins">${sl.products.map((p, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(thumb(p.image, 80))}" alt="">` : ''}<span class="chip__t">${i + 1}. ${esc(p.title)}</span>
         ${i ? `<button type="button" class="chip__x" data-sl="up" data-i="${i}" title="往前挪">${I.up}</button>` : ''}<button type="button" class="chip__x" data-sl="rm" data-i="${i}" aria-label="移除">${I.x}</button></span>`).join('')}
@@ -1645,7 +1674,7 @@
     const base = SL.saleBase(d.products, link, opts, all);
     const byId = new Map(base.map((p) => [numId(p.id), p]));
     const head = []; const hs = new Set();
-    for (const x of link.products || []) { const id = numId(x.id); if (byId.has(id) && !hs.has(id)) { head.push(byId.get(id)); hs.add(id); } }
+    for (const x of (link.products || []).slice(0, SL.MAX_FIXED)) { const id = numId(x.id); if (byId.has(id) && !hs.has(id)) { head.push(byId.get(id)); hs.add(id); } }
     return { list: [...head, ...base.filter((p) => !hs.has(numId(p.id)))], baseIds: base.map((p) => numId(p.id)) };
   }
   const SL_ST = { instock: 'In Stock', preorder: 'Pre Order', oos: 'Out of Stock' };
@@ -1676,8 +1705,8 @@
     const all = !!sl.showAll;
     const { list } = slOrder(d, link, opts, all);
     const limit = Math.max(0, parseInt(v.limit, 10) || 0);
-    const pinned = new Set(sl.products.map((p) => numId(p.id)));
-    const fromPin = new Set(ap && !v.sort ? (ap.products || []).map((p) => numId(p.id)) : []); // 蓝框:顺序来自合集排序清单
+    const pinned = new Set(sl.products.slice(0, SL_MAX_FIXED).map((p) => numId(p.id))); // 红框:网站只认前 50 个
+    const fromPin = new Set(ap && !SL.isCustom(link) ? (ap.products || []).map((p) => numId(p.id)) : []); // 蓝框:没自定义时,顺序来自置顶清单
     const lost = sl.products.filter((x) => !list.some((p) => numId(p.id) === numId(x.id)));
     const MAXC = 150; let n = 0;
     const cards = list.slice(0, MAXC).map((p) => {
@@ -1691,7 +1720,7 @@
       <p class="slsum">显示 <b>${view.list.length}</b> 个产品${view.total > view.list.length ? `(符合条件的有 ${view.total} 个,只取前 ${view.list.length} 个)` : ''} · 这个 Collection 一共 ${d.total} 个产品,打折的 ${onSale} 个${d.truncated ? ' · ⚠️ Collection 太大,前台只读前 1000 个' : ''}</p>
       ${view.pins.some((p) => !p.shown) && !all ? `<div class="note note--warn note--sm">${view.pins.filter((p) => !p.shown).map((p) => `固定了位置的「${esc(p.title)}」现在不会显示:${esc(p.why)}`).join('<br>')}${lost.length ? '<br>符合条件后(比如开始打折)会出现在你排的位置;不过在下面拖动别的产品时,它们会挪到固定部分的最后 —— 想一起排,勾上「也显示现在不会出现的产品」。' : ''}</div>` : ''}
       ${sl.products.length > 50 ? `<div class="note note--warn note--sm">前台最多固定前 50 个位置,你现在固定了 ${sl.products.length} 个 —— 第 51 个以后按「排序」排。</div>` : ''}
-      ${slSrcHtml(c, v, d, view, pinned)}
+      ${slSrcHtml(c, v, d, view)}
       <div class="slord">
         <label class="tgl tgl--sm"><input type="checkbox" data-slall ${all ? 'checked' : ''}/><span class="tgl__ui"></span><span>也显示现在不会出现的产品<span class="muted">(没打折 / 没货 / 折扣不够的,灰色;活动前先排好,开始打折后就在这个位置出现)</span></span></label>
         ${sl.products.length ? `<span class="slord__sum">固定了前 <b>${sl.products.length}</b> 个位置</span><button type="button" class="btn btn-sm btn-ghost" data-slclear title="清掉手动排的顺序">全部按排序规则</button>` : ''}
@@ -1726,39 +1755,41 @@
     if (!wx?.collection) return '<span class="muted">先选 Collection</span>';
     const links = salesOf(wx.collection.id);
     if (!links.length) return '<span class="muted">没有 —— 这份清单只管 Collection 本来那一页</span>';
-    // 这份清单(正在编辑的样子)排在前面的产品
-    const mine = wxBase.length ? OD.minimalPrefix(wxBase, wx.order.map(pidOf)) : [];
+    // 2026-10-26 用户定:促销链接有自定义(固定了产品 / 选了排序)就完全独立;什么都没设才跟着这份清单
     return `<div class="slrel">${links.map((x) => {
-      const all = (x.products || []).length;
-      const fixed = new Set((x.products || []).slice(0, SL_MAX_FIXED).map((p) => numId(p.id))); const k = fixed.size; // 网站只认前 50 个
-      const over = all > SL_MAX_FIXED ? `(链接里排了 ${all} 个,但网站只认前 ${SL_MAX_FIXED} 个;第 ${SL_MAX_FIXED + 1} 个以后和其余打折产品一样按这份清单排)` : '';
-      const both = mine.filter((id) => fixed.has(String(id))).length;
+      const n = (x.products || []).length; const k = Math.min(n, SL_MAX_FIXED);
+      const own = [k ? `固定了 ${k} 个产品${n > SL_MAX_FIXED ? `(排了 ${n} 个,网站只认前 ${SL_MAX_FIXED} 个)` : ''}` : '', x.sort ? `排序选了「${esc(SORT_LABEL()[x.sort] || x.sort)}」` : k ? '其余按折扣从大到小' : ''].filter(Boolean).join(',');
       return `<div class="slrel__i"><span class="slrel__t">${badge(x)}<b>${esc(titleOf(x))}</b><span class="mono muted">?onsale${x.slug ? `=${esc(x.slug)}` : ''}</span></span>
-        <span class="slrel__w">${x.sort
-          ? `<span class="tag">不受这份清单影响</span>链接用自己的排序「${esc(SORT_LABEL()[x.sort] || x.sort)}」${k ? `,另外自己排好了 ${k} 个` : ''},这份清单改不到它`
-          : !k ? '<span class="tag tag--accent">按这份清单排</span>链接自己没排位置,所以链接里<b>打折的</b>产品按这份清单的顺序排(没打折的不会出现在链接里)'
-            : `<span class="tag tag--accent">促销链接优先</span>链接自己排好的${all > SL_MAX_FIXED ? '前' : ''} <b>${k} 个排最前,这份清单改不动它们</b>;其余打折产品,才按这份清单的顺序接在后面${over}${both ? `。这份清单排的产品里有 ${both} 个也在链接排好的里面,在链接里按链接的位置` : ''}`}</span>
+        <span class="slrel__w">${SL.isCustom(x)
+          ? `<span class="tag">独立排序,不受影响</span>这条链接${own},完全按它自己的顺序;这份清单怎么改都影响不到它`
+          : '<span class="tag tag--accent">跟着这份清单</span>这条链接没设自己的排序,所以链接里<b>打折的</b>产品按这份清单 → Collection 默认设置的顺序排(没打折的不会出现在链接里)'}</span>
         <button type="button" class="btn btn-sm btn-ghost" data-wx="opensl" data-id="${esc(x.id)}">打开</button></div>`;
     }).join('')}</div>`;
   }
   // 促销链接预览上面:顾客看到的顺序怎么来的(三层,和 sale-link.js 的 saleView 同一个顺序)
-  function slSrcHtml(c, v, d, view, pinned) {
+  function slSrcHtml(c, v, d, view) {
+    const link = { ...v, products: sl.products };
+    const li = (n, body, cls = '') => `<li class="slsrc__i${cls}"><i>${n}</i><div>${body}</div></li>`;
+    const sortCn = (k) => esc(SORT_LABEL()[k] || k);
+    if (SL.isCustom(link)) { // 有自定义:完全独立,置顶清单 / Collection 默认设置都影响不到
+      const n = sl.products.length; const k = Math.min(n, SL_MAX_FIXED); const es = SL.effSort(link);
+      return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序 · <b>这条链接独立排序</b>,Collection 排序清单和默认设置都影响不到</li>
+        ${li(1, `<b>这条链接固定的</b> ${k ? `${n > SL_MAX_FIXED ? '前 ' : ''}${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框${n > SL_MAX_FIXED ? `<span class="warn">;你排的第 ${SL_MAX_FIXED + 1}–${n} 个网站不认,按第 2 层排</span>` : ''}` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
+        ${li(2, `<b>其余打折的</b> 按「${sortCn(es)}」${!v.sort ? '<em>固定了产品、没另外选排序,就按折扣从大到小;可以在左边「排序」里换</em>' : ''}<em>一样大的按最新上架在前</em>`)}
+      </ol>`;
+    }
+    // 没自定义:跟着 Collection 本来那一页(生效中的置顶清单 → Collection 默认设置)
     const ap = activePin(numId(c.id));
-    const k = Math.min(pinned.size, SL_MAX_FIXED); const over = pinned.size - k;
-    const follow = !v.sort;
-    const apIds = new Set(follow && ap ? (ap.products || []).map((p) => numId(p.id)) : []);
-    const fromList = view.list.filter((p) => apIds.has(numId(p.id)) && !pinned.has(numId(p.id))).length;
-    const next = follow && !ap ? pinsOf(numId(c.id)).filter((p) => status(p) === 'scheduled').sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0))[0] : null;
+    const apIds = new Set(ap ? (ap.products || []).map((p) => numId(p.id)) : []);
+    const fromList = view.list.filter((p) => apIds.has(numId(p.id))).length;
+    const next = !ap ? pinsOf(numId(c.id)).filter((p) => status(p) === 'scheduled').sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0))[0] : null;
     const r = d.sortRule || { off: false, pinManual: 12, pinNew: 0 };
     const rule = r.off ? '按 Collection 后台的顺序' : CS.describe({ ...r, sortOrder: 'MANUAL' });
-    const li = (n, body, cls = '') => `<li class="slsrc__i${cls}"><i>${n}</i><div>${body}</div></li>`;
-    return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序(1 最优先,2 其次,3 最后)</li>
-      ${li(1, `<b>这条链接固定的</b> ${k ? `${over ? '前 ' : ''}${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框${over ? `<span class="warn">;你排的第 ${SL_MAX_FIXED + 1}–${SL_MAX_FIXED + over} 个网站不认,顾客看到的是按第 2、3 层排</span>` : ''}` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
-      ${li(2, follow
-        ? ap ? `<b>Collection 排序清单「${esc(titleOf(ap))}」</b>里打折的 ${fromList} 个 <span class="slsrc__lg slsrc__lg--list"></span>蓝框<em>${win(ap).end != null ? `到 ${fDT(win(ap).end)} 结束,之后这一层就没有了` : '长期生效'};要改在「Collection 排序」里改 <button type="button" class="linkbtn" data-sl="openpin" data-id="${esc(ap.id)}">打开这份清单</button></em>`
-          : `<b>Collection 排序清单</b> <span class="muted">这一刻没有生效的</span>${next ? `<em>「${esc(titleOf(next))}」${fDT(win(next).start)} 开始,到时这里会跟着变</em>` : ''}`
-        : `<b>Collection 排序清单</b> <span class="muted">不跟</span><em>${ap ? `「${esc(titleOf(ap))}」正在生效,但` : ''}这条链接的排序选了「${esc(SORT_LABEL()[v.sort] || v.sort)}」,不看 Collection 排序;想跟着就把排序改回「和 Collection 平时一样」</em>`, follow ? '' : ' is-off')}
-      ${li(3, `<b>其余打折的</b> ${follow ? `按 Collection 默认设置:${esc(rule)}` : `按「${esc(SORT_LABEL()[v.sort] || v.sort)}」`}`)}
+    return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序 · 这条链接没设自己的排序,<b>跟着 Collection 本来那一页</b></li>
+      ${li(1, ap ? `<b>Collection 排序清单「${esc(titleOf(ap))}」</b>里打折的 ${fromList} 个 <span class="slsrc__lg slsrc__lg--list"></span>蓝框<em>${win(ap).end != null ? `到 ${fDT(win(ap).end)} 结束,之后这一层就没有了` : '长期生效'};要改在「Collection 排序」里改 <button type="button" class="linkbtn" data-sl="openpin" data-id="${esc(ap.id)}">打开这份清单</button></em>`
+        : `<b>Collection 排序清单</b> <span class="muted">这一刻没有生效的</span>${next ? `<em>「${esc(titleOf(next))}」${fDT(win(next).start)} 开始,到时这里会跟着变</em>` : ''}`)}
+      ${li(2, `<b>其余打折的</b> 按 Collection 默认设置:${esc(rule)}`)}
+      <li class="slsrc__tip">想让这条链接独立排序:在下面拖动卡片固定位置,或在左边「排序」选一种 —— 之后置顶清单和 Collection 默认设置都影响不到它</li>
     </ol>`;
   }
   // ================= 合集默认排序(合集页「平时」怎么排;规则在 /lib/col-sort.js,和服务器同一份)=================
@@ -2003,7 +2034,7 @@
         need ? '' : `${MODE === 'live' && isApprover() ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶清单</button>`)}
       ${subTabsHtml('pnview', pnView, [['pins', '置顶清单', (S.pins || []).length], ['defsort', '默认设置']])}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
-      <div class="note note--sm">💡 这里排的是<b>Collection 本来那一页</b>。促销链接(?onsale,只放打折产品)是另一页:它的排序选「和 Collection 平时一样」时,<b>链接自己排好的产品优先</b>排最前,其余打折的产品才按这里的顺序;选了别的排序就不受这里影响。只想排打折那一页?打开那条促销链接直接拖。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
+      <div class="note note--sm">💡 这里排的是<b>Collection 本来那一页</b>。促销链接(?onsale,只放打折产品)只要固定了产品或选了排序,就<b>完全按它自己的</b>,这里影响不到;只有什么都没设的促销链接,才跟着这里的顺序。只想排打折那一页?打开那条促销链接直接拖。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
       ${alertsHtml(['pin'])}
       <section class="panel">
         <div class="panel__h"><h3>这一刻各 Collection 的排序</h3><span class="muted">${pnAt == null ? '现在' : `${fDT(T)} · ${relDay(T)}`}</span></div>
@@ -2015,7 +2046,7 @@
         const act = activePin(g.cid, T);
         // 首页哪些模块页签也吃这个合集(同名的只说一次)
         const used = [...new Set(modTabsUsing(g.cid).map((u) => `${MODULE_CN[u.v.module]}·${tabLabel(u.t)}`))];
-        const sls = g.cid === '?' ? [] : salesOf(g.cid); const slFollow = sls.filter((x) => !x.sort);
+        const sls = g.cid === '?' ? [] : salesOf(g.cid); const slFollow = sls.filter((x) => !SL.isCustom(x)); // 没设自己排序的才跟着这里
         const cs = (S.colState || {})[String(g.cid)];
         const sf = (S.sortFlags || {})[String(g.cid)];
         const open = pnOpen.has(g.cid);
@@ -2030,9 +2061,9 @@
             ${sf ? `<span class="tag tag--accent" title="「${esc(pinNm(sf))}」生效期间 Collection 页完全按清单顺序显示,结束自动恢复默认设置">完全按清单顺序</span>` : ''}
             ${!act ? '<span class="muted">这一刻没有清单生效</span>' : ''}
             ${used.length ? `<span class="muted" title="${esc(used.map((u) => `首页「${u}」`).join('、'))}也用这个 Collection">首页${esc(used[0])}${used.length > 1 ? ` 等 ${used.length} 个页签` : ''}也用</span>` : ''}
-            ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${x.sort ? '用自己的排序,不受这里的清单影响' : (x.products || []).length ? `促销链接优先:自己排好的 ${Math.min((x.products || []).length, SL_MAX_FIXED)} 个排最前,其余打折的按这里的清单` : '打折的产品按这里的清单排'}`).join('\n'))}">${slFollow.length === 1
-              ? ((slFollow[0].products || []).length ? `促销链接「${esc(titleOf(slFollow[0]))}」:自己排好的 ${Math.min((slFollow[0].products || []).length, SL_MAX_FIXED)} 个优先,其余按这里的清单` : `促销链接「${esc(titleOf(slFollow[0]))}」按这里的清单排`)
-              : slFollow.length ? `${slFollow.length} 条促销链接:各自排好的优先,其余按这里的清单` : `${sls.length} 条促销链接用自己的排序`}</span>` : ''}
+            ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${SL.isCustom(x) ? '设了自己的排序,完全独立,这里影响不到' : '没设自己的排序,打折的产品跟着这里的顺序'}`).join('\n'))}">${slFollow.length
+              ? `促销链接${slFollow.length === 1 ? `「${esc(titleOf(slFollow[0]))}」` : ` ${slFollow.length} 条`}跟着这个顺序${sls.length > slFollow.length ? `(另外 ${sls.length - slFollow.length} 条独立排序)` : ''}`
+              : `${sls.length === 1 ? `促销链接「${esc(titleOf(sls[0]))}」` : `${sls.length} 条促销链接`}独立排序,不受这里影响`}</span>` : ''}
             ${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm btn-ghost" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本</button></span>` : ''}</div>
           ${cs?.hold ? `<div class="note note--warn note--sm"><div>有人在 Shopify 后台改过这个 Collection 的顺序(「${esc(pinNm(cs))}」排在最前的产品被挪动了),<b>app 先停手</b>,没有覆盖。选一个:</div>
               <div class="holdopts"><button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按本次排序</button><span class="muted">按这份清单重新排,后台的改动会被盖掉;清单结束照常还原</span></div>
@@ -3884,7 +3915,15 @@
     }
     if (base.kind === 'callout') {
       const slim = (p) => (p ? { id: p.id, handle: p.handle, title: p.title, image: p.image || '' } : null);
-      v.rules = coRulesOf(ed).map((r) => ({ f: r.f, n: !!r.n, v: r.f === 'collection' ? r.v.map(({ id, handle, title }) => ({ id, handle, title })) : [...r.v] }));
+      const slimR = (rs) => coRulesOf({ rules: rs }).map((r) => ({ f: r.f, n: !!r.n, v: r.f === 'collection' ? r.v.map(({ id, handle, title }) => ({ id, handle, title })) : [...r.v] }));
+      const gs = (ed.groups || []).filter((g) => coRulesOf(g).length);
+      if (g('joint')?.checked && gs.length > 1) { // 联合推广好几组:都存下来;rules 存第一组(店里的 rules 字段 / 老代码用)
+        v.ruleGroups = gs.map((x) => ({ id: x.id, name: String(x.name || '').trim(), rules: slimR(x.rules) }));
+        v.rules = v.ruleGroups[0].rules;
+      } else {
+        v.ruleGroups = gs.length === 1 && g('joint')?.checked && String(gs[0].name || '').trim() ? [{ id: gs[0].id, name: String(gs[0].name).trim(), rules: slimR(gs[0].rules) }] : [];
+        v.rules = slimR(gs.length ? gs[0].rules : ed.rules);
+      }
       v.collections = []; v.tags = []; v.vendors = []; v.exTags = []; // 第一版的字段不再用(条件都在 rules 里)
       v.products = ed.products.map(slim); v.exProducts = ed.exProducts.map(slim); v.promo = slim(ed.promo);
       v.link = String(v.link || '').trim(); if (g('priority')) v.priority = +g('priority').value || 0;
@@ -3964,6 +4003,11 @@
     if (ed.co) { // 推广块:条件放 ed.rules;第一版「满足任一」的设置换成条件(两种以上一起用时提示一下)
       const legacy = !coRulesOf(base).length && coLegacyRules(base).length;
       ed.rules = (legacy ? coLegacyRules(base) : base.rules || []).map((r) => ({ f: r.f, n: !!r.n, v: [...(r.v || [])] }));
+      // 联合推广的条件组:老数据只有 rules = 一组
+      const cl = (rs) => (rs || []).map((r) => ({ f: r.f, n: !!r.n, v: [...(r.v || [])] }));
+      ed.joint = !!base.joint;
+      ed.groups = base.joint && base.ruleGroups?.length ? base.ruleGroups.map((g, k) => ({ id: g.id || `g${k}`, name: g.name || '', rules: cl(g.rules) })) : [{ id: 'g0', name: '', rules: ed.rules }];
+      coSetGroup(0);
       ed.coLegacy = !!legacy && coLegacyRules(base).filter((r) => !r.n).length > 1;
       ed.collections = []; ed.tags = [];
     }
@@ -4057,6 +4101,7 @@
     if (kind === 'callout') {
       f.addEventListener('change', (e) => {
         if (e.target.name !== 'joint') return;
+        ed.joint = !!e.target.checked; if (!ed.joint) coSetGroup(0); // 关掉联合推广:只用第一组
         if (e.target.checked && !ed.promos.length && ed.promo) ed.promos = [ed.promo]; // 单个 ↔ 多个 推广产品互相带过去
         if (!e.target.checked && !ed.promo && ed.promos.length) ed.promo = ed.promos[0];
         rerenderCo();
@@ -4069,6 +4114,27 @@
           if (a && coDeal?.status !== 'active') a.href = coDealUrl();
           if (st && coDeal?.status === 'active') { const el = $('#co-deal'); const keep = e.target.value; el.innerHTML = coDealHtml(base); const ni = el.querySelector('[data-co-pct]'); ni.value = keep; ni.focus(); }
         }
+      });
+      f.addEventListener('input', (e) => { // 条件组的名字(页签跟着变,不重画输入框)
+        if (!e.target.hasAttribute?.('data-cogname')) return;
+        ed.groups[ed.gi].name = e.target.value;
+        const tab = $(`#ed-scope [data-cog="${ed.gi}"]`); if (tab) { const em = tab.querySelector('em'); tab.textContent = coGName(ed.groups[ed.gi], ed.gi); if (em) tab.appendChild(em); }
+      });
+      f.addEventListener('change', (e) => { // 从别的推广块复制条件 → 新的一组(那张的排除 / 一定显示的产品也带过来)
+        if (!e.target.hasAttribute?.('data-cocopy')) return;
+        const src = byId(e.target.value); e.target.value = ''; if (!src) return;
+        const cl = (rs) => (rs || []).map((r) => ({ f: r.f, n: !!r.n, v: [...(r.v || [])] }));
+        const srcGroups = src.ruleGroups?.length ? src.ruleGroups : [{ name: '', rules: coRulesOf(src).length ? src.rules : coLegacyRules(src) }];
+        const base0 = String(src.name || '').replace(/^SF[\s_-]*/i, '').trim();
+        for (const sg of srcGroups) ed.groups.push({ id: `g${Date.now().toString(36)}${ed.groups.length}`, name: sg.name || base0, rules: cl(sg.rules) });
+        // 第一组如果还是空的(新建的时候),直接去掉
+        if (ed.groups.length > 1 && !coRulesOf(ed.groups[0]).length && !String(ed.groups[0].name || '').trim()) ed.groups.shift();
+        const has = (arr, p) => arr.some((x) => numId(x.id) === numId(p.id));
+        let nEx = 0, nInc = 0;
+        for (const p of src.exProducts || []) if (!has(ed.exProducts, p)) { ed.exProducts.push(p); nEx++; }
+        for (const p of src.products || []) if (!has(ed.products, p)) { ed.products.push(p); nInc++; }
+        coSetGroup(ed.groups.length - 1); refreshScope();
+        toast(`已从「${src.name}」复制条件${nEx ? `,另外带上排除的 ${nEx} 个产品` : ''}${nInc ? `、一定显示的 ${nInc} 个产品` : ''};保存后才生效`);
       });
       f.addEventListener('input', (e) => { // 套装说明的一句话
         const kk = e.target.dataset?.kit; if (!kk || !kk.startsWith('note:')) return;
@@ -4322,7 +4388,10 @@
       const pv = $('#ed-pv'); let slDrag = null;
       const slReorder = (move) => {
         const c = sl?.collection; const d = c && slPrev[c.handle]; if (!d?.products) return;
-        const link = { ...readForm(base), products: sl.products };
+        // 一拖动就是自定义排序(2026-10-26):排序留空的改成折扣从大到小;在「自定义之后」的顺序上挪,只固定挪动的那几个
+        //(原来跟着 Collection 的链接,其余会先按折扣从大到小排好 —— 不把 Collection 现在的顺序整份冻结进来)
+        const link = { ...readForm(base), products: sl.products, sort: readForm(base).sort || 'discount' };
+        const sortEl = $('#ed-form [name="sort"]'); if (sortEl && !sortEl.value) sortEl.value = 'discount';
         const { list, baseIds } = slOrder(d, link, slOpts(c, d), !!sl.showAll);
         const ids = list.map((p) => numId(p.id));
         move(ids, list, link);
@@ -4436,6 +4505,8 @@
       }
       const rmb = e.target.closest('[data-rm]');
       if (rmb) { const [k, i] = rmb.dataset.rm.split(':'); ed[k].splice(+i, 1); refreshScope(); return; }
+      const cog = e.target.closest('[data-cog]'); // 联合推广:切换条件组
+      if (cog) { coSetGroup(+cog.dataset.cog); refreshScope(); return; }
       const rvx = e.target.closest('[data-rvx]'); // 推广块条件:删一个值 / 删一条 / 加一条
       if (rvx) { const [i, j] = rvx.dataset.rvx.split(':').map(Number); ed.rules[i].v.splice(j, 1); refreshScope(); return; }
       const rdel = e.target.closest('[data-rdel]');
@@ -4470,6 +4541,8 @@
           return;
         }
         if (a === 'nolpimg') { f.querySelector('[name="lpImage"]').value = ''; f.querySelector('[name="lpImageId"]').value = ''; return rerenderCo(); }
+        if (a === 'gadd') { ed.groups.push({ id: `g${Date.now().toString(36)}`, name: '', rules: [] }); coSetGroup(ed.groups.length - 1); refreshScope(); $('#ed-scope [data-cogname]')?.focus(); return; }
+        if (a === 'gdel' && ed.groups.length > 1) { ed.groups.splice(ed.gi, 1); coSetGroup(ed.gi - 1); refreshScope(); return; }
         if (a === 'kitnorec') { ed.kits.forEach((k) => { k.rec = false; }); const el = $('#co-kits'); if (el) el.innerHTML = coKitsHtml(); }
         if (a === 'lpsadd' && ed.lpSteps.length < 4) { ed.lpSteps.push({ t: '', d: '' }); $('#co-lps').innerHTML = lpsHtml(); $(`#co-lps [data-lps="t:${ed.lpSteps.length - 1}"]`)?.focus(); }
         if (a === 'lpsdel') { ed.lpSteps.splice(+co.dataset.i, 1); $('#co-lps').innerHTML = lpsHtml(); }

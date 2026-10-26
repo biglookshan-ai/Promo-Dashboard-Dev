@@ -25,9 +25,11 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const THEME = path.join(os.homedir(), 'Vibe Coding Dev/Shopify Dev/_worktrees/cgp-theme-campaign');
 const SHOP = 'harness-test.myshopify.com';
 const KEY = 'harness-key', SECRET = 'harness-secret';
-const P = { entry: 4793, fake: 4794, app: 4795 };
+// HARNESS_PORT=4893 → 4893 / 4894 / 4895 三个端口整体挪开(另一个会话已经开着一份时用)
+const B = +process.env.HARNESS_PORT || 4793;
+const P = { entry: B, fake: B + 1, app: B + 2 };
 const args = new Set(process.argv.slice(2));
-const DATA = path.join(os.tmpdir(), 'promo-live-harness');
+const DATA = path.join(os.tmpdir(), B === 4793 ? 'promo-live-harness' : `promo-live-harness-${B}`); // 换了端口就用自己的数据目录,别清掉另一份的
 if (args.has('--fresh')) fs.rmSync(DATA, { recursive: true, force: true });
 fs.mkdirSync(DATA, { recursive: true });
 

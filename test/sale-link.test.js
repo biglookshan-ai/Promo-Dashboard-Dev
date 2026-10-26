@@ -107,18 +107,47 @@ test('活动徽章链接:自动 / 不能点 / 指定链接的校验和写进店�
   assert.equal(f(''), ''); assert.equal(f('none'), 'none'); assert.equal(f(' /collections/x '), '/collections/x');
 });
 
-test('排序编辑器:saleBase 不算置顶;all = 连没打折的也排进来;置顶 = 最短前缀', async () => {
+test('排序编辑器:saleBase 不算置顶;all = 连没打折的也排进来;置顶 = 最短前缀(按链接自己的排序算)', async () => {
   const { saleBase, saleView } = await import('../src/sale-link.js');
   const { minimalPrefix } = await import('../src/order-diff.js');
   const P = [{ id: 1, discount: 10 }, { id: 2, discount: 0 }, { id: 3, discount: 30 }, { id: 4, discount: 20 }];
   assert.deepEqual(saleBase(P, {}).map((p) => p.id), [1, 3, 4]);
   assert.deepEqual(saleBase(P, {}, {}, true).map((p) => p.id), [1, 2, 3, 4]);
   assert.deepEqual(saleBase(P, { sort: 'discount' }).map((p) => p.id), [3, 4, 1]);
-  // 把 4 拖到第 1 位 → 只要固定 [4],其余照排序;顾客看到 4,1,3
-  const pins = minimalPrefix([1, 3, 4], [4, 1, 3]);
+  // 拖动时链接按自己的排序(没选就是折扣从大到小):把 4 拖到第 1 位 → 只要固定 [4];顾客看到 4,3,1
+  const pins = minimalPrefix([3, 4, 1], [4, 3, 1]);
   assert.deepEqual(pins, ['4']);
-  assert.deepEqual(saleView(P, { products: pins.map((id) => ({ id })) }).list.map((p) => p.id), [4, 1, 3]);
+  assert.deepEqual(saleView(P, { sort: 'discount', products: pins.map((id) => ({ id })) }).list.map((p) => p.id), [4, 3, 1]);
+  // 固定了产品又没选排序 = 其余按折扣从大到小
+  assert.deepEqual(saleView(P, { products: [{ id: 1 }] }).list.map((p) => p.id), [1, 3, 4]);
   // 没打折的 2 先排在第 1 位:现在不出现,打折后排第一
-  assert.deepEqual(saleView(P, { products: [{ id: 2 }] }).list.map((p) => p.id), [1, 3, 4]);
-  assert.deepEqual(saleView(P.map((p) => (p.id === 2 ? { ...p, discount: 5 } : p)), { products: [{ id: 2 }] }).list.map((p) => p.id), [2, 1, 3, 4]);
+  assert.deepEqual(saleView(P, { products: [{ id: 2 }] }).list.map((p) => p.id), [3, 4, 1]);
+  assert.deepEqual(saleView(P.map((p) => (p.id === 2 ? { ...p, discount: 5 } : p)), { products: [{ id: 2 }] }).list.map((p) => p.id), [2, 3, 4, 1]);
+});
+
+test('有自定义的促销链接完全不受置顶清单 / Collection 默认设置影响;没自定义才跟着 Collection(2026-10-26 用户定)', async () => {
+  const { saleView, isCustom, effSort } = await import('../src/sale-link.js');
+  const P = [{ id: 1, discount: 10, created: 5 }, { id: 2, discount: 20, created: 4 }, { id: 3, discount: 10, created: 9 }, { id: 4, discount: 20, created: 1 }];
+  const pinList = { pinIds: [1], sortRule: { off: true } };          // 生效中的置顶清单把 1 排第一
+  // 没自定义:跟着 Collection(置顶清单的 1 排第一)
+  assert.equal(isCustom({}), false);
+  assert.deepEqual(saleView(P, {}, pinList).list.map((p) => p.id), [1, 2, 3, 4]);
+  // 选了排序:置顶清单管不到;折扣一样时按最新(created 大的在前)
+  assert.deepEqual(saleView(P, { sort: 'discount' }, pinList).list.map((p) => p.id), [2, 4, 3, 1]);
+  assert.deepEqual(saleView(P, { sort: 'discount' }, {}).list.map((p) => p.id), [2, 4, 3, 1]);
+  // 固定了产品、排序留空:也算自定义 → 其余按折扣从大到小,置顶清单管不到
+  const fixed = { products: [{ id: 3 }] };
+  assert.equal(isCustom(fixed), true); assert.equal(effSort(fixed), 'discount');
+  assert.deepEqual(saleView(P, fixed, pinList).list.map((p) => p.id), [3, 2, 4, 1]);
+  assert.deepEqual(saleView(P, fixed, {}).list.map((p) => p.id), [3, 2, 4, 1]);
+});
+
+test('固定位置只认前 50 个(和网站一致);第 51 个以后按链接自己的排序', async () => {
+  const { saleView, MAX_FIXED } = await import('../src/sale-link.js');
+  const P = Array.from({ length: 60 }, (_, i) => ({ id: i + 1, discount: i + 1, created: 0 })); // 折扣:id 越大越高
+  const order = Array.from({ length: 60 }, (_, i) => ({ id: i + 1 }));                      // 想按 1,2,3…60 排
+  const v = saleView(P, { products: order }).list.map((p) => p.id);
+  assert.equal(MAX_FIXED, 50);
+  assert.deepEqual(v.slice(0, 50), Array.from({ length: 50 }, (_, i) => i + 1));
+  assert.deepEqual(v.slice(50), [60, 59, 58, 57, 56, 55, 54, 53, 52, 51]);                  // 51–60 按折扣从大到小
 });

@@ -5,6 +5,11 @@
 //   slug 后缀 · collection 合集 · inStock 只显示有货 · minDiscount 最低折扣 % · products 置顶(按顺序)
 //   · limit 最多几个(空 / 0 = 不限)· sort 排序 · heading 页面上的标题
 // 前台的产品数据来自主题的 cgp-json(每个产品:id、discount 折扣最大的变体的 %、status instock / preorder / oos、created、price)。
+//
+// ★ 2026-10-26 用户定:链接**有自定义**(固定了产品,或选了排序方式)= 完全独立 —— 固定的排最前,其余按链接自己的排序
+//   (固定了产品又没选排序 = 折扣从大到小),一样大再按最新、产品 id;**不看 Collection 的顺序,置顶清单 / 默认设置都影响不到**。
+//   链接**什么都没自定义**才跟着 Collection 平时的顺序(生效中的置顶清单 → Collection 默认设置)。
+//   固定位置最多前 50 个算数(metaobjects.js 只往店里写前 50 个,主题一次只读得到 50 个)。
 
 export const SALE_SORTS = [
   ['', '和 Collection 平时一样'], ['discount', '折扣从大到小'], ['newest', '最新上架在前'], ['price-asc', '价格从低到高'], ['price-desc', '价格从高到低'],
@@ -12,6 +17,10 @@ export const SALE_SORTS = [
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 export const slugOf = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 const nid = (id) => Number(String(id ?? '').split('/').pop()) || 0;
+export const MAX_FIXED = 50;
+// 有没有自定义排序;实际用哪种排序('' = 跟着 Collection)
+export const isCustom = (link = {}) => !!link.sort || (link.products || []).length > 0;
+export const effSort = (link = {}) => link.sort || ((link.products || []).length ? 'discount' : '');
 
 // 一个产品能不能出现在这条链接里(不算「最多几个」)。为什么不行也说出来,编辑器提示用
 export function whyOut(p, link = {}) {
@@ -40,9 +49,10 @@ export function featuredOrder(list, { sortRule = null, pinIds = [] } = {}) {
   return [...head, ...out];
 }
 
+const NEWEST = (a, b) => (+b.created || 0) - (+a.created || 0) || nid(b.id) - nid(a.id);
 const BY = {
   discount: (a, b) => (b.discount || 0) - (a.discount || 0),
-  newest: (a, b) => (+b.created || 0) - (+a.created || 0),
+  newest: NEWEST,
   'price-asc': (a, b) => (a.price || 0) - (b.price || 0),
   'price-desc': (a, b) => (b.price || 0) - (a.price || 0),
 };
@@ -52,14 +62,15 @@ const BY = {
 // 不算置顶时的顺序(合集平时的顺序 → 按链接的排序方式)。all = 连没打折 / 不符合条件的也排进来
 // (排序编辑器「也显示现在不会出现的产品」用:活动开始前先排好,开始后才打折的产品照这个位置出现)
 export function saleBase(products, link = {}, opts = {}, all = false) {
-  const base = featuredOrder(all ? products : products.filter((p) => !whyOut(p, link)), opts);
-  const by = BY[link.sort];
-  return by ? base.map((p, i) => ({ p, i })).sort((a, b) => by(a.p, b.p) || a.i - b.i).map((o) => o.p) : base;
+  const list = all ? products : products.filter((p) => !whyOut(p, link));
+  const by = BY[effSort(link)];
+  if (!by) return featuredOrder(list, opts);                // 没自定义:跟着 Collection 平时的顺序(置顶清单 → 默认设置)
+  return [...list].sort((a, b) => by(a, b) || NEWEST(a, b)); // 有自定义:只按链接自己的排序,不看 Collection 的先后
 }
 
 export function saleView(products, link = {}, opts = {}) {
   let list = saleBase(products, link, opts);
-  const pinIds = (link.products || []).map((x) => nid(x.id));
+  const pinIds = (link.products || []).slice(0, MAX_FIXED).map((x) => nid(x.id)); // 网站只认前 50 个
   if (pinIds.length) {
     const byId = new Map(list.map((p) => [nid(p.id), p]));
     const head = pinIds.filter((id, i) => byId.has(id) && pinIds.indexOf(id) === i).map((id) => byId.get(id));
@@ -74,6 +85,7 @@ export function saleView(products, link = {}, opts = {}) {
   const pins = (link.products || []).map((x) => {
     const p = all.get(nid(x.id));
     const why = !p ? '不在这个 Collection 里' : whyOut(p, link) || (shown.has(nid(x.id)) ? '' : `排在「最多 ${limit} 个」以外`);
+    // 第 51 个以后:网站不认这个固定位置(照样可能显示,只是按排序规则排)
     return { id: x.id, title: x.title || p?.title || '', shown: !why, why };
   });
   return { list, total, pins };

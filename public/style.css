@@ -1891,3 +1891,14 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .cokit__rec { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted, #5d6066); white-space: nowrap; cursor: pointer; }
 .cokits > .btn { align-self: flex-start; }
 .slsrc .warn { color: var(--danger); }
+/* 联合推广的条件组(每个牌子一组):页签 + 当前组的名字 */
+.cogroups { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px dashed var(--line, #e3e6ea); }
+.cogtabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cogtab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--line, #e3e6ea); border-radius: 6px; background: #fff; color: inherit; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.cogtab em { font-style: normal; font-size: 12px; font-weight: 500; color: var(--muted, #6b7280); }
+.cogtab.is-on { border-color: var(--accent, #2563eb); box-shadow: inset 0 0 0 1px var(--accent, #2563eb); color: var(--accent, #2563eb); }
+.cogtab.is-on em { color: inherit; opacity: .75; }
+.cogtabs .sel { max-width: 220px; }
+.cogcur { display: flex; align-items: center; gap: 8px; }
+.cogcur .inp { max-width: 320px; }
+.slsrc__tip { padding-top: 6px; margin-top: 2px; border-top: 1px dashed var(--border); font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
