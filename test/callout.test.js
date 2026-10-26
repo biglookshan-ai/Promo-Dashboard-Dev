@@ -1,7 +1,7 @@
 // 产品页推广块的条件(和主题 snippets/cgp-pdp-callout.liquid 同一套判断)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calloutQuery, calloutTitleOk, calloutScope } from '../src/counts.js';
+import { calloutQuery, calloutTitleOk, calloutScope, calloutIds, ruleGroupsOf } from '../src/counts.js';
 import { validate } from '../src/schedule-actions.js';
 import { fieldsFor } from '../src/metaobjects.js';
 
@@ -61,4 +61,32 @@ test('联合推广版本 4:视频 / 套装说明的检查,写进店里的新字�
   // 不是联合推广的推广块不写这些
   const g = Object.fromEntries(fieldsFor({ kind: 'callout', name: 'x', title: 't', promo: { id: 1 }, badge: 'New' }).map((x) => [x.key, x.value]));
   assert.equal(g.badge, undefined);
+});
+
+test('联合推广条件组:组和组之间「或」,同一个产品只算一次,每组各自的数量;校验', async () => {
+  // 假 Shopify:按搜索语句里的品牌给产品
+  const byVendor = { DZOFILM: [1, 2, 3], BLAZAR: [3, 4, 5], Thypoch: [6] };
+  const gql = async (ctx, q, v) => {
+    if (q.includes('after: $after') && q.includes('query: $q')) {
+      const vs = Object.keys(byVendor).filter((k) => v.q.includes(`vendor:'${k}'`));
+      const ids = [...new Set(vs.flatMap((k) => byVendor[k]))];
+      return { products: { nodes: ids.map((i) => ({ id: `gid://shopify/Product/${i}`, title: `P${i}`, handle: `p${i}`, status: 'ACTIVE' })), pageInfo: { hasNextPage: false, endCursor: null } } };
+    }
+    if (q.includes('nodes(ids')) return { nodes: v.ids.map((id) => ({ id, title: id, handle: 'h', status: 'ACTIVE' })) };
+    throw new Error('unexpected ' + q);
+  };
+  const ruleGroups = [{ name: 'DZO', rules: [{ f: 'vendor', v: ['DZOFILM'] }] }, { name: 'Blazar', rules: [{ f: 'vendor', v: ['BLAZAR'] }] }, { name: '空的', rules: [] }];
+  assert.equal(ruleGroupsOf({ rules: [{ f: 'vendor', v: ['x'] }], ruleGroups }).length, 2); // 空组不算;有组时不看 rules
+  assert.equal(ruleGroupsOf({ rules: [{ f: 'vendor', v: ['x'] }] }).length, 1);
+  const sc = await calloutScope({}, { ruleGroups, exProducts: [{ id: 5 }] }, gql);
+  assert.equal(sc.total, 4); // 1 2 3 4(3 两组都命中只算一次,5 排除)
+  assert.deepEqual(sc.groups, [3, 2]);
+  const ids = await calloutIds({}, { ruleGroups, exProducts: [{ id: 5 }], products: [{ id: 'gid://shopify/Product/6' }] }, gql);
+  assert.deepEqual(ids.ids.map(Number).sort((a, b) => a - b), [1, 2, 3, 4, 6]);
+  // 保存检查
+  const j = { kind: 'callout', name: 'x', title: 't', joint: true, lensCollection: { id: 1 }, promoCollection: { id: 2 }, promos: [{ id: 9 }], promoTitle: 'p' };
+  assert.equal(validate({ ...j, ruleGroups }), '');
+  assert.match(validate({ ...j, ruleGroups: [{ rules: [] }] }), /放在哪些产品/);
+  assert.match(validate({ ...j, ruleGroups: [{ rules: [{ f: 'price', v: ['1'] }] }] }), /类型不对/);
+  assert.match(validate({ kind: 'callout', name: 'x', title: 't', promo: { id: 1 }, ruleGroups }), /只有联合推广/);
 });

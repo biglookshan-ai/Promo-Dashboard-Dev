@@ -65,7 +65,7 @@ export async function syncJoint(ctx, state, it, { gql, now = Date.now(), force =
   let lens;
   try {
     const { ids, capped } = await calloutIds(ctx, {
-      rules: it.rules, products: it.products, exProducts: it.exProducts, promos: (it.promos?.length ? it.promos : it.promo ? [it.promo] : []),
+      rules: it.rules, ruleGroups: it.ruleGroups, products: it.products, exProducts: it.exProducts, promos: (it.promos?.length ? it.promos : it.promo ? [it.promo] : []),
       exCollections: it.promoCollection?.id ? [it.promoCollection.id] : [],
     }, gql);
     lens = await syncMembers(ctx, gql, it.lensCollection, capped ? [] : ids, { force,

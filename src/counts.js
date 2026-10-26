@@ -61,8 +61,34 @@ async function gqlRetry(ctx, gql, query, vars) { // 逐页拉的时候可能被�
 }
 // 推广的产品自己不算(联合推广可以选多个 promos;普通推广块只有一个 promo)
 const promoEx = (promo, promos) => [...(Array.isArray(promos) ? promos : []), promo].filter((p) => p?.id || typeof p === 'string').map((p) => numId(p.id || p));
-export async function calloutScope(ctx, { rules = [], products = [], exProducts = [], promo = null, promos = [] }, gql = graphql) {
-  const rs = coRules(rules);
+// 联合推广的「条件组」(2026-10-26 用户:每个牌子筛选方法不一样,不想为每个牌子复制一份推广):
+//   ruleGroups = [{ name, rules }],组和组之间「或」(命中任一组就算),组里还是每条都要满足。没有 ruleGroups = 只有 rules 这一组。
+export const ruleGroupsOf = ({ rules = [], ruleGroups = null } = {}) =>
+  (Array.isArray(ruleGroups) && ruleGroups.length ? ruleGroups.map((g) => coRules(g?.rules)) : [coRules(rules)]).filter((rs) => rs.length);
+// 一组条件命中的全部产品(逐页拉,标题条件在这里比):id → { id, title, handle, status }
+async function groupHits(ctx, gql, rs, exIds, cap) {
+  const hits = new Map(); let after = null; let scanned = 0; let capped = false;
+  const query = calloutQuery(rs);
+  do {
+    const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { products(first: 250, after: $after, query: $q, sortKey: TITLE) { nodes { id title handle status } pageInfo { hasNextPage endCursor } } }`, { q: query, after });
+    for (const p of d.products.nodes) if (!exIds.has(numId(p.id)) && calloutTitleOk(rs, p.title)) hits.set(numId(p.id), p);
+    after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
+    scanned += d.products.nodes.length;
+    if (after && scanned >= cap) { capped = true; break; }
+  } while (after);
+  return { hits, capped };
+}
+export async function calloutScope(ctx, { rules = [], ruleGroups = null, products = [], exProducts = [], promo = null, promos = [] }, gql = graphql) {
+  const groups = ruleGroupsOf({ rules, ruleGroups });
+  if (groups.length > 1) { // 好几组:每组逐页拉,合在一起(同一个产品命中两组只算一次);每组各命中多少个也带回去给编辑器
+    const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), ...promoEx(promo, promos)].filter(Boolean));
+    const incIds = products.map((p) => numId(p.id || p)).filter((id) => id && !exIds.has(id));
+    const all = new Map(); const per = []; let capped = false;
+    for (const rs of groups) { const r = await groupHits(ctx, gql, rs, exIds, 2000); per.push(r.hits.size); if (r.capped) capped = true; r.hits.forEach((v, k) => all.set(k, v)); }
+    incIds.forEach((id) => { if (!all.has(id)) all.set(id, null); });
+    return { total: all.size, sample: await coSample(ctx, gql, [...all.keys()], 12), capped, groups: per };
+  }
+  const rs = groups[0] || [];
   const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), ...promoEx(promo, promos)].filter(Boolean));
   const incIds = products.map((p) => numId(p.id || p)).filter((id) => id && !exIds.has(id));
   if (!rs.length && !incIds.length) return { total: 0, sample: [], capped: false };
@@ -101,8 +127,8 @@ export async function calloutScope(ctx, { rules = [], products = [], exProducts 
 }
 // 联合推广(2026-10-22):按条件算出**全部**命中的产品 id(同步进「兼容产品」合集用),和 calloutScope 同一套判断。
 //   exCollections = 这些合集里的产品不算(比如推广产品自己那个系列:Smart Fusion 的套装不能算进「兼容镜头」)
-export async function calloutIds(ctx, { rules = [], products = [], exProducts = [], promo = null, promos = [], exCollections = [] }, gql = graphql, { cap = 3000 } = {}) {
-  const rs = coRules(rules);
+export async function calloutIds(ctx, { rules = [], ruleGroups = null, products = [], exProducts = [], promo = null, promos = [], exCollections = [] }, gql = graphql, { cap = 3000 } = {}) {
+  const groups = ruleGroupsOf({ rules, ruleGroups });
   const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), ...promoEx(promo, promos)].filter(Boolean));
   for (const c of exCollections) {
     let after = null;
@@ -114,7 +140,7 @@ export async function calloutIds(ctx, { rules = [], products = [], exProducts = 
     }
   }
   const ids = new Set(); let capped = false;
-  if (rs.length) {
+  for (const rs of groups) { // 每组各拉一遍,合在一起(组和组之间「或」)
     const query = calloutQuery(rs);
     let after = null; let scanned = 0;
     do {

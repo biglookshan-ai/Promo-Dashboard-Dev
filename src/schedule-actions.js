@@ -32,6 +32,8 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   'joint', 'lensCollection', 'promoCollection', 'promoTitle', 'promoText', 'promoLinkText', 'offer', 'lpTitle', 'lpText', 'lpImage', 'lpImageId', 'lpSteps', 'lpTerms', 'dealPct',
   // 联合推广版本 4(2026-10-26):小标签、视频、弹窗标题、卖点、兼容相机、套装说明(How it works 仍存在 lpSteps)
   'badge', 'video', 'popTitle', 'points', 'cameras', 'camerasNote', 'kits',
+  // 联合推广的条件组(2026-10-26):[{ id, name, rules }],组和组之间「或」;rules 仍存第一组(老代码 / 店里 rules 字段用)
+  'ruleGroups',
   // 产品页推广块:推广的产品、链接文字、品牌、排除的产品 / 标签(其余沿用 title / text / link / image / collections / tags / products / priority)
   'promo', 'promos', 'linkText', 'vendors', 'exProducts', 'exTags', 'rules',
   // 主活动 / 子活动:活动属于哪个主活动(活动 id;只有一层)
@@ -114,12 +116,18 @@ export function validate(it) {
       if (vid && !/^(https?:\/\/)?(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(vid) && !/^[\w-]{11}$/.test(vid)) return '视频请填 YouTube 链接(youtube.com/watch?v=… 或 youtu.be/…)';
       if (it.kits != null && (!Array.isArray(it.kits) || it.kits.length > 60 || it.kits.some((k) => !k || !k.v))) return '套装说明的格式不对';
     }
-    const rules = (it.rules || []).filter((r) => (r.v || []).length);
-    if (rules.length > 20) return '条件最多 20 行';
-    for (const r of rules) {
-      if (!['vendor', 'type', 'collection', 'tag', 'title'].includes(r.f)) return '条件的类型不对';
-      if (r.v.length > 50) return '一行条件最多 50 个值';
-      if (r.f === 'collection' ? r.v.some((c) => !c?.id) : r.v.some((x) => typeof x !== 'string' || !x.trim())) return '条件里有空的值';
+    // 联合推广可以有好几组条件(每个牌子一组,组和组之间「或」);普通推广块只有 rules 一组
+    if (it.ruleGroups != null && (!Array.isArray(it.ruleGroups) || it.ruleGroups.length > 20 || it.ruleGroups.some((g) => !g || !Array.isArray(g.rules)))) return '条件组的格式不对(最多 20 组)';
+    if (it.ruleGroups?.length && !it.joint) return '只有联合推广能分好几组条件';
+    const groups = (it.ruleGroups?.length ? it.ruleGroups.map((g) => g.rules) : [it.rules || []]).map((rs) => (rs || []).filter((r) => (r.v || []).length));
+    const rules = groups.flat();
+    for (const g of groups) {
+      if (g.length > 20) return '每组条件最多 20 行';
+      for (const r of g) {
+        if (!['vendor', 'type', 'collection', 'tag', 'title'].includes(r.f)) return '条件的类型不对';
+        if (r.v.length > 50) return '一行条件最多 50 个值';
+        if (r.f === 'collection' ? r.v.some((c) => !c?.id) : r.v.some((x) => typeof x !== 'string' || !x.trim())) return '条件里有空的值';
+      }
     }
     if (!rules.length && !(it.products || []).length && ![it.collections, it.tags, it.vendors].some((x) => (x || []).length)) return '请设置放在哪些产品上(至少一条条件,或者选几个一定显示的产品)';
   }

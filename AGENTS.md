@@ -158,6 +158,9 @@
   每次同步先把推广产品合集对齐成**正好这几个**(多出来的移出,安全阀同上,结果在 `jointSync[id].promo`),再同步兼容产品(条件命中的去掉推广产品 + 推广合集成员)。
   ⛔ 老的推广块(只有 `promo`、没有 `promos`)**不动推广产品合集**,等人在新编辑器里看过、保存一次才开始管(免得上线后突然把人工放进去的产品移出)。保存时联合推广必须选至少一个推广产品。
   主题里 joint 推广块不看 rules,看 `product.collections`:在推广产品合集 → B 面(优先),在兼容产品合集 → A 面。
+  **条件组**(2026-10-26 用户:每个牌子筛选方法不一样,不想每个牌子复制一条推广):联合推广可以有 `ruleGroups = [{ id, name, rules }]`,组和组之间「或」、组里每条都要满足;
+  `calloutScope` / `calloutIds` 用 `ruleGroupsOf()` 逐组拉再合并(scope 额外回 `groups` = 每组命中数),同步进同一个兼容产品合集;`rules` 仍存第一组(店里 rules 字段 / 普通推广块用)。
+  只有联合推广能分组(普通推广块的条件主题要在 Liquid 里判断,没做分组)。编辑器:条件区上面一排组页签(`coGroupsHtml`,`ed.rules` 就是当前组的数组),「从别的推广块复制条件」把那张的条件变成新的一组、排除 / 一定显示的产品并进来。
   2026-10-23 主题改成「一段话卡片 + 点开弹窗」(主题仓库 snippets/cgp-joint-popup.liquid / cgp-joint-product.liquid / cgp-joint-pct.liquid,assets/cgp-joint.css / .js):
   卡片 = 优惠一句 + 标题 + 链接文字;A 面弹窗里推广产品一行一个(选套装、直接加购物车、显示搭配价),B 面弹窗里 8 张兼容产品卡片可直接加购;弹窗底部才链到活动页。
   **搭配价的百分比主题直接读 KitBundle 写在兼容产品上的 `custom.gift_trigger`(kind = deal)**,不读这里的 dealPct —— 两边不一致时以 KitBundle 为准(编辑器折扣行会提醒)。
