@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calloutQuery, calloutTitleOk, calloutScope, calloutIds, ruleGroupsOf } from '../src/counts.js';
 import { validate } from '../src/schedule-actions.js';
-import { fieldsFor } from '../src/metaobjects.js';
+import { fieldsFor, brandOrderOf } from '../src/metaobjects.js';
 
 const R = [
   { f: 'vendor', n: false, v: ['DZOFILM', 'Thypoch'] }, { f: 'type', n: false, v: ['Cine Lens'] },
@@ -89,4 +89,16 @@ test('联合推广条件组:组和组之间「或」,同一个产品只算一次
   assert.match(validate({ ...j, ruleGroups: [{ rules: [] }] }), /放在哪些产品/);
   assert.match(validate({ ...j, ruleGroups: [{ rules: [{ f: 'price', v: ['1'] }] }] }), /类型不对/);
   assert.match(validate({ kind: 'callout', name: 'x', title: 't', promo: { id: 1 }, ruleGroups }), /只有联合推广/);
+});
+
+test('联合推广的牌子顺序 = 条件组的顺序(取「品牌是」的值,不分大小写只算一次)', () => {
+  const it = { kind: 'callout', joint: true, ruleGroups: [
+    { rules: [{ f: 'vendor', v: ['BLAZAR (Great Joy)'] }, { f: 'type', v: ['Cine Lens'] }] },
+    { rules: [{ f: 'vendor', v: ['DZOFiLM'] }, { f: 'vendor', n: true, v: ['Other'] }] },
+    { rules: [{ f: 'vendor', v: ['dzofilm', 'NiSi'] }] },
+  ] };
+  assert.deepEqual(brandOrderOf(it), ['BLAZAR (Great Joy)', 'DZOFiLM', 'NiSi']);
+  assert.deepEqual(brandOrderOf({ rules: [{ f: 'vendor', v: ['A'] }] }), ['A']);
+  const f = Object.fromEntries(fieldsFor({ ...it, name: 'x', title: 't', lensCollection: { id: 1 }, promoCollection: { id: 2 }, promos: [{ id: 9 }] }).map((x) => [x.key, x.value]));
+  assert.deepEqual(JSON.parse(f.brand_order), ['BLAZAR (Great Joy)', 'DZOFiLM', 'NiSi']);
 });

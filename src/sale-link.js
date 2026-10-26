@@ -9,7 +9,8 @@
 // ★ 2026-10-26 用户定:链接**有自定义**(固定了产品,或选了排序方式)= 完全独立 —— 固定的排最前,其余按链接自己的排序
 //   (固定了产品又没选排序 = 折扣从大到小),一样大再按最新、产品 id;**不看 Collection 的顺序,置顶清单 / 默认设置都影响不到**。
 //   链接**什么都没自定义**才跟着 Collection 平时的顺序(生效中的置顶清单 → Collection 默认设置)。
-//   固定位置最多前 50 个算数(metaobjects.js 只往店里写前 50 个,主题一次只读得到 50 个)。
+//   固定位置最多前 100 个算数(2026-10-26 从 50 提到 100:metaobjects.js 另写 pin_ids 产品编号,主题优先读它;
+//   店里的内容类型还没补建 pin_ids 时,主题只读得到前 50 个 —— 编辑器会提醒去补建)。
 
 export const SALE_SORTS = [
   ['', '和 Collection 平时一样'], ['discount', '折扣从大到小'], ['newest', '最新上架在前'], ['price-asc', '价格从低到高'], ['price-desc', '价格从高到低'],
@@ -17,7 +18,7 @@ export const SALE_SORTS = [
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 export const slugOf = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 const nid = (id) => Number(String(id ?? '').split('/').pop()) || 0;
-export const MAX_FIXED = 50;
+export const MAX_FIXED = 100; // 2026-10-26 从 50 提到 100(店里另存 pin_ids,主题优先读它)
 // 有没有自定义排序;实际用哪种排序('' = 跟着 Collection)
 export const isCustom = (link = {}) => !!link.sort || (link.products || []).length > 0;
 export const effSort = (link = {}) => link.sort || ((link.products || []).length ? 'discount' : '');
@@ -70,7 +71,7 @@ export function saleBase(products, link = {}, opts = {}, all = false) {
 
 export function saleView(products, link = {}, opts = {}) {
   let list = saleBase(products, link, opts);
-  const pinIds = (link.products || []).slice(0, MAX_FIXED).map((x) => nid(x.id)); // 网站只认前 50 个
+  const pinIds = (link.products || []).slice(0, MAX_FIXED).map((x) => nid(x.id)); // 网站只认前 100 个
   if (pinIds.length) {
     const byId = new Map(list.map((p) => [nid(p.id), p]));
     const head = pinIds.filter((id, i) => byId.has(id) && pinIds.indexOf(id) === i).map((id) => byId.get(id));
@@ -85,7 +86,7 @@ export function saleView(products, link = {}, opts = {}) {
   const pins = (link.products || []).map((x) => {
     const p = all.get(nid(x.id));
     const why = !p ? '不在这个 Collection 里' : whyOut(p, link) || (shown.has(nid(x.id)) ? '' : `排在「最多 ${limit} 个」以外`);
-    // 第 51 个以后:网站不认这个固定位置(照样可能显示,只是按排序规则排)
+    // 第 101 个以后:网站不认这个固定位置(照样可能显示,只是按排序规则排)
     return { id: x.id, title: x.title || p?.title || '', shown: !why, why };
   });
   return { list, total, pins };

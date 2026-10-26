@@ -1433,11 +1433,12 @@
     const others = (S.callouts || []).filter((x) => x.id !== ed.__it?.id && (coRulesOf(x).length || coLegacyRules(x).length || (x.ruleGroups || []).length));
     const cur = ed.groups[ed.gi] || ed.groups[0];
     return `<div class="cogroups">
-      <div class="scope__lbl">条件组 <em>每个牌子一组(各自的筛选方法);命中任何一组就算兼容产品,文案只有一份</em></div>
+      <div class="scope__lbl">条件组 <em>每个牌子一组(各自的筛选方法);命中任何一组就算兼容产品,文案只有一份。页签的顺序 = 活动页和弹窗里牌子按钮的顺序</em></div>
       <div class="cogtabs">${ed.groups.map((g, k) => { const n = cnt(k); return `<button type="button" class="cogtab${k === ed.gi ? ' is-on' : ''}" data-cog="${k}">${esc(coGName(g, k))}${n != null ? `<em>${n}</em>` : ''}</button>`; }).join('')}
         <button type="button" class="chipadd" data-co="gadd">${I.plus}加一组</button>
         ${others.length ? `<select class="sel sel--sm" data-cocopy aria-label="从别的推广块复制条件"><option value="">从别的推广块复制条件…</option>${others.map((o) => `<option value="${esc(o.id)}">${esc(o.name || o.title || o.id)}</option>`).join('')}</select>` : ''}</div>
-      <div class="cogcur"><input class="inp" data-cogname value="${esc(cur.name || '')}" placeholder="这一组的名字(比如 DZOFILM;空 = 用条件里的品牌)"/>${ed.groups.length > 1 ? '<button type="button" class="btn btn-sm btn-ghost" data-co="gdel">删掉这一组</button>' : ''}</div>
+      <div class="cogcur"><input class="inp" data-cogname value="${esc(cur.name || '')}" placeholder="这一组的名字(比如 DZOFILM;空 = 用条件里的品牌)"/>
+        ${ed.groups.length > 1 ? `<button type="button" class="btn btn-sm btn-ghost" data-co="gleft" ${ed.gi === 0 ? 'disabled' : ''} title="往前挪(前台牌子按钮也往前)">← 往前</button><button type="button" class="btn btn-sm btn-ghost" data-co="gright" ${ed.gi === ed.groups.length - 1 ? 'disabled' : ''} title="往后挪">往后 →</button><button type="button" class="btn btn-sm btn-ghost" data-co="gdel">删掉这一组</button>` : ''}</div>
     </div>`;
   }
   function coSetGroup(k) { ed.gi = Math.max(0, Math.min(k, ed.groups.length - 1)); ed.rules = ed.groups[ed.gi].rules; }
@@ -1674,7 +1675,7 @@
     const base = SL.saleBase(d.products, link, opts, all);
     const byId = new Map(base.map((p) => [numId(p.id), p]));
     const head = []; const hs = new Set();
-    for (const x of (link.products || []).slice(0, SL.MAX_FIXED)) { const id = numId(x.id); if (byId.has(id) && !hs.has(id)) { head.push(byId.get(id)); hs.add(id); } }
+    for (const x of (link.products || []).slice(0, slMax())) { const id = numId(x.id); if (byId.has(id) && !hs.has(id)) { head.push(byId.get(id)); hs.add(id); } }
     return { list: [...head, ...base.filter((p) => !hs.has(numId(p.id)))], baseIds: base.map((p) => numId(p.id)) };
   }
   const SL_ST = { instock: 'In Stock', preorder: 'Pre Order', oos: 'Out of Stock' };
@@ -1705,7 +1706,7 @@
     const all = !!sl.showAll;
     const { list } = slOrder(d, link, opts, all);
     const limit = Math.max(0, parseInt(v.limit, 10) || 0);
-    const pinned = new Set(sl.products.slice(0, SL_MAX_FIXED).map((p) => numId(p.id))); // 红框:网站只认前 50 个
+    const pinned = new Set(sl.products.slice(0, slMax()).map((p) => numId(p.id))); // 红框:网站认的那几个(100 个,没补建字段时 50 个)
     const fromPin = new Set(ap && !SL.isCustom(link) ? (ap.products || []).map((p) => numId(p.id)) : []); // 蓝框:没自定义时,顺序来自置顶清单
     const lost = sl.products.filter((x) => !list.some((p) => numId(p.id) === numId(x.id)));
     const MAXC = 150; let n = 0;
@@ -1719,7 +1720,8 @@
     return `${bigBar || head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button> <button type="button" class="btn btn-sm btn-primary" data-sl="big">⤢ 放大排序</button>')}
       <p class="slsum">显示 <b>${view.list.length}</b> 个产品${view.total > view.list.length ? `(符合条件的有 ${view.total} 个,只取前 ${view.list.length} 个)` : ''} · 这个 Collection 一共 ${d.total} 个产品,打折的 ${onSale} 个${d.truncated ? ' · ⚠️ Collection 太大,前台只读前 1000 个' : ''}</p>
       ${view.pins.some((p) => !p.shown) && !all ? `<div class="note note--warn note--sm">${view.pins.filter((p) => !p.shown).map((p) => `固定了位置的「${esc(p.title)}」现在不会显示:${esc(p.why)}`).join('<br>')}${lost.length ? '<br>符合条件后(比如开始打折)会出现在你排的位置;不过在下面拖动别的产品时,它们会挪到固定部分的最后 —— 想一起排,勾上「也显示现在不会出现的产品」。' : ''}</div>` : ''}
-      ${sl.products.length > 50 ? `<div class="note note--warn note--sm">前台最多固定前 50 个位置,你现在固定了 ${sl.products.length} 个 —— 第 51 个以后按「排序」排。</div>` : ''}
+      ${sl.products.length > slMax() ? `<div class="note note--warn note--sm">网站最多固定前 ${slMax()} 个位置,你现在固定了 ${sl.products.length} 个 —— 第 ${slMax() + 1} 个以后按「排序」排。</div>` : ''}
+      ${slPinIdsMissing() && sl.products.length > 50 ? '<div class="note note--warn note--sm">固定位置已经可以到 100 个,但店里的「促销链接」内容类型还没补建新字段,网站暂时只认前 50 个。到「设置 → 店铺连接」点补建,补完这条链接会自动重写一次。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
       ${slSrcHtml(c, v, d, view)}
       <div class="slord">
         <label class="tgl tgl--sm"><input type="checkbox" data-slall ${all ? 'checked' : ''}/><span class="tgl__ui"></span><span>也显示现在不会出现的产品<span class="muted">(没打折 / 没货 / 折扣不够的,灰色;活动前先排好,开始打折后就在这个位置出现)</span></span></label>
@@ -1748,7 +1750,9 @@
   }
   // 这个合集还没结束的促销链接(2026-10-26 用户:看不出促销链接的置顶和合集排序是什么关系)
   //   排序留空(和合集平时一样)= 链接里打折的产品沿用合集排序清单的顺序,链接自己固定的排在更前面;选了别的排序 = 不跟合集排序
-  const SL_MAX_FIXED = 50; // 促销链接最多固定前 50 个(app 只往店里写前 50 个,主题一次只读得到 50 个)
+  // 促销链接最多固定前几个:100 个(2026-10-26 从 50 提到 100,店里另存 pin_ids 产品编号);店里的内容类型还没补建 pin_ids 时网站只认前 50 个
+  const slPinIdsMissing = () => MODE === 'live' && (S.setup?.fieldsMissing || []).includes('cgp_sale_link.pin_ids');
+  const slMax = () => (slPinIdsMissing() ? 50 : SL.MAX_FIXED);
   const salesOf = (cid) => (S.salelinks || []).filter((x) => x.collection && numId(x.collection.id) === numId(cid) && !['ended', 'rejected'].includes(status(x)));
   // 置顶清单编辑器第 1 段:这个合集的促销链接各自跟不跟这份清单
   function wxSlHtml() {
@@ -1757,8 +1761,8 @@
     if (!links.length) return '<span class="muted">没有 —— 这份清单只管 Collection 本来那一页</span>';
     // 2026-10-26 用户定:促销链接有自定义(固定了产品 / 选了排序)就完全独立;什么都没设才跟着这份清单
     return `<div class="slrel">${links.map((x) => {
-      const n = (x.products || []).length; const k = Math.min(n, SL_MAX_FIXED);
-      const own = [k ? `固定了 ${k} 个产品${n > SL_MAX_FIXED ? `(排了 ${n} 个,网站只认前 ${SL_MAX_FIXED} 个)` : ''}` : '', x.sort ? `排序选了「${esc(SORT_LABEL()[x.sort] || x.sort)}」` : k ? '其余按折扣从大到小' : ''].filter(Boolean).join(',');
+      const n = (x.products || []).length; const k = Math.min(n, slMax());
+      const own = [k ? `固定了 ${k} 个产品${n > slMax() ? `(排了 ${n} 个,网站只认前 ${slMax()} 个)` : ''}` : '', x.sort ? `排序选了「${esc(SORT_LABEL()[x.sort] || x.sort)}」` : k ? '其余按折扣从大到小' : ''].filter(Boolean).join(',');
       return `<div class="slrel__i"><span class="slrel__t">${badge(x)}<b>${esc(titleOf(x))}</b><span class="mono muted">?onsale${x.slug ? `=${esc(x.slug)}` : ''}</span></span>
         <span class="slrel__w">${SL.isCustom(x)
           ? `<span class="tag">独立排序,不受影响</span>这条链接${own},完全按它自己的顺序;这份清单怎么改都影响不到它`
@@ -1772,9 +1776,9 @@
     const li = (n, body, cls = '') => `<li class="slsrc__i${cls}"><i>${n}</i><div>${body}</div></li>`;
     const sortCn = (k) => esc(SORT_LABEL()[k] || k);
     if (SL.isCustom(link)) { // 有自定义:完全独立,置顶清单 / Collection 默认设置都影响不到
-      const n = sl.products.length; const k = Math.min(n, SL_MAX_FIXED); const es = SL.effSort(link);
+      const n = sl.products.length; const k = Math.min(n, slMax()); const es = SL.effSort(link);
       return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序 · <b>这条链接独立排序</b>,Collection 排序清单和默认设置都影响不到</li>
-        ${li(1, `<b>这条链接固定的</b> ${k ? `${n > SL_MAX_FIXED ? '前 ' : ''}${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框${n > SL_MAX_FIXED ? `<span class="warn">;你排的第 ${SL_MAX_FIXED + 1}–${n} 个网站不认,按第 2 层排</span>` : ''}` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
+        ${li(1, `<b>这条链接固定的</b> ${k ? `${n > slMax() ? '前 ' : ''}${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框${n > slMax() ? `<span class="warn">;你排的第 ${slMax() + 1}–${n} 个网站不认,按第 2 层排</span>` : ''}` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
         ${li(2, `<b>其余打折的</b> 按「${sortCn(es)}」${!v.sort ? '<em>固定了产品、没另外选排序,就按折扣从大到小;可以在左边「排序」里换</em>' : ''}<em>一样大的按最新上架在前</em>`)}
       </ol>`;
     }
@@ -4542,6 +4546,10 @@
         }
         if (a === 'nolpimg') { f.querySelector('[name="lpImage"]').value = ''; f.querySelector('[name="lpImageId"]').value = ''; return rerenderCo(); }
         if (a === 'gadd') { ed.groups.push({ id: `g${Date.now().toString(36)}`, name: '', rules: [] }); coSetGroup(ed.groups.length - 1); refreshScope(); $('#ed-scope [data-cogname]')?.focus(); return; }
+        if ((a === 'gleft' || a === 'gright') && ed.groups.length > 1) { // 挪页签 = 改前台牌子按钮的顺序
+          const to = ed.gi + (a === 'gleft' ? -1 : 1); if (to < 0 || to >= ed.groups.length) return;
+          const [g0] = ed.groups.splice(ed.gi, 1); ed.groups.splice(to, 0, g0); coSetGroup(to); refreshScope(); return;
+        }
         if (a === 'gdel' && ed.groups.length > 1) { ed.groups.splice(ed.gi, 1); coSetGroup(ed.gi - 1); refreshScope(); return; }
         if (a === 'kitnorec') { ed.kits.forEach((k) => { k.rec = false; }); const el = $('#co-kits'); if (el) el.innerHTML = coKitsHtml(); }
         if (a === 'lpsadd' && ed.lpSteps.length < 4) { ed.lpSteps.push({ t: '', d: '' }); $('#co-lps').innerHTML = lpsHtml(); $(`#co-lps [data-lps="t:${ed.lpSteps.length - 1}"]`)?.focus(); }

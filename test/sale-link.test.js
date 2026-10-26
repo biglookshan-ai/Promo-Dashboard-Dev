@@ -142,12 +142,22 @@ test('有自定义的促销链接完全不受置顶清单 / Collection 默认设
   assert.deepEqual(saleView(P, fixed, {}).list.map((p) => p.id), [3, 2, 4, 1]);
 });
 
-test('固定位置只认前 50 个(和网站一致);第 51 个以后按链接自己的排序', async () => {
+test('固定位置只认前 100 个(和网站一致,2026-10-26 从 50 提到 100);第 101 个以后按链接自己的排序', async () => {
   const { saleView, MAX_FIXED } = await import('../src/sale-link.js');
-  const P = Array.from({ length: 60 }, (_, i) => ({ id: i + 1, discount: i + 1, created: 0 })); // 折扣:id 越大越高
-  const order = Array.from({ length: 60 }, (_, i) => ({ id: i + 1 }));                      // 想按 1,2,3…60 排
+  const P = Array.from({ length: 110 }, (_, i) => ({ id: i + 1, discount: i + 1, created: 0 })); // 折扣:id 越大越高
+  const order = Array.from({ length: 110 }, (_, i) => ({ id: i + 1 }));                      // 想按 1,2,3…110 排
   const v = saleView(P, { products: order }).list.map((p) => p.id);
-  assert.equal(MAX_FIXED, 50);
-  assert.deepEqual(v.slice(0, 50), Array.from({ length: 50 }, (_, i) => i + 1));
-  assert.deepEqual(v.slice(50), [60, 59, 58, 57, 56, 55, 54, 53, 52, 51]);                  // 51–60 按折扣从大到小
+  assert.equal(MAX_FIXED, 100);
+  assert.deepEqual(v.slice(0, 100), Array.from({ length: 100 }, (_, i) => i + 1));
+  assert.deepEqual(v.slice(100), [110, 109, 108, 107, 106, 105, 104, 103, 102, 101]);         // 101–110 按折扣从大到小
+});
+
+test('促销链接写进店里:products 只写前 50 个(主题读产品列表的上限),pin_ids 写前 100 个产品编号', async () => {
+  const { fieldsFor } = await import('../src/metaobjects.js');
+  const it = { kind: 'salelink', name: 'x', slug: 'x', collection: { id: 9 }, products: Array.from({ length: 120 }, (_, i) => ({ id: `gid://shopify/Product/${i + 1}` })) };
+  const f = Object.fromEntries(fieldsFor(it, {}).map((x) => [x.key, x.value]));
+  assert.equal(JSON.parse(f.products).length, 50);
+  const ids = JSON.parse(f.pin_ids);
+  assert.equal(ids.length, 100); assert.equal(ids[0], 1); assert.equal(ids[99], 100);
+  assert.equal(JSON.parse(Object.fromEntries(fieldsFor({ ...it, products: [] }, {}).map((x) => [x.key, x.value])).pin_ids).length, 0);
 });

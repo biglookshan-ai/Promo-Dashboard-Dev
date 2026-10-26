@@ -3,6 +3,7 @@
 // 首页商品模块的「页签」不开 publishable(永远可读),它跟着所属的模块版本一起上下线。
 // 主题只遍历 .values(只返回 ACTIVE),不写日期判断 —— 什么时候上线全由定时器切这个状态决定。
 import { graphql } from './shopify.js';
+import { MAX_FIXED as SL_MAX_FIXED } from './sale-link.js';
 
 export const REQUIRED_SCOPES = ['write_metaobject_definitions', 'write_metaobjects', 'write_files'];
 
@@ -154,6 +155,8 @@ export const DEFINITIONS = [
       t('slug', '链接后缀', 'single_line_text_field', { description: '?onsale= 后面那段,小写字母 / 数字 / 横线' }),
       t('collection', '合集', 'collection_reference'),
       t('products', '置顶的产品(按顺序)', 'list.product_reference'),
+      // 2026-10-26 用户:固定位置要到 100 个 —— 产品列表在主题里一次只读得到 50 个,另存一份产品编号(最多 100 个),主题优先读它
+      t('pin_ids', '置顶的产品编号(按顺序,最多 100 个)', 'json', { description: '[产品 id 数字],主题优先读这个;没有才读上面的「置顶的产品」(只认前 50 个)' }),
       t('in_stock', '只显示有货', 'boolean'),
       t('min_discount', '最低折扣 %', 'number_integer'),
       t('limit', '最多显示几个', 'number_integer', { description: '0 = 不限' }),
@@ -212,6 +215,8 @@ export const DEFINITIONS = [
       t('cameras', '兼容相机', 'multi_line_text_field', { description: '一行一个' }),
       t('cameras_note', '兼容相机 · 说明', 'single_line_text_field'),
       t('kits', '套装说明', 'json', { description: '[{v: 款式 id, note: 一句说明, rec: 推荐}]' }),
+      // 2026-10-26:活动页 / 弹窗里牌子按钮的顺序 = 编辑器里条件组页签的顺序(每组「品牌是」的值);没列到的按字母排在后面
+      t('brand_order', '牌子顺序', 'list.single_line_text_field', { description: '活动页 / 弹窗里牌子按钮的顺序;没列到的按字母排在后面' }),
     ],
   },
 ];
@@ -370,6 +375,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
     Object.assign(f, {
       name: str(it.name), slug: str(it.slug), collection: toGid('Collection', it.collection?.id) || '',
       products: list((it.products || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)), // 主题一次只读得到前 50 个
+      pin_ids: JSON.stringify((it.products || []).map((p) => Number(String(p.id).split('/').pop())).filter((n) => n > 0).slice(0, SL_MAX_FIXED)),
       in_stock: it.inStock ? 'true' : 'false', min_discount: String(Math.max(0, Math.round(Number(it.minDiscount) || 0))),
       limit: String(Math.max(0, Math.round(Number(it.limit) || 0))), sort: str(it.sort), title: str(it.heading),
       after_end: ['collection', 'url'].includes(it.afterEnd) ? it.afterEnd : '', after_end_url: it.afterEnd === 'url' ? str(it.afterEndUrl).trim() : '',
@@ -392,7 +398,7 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       lp_steps: JSON.stringify((it.lpSteps || []).filter((x) => x && String(x.t || '').trim()).slice(0, 4).map((x) => ({ t: String(x.t).trim(), d: String(x.d || '').trim() }))),
       lp_terms: str(it.lpTerms),
       badge: str(it.badge), video: str(it.video).trim(), pop_title: str(it.popTitle), points: str(it.points), cameras: str(it.cameras), cameras_note: str(it.camerasNote),
-      kits: JSON.stringify(kitsOut(it.kits)),
+      kits: JSON.stringify(kitsOut(it.kits)), brand_order: list(brandOrderOf(it)),
     });
     else Object.assign(f, { joint: 'false' });
   }
@@ -400,6 +406,16 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
   return Object.entries(f).map(([key, value]) => ({ key, value }));
 }
 
+// 联合推广的牌子顺序:按条件组的顺序,取每组「品牌是」的值(同一个牌子不分大小写只算一次)
+export function brandOrderOf(it) {
+  const groups = it?.ruleGroups?.length ? it.ruleGroups.map((g) => g?.rules || []) : [it?.rules || []];
+  const out = []; const seen = new Set();
+  for (const rs of groups) for (const r of rs || []) {
+    if (r?.f !== 'vendor' || r.n) continue;
+    for (const v of r.v || []) { const k = String(v).trim().toLowerCase(); if (k && !seen.has(k)) { seen.add(k); out.push(String(v).trim()); } }
+  }
+  return out.slice(0, 50);
+}
 // 联合推广的套装说明:[{v: 款式 id(数字), note, rec}];只留有说明或标了推荐的,推荐只能一个
 export function kitsOut(kits) {
   let rec = false;
