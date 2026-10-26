@@ -1289,7 +1289,9 @@
     if (coDeal?.status === 'active' && coDeal.campaignId) return `${base}/app/gifts/${encodeURIComponent(coDeal.campaignId)}`;
     if (!ed.lensCollection || !ed.promoCollection) return '';
     const q = new URLSearchParams({ deal: '1', pct: String(ed.dealPct || 10), title: ($('#ed-form [name="name"]')?.value || '').trim() || `${ed.promoCollection.title} × compatible products`,
-      trigger: gidOf('Collection', ed.lensCollection.id), reward: gidOf('Collection', ed.promoCollection.id) });
+      trigger: gidOf('Collection', ed.lensCollection.id), reward: gidOf('Collection', ed.promoCollection.id),
+      // 2026-10-26:兼容镜头里无反卡口的款式不算(Smart Fusion 只给 Sony E,老卡口能转接),KitBundle 预填好,可在那边改
+      exopt: 'RF,L,X,Z,MFT,EF-M,DL' });
     return `${base}/app/gifts/new?${q}`;
   }
   function coDealHtml(it) {
