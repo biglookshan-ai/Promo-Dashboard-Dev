@@ -150,7 +150,7 @@
   // 能被选进分工的人:正式数据 = 看得到这类内容所在页面的成员;演示 = 名单里所有人
   const PAGE_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pmodules', salelink: 'pmodules', callout: 'pmodules', campaign: 'campaigns' };
   const peopleFor = (kind) => S.staff.filter((u) => !u.pages || u.admin || u.pages.includes(PAGE_OF[kind]));
-  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: '合集置顶', salelink: '促销链接', callout: '产品页推广', price: '改价' };
+  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: 'Collection 置顶', salelink: '促销链接', callout: '产品页推广', price: '改价' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
   const rid = (p) => p + Math.random().toString(36).slice(2, 9);
@@ -216,7 +216,7 @@
   const nTxt = (n) => (n == null ? '?' : n);
   function campScope(c, short, sep = ' + ') {
     const parts = [];
-    if (c.collections?.length) parts.push(short ? `合集 ${c.collections.length}` : `合集:${c.collections.map((x) => `${esc(x.title)}(${nTxt(colCount(x))})`).join('、')}`);
+    if (c.collections?.length) parts.push(short ? `Collection ${c.collections.length}` : `Collection:${c.collections.map((x) => `${esc(x.title)}(${nTxt(colCount(x))})`).join('、')}`);
     if (c.tags?.length) parts.push(short ? `标签 ${c.tags.length}` : `标签:${c.tags.map((t) => `${esc(t)}(${nTxt(tagCount(t))})`).join('、')}`);
     if (c.products?.length) parts.push(short ? `产品 ${c.products.length}` : `指定 ${c.products.length} 个产品`);
     return parts.join(short ? ' · ' : sep) || (short ? '无产品' : '<span class="muted">没选产品(不显示徽章;挂在下面的 Banner / 顶栏 / 促销链接照常上下线)</span>');
@@ -371,7 +371,7 @@
       body = `<div class="pop__camp">
         <div>${x.badge ? `<span class="pbadge">${esc(x.badge)}</span>` : ''}${x.countdown ? '<span class="tag">倒计时</span>' : ''}</div>
         <div class="muted">${campScope(x)}</div>
-        <div>约 <b>${st.total}${st.unknown ? '+' : ''}</b> 个产品${st.overlap ? '<span class="muted">(合集和标签可能有重叠)</span>' : ''}</div>
+        <div>约 <b>${st.total}${st.unknown ? '+' : ''}</b> 个产品${st.overlap ? '<span class="muted">(Collection 和标签可能有重叠)</span>' : ''}</div>
         ${bn.length ? `<div class="pop__thumbs">${bn.map((b) => `<span class="pop__t">${slideHtml(b, { w: 200 })}</span>`).join('')}</div>` : ''}
       </div>`;
     }
@@ -519,7 +519,7 @@
             <div class="pvside__g"><span>顶栏公告</span><b>${msgs.length} 条</b>${msgs.map((m) => `<button class="pvside__i" data-open="${m.id}" type="button">${esc(titleOf(m))}</button>`).join('') || '<span class="muted">无</span>'}</div>
             <div class="pvside__g"><span>Banner</span><b>${bns.length} 张</b></div>
             ${mods.map(({ m, v }) => `<div class="pvside__g"><span>${MODULE_CN[m]}</span><b>${esc(v.name || '平时版本')}</b><span class="muted">${(v.tabs || []).map((t) => esc(tabLabel(t))).join(' · ')}</span></div>`).join('')}
-            <div class="pvside__g"><span>合集置顶</span>${pins.length ? pins.map((p) => `<button class="pvside__i" data-open="${p.id}" type="button">${esc(p.collection?.title || titleOf(p))}:${(p.products || []).length} 个${p.onlyListed ? '(只显示这些)' : ''}</button>`).join('') : '<span class="muted">无</span>'}</div>
+            <div class="pvside__g"><span>Collection 置顶</span>${pins.length ? pins.map((p) => `<button class="pvside__i" data-open="${p.id}" type="button">${esc(p.collection?.title || titleOf(p))}:${(p.products || []).length} 个${p.onlyListed ? '(只显示这些)' : ''}</button>`).join('') : '<span class="muted">无</span>'}</div>
           </aside>
         </div>
         <p class="muted">这里画的是 app 排期的部分。顾客实际看到的还有主题里固定的区块(导航、Top Categories 等),那些不归这里管。</p>
@@ -951,11 +951,11 @@
   // 关联的飞书任务:链接 + 名字(任务状态在接好飞书任务权限后显示)
   const larkTaskGuid = (url) => (String(url).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0] || '';
   // 活动页:① 活动设置(时间 / 产品 / 产品上显示什么,一眼看清)→ ② 需要留意(有问题才出现)→ ③ 网站内容(按类型分组)→ ④ 改价 → ⑤ 飞书任务
-  const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接'], ['callout', '产品页推广']];
+  const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', 'Collection 置顶'], ['salelink', '促销链接'], ['callout', '产品页推广']];
   const dhm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h ${m % 60}m`; };
   // 徽章点了去哪(活动的 badgeLink):'' 自动 / 'none' 不能点 / 链接
   const blMode = (v) => (v === 'none' ? 'none' : v ? 'url' : '');
-  const BL_OPTS = [['', '自动(促销链接 / 参加的第一个合集)'], ['url', '指定链接'], ['none', '不能点']];
+  const BL_OPTS = [['', '自动(促销链接 / 参加的第一个 Collection)'], ['url', '指定链接'], ['none', '不能点']];
   const blSelect = (v, attrs) => `<select class="sel sel--sm" ${attrs}>${BL_OPTS.map(([k, l]) => `<option value="${k}" ${blMode(v) === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   // 活动下的促销链接(2026-10-19 起自动算参加:主题判断产品出现在这个活动的某条进行中的促销链接里 → 显示徽章)
   const campLinks = (c) => (S.salelinks || []).filter((x) => x.campaign === c.id && x.collection?.id);
@@ -991,7 +991,7 @@
       <div class="panel__h"><h3>活动设置</h3><button class="btn btn-primary btn-sm" type="button" data-open="${c.id}">修改活动设置</button></div>
       <div class="hubset__g">
         ${item('时间', `<b>${w.start != null ? fDT(w.start) : '立即'} → ${w.end != null ? fDT(w.end) : '不结束'}</b>`, `${span}${left ? ' · ' + left : ''}`)}
-        ${item('参加的产品', `<b>${noScope ? (campLinks(c).length ? '促销链接里的产品' : '没选产品') : `${st.total}${st.unknown ? '+' : ''} 个产品`}</b>`, `${noScope ? (campLinks(c).length ? '没另外选合集 / 标签 / 产品' : '参加的产品 = 显示活动徽章和倒计时的产品') : campScope(c, false, '<br>')}${slCoverHtml(c)}`)}
+        ${item('参加的产品', `<b>${noScope ? (campLinks(c).length ? '促销链接里的产品' : '没选产品') : `${st.total}${st.unknown ? '+' : ''} 个产品`}</b>`, `${noScope ? (campLinks(c).length ? '没另外选 Collection / 标签 / 产品' : '参加的产品 = 显示活动徽章和倒计时的产品') : campScope(c, false, '<br>')}${slCoverHtml(c)}`)}
         ${item('产品上显示', shows, '', `${quick}<span class="qset__hint">改了马上保存${c.state === 'approved' ? ',网站马上生效' : '(活动还是草稿,批准后才上网站)'};颜色、倒计时文案在「修改活动设置」里</span>`)}
       </div>
     </section>`;
@@ -1089,7 +1089,7 @@
     const add = (kind, label) => `<button type="button" class="btn btn-sm" data-new="${kind}" data-for="${c.id}">${I.plus}${label}</button>`;
     const needType = (flag, label) => `<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">${label}(要先补建内容类型)</button>`;
     const adds = add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页商品模块')
-      + (MODE === 'live' && S.setup && S.setup.pinReady === false ? needType('pin', '合集置顶') : add('pin', '合集置顶'))
+      + (MODE === 'live' && S.setup && S.setup.pinReady === false ? needType('pin', 'Collection 置顶') : add('pin', 'Collection 置顶'))
       + (MODE === 'live' && S.setup && S.setup.slReady === false ? needType('salelink', '促销链接') : add('salelink', '促销链接'))
       + (MODE === 'live' && S.setup && S.setup.coReady === false ? needType('callout', '产品页推广') : add('callout', '产品页推广'));
     const groups = HUB_KINDS.map(([k, label]) => { const list = mine(k); return list.length
@@ -1114,7 +1114,7 @@
         <div class="hchecks">${checks.map((x) => `<div class="hcheck hcheck--${x.level}">${x.level === 'warn' ? '⚠️' : 'ℹ️'} <span>${esc(x.text)}</span>${x.id ? `<button type="button" class="linkbtn" data-open="${x.id}">去改</button>` : x.price ? `<button type="button" class="linkbtn" data-price="${x.price}">去改</button>` : ''}</div>`).join('')}</div></section>` : ''}
 `;
     const hubWeb = `      <section class="panel hubsec"><div class="panel__h"><h3>网站上跟着活动变的</h3><span class="muted">跟随活动时间的:活动开始自动上线、结束自动下线</span></div>
-        ${groups || '<p class="muted">还没有。活动期间想让首页 Banner、顶栏、首页商品模块、合集排序也跟着换,就在下面加。</p>'}
+        ${groups || '<p class="muted">还没有。活动期间想让首页 Banner、顶栏、首页商品模块、Collection 排序也跟着换,就在下面加。</p>'}
         <div class="hubsec__add">${adds}</div></section>
 `;
     const hubPriceSec = `      <section class="panel hubsec"><div class="panel__h"><h3>改价</h3><span class="muted">${canPrice ? '到点自动改价、到期自动恢复' : '改价信息保密,只有定价同事和管理员能看'}</span></div>
@@ -1155,14 +1155,14 @@
     const names = [...new Set(themes.flatMap((t) => t.templates))].sort((a, b) => (a === 'sale' ? -1 : b === 'sale' ? 1 : a.localeCompare(b)));
     dl.innerHTML = names.map((n) => `<option value="${esc(n)}">${main?.templates.includes(n) ? '正式主题有' : '只在未发布的主题里'}</option>`).join('');
     const v = String($('#ed-form [name="view"]')?.value || '').trim();
-    if (!v) { info.innerHTML = '留空 = 用这个合集原来的版面。促销页模板叫 <b class="mono">sale</b>(在主题编辑器里排版)'; return; }
+    if (!v) { info.innerHTML = '留空 = 用这个 Collection 原来的版面。促销页模板叫 <b class="mono">sale</b>(在主题编辑器里排版)'; return; }
     const slug = String($('#ed-form [name="slug"]')?.value || '').trim().toLowerCase();
     const bound = SL.viewBound(slug, v) ? '<br>🔗 后缀和模板名一样,链接只要 <b class="mono">?view=' + esc(v) + '</b>' : SL.SLUG_RE.test(SL.slugOf(v)) && SL.slugOf(v) === v.toLowerCase() ? `<br>想要短链接(只写 ?view=${esc(v)}):把后缀改成 <b class="mono">${esc(v.toLowerCase())}</b> <button type="button" class="btn btn-sm" data-sl="slugview">改成一样</button>` : '';
     if (MODE !== 'live' || !slTpl || slTpl.busy) { info.innerHTML = bound.replace(/^<br>/, ''); return; }
     const inMain = main?.templates.includes(v); const others = themes.filter((t) => t.role !== 'MAIN' && t.templates.includes(v)).map((t) => t.name);
     info.innerHTML = (inMain ? `✅ 正式主题「${esc(main.name)}」里有这个模板`
-      : others.length ? `<span class="tag tag--warn">⚠️ 只在「${esc(others.join('、'))}」里,正式主题还没有 —— 顾客打开会看到默认的合集页</span>`
-        : '<span class="tag tag--danger">⚠️ 主题里找不到这个模板,顾客打开会看到默认的合集页</span>') + bound;
+      : others.length ? `<span class="tag tag--warn">⚠️ 只在「${esc(others.join('、'))}」里,正式主题还没有 —— 顾客打开会看到默认的 Collection 页</span>`
+        : '<span class="tag tag--danger">⚠️ 主题里找不到这个模板,顾客打开会看到默认的 Collection 页</span>') + bound;
   }
   const SORT_LABEL = () => Object.fromEntries(SL.SALE_SORTS);
   function slTags(x) {
@@ -1173,7 +1173,7 @@
     if (x.sort) t.push(SORT_LABEL()[x.sort] || x.sort);
     if ((x.products || []).length) t.push(`置顶 ${x.products.length} 个`);
     if (x.view) t.push(`模板 ${x.view}`);
-    if (x.afterEnd === 'collection') t.push('结束后跳回合集');
+    if (x.afterEnd === 'collection') t.push('结束后跳回 Collection');
     if (x.afterEnd === 'url') t.push(`结束后跳到 ${x.afterEndUrl || ''}`);
     return t.map((s) => `<span class="tag">${esc(s)}</span>`).join('');
   }
@@ -1202,7 +1202,7 @@
   // 主题 snippets/cgp-pdp-callout.liquid 画在产品页价格 / 活动徽章下面;「命中多少个」由服务器 /callout-scope 按同一套条件算
   let coOpts = null; // 店里的品牌 / 产品类型 / 标签(条件的下拉,打开编辑器时按需读一次)
   let coRes = null; // 编辑器右边的命中结果:null 没算 / 'loading' / { total, sample, capped } / { error }
-  const CO_F = { vendor: '品牌', type: '产品类型', collection: '合集', tag: '标签', title: '标题' };
+  const CO_F = { vendor: '品牌', type: '产品类型', collection: 'Collection', tag: '标签', title: '标题' };
   const CO_OPS = { vendor: ['是', '不是'], type: ['是', '不是'], collection: ['在', '不在'], tag: ['带', '不带'], title: ['包含', '不包含'] };
   const coLink = (x) => (x.joint && x.lensCollection?.handle ? `/collections/${x.lensCollection.handle}` : String(x.link || '').trim() || (x.promo?.handle ? `/products/${x.promo.handle}` : ''));
   const coImg = (x) => x.image || x.promo?.image || '';
@@ -1217,7 +1217,7 @@
   function coScopeText(x) {
     const n = (a) => (a || []).length; const rs = coRulesOf(x);
     const main = rs.length ? rs.map(coRuleText).join(' 且 ')
-      : [n(x.collections) && `合集 ${x.collections.map((c) => c.title).join('、')}`, n(x.tags) && `标签 ${x.tags.join('、')}`, n(x.vendors) && `品牌 ${x.vendors.join('、')}`].filter(Boolean).join(' 或 ');
+      : [n(x.collections) && `Collection ${x.collections.map((c) => c.title).join('、')}`, n(x.tags) && `标签 ${x.tags.join('、')}`, n(x.vendors) && `品牌 ${x.vendors.join('、')}`].filter(Boolean).join(' 或 ');
     const extra = [n(x.products) && `一定显示 ${n(x.products)} 个产品`, n(x.exProducts) && `排除 ${n(x.exProducts)} 个产品`, !rs.length && n(x.exTags) && `排除标签 ${x.exTags.join('、')}`].filter(Boolean);
     return [main, ...extra].filter(Boolean).join(';') || '还没设置放在哪些产品';
   }
@@ -1260,9 +1260,9 @@
   const coNewName = (type) => { const p = ed.promo?.title || ed.promoCollection?.title || '';
     return type === 'lensColl' ? `${p ? `${p} ` : ''}Compatible Lenses`.trim() : p; };
   const coCollHtml = (type) => { const c = ed[CO_COLL[type]]; const nf = ed.newColl?.[type]; const note = ed.collNote?.[type];
-    if (nf != null) return `<div class="rowin"><span class="conew"><input class="inp inp--sm" data-conew="${type}" value="${esc(nf)}" placeholder="合集名称(前台会看到)"/>
+    if (nf != null) return `<div class="rowin"><span class="conew"><input class="inp inp--sm" data-conew="${type}" value="${esc(nf)}" placeholder="Collection 名称(前台会看到)"/>
       <button type="button" class="btn btn-sm btn-primary" data-co="mk${type}">建好并选上</button><button type="button" class="btn btn-sm btn-ghost" data-co="nonew" data-t="${type}">取消</button></span></div>
-      <em>${type === 'lensColl' ? '建成空的手动合集,自动套上活动页模板;产品由下面的条件自动同步进去' : '建成空的手动合集;下面选的推广产品保存后自动放进去'}</em>`;
+      <em>${type === 'lensColl' ? '建成空的手动 Collection,自动套上活动页模板;产品由下面的条件自动同步进去' : '建成空的手动 Collection;下面选的推广产品保存后自动放进去'}</em>`;
     return `<div class="rowin">${c ? `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}<button type="button" class="chip__x" data-co="un${type}" aria-label="移除">${I.x}</button></span>` : '<span class="muted">还没选</span>'}
       <button type="button" class="btn btn-sm" data-pick="${type}">${c ? '换一个' : '选已有的'}</button>
       ${MODE === 'live' && isApprover() ? `<button type="button" class="btn btn-sm btn-ghost" data-co="new${type}">${I.plus}新建</button>` : ''}</div>
@@ -1290,7 +1290,7 @@
       <label class="codeal__pct">搭配买推广产品打 <input class="inp inp--xs" type="number" min="1" max="99" data-co-pct value="${esc(String(pct))}"/> % off</label>
       <div class="codeal__st">${st}</div>
       ${url ? `<a class="btn btn-sm ${coDeal?.status === 'active' ? '' : 'btn-primary'}" href="${esc(url)}" target="_blank" rel="noopener">${coDeal?.status === 'active' ? '在 KitBundle 打开' : '在 KitBundle 设置折扣'} ↗</a>`
-        : '<span class="muted">先选好两个合集</span>'}
+        : '<span class="muted">先选好两个 Collection</span>'}
     </div>`;
   }
   function coLoadDeal(it) {
@@ -1301,16 +1301,16 @@
   }
   // 兼容产品合集最近一次同步(服务器 src/joint-sync.js:保存后马上一次,之后每小时一次)
   const coSyncLine = (x) => { const r = (S.jointSync || {})[x.id]; if (!r) return '';
-    return r.error || r.promo?.error ? `<span class="warn">同步没成功</span>` : `合集里 ${r.count} 个产品(${fDT(r.at)} 同步)`; };
+    return r.error || r.promo?.error ? `<span class="warn">同步没成功</span>` : `Collection 里 ${r.count} 个产品(${fDT(r.at)} 同步)`; };
   function coSyncHtml(it) {
-    if (MODE !== 'live') return '<p class="muted">演示模式不同步;正式数据里保存后会马上把推广产品、命中的兼容产品分别同步进两个合集。</p>';
+    if (MODE !== 'live') return '<p class="muted">演示模式不同步;正式数据里保存后会马上把推广产品、命中的兼容产品分别同步进两个 Collection。</p>';
     const r = (S.jointSync || {})[it.id];
     const canRun = it.id && byId(it.id)?.state === 'approved' && isApprover();
     const line = (x, what) => (x.error ? `<span>⚠️ ${what}:${esc(x.error)}</span>`
       : `<span>✓ ${what}「${esc(x.collection?.title || '')}」现在 <b>${x.count}</b> 个产品(这次加了 ${x.added}、移出 ${x.removed})</span>`);
     const lines = !r ? ['<span class="muted">还没同步过(保存上线后马上同步一次,之后每小时一次)</span>']
-      : [...(r.promo ? [line(r.promo, '推广产品合集')] : it.promos?.length ? [] : ['<span class="muted">推广产品合集:这条是旧设置,在上面选好推广的产品保存后,app 才开始自动管</span>']),
-        line(r, '兼容产品合集'), `<span class="muted">${fDT(r.at)} 同步</span>`];
+      : [...(r.promo ? [line(r.promo, '推广产品 Collection')] : it.promos?.length ? [] : ['<span class="muted">推广产品 Collection:这条是旧设置,在上面选好推广的产品保存后,app 才开始自动管</span>']),
+        line(r, '兼容产品 Collection'), `<span class="muted">${fDT(r.at)} 同步</span>`];
     return `<div class="cosync ${r?.error || r?.promo?.error ? 'is-err' : ''}"><div class="cosync__lines">${lines.join('')}</div>
       ${canRun ? `<span class="cosync__acts"><button type="button" class="btn btn-sm" data-co="sync">立即同步</button>${r?.held ? '<button type="button" class="btn btn-sm btn-danger-t" data-co="syncforce">仍然同步</button>' : ''}</span>` : ''}</div>`;
   }
@@ -1342,16 +1342,16 @@
           ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>' : ''}</div>
           <input type="hidden" name="image" value="${esc(it.image || '')}"/><input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
           <em>一般不用传,直接用推广产品的主图;想换一张(比如镜头 + Smart Fusion 的合照)再上传,存进 Shopify 文件库。</em></div>`)}
-      ${J ? sec(N(), '合集和折扣', '两个合集可以选已有的,也可以在这里新建;里面的产品都由 app 自动放', `
-        <div class="fld"><span>兼容产品合集 <em>也是活动页</em></span><div id="co-lensColl">${coCollHtml('lensColl')}</div>
-          <em>app 按下面的条件把产品同步进去(保存后马上一次,之后每小时一次);多个牌子的镜头可以共用这一个合集</em></div>
-        <div class="fld"><span>推广产品合集 <em>打折的产品,比如 Smart Fusion</em></span><div id="co-promoColl">${coCollHtml('promoColl')}</div></div>
+      ${J ? sec(N(), 'Collection 和折扣', '两个 Collection 可以选已有的,也可以在这里新建;里面的产品都由 app 自动放', `
+        <div class="fld"><span>兼容产品 Collection <em>也是活动页</em></span><div id="co-lensColl">${coCollHtml('lensColl')}</div>
+          <em>app 按下面的条件把产品同步进去(保存后马上一次,之后每小时一次);多个牌子的镜头可以共用这一个 Collection</em></div>
+        <div class="fld"><span>推广产品 Collection <em>打折的产品,比如 Smart Fusion</em></span><div id="co-promoColl">${coCollHtml('promoColl')}</div></div>
         <div class="fld"><span>推广的产品 <em>可以多选,比如 Smart Fusion 和它的套装</em></span><div class="chips" id="co-promos">${coPromosHtml()}</div>
-          <em>app 自动把它们放进推广产品合集(合集里多出来的会移出),所有选项都参与;它们的页面显示「推广产品页上的卡片」;第一个的主图是兼容产品页卡片的默认图</em></div>
+          <em>app 自动把它们放进推广产品 Collection(Collection 里多出来的会移出),所有选项都参与;它们的页面显示「推广产品页上的卡片」;第一个的主图是兼容产品页卡片的默认图</em></div>
         <div id="co-sync">${coSyncHtml(it)}</div>
         <div class="fld"><span>折扣 <em>在 KitBundle 结账时自动打,每件兼容产品配 1 件推广产品</em></span><div id="co-deal">${coDealHtml(it)}</div></div>`) : ''}
       ${sec(N(), J ? '兼容产品(按条件)' : '放在哪些产品', '按条件自动算,以后新上架的产品符合条件就自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
-      ${J ? sec(N(), '活动页', '兼容产品合集页面的顶部:大图、介绍、玩法、条款;下面接着是全部兼容产品', `
+      ${J ? sec(N(), '活动页', '兼容产品 Collection 页面的顶部:大图、介绍、玩法、条款;下面接着是全部兼容产品', `
         <div class="fld2">${fld('标题', inp('lpTitle', it.lpTitle, 'Turn your manual lens into a Sony autofocus lens'))}
           <div class="fld"><span>大图</span><div class="rowin coimgrow">${it.lpImage ? `<span class="coimg" style="background-image:url('${esc(thumb(it.lpImage, 120))}')"></span><button type="button" class="btn btn-sm btn-ghost" data-co="nolpimg">不用大图</button>` : '<span class="muted">没有大图(只显示文字)</span>'}
             ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-upto="lpImage" hidden/></label>' : ''}</div>
@@ -1380,7 +1380,7 @@
     const row = (k, body) => `<div class="scope__row"><span class="scope__k">${k}</span><span class="chips">${body}</span></div>`;
     const rules = ed.rules.map((r, i) => {
       const vals = r.v.map((v, j) => `<span class="chip"><span class="chip__t${r.f === 'tag' ? ' mono' : ''}">${esc(r.f === 'collection' ? v.title : v)}</span>${r.f === 'collection' ? linkPair('collections', v) : r.f === 'tag' ? linkPair('tags', v) : ''}${x(`data-rvx="${i}:${j}"`)}</span>`).join('');
-      const add = r.f === 'collection' ? `<button type="button" class="chipadd" data-pick="rule:${i}">${I.plus}选择合集</button>`
+      const add = r.f === 'collection' ? `<button type="button" class="chipadd" data-pick="rule:${i}">${I.plus}选择 Collection</button>`
         : `<input class="chipinp" data-rv="${i}" ${r.f === 'title' ? '' : `list="co-dl-${r.f}"`} placeholder="${r.f === 'title' ? '输入一段文字(整段连着出现才算),回车添加' : `输入或选${CO_F[r.f]},回车添加`}" ${r.f === 'title' ? 'title="整段文字连在一起出现才算(不分大小写),比如 e mount 不会因为只有 e 或只有 mount 就算;想「这个或那个」就分成几个值"' : ''}/>`;
       return `<div class="corule${r.n ? ' is-not' : ''}">
         <select class="sel sel--sm" data-rf="${i}" aria-label="条件类型">${Object.entries(CO_F).map(([k, l]) => `<option value="${k}" ${r.f === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -1392,7 +1392,7 @@
       <div class="scope__lbl">条件 <em>每一条都要满足;一条里填几个值 = 任一个就算(「不是 / 不包含」= 一个都不能有)</em></div>
       ${rules || '<p class="muted">还没有条件。</p>'}
       <div class="coadd"><span class="muted">加一条条件:</span>${Object.entries(CO_F).map(([k, l]) => `<button type="button" class="chipadd" data-radd="${k}">${I.plus}${l}</button>`).join('')}</div>
-      ${ed.coLegacy ? '<div class="note note--warn">这张是第一版的设置(合集 / 标签 / 品牌「满足任一」),已经换成上面的条件 —— 现在是「每条都要满足」,检查一下再保存。</div>' : ''}
+      ${ed.coLegacy ? '<div class="note note--warn">这张是第一版的设置(Collection / 标签 / 品牌「满足任一」),已经换成上面的条件 —— 现在是「每条都要满足」,检查一下再保存。</div>' : ''}
       <div class="scope__lbl">另外 <em>不看上面的条件</em></div>
       ${row('一定显示', `${ed.products.map((p, i) => pchip(p, 'products', i)).join('')}<button type="button" class="chipadd" data-pick="products">${I.plus}选择产品</button>`)}
       ${row('排除产品', `${ed.exProducts.map((p, i) => pchip(p, 'exProducts', i)).join('')}<button type="button" class="chipadd" data-pick="exProducts">${I.plus}选择产品</button>`)}
@@ -1449,10 +1449,10 @@
         <div class="pv-pdp__info"><div class="pv-pdp__title">${esc(title)}</div><div class="pv-pdp__price">£—</div>${card}<div class="pv-pdp__btn">Add to cart</div></div></div>`;
       return `<div class="pv-label">兼容产品页 <em>${esc(prod?.title || '比如一支手动镜头')}</em></div>
         ${pdp(prod?.title || 'DZOFILM VESPID 2 Prime 35mm T2.1', prod?.image, coCardHtml(v))}
-        <div class="pv-label">推广产品页 <em>${esc(v.promoCollection?.title || '推广产品合集')} 里的产品</em></div>
+        <div class="pv-label">推广产品页 <em>${esc(v.promoCollection?.title || '推广产品 Collection')} 里的产品</em></div>
         ${pdp(v.promo?.title || 'PDMOVIE Smart Fusion', v.promo?.image, coCardHtml(v, 'b'))}
-        <p class="muted pv-cap">${coLink(v) ? `两张卡片点开是弹窗(推广产品 / 兼容产品可直接加购物车),弹窗底部链到活动页 <a class="lk mono" href="${esc(frontUrl(coLink(v)))}" target="_blank" rel="noopener">${esc(coLink(v))}</a>` : '两张卡片点开是弹窗;选了兼容产品合集后,弹窗底部链到它的页面(活动页)'}</p>
-        <div class="pv-label">兼容产品(会同步进合集)</div>
+        <p class="muted pv-cap">${coLink(v) ? `两张卡片点开是弹窗(推广产品 / 兼容产品可直接加购物车),弹窗底部链到活动页 <a class="lk mono" href="${esc(frontUrl(coLink(v)))}" target="_blank" rel="noopener">${esc(coLink(v))}</a>` : '两张卡片点开是弹窗;选了兼容产品 Collection 后,弹窗底部链到它的页面(活动页)'}</p>
+        <div class="pv-label">兼容产品(会同步进 Collection)</div>
         ${coMatchHtml(v)}`;
     }
     return `<div class="pv-label">产品页上的样子 <em>价格 / 活动徽章下面</em></div>
@@ -1476,37 +1476,37 @@
     const groups = new Map();
     for (const x of (S.salelinks || []).filter((y) => pMatch('salelinks', y))) {
       const k = x.collection ? numId(x.collection.id) : '?';
-      if (!groups.has(k)) groups.set(k, { title: x.collection?.title || '(没选合集)', handle: x.collection?.handle || '', list: [] });
+      if (!groups.has(k)) groups.set(k, { title: x.collection?.title || '(没选 Collection)', handle: x.collection?.handle || '', list: [] });
       groups.get(k).list.push(x);
     }
     const rows = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title));
     root.innerHTML = `
-      ${pageHead('促销链接', '给合集做一条只显示打折产品的链接(比如 /collections/dzofilm?onsale=autumn),放进 Banner、邮件、社媒都行;发出去以后还能改设置。',
+      ${pageHead('促销链接', '给 Collection 做一条只显示打折产品的链接(比如 /collections/dzofilm?onsale=autumn),放进 Banner、邮件、社媒都行;发出去以后还能改设置。',
         need ? '' : `<button class="btn btn-primary" data-new="salelink" type="button">${I.plus}新建促销链接</button>`)}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
-      <div class="note note--sm">💡 不用保存也能用:任何合集链接后面加 <b class="mono">?onsale</b>,就只显示这个合集里打折的产品(顺序和合集平时一样)。</div>
+      <div class="note note--sm">💡 不用保存也能用:任何 Collection 链接后面加 <b class="mono">?onsale</b>,就只显示这个 Collection 里打折的产品(顺序和 Collection 平时一样)。</div>
       ${alertsHtml(['salelink'])}
-      ${ptoolHtml('salelinks', S.salelinks || [], '', { ph: '搜索名称、后缀或合集' })}
+      ${ptoolHtml('salelinks', S.salelinks || [], '', { ph: '搜索名称、后缀或 Collection' })}
       ${rows.length ? rows.map((g) => `<div class="ilist"><div class="ilist__grp"><b>${esc(g.title)}</b>${g.handle ? `<span class="muted mono">/collections/${esc(g.handle)}</span>` : ''}</div>
         ${g.list.sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0)).map((x) => itemRow(x, { tags: slTags(x),
           sub: x.heading ? `标题「${esc(x.heading)}」` : '', extra: copyBox(slUrl(x), `slu-${x.id}`) })).join('')}</div>`).join('')
-        : (need ? '' : empty((S.salelinks || []).length ? '没有符合条件的促销链接' : '还没有促销链接。点右上角新建一条:选合集、起个后缀,右边会实时显示这条链接会出现哪些产品。'))}`;
+        : (need ? '' : empty((S.salelinks || []).length ? '没有符合条件的促销链接' : '还没有促销链接。点右上角新建一条:选 Collection、起个后缀,右边会实时显示这条链接会出现哪些产品。'))}`;
   }
   // ---- 编辑器 ----
   function slFormHtml(it) {
     const c = sl?.collection || it.collection;
     return `${edSec(1, '链接', '', `${fld('名称', inp('name', it.name, '如:DZOFiLM Autumn Deals'), '给自己人看的名字;后缀没改过会跟着它自动生成')}
-      <div class="fld"><span>合集</span><div class="rowin" id="sl-coll">${slCollHtml(c)}</div></div>
-      ${fld('链接后缀', `<input class="inp mono" name="slug" value="${esc(it.slug || '')}" placeholder="如:autumn" ${it.slug ? 'data-touched="1"' : ''}/>`, '?onsale= 后面那段:小写字母、数字、横线;同一个合集里不能重复')}
-      <div class="fld"><span>页面模板 <em>?view= 后面那段:用主题里单独排版的促销页(比如 sale);留空 = 合集原来的版面</em></span>
-        <input class="inp mono" name="view" list="sl-views" value="${esc(it.view || '')}" placeholder="留空 = 合集原来的版面,或填 sale"/><datalist id="sl-views"></datalist>
+      <div class="fld"><span>Collection</span><div class="rowin" id="sl-coll">${slCollHtml(c)}</div></div>
+      ${fld('链接后缀', `<input class="inp mono" name="slug" value="${esc(it.slug || '')}" placeholder="如:autumn" ${it.slug ? 'data-touched="1"' : ''}/>`, '?onsale= 后面那段:小写字母、数字、横线;同一个 Collection 里不能重复')}
+      <div class="fld"><span>页面模板 <em>?view= 后面那段:用主题里单独排版的促销页(比如 sale);留空 = Collection 原来的版面</em></span>
+        <input class="inp mono" name="view" list="sl-views" value="${esc(it.view || '')}" placeholder="留空 = Collection 原来的版面,或填 sale"/><datalist id="sl-views"></datalist>
         <em id="sl-viewinfo"></em></div>
       <div class="fld"><span>完整链接 <em>保存并生效后,这个链接才会按下面的设置显示</em></span><div id="sl-url"></div></div>
 `)}
       ${edSec(2, '显示哪些产品', '', `      <label class="tgl"><input type="checkbox" name="inStock" ${it.inStock ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示有货的</b><span class="muted">预订(Pre Order)和缺货的不显示,和前台卡片上的「In Stock」一致</span></span></label>
       <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
         ${fld('最多显示几个', `<input class="inp" type="number" min="0" name="limit" value="${esc(it.limit ?? '')}" placeholder="不限"/>`, '按下面的排法取前面几个')}</div>
-      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和合集平时一样」= 跟着合集本来那一页:生效中的合集排序清单 → 合集默认设置(右边「顾客看到的顺序」第 2、3 层);选别的就不看合集排序。顾客自己选了 Sort by 就按他选的')}
+      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和 Collection 平时一样」= 跟着 Collection 本来那一页:生效中的 Collection 排序清单 → Collection 默认设置(右边「顾客看到的顺序」第 2、3 层);选别的就不看 Collection 排序。顾客自己选了 Sort by 就按他选的')}
       ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
 `)}
       ${edSec(3, '产品顺序', '拖动产品卡片调整顾客看到的顺序', `      <div class="fld"><span>固定位置的产品 <em>拖动产品卡片排序:右边直接拖,或点「放大排序」铺满整个窗口来排;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span>
@@ -1514,19 +1514,19 @@
 `)}
       ${edSec(4, '什么时候显示', '', `${timeBlock(it, 'salelink')}
       <div class="fld"><span>结束后去哪 <em>时间到了(或跟随的活动结束)以后,顾客再打开这条链接会怎样</em></span>
-        <select class="sel" name="afterEnd">${SL.AFTER_END.map(([k, l]) => `<option value="${k}" ${(it.afterEnd || '') === k ? 'selected' : ''}>${k ? l : '不跳转(显示这个合集所有打折的产品)'}</option>`).join('')}</select>
+        <select class="sel" name="afterEnd">${SL.AFTER_END.map(([k, l]) => `<option value="${k}" ${(it.afterEnd || '') === k ? 'selected' : ''}>${k ? l : '不跳转(显示这个 Collection 所有打折的产品)'}</option>`).join('')}</select>
         <input class="inp mono" name="afterEndUrl" id="sl-afterurl" value="${esc(it.afterEndUrl || '')}" placeholder="/collections/black-friday 或 https://…" ${it.afterEnd === 'url' ? '' : 'hidden'}/>
-        <em>不跳转:链接照样能打开,显示这个合集所有打折的产品(短链接 ?view= 还会用这个模板的版面)。跳回合集:回到这个合集原来的页面。暂停中的链接不跳转。</em></div>`)}`;
+        <em>不跳转:链接照样能打开,显示这个 Collection 所有打折的产品(短链接 ?view= 还会用这个模板的版面)。跳回 Collection:回到这个 Collection 原来的页面。暂停中的链接不跳转。</em></div>`)}`;
   }
   const slCollHtml = (c) => `${c ? `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}</span>` : '<span class="muted">还没选</span>'}
-    <button type="button" class="btn btn-sm" data-sl="coll">${c ? '换一个合集' : '选择合集'}</button>`;
+    <button type="button" class="btn btn-sm" data-sl="coll">${c ? '换一个 Collection' : '选择 Collection'}</button>`;
   function redrawSlUrl() {
     const box = $('#sl-url'); if (!box) return;
     const slug = String($('#ed-form [name="slug"]')?.value || '').trim().toLowerCase();
     const view = String($('#ed-form [name="view"]')?.value || '').trim();
     const u = slUrl({ collection: sl?.collection, slug, view });
     redrawSlView();
-    box.innerHTML = !sl?.collection ? '<span class="muted">选好合集、填好后缀就会出现</span>'
+    box.innerHTML = !sl?.collection ? '<span class="muted">选好 Collection、填好后缀就会出现</span>'
       : SL.SLUG_RE.test(slug) ? copyBox(u, 'sl-url-i') : '<span class="muted">后缀只能用小写字母、数字和横线</span>';
   }
   function redrawSl() {
@@ -1607,17 +1607,17 @@
       ${slPos === id ? `<input class="slcard__pos" type="number" min="1" data-slposin="${id}" value="${pos || ''}" aria-label="移到第几位"/>`
         : `<button type="button" class="slcard__n" data-slpos="${id}" title="点一下,输入要移到第几位">${pos || '—'}</button>`}
       <span class="slcard__img" ${p.image ? `style="background-image:url('${esc(p.image)}')"` : ''}>${p.discount > 0 ? `<span class="slcard__off">${p.discount}% OFF</span>` : ''}</span>
-      <span class="slcard__t">${esc(p.title)}</span>${lst && !pin ? '<span class="slcard__src">来自合集排序</span>' : ''}<span class="slcard__p">${p.compareStr ? `<s>${esc(p.compareStr)}</s> ` : ''}<b>${esc(p.priceStr || '')}</b></span>
+      <span class="slcard__t">${esc(p.title)}</span>${lst && !pin ? '<span class="slcard__src">来自 Collection 排序</span>' : ''}<span class="slcard__p">${p.compareStr ? `<s>${esc(p.compareStr)}</s> ` : ''}<b>${esc(p.priceStr || '')}</b></span>
       ${why ? `<span class="slcard__why">现在不会出现:${esc(why)}</span>` : `<span class="slcard__s slcard__s--${esc(p.status)}">${SL_ST[p.status] || esc(p.status)}</span>`}
       <span class="slcard__acts"><button type="button" data-sltop="${id}" title="移到第 1 位">置顶</button><a href="${esc((S.store?.domain || '') + (p.url || ''))}" target="_blank" rel="noopener" draggable="false">前台↗</a></span></div>`;
   };
   function slPreviewHtml(v) {
     const head = (extra = '') => `<div class="pv-label">顾客打开这条链接会看到${extra}</div>`;
     const c = sl?.collection || v.collection;
-    if (!c) return `${head()}<p class="muted">先选合集。</p>`;
+    if (!c) return `${head()}<p class="muted">先选 Collection。</p>`;
     if (MODE !== 'live') return `${head()}<p class="muted">演示模式没有前台的折扣和库存数据;正式数据里这里会按前台实时算出会显示哪些产品。</p>`;
     const d = slPrev[c.handle];
-    if (!d || d.busy) return `${head()}<p class="muted">正在读前台这个合集的产品…</p>`;
+    if (!d || d.busy) return `${head()}<p class="muted">正在读前台这个 Collection 的产品…</p>`;
     if (d.error) return `${head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">重试</button>')}<div class="note note--danger">${esc(d.error)}</div>`;
     const ap = activePin(numId(c.id));
     const opts = slOpts(c, d); const link = { ...v, products: sl.products };
@@ -1639,7 +1639,7 @@
     const bigBar = sl.big ? `<div class="slbig__bar"><button type="button" class="btn btn-sm" data-sl="big">← 返回链接设置</button><b>排序 · ${esc(v.name || c.title)}</b>
         <input class="inp inp--sm" data-slq placeholder="找产品(不会打乱顺序)" value="${esc(slQ)}"/><button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button></div>` : '';
     return `${bigBar || head(' <button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button> <button type="button" class="btn btn-sm btn-primary" data-sl="big">⤢ 放大排序</button>')}
-      <p class="slsum">显示 <b>${view.list.length}</b> 个产品${view.total > view.list.length ? `(符合条件的有 ${view.total} 个,只取前 ${view.list.length} 个)` : ''} · 这个合集一共 ${d.total} 个产品,打折的 ${onSale} 个${d.truncated ? ' · ⚠️ 合集太大,前台只读前 1000 个' : ''}</p>
+      <p class="slsum">显示 <b>${view.list.length}</b> 个产品${view.total > view.list.length ? `(符合条件的有 ${view.total} 个,只取前 ${view.list.length} 个)` : ''} · 这个 Collection 一共 ${d.total} 个产品,打折的 ${onSale} 个${d.truncated ? ' · ⚠️ Collection 太大,前台只读前 1000 个' : ''}</p>
       ${view.pins.some((p) => !p.shown) && !all ? `<div class="note note--warn note--sm">${view.pins.filter((p) => !p.shown).map((p) => `固定了位置的「${esc(p.title)}」现在不会显示:${esc(p.why)}`).join('<br>')}${lost.length ? '<br>符合条件后(比如开始打折)会出现在你排的位置;不过在下面拖动别的产品时,它们会挪到固定部分的最后 —— 想一起排,勾上「也显示现在不会出现的产品」。' : ''}</div>` : ''}
       ${sl.products.length > 50 ? `<div class="note note--warn note--sm">前台最多固定前 50 个位置,你现在固定了 ${sl.products.length} 个 —— 第 51 个以后按「排序」排。</div>` : ''}
       ${slSrcHtml(c, v, d, view, pinned)}
@@ -1647,7 +1647,7 @@
         <label class="tgl tgl--sm"><input type="checkbox" data-slall ${all ? 'checked' : ''}/><span class="tgl__ui"></span><span>也显示现在不会出现的产品<span class="muted">(没打折 / 没货 / 折扣不够的,灰色;活动前先排好,开始打折后就在这个位置出现)</span></span></label>
         ${sl.products.length ? `<span class="slord__sum">固定了前 <b>${sl.products.length}</b> 个位置</span><button type="button" class="btn btn-sm btn-ghost" data-slclear title="清掉手动排的顺序">全部按排序规则</button>` : ''}
       </div>
-      <p class="muted pv-cap">拖动卡片调整顾客看到的顺序,或点左上角的序号输入第几位;红框 = 这条链接固定了位置${fromPin.size ? ',蓝框 = 位置来自合集排序清单' : ''}。没动过的按左边的「排序」排,以后新打折的产品排在固定的后面。</p>
+      <p class="muted pv-cap">拖动卡片调整顾客看到的顺序,或点左上角的序号输入第几位;红框 = 这条链接固定了位置${fromPin.size ? ',蓝框 = 位置来自 Collection 排序清单' : ''}。没动过的按左边的「排序」排,以后新打折的产品排在固定的后面。</p>
       ${cards ? `<div class="slgrid${sl.big ? ' slgrid--big' : ''}">${cards}</div>${list.length > MAXC ? `<p class="muted">……还有 ${list.length - MAXC} 个,按排序规则排在后面</p>` : ''}` : '<p class="muted">按现在的设置一个产品都没有,顾客打开会看到「没有产品」。</p>'}
       <p class="muted pv-cap">数据来自前台(和顾客看到的一样),两分钟内不重复读;刚改过价格 / 库存就点「刷新」。</p>`;
   }
@@ -1673,9 +1673,9 @@
   const salesOf = (cid) => (S.salelinks || []).filter((x) => x.collection && numId(x.collection.id) === numId(cid) && !['ended', 'rejected'].includes(status(x)));
   // 置顶清单编辑器第 1 段:这个合集的促销链接各自跟不跟这份清单
   function wxSlHtml() {
-    if (!wx?.collection) return '<span class="muted">先选合集</span>';
+    if (!wx?.collection) return '<span class="muted">先选 Collection</span>';
     const links = salesOf(wx.collection.id);
-    if (!links.length) return '<span class="muted">没有 —— 这份清单只管合集本来那一页</span>';
+    if (!links.length) return '<span class="muted">没有 —— 这份清单只管 Collection 本来那一页</span>';
     return `<div class="slrel">${links.map((x) => {
       const k = (x.products || []).length;
       return `<div class="slrel__i"><span class="slrel__t">${badge(x)}<b>${esc(titleOf(x))}</b><span class="mono muted">?onsale${x.slug ? `=${esc(x.slug)}` : ''}</span></span>
@@ -1694,15 +1694,15 @@
     const fromList = view.list.filter((p) => apIds.has(numId(p.id)) && !pinned.has(numId(p.id))).length;
     const next = follow && !ap ? pinsOf(numId(c.id)).filter((p) => status(p) === 'scheduled').sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0))[0] : null;
     const r = d.sortRule || { off: false, pinManual: 12, pinNew: 0 };
-    const rule = r.off ? '按合集后台的顺序' : CS.describe({ ...r, sortOrder: 'MANUAL' });
+    const rule = r.off ? '按 Collection 后台的顺序' : CS.describe({ ...r, sortOrder: 'MANUAL' });
     const li = (n, body, cls = '') => `<li class="slsrc__i${cls}"><i>${n}</i><div>${body}</div></li>`;
     return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序(从上往下)</li>
       ${li(1, `<b>这条链接固定的</b> ${k ? `${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
       ${li(2, follow
-        ? ap ? `<b>合集排序清单「${esc(titleOf(ap))}」</b>里打折的 ${fromList} 个 <span class="slsrc__lg slsrc__lg--list"></span>蓝框<em>${win(ap).end != null ? `到 ${fDT(win(ap).end)} 结束,之后这一层就没有了` : '长期生效'};要改在「合集排序」里改 <button type="button" class="linkbtn" data-sl="openpin" data-id="${esc(ap.id)}">打开这份清单</button></em>`
-          : `<b>合集排序清单</b> <span class="muted">这一刻没有生效的</span>${next ? `<em>「${esc(titleOf(next))}」${fDT(win(next).start)} 开始,到时这里会跟着变</em>` : ''}`
-        : `<b>合集排序清单</b> <span class="muted">不跟</span><em>${ap ? `「${esc(titleOf(ap))}」正在生效,但` : ''}这条链接的排序选了「${esc(SORT_LABEL()[v.sort] || v.sort)}」,不看合集排序;想跟着就把排序改回「和合集平时一样」</em>`, follow ? '' : ' is-off')}
-      ${li(3, `<b>其余打折的</b> ${follow ? `按合集默认设置:${esc(rule)}` : `按「${esc(SORT_LABEL()[v.sort] || v.sort)}」`}`)}
+        ? ap ? `<b>Collection 排序清单「${esc(titleOf(ap))}」</b>里打折的 ${fromList} 个 <span class="slsrc__lg slsrc__lg--list"></span>蓝框<em>${win(ap).end != null ? `到 ${fDT(win(ap).end)} 结束,之后这一层就没有了` : '长期生效'};要改在「Collection 排序」里改 <button type="button" class="linkbtn" data-sl="openpin" data-id="${esc(ap.id)}">打开这份清单</button></em>`
+          : `<b>Collection 排序清单</b> <span class="muted">这一刻没有生效的</span>${next ? `<em>「${esc(titleOf(next))}」${fDT(win(next).start)} 开始,到时这里会跟着变</em>` : ''}`
+        : `<b>Collection 排序清单</b> <span class="muted">不跟</span><em>${ap ? `「${esc(titleOf(ap))}」正在生效,但` : ''}这条链接的排序选了「${esc(SORT_LABEL()[v.sort] || v.sort)}」,不看 Collection 排序;想跟着就把排序改回「和 Collection 平时一样」</em>`, follow ? '' : ' is-off')}
+      ${li(3, `<b>其余打折的</b> ${follow ? `按 Collection 默认设置:${esc(rule)}` : `按「${esc(SORT_LABEL()[v.sort] || v.sort)}」`}`)}
     </ol>`;
   }
   // ================= 合集默认排序(合集页「平时」怎么排;规则在 /lib/col-sort.js,和服务器同一份)=================
@@ -1731,7 +1731,7 @@
     return `<div class="irow">
       <span class="irow__lead">${c.image ? `<span class="irow__thumb" style="background-image:url('${esc(thumb(c.image, 160))}')"></span>` : `<span class="irow__thumb">${I.sort}</span>`}</span>
       <button class="irow__main" type="button" data-csopen="${esc(c.id)}">
-        <span class="irow__t"><span class="irow__name">${esc(c.title)}</span>${def ? '' : '<span class="tag tag--accent">单独设过</span>'}${c.held ? `<span class="tag tag--ok" title="这份清单生效期间合集页暂时完全按清单顺序,结束后回到这里的设置">「${esc(c.held)}」生效中</span>` : ''}</span>
+        <span class="irow__t"><span class="irow__name">${esc(c.title)}</span>${def ? '' : '<span class="tag tag--accent">单独设过</span>'}${c.held ? `<span class="tag tag--ok" title="这份清单生效期间 Collection 页暂时完全按清单顺序,结束后回到这里的设置">「${esc(c.held)}」生效中</span>` : ''}</span>
         <span class="irow__s">后台排序:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}${pins ? ` · ${pins} 份置顶清单` : ''}</span>
       </button>
       <span class="irow__when cs-mode${def ? ' is-def' : ''}">${esc(CS.describe(c))}</span>
@@ -1741,20 +1741,20 @@
   }
   function renderColSorts() {
     let body;
-    if (!csRows) body = csErr ? `<div class="note note--danger">读不到合集:${esc(csErr)} <button class="btn btn-sm" data-csre type="button">再试一次</button></div>` : '<div class="empty">正在读店里的全部合集…</div>';
+    if (!csRows) body = csErr ? `<div class="note note--danger">读不到 Collection:${esc(csErr)} <button class="btn btn-sm" data-csre type="button">再试一次</button></div>` : '<div class="empty">正在读店里的全部 Collection…</div>';
     else {
       const inQ = csRows.filter(csQ);
       const fn = (CS_TABS.find(([k]) => k === csF.f) || CS_TABS[0])[2];
       body = `<div class="ptool"><div class="ftabs">${CS_TABS.map(([k, l, f]) => { const n = inQ.filter(f).length;
           return k === 'auto' && !n && csF.f !== 'auto' ? '' : `<button class="ftab ${csF.f === k ? 'is-active' : ''}" data-csf="${k}" type="button">${l}<span>${n}</span></button>`; }).join('')}</div>
-        <input class="inp inp--sm ptool__q" id="cs-q" placeholder="搜索合集" value="${esc(csF.q)}"/>
+        <input class="inp inp--sm ptool__q" id="cs-q" placeholder="搜索 Collection" value="${esc(csF.q)}"/>
         <div class="ptool__r"><button class="btn btn-sm btn-ghost" data-csre type="button" title="重新读店里现在的设置">刷新</button></div></div>
-        ${ilistHtml(inQ.filter(fn).map(csRowHtml), csRows.length ? '没有符合条件的合集' : '店里还没有合集')}`;
+        ${ilistHtml(inQ.filter(fn).map(csRowHtml), csRows.length ? '没有符合条件的 Collection' : '店里还没有 Collection')}`;
     }
     $('#pn-root').innerHTML = `
-      ${pageHead('合集排序', '每个合集的默认设置:没有置顶清单生效时,合集页默认怎么排。')}
+      ${pageHead('Collection 排序', '每个 Collection 的默认设置:没有置顶清单生效时,Collection 页默认怎么排。')}
       ${subTabsHtml('pnview', pnView, [['pins', '置顶清单', (S.pins || []).length], ['defsort', '默认设置']])}
-      <div class="note note--sm">💡 没单独设过的合集都是:<b>前 ${CS.DEFAULT_N} 个按手动顺序,其余按新到旧</b>(新品自动往前)。只管顾客没选别的 Sort by 时的顺序;生效中的置顶清单优先。${MODE === 'demo' ? '演示模式用的是示例合集,改动只存在这台电脑。' : ''}</div>
+      <div class="note note--sm">💡 没单独设过的 Collection 都是:<b>前 ${CS.DEFAULT_N} 个按手动顺序,其余按新到旧</b>(新品自动往前)。只管顾客没选别的 Sort by 时的顺序;生效中的置顶清单优先。${MODE === 'demo' ? '演示模式用的是示例 Collection,改动只存在这台电脑。' : ''}</div>
       ${body}`;
     wirePnView();
     $$('#pn-root [data-csf]').forEach((b) => b.addEventListener('click', () => { csF.f = b.dataset.csf; renderPins(); }));
@@ -1798,7 +1798,7 @@
         ${opt('top', `前 ${st.mode === 'top' ? 'N' : CS.DEFAULT_N} 个按手动顺序,其余按新到旧`, '默认。排在最前的几个照手动顺序固定住,后面的按上架时间,新品自动往前',
           `前 <input class="inp inp--xs" data-cs="n" type="number" min="0" max="${CS.MAX_N}" value="${esc(String(st.n))}"/> 个按手动顺序
            ${Number(st.n) !== CS.DEFAULT_N ? `<button type="button" class="linkbtn" data-cs="n12">恢复默认 ${CS.DEFAULT_N}</button>` : ''}<span class="muted">填 0 = 全部按新到旧</span>`)}
-        ${opt('manual', '完全按手动顺序', '整个合集都照你排的顺序(Shopify 后台拖的顺序)')}
+        ${opt('manual', '完全按手动顺序', '整个 Collection 都照你排的顺序(Shopify 后台拖的顺序)')}
         ${opt('shopify', '完全按 Shopify 的自动排序', '比如按畅销、最新上架、价格',
           `按 <select class="inp inp--sm" data-cs="so">${CS.AUTO_SORTS.map((k) => `<option value="${k}" ${st.sortOrder === k ? 'selected' : ''}>${CS.SORT_CN[k]}</option>`).join('')}</select> 排`)}`;
     };
@@ -1807,14 +1807,14 @@
       const from = CS.sortCn(c.sortOrder); const notManual = c.sortOrder !== 'MANUAL';
       const blocked = !!(taken && p?.ops.sortOrder && p.ops.sortOrder !== 'MANUAL');
       const notes = [];
-      if (st.mode === 'top' && notManual) notes.push(`<div class="note note--warn note--sm">这个合集后台现在按「${from}」排${st.toManual ? '。' : `,所以「前 ${esc(String(st.n))} 个」是${from}的前几个,不是你排的。`}
+      if (st.mode === 'top' && notManual) notes.push(`<div class="note note--warn note--sm">这个 Collection 后台现在按「${from}」排${st.toManual ? '。' : `,所以「前 ${esc(String(st.n))} 个」是${from}的前几个,不是你排的。`}
         <label class="ck"><input type="checkbox" data-cs="tomanual" ${st.toManual ? 'checked' : ''}/>同时把后台排序方式改成「手动」</label></div>`);
       if (p?.ops.sortOrder === 'MANUAL') notes.push(`<div class="note note--warn note--sm">保存时会把 Shopify 后台的排序方式从「${from}」改成「手动」。起始顺序由 Shopify 决定,改完到前台看一眼;要调就在 Shopify 后台拖,或新建置顶清单。</div>`);
       else if (p?.ops.sortOrder && !blocked) notes.push(`<div class="note note--warn note--sm">保存时会把 Shopify 后台的排序方式从「${from}」改成「${CS.sortCn(p.ops.sortOrder)}」。</div>`);
-      if (st.mode === 'shopify' && pins.length && !blocked) notes.push(`<div class="note note--sm">这个合集有 ${pins.length} 份置顶清单。后台不是「手动」排序时,清单只能在前台排(店里的顺序不会被改)。</div>`);
-      if (blocked) notes.push(`<div class="note note--danger note--sm">这个合集的顺序现在由「${esc(pinNm(taken))}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了 —— 等这份清单结束后再改。</div>`);
-      if (c.held) notes.push(`<div class="note note--ok note--sm">「${esc(c.held)}」生效期间,合集页暂时完全按清单顺序;这里改的是默认设置,清单结束后就用新的。</div>`);
-      if (!canEdit) notes.push(`<div class="note note--sm">${!isApprover() ? '只有管理员能改合集的默认排序' : 'app 还没有「改产品 / 合集」的权限,改不了'}</div>`);
+      if (st.mode === 'shopify' && pins.length && !blocked) notes.push(`<div class="note note--sm">这个 Collection 有 ${pins.length} 份置顶清单。后台不是「手动」排序时,清单只能在前台排(店里的顺序不会被改)。</div>`);
+      if (blocked) notes.push(`<div class="note note--danger note--sm">这个 Collection 的顺序现在由「${esc(pinNm(taken))}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了 —— 等这份清单结束后再改。</div>`);
+      if (c.held) notes.push(`<div class="note note--ok note--sm">「${esc(c.held)}」生效期间,Collection 页暂时完全按清单顺序;这里改的是默认设置,清单结束后就用新的。</div>`);
+      if (!canEdit) notes.push(`<div class="note note--sm">${!isApprover() ? '只有管理员能改 Collection 的默认排序' : 'app 还没有「改产品 / Collection」的权限,改不了'}</div>`);
       R('notes').innerHTML = notes.join('');
       R('pv').innerHTML = `<div><span class="muted">现在</span>${esc(CS.describe(c))}</div>
         <div class="${p?.changed ? 'is-chg' : ''}"><span class="muted">保存后</span>${err ? `<span class="cs-err">${esc(err)}</span>` : p.changed ? esc(CS.describe(p.after)) : '和现在一样'}</div>`;
@@ -1857,13 +1857,13 @@
   function openColSort(id) {
     const c = (csRows || []).find((x) => x.id === String(id)); if (!c) return;
     hidePop();
-    $('#drawer').innerHTML = `<div class="drawer__h"><div><span class="kchip">合集排序</span> <b>${esc(c.title)} · 默认设置</b></div>
+    $('#drawer').innerHTML = `<div class="drawer__h"><div><span class="kchip">Collection 排序</span> <b>${esc(c.title)} · 默认设置</b></div>
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button></div>
       <div class="drawer__b drawer__b--cs"><div>
-        ${edSec(1, '怎么排', '顾客没选别的 Sort by 时,合集页默认的顺序', `<div id="cs-panel"></div>
+        ${edSec(1, '怎么排', '顾客没选别的 Sort by 时,Collection 页默认的顺序', `<div id="cs-panel"></div>
           <div class="cs-links">${MODE === 'live' && c.handle ? linkPair('collections', c) : ''}<span class="muted">Shopify 后台的排序方式:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}</span></div>`)}
       </div></div>
-      <div class="drawer__f"><span class="muted">保存后马上生效,前台合集页刷新就能看到</span>
+      <div class="drawer__f"><span class="muted">保存后马上生效,前台 Collection 页刷新就能看到</span>
         <div class="drawer__acts"><button class="btn" data-act="close" type="button">取消</button><button class="btn btn-primary" id="cs-save" type="button">保存</button></div></div>`;
     $('#drawer').hidden = false; $('#drawer-mask').hidden = false; document.body.classList.add('no-scroll');
     $('#drawer').onclick = (e) => { if (e.target.closest('[data-act="close"]')) closeDrawer(); };
@@ -1886,7 +1886,7 @@
     const key = row ? row.id : '';
     if (el.dataset.k === key) return; // 同一个合集:别把正在改的面板冲掉
     el.dataset.k = key;
-    if (!row) { el.innerHTML = `<span class="muted">${wx?.collection ? '读取中…' : '先选合集'}</span>`; return; }
+    if (!row) { el.innerHTML = `<span class="muted">${wx?.collection ? '读取中…' : '先选 Collection'}</span>`; return; }
     el.innerHTML = `<details class="csin"><summary><b class="csin__v">${esc(CS.describe(row))}</b><span class="csin__go"></span></summary>
       <div class="csin__b"><p class="muted">读取中…</p></div></details>`;
     const d = el.querySelector('details');
@@ -1899,7 +1899,7 @@
         try { c = (await api('GET', `/api/schedule/col-sort?id=${encodeURIComponent(row.id)}`)).collection; }
         catch (e) { body.innerHTML = `<p class="muted">${esc(e.message)}</p>`; delete d.dataset.ready; return; }
       }
-      body.innerHTML = `<div data-r="panel"></div><div class="csin__f"><span class="muted">这是合集自己的设置,和这份清单分开保存,点了马上生效</span>
+      body.innerHTML = `<div data-r="panel"></div><div class="csin__f"><span class="muted">这是 Collection 自己的设置,和这份清单分开保存,点了马上生效</span>
         <button class="btn btn-sm btn-primary" type="button">保存默认设置</button></div>`;
       csPanel(body.querySelector('[data-r="panel"]'), c, { saveBtn: body.querySelector('.csin__f .btn'), onSaved: async (r) => {
         d.querySelector('.csin__v').textContent = CS.describe(c);
@@ -1923,7 +1923,7 @@
     const groups = new Map();
     for (const p of (S.pins || []).filter((x) => pMatch('pins', x))) {
       const cid = p.collection ? numId(p.collection.id) : '?';
-      if (!groups.has(cid)) groups.set(cid, { cid, title: p.collection?.title || '(没选合集)', list: [] });
+      if (!groups.has(cid)) groups.set(cid, { cid, title: p.collection?.title || '(没选 Collection)', list: [] });
       groups.get(cid).list.push(p);
     }
     // 每个合集里排先后:这一刻生效的 → 其他上线中 → 快开始的 → 待审核 / 草稿 → 暂停 → 结束(后两类新的在前)
@@ -1939,22 +1939,22 @@
       return itemRow(p, { badge: badgeAt(p, T), thumb: '', cls: 'irow--pin',
         tags: `${p.fullOrder ? '<span class="tag tag--accent">完全按清单顺序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示清单里的</span>' : ''}${p.countdown ? '<span class="tag">倒计时</span>' : ''}`,
         sub: `${prods.length} 个产品排在前面${(p.hidden || []).length ? ` · ${(p.hidden || []).length} 个不显示` : ''}`,
-        act: `${['draft', 'rejected', 'ended', 'paused'].includes(status(p)) ? `<button class="btn btn-sm btn-ghost btn-danger-t" type="button" data-pindel="${p.id}" title="删除这份清单(不影响别的清单和合集本身)">删除</button>` : ''}<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
+        act: `${['draft', 'rejected', 'ended', 'paused'].includes(status(p)) ? `<button class="btn btn-sm btn-ghost btn-danger-t" type="button" data-pindel="${p.id}" title="删除这份清单(不影响别的清单和 Collection 本身)">删除</button>` : ''}<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
         extra: prods.length ? `<span class="pnrow__ps">${prods.slice(0, 14).map((x) => `<span class="pnrow__p" title="${esc(x.title)}">${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 14 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}</span>` : '' });
     };
     $('#pn-root').innerHTML = `
-      ${pageHead('合集排序', '让合集页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
+      ${pageHead('Collection 排序', '让 Collection 页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
         need ? '' : `${MODE === 'live' && isApprover() ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶清单</button>`)}
       ${subTabsHtml('pnview', pnView, [['pins', '置顶清单', (S.pins || []).length], ['defsort', '默认设置']])}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
-      <div class="note note--sm">💡 这里排的是<b>合集本来那一页</b>。促销链接(?onsale,只放打折产品)是另一页:它的排序选「和合集平时一样」时,打折的产品会<b>沿用这里的顺序</b>,链接自己固定的再排到最前;选了别的排序就不受这里影响。只想排打折那一页?打开那条促销链接直接拖。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
+      <div class="note note--sm">💡 这里排的是<b>Collection 本来那一页</b>。促销链接(?onsale,只放打折产品)是另一页:它的排序选「和 Collection 平时一样」时,打折的产品会<b>沿用这里的顺序</b>,链接自己固定的再排到最前;选了别的排序就不受这里影响。只想排打折那一页?打开那条促销链接直接拖。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
       ${alertsHtml(['pin'])}
       <section class="panel">
-        <div class="panel__h"><h3>这一刻各合集的排序</h3><span class="muted">${pnAt == null ? '现在' : `${fDT(T)} · ${relDay(T)}`}</span></div>
+        <div class="panel__h"><h3>这一刻各 Collection 的排序</h3><span class="muted">${pnAt == null ? '现在' : `${fDT(T)} · ${relDay(T)}`}</span></div>
         ${tlHtml('pn', points, pnAt)}
         ${tlChanges(points, pnAt)}
       </section>
-      ${ptoolHtml('pins', S.pins || [], '', { ph: '搜索清单或合集' })}
+      ${ptoolHtml('pins', S.pins || [], '', { ph: '搜索清单或 Collection' })}
       ${rows.length ? rows.map((g) => {
         const act = activePin(g.cid, T);
         // 首页哪些模块页签也吃这个合集(同名的只说一次)
@@ -1969,13 +1969,13 @@
         const st0 = (p) => win(p).start ?? 0;
         return `<div class="ilist pngroup">
           <div class="ilist__grp pngrp"><b>${esc(g.title)}</b>
-            ${cs && !cs.hold ? `<span class="tag tag--ok" title="店里这个合集现在真的按「${esc(pinNm(cs))}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了合集` : ''};结束会自动还原成接管前的顺序">店里已按清单排好</span>` : ''}
-            ${sf ? `<span class="tag tag--accent" title="「${esc(pinNm(sf))}」生效期间合集页完全按清单顺序显示,结束自动恢复默认设置">完全按清单顺序</span>` : ''}
+            ${cs && !cs.hold ? `<span class="tag tag--ok" title="店里这个 Collection 现在真的按「${esc(pinNm(cs))}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了 Collection` : ''};结束会自动还原成接管前的顺序">店里已按清单排好</span>` : ''}
+            ${sf ? `<span class="tag tag--accent" title="「${esc(pinNm(sf))}」生效期间 Collection 页完全按清单顺序显示,结束自动恢复默认设置">完全按清单顺序</span>` : ''}
             ${!act ? '<span class="muted">这一刻没有清单生效</span>' : ''}
-            ${used.length ? `<span class="muted" title="${esc(used.map((u) => `首页「${u}」`).join('、'))}也用这个合集">首页${esc(used[0])}${used.length > 1 ? ` 等 ${used.length} 个页签` : ''}也用</span>` : ''}
+            ${used.length ? `<span class="muted" title="${esc(used.map((u) => `首页「${u}」`).join('、'))}也用这个 Collection">首页${esc(used[0])}${used.length > 1 ? ` 等 ${used.length} 个页签` : ''}也用</span>` : ''}
             ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${x.sort ? '用自己的排序,不跟这里' : '跟着这里的顺序(只看打折的)'}`).join('\n'))}">${slFollow.length ? `促销链接${slFollow.length === 1 ? `「${esc(titleOf(slFollow[0]))}」` : ` ${slFollow.length} 条`}也跟着这个顺序` : `${sls.length} 条促销链接用自己的排序`}</span>` : ''}
             ${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm btn-ghost" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本</button></span>` : ''}</div>
-          ${cs?.hold ? `<div class="note note--warn note--sm">有人在 Shopify 后台手动改过这个合集的顺序,<b>app 已经停手</b>,不会覆盖别人的改动。
+          ${cs?.hold ? `<div class="note note--warn note--sm">有人在 Shopify 后台手动改过这个 Collection 的顺序,<b>app 已经停手</b>,不会覆盖别人的改动。
               <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按清单重新排</button>
               <button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">就用现在的,别管了</button></div>` : ''}
           ${live.length > 1 ? `<div class="note note--warn note--sm">这一刻有 ${live.length} 份清单同时生效,${live.filter((p) => st0(p) === st0(act)).length > 1
@@ -1985,7 +1985,7 @@
           ${rest.length ? `<button type="button" class="pnmore" data-pnmore="${esc(String(g.cid))}">${open ? `收起<svg class="ico pnmore__i is-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`
             : `显示全部 ${g.list.length} 条调整记录<span class="muted">(${esc(restSum)})</span><svg class="ico pnmore__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`}</button>` : ''}
         </div>`;
-      }).join('') : (need ? '' : empty((S.pins || []).length ? '没有符合条件的清单' : '还没有置顶清单。点右上角新建一个,选合集、拖好顺序就行。'))}`;
+      }).join('') : (need ? '' : empty((S.pins || []).length ? '没有符合条件的清单' : '还没有置顶清单。点右上角新建一个,选 Collection、拖好顺序就行。'))}`;
     wireTimeline('pn', points, () => pnAt, (v) => { pnAt = v; renderPins(); });
     wirePnView();
     // 立即执行一次:不用等定时器那一分钟,而且把「做了什么 / 为什么没做」直接说出来
@@ -2018,7 +2018,7 @@
       b.disabled = true;
       try {
         await api('POST', '/api/schedule/col-hold', { collection: release ? b.dataset.colrelease : b.dataset.colhold, release });
-        await load(); renderAll(); toast(release ? '好,这个合集的顺序交回给你' : '好,下一分钟按清单重新排');
+        await load(); renderAll(); toast(release ? '好,这个 Collection 的顺序交回给你' : '好,下一分钟按清单重新排');
       } catch (e) { toast(e.message, false); b.disabled = false; }
     }));
     $$('#pn-root [data-pindup]').forEach((b) => b.addEventListener('click', (e) => {
@@ -2093,7 +2093,7 @@
       </section>`;
     const go = async () => {
       const q = $('#lk-q').value.trim(); const out = $('#lk-out'); if (!q) return;
-      if (MODE !== 'live') { out.innerHTML = '<p class="muted">演示模式查不了(要读产品的合集和标签)。切到正式数据后,这里会列出这个产品参加的活动,以及是因为哪个合集 / 标签 / 单独指定参加的。</p>'; return; }
+      if (MODE !== 'live') { out.innerHTML = '<p class="muted">演示模式查不了(要读产品的 Collection 和标签)。切到正式数据后,这里会列出这个产品参加的活动,以及是因为哪个 Collection / 标签 / 单独指定参加的。</p>'; return; }
       out.innerHTML = '<p class="muted">查询中…</p>';
       try {
         const r = await api('GET', `/api/schedule/product?q=${encodeURIComponent(q)}`);
@@ -2101,7 +2101,7 @@
         out.innerHTML = `<div class="lk">
           ${p.image ? `<img class="lk__img" src="${esc(p.image)}" alt="">` : ''}
           <div class="lk__b"><b>${esc(p.title)}</b> ${linkPair('products', p)}
-            <div class="muted">在 ${p.collections.length} 个合集里 · ${p.tags.length} 个标签</div>
+            <div class="muted">在 ${p.collections.length} 个 Collection 里 · ${p.tags.length} 个标签</div>
             ${r.campaigns.length ? r.campaigns.map((c) => { const x = byId(c.id); return `<div class="lk__c">${x ? badge(x) : ''}<button class="linkbtn" data-open="${c.id}" type="button">${esc(c.name)}</button><span class="muted">${esc(c.why.join(' · '))}</span></div>`; }).join('')
               : '<p class="muted">不在任何已批准的活动里。</p>'}
           </div></div>`;
@@ -2127,7 +2127,7 @@
   }
   const pmColors = (v) => ({ ...PM_FALLBACK[v.module || 'sale'], ...Object.fromEntries(['titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText'].filter((k) => v[k]).map((k) => [k, v[k]])) });
   const tabLabel = (t) => t.title || t.collection?.title || (t.source === 'products' ? '手选产品' : '未命名页签');
-  const tabSummary = (t) => `${t.source === 'products' ? `手选 ${(t.products || []).length} 个产品` : `合集 ${t.collection ? esc(t.collection.title) : '(未选)'}`}${t.onlyDiscounted ? ' · 只看打折' : ''}${t.newestFirst ? ' · 最新在前' : ''} · ${Number(t.limit) ? `最多 ${t.limit} 个` : '不限数量'}`;
+  const tabSummary = (t) => `${t.source === 'products' ? `手选 ${(t.products || []).length} 个产品` : `Collection ${t.collection ? esc(t.collection.title) : '(未选)'}`}${t.onlyDiscounted ? ' · 只看打折' : ''}${t.newestFirst ? ' · 最新在前' : ''} · ${Number(t.limit) ? `最多 ${t.limit} 个` : '不限数量'}`;
   // 首页上的样子:标题两段 + 页签 + 产品卡(正式数据里取真实产品,演示时是占位)
   const pmPreviewCache = {};
   const tabKey = (t) => JSON.stringify([t.source, t.collection?.id, (t.products || []).map((p) => p.id), t.onlyDiscounted, t.sortByDiscount, t.newestFirst, t.limit]);
@@ -2166,7 +2166,7 @@
       <div class="pmv__tabs">${tabs.map((x, i) => `<span class="pmv__tab ${x.campaign && !tabOn(x, at ?? now()) ? 'is-off' : ''}" data-pmtab="${i}" style="${i === activeTab ? `background:${esc(c.tabActiveBg)};color:${esc(c.tabActiveText)}` : ''}" ${x.campaign ? `title="只在「${esc(camp(x.campaign)?.name || '某个活动')}」期间显示${tabOn(x, at ?? now()) ? '' : '(这一刻不显示)'}"` : ''}>${esc(tabLabel(x))}${x.campaign ? ' ⏱' : ''}</span>`).join('')}</div>
       ${small ? '' : `<div class="pmv__grid">${cards}</div>
       <div class="pmv__foot">${t ? `${tabSummary(t)}${cached ? ` · 现在符合条件的有 ${cached.shown}${cached.approx ? '+' : ''} 个` : MODE === 'live' ? ' · 正在取产品…' : ' · <b>示例产品</b>(演示模式画的是真实产品的图和名字,价格是编的;切到正式数据就是这个页签真正会出现的产品)'}` : ''}
-        ${pin ? `<div class="pmv__pinnote">这一刻这个合集按「<b>${esc(titleOf(pin))}</b>」排:${(pin.products || []).length} 个产品置顶${pin.onlyListed ? ',而且只显示这些' : ''} <button class="linkbtn" data-open="${pin.id}" type="button">改清单</button></div>` : ''}</div>`}
+        ${pin ? `<div class="pmv__pinnote">这一刻这个 Collection 按「<b>${esc(titleOf(pin))}</b>」排:${(pin.products || []).length} 个产品置顶${pin.onlyListed ? ',而且只显示这些' : ''} <button class="linkbtn" data-open="${pin.id}" type="button">改清单</button></div>` : ''}</div>`}
     </div>`;
   }
   // 正式数据:取某个页签的前几个产品(只给后台预览用)
@@ -2215,11 +2215,11 @@
   const FIELD = {
     title: '标题', subtitle: '副标题', description: '描述', image: '图片', tag: '角标', button1_text: '按钮 1 文字', button1_url: '按钮 1 链接',
     button2_text: '按钮 2 文字', button2_url: '按钮 2 链接', button1_video: '按钮 1 视频', button2_video: '按钮 2 视频', emoji: 'Emoji', text: '文字', link: '链接', category: '分类',
-    name: '名称', collections: '合集', tags: '标签', products: '指定产品', badge: '徽章文字', countdown: '倒计时', priority: '优先级',
+    name: '名称', collections: 'Collection', tags: '标签', products: '指定产品', badge: '徽章文字', countdown: '倒计时', priority: '优先级',
     bg: '底色', color: '文字颜色', accent: '点缀色', effect: '特效', decoLeft: '左侧装饰', decoRight: '右侧装饰',
     module: '模块', title2: '标题第二段', titleColor: '第一段颜色', title2Color: '第二段颜色', tabActiveBg: '页签高亮底色', tabActiveText: '页签高亮文字', tabs: '页签', isDefault: '平时版本',
     start: '开始', end: '结束', campaign: '所属活动',
-    collection: '合集', onlyListed: '只显示前 N 个', hidden: '不显示的产品', fullOrder: '完全按清单顺序', larkLinks: '关联的飞书任务',
+    collection: 'Collection', onlyListed: '只显示前 N 个', hidden: '不显示的产品', fullOrder: '完全按清单顺序', larkLinks: '关联的飞书任务',
     owner: '负责人', approver: '审批人', cc: '抄送', due: '截止时间',
   };
   const showVal = (k, v) => {
@@ -2263,7 +2263,7 @@
   }
   function renderHistory() {
     const root = $('#hs-root'); if (!root) return;
-    const kinds = [['', '全部类型'], ['banner', 'Banner'], ['topbar', '顶栏'], ['tbstyle', '顶栏样式'], ['pmodule', '商品模块'], ['pin', '合集排序'], ['campaign', '活动'],
+    const kinds = [['', '全部类型'], ['banner', 'Banner'], ['topbar', '顶栏'], ['tbstyle', '顶栏样式'], ['pmodule', '商品模块'], ['pin', 'Collection 排序'], ['campaign', '活动'],
       ...(window.cgpCanSee && window.cgpCanSee('price') ? [['price', '改价']] : [])];
     const byDay = new Map();
     for (const r of hsRows || []) { const d = fDate(r.at); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(r); }
@@ -2399,11 +2399,11 @@
   function pShowVal(k, v) {
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '<span class="muted">(空)</span>';
     if (k === 'kind') return v === 'permanent' ? '永久调价' : '限时(到期恢复原价)';
-    if (k === 'layer') return esc({ flash: '限时抢购', brand: '品牌 / 合集', sitewide: '全场' }[v] || v);
+    if (k === 'layer') return esc({ flash: '限时抢购', brand: '品牌 / Collection', sitewide: '全场' }[v] || v);
     if (k === 'compare') return esc({ original: '原价作为划线价', keep: '划线价不变', none: '不显示划线价' }[v] || v);
     if (k === 'rule') return `${esc((RULE_CN[v.mode] || ((x) => `${v.mode} ${x}`))(v.value))}${v.rounding ? `,尾数 ${esc(v.rounding)}` : ''}`;
     if (k === 'scope') {
-      const m = { collections: `指定合集:${(v.collections || []).map((c) => c.title || c.id).join('、')}`, products: `指定产品 ${(v.products || []).length} 个`,
+      const m = { collections: `指定 Collection:${(v.collections || []).map((c) => c.title || c.id).join('、')}`, products: `指定产品 ${(v.products || []).length} 个`,
         search: `按品牌 / 标签 / 类型:${[v.vendor, v.tag, v.type].filter(Boolean).join(' / ')}`, all: '全店所有产品' }[v.mode];
       return esc(m || v.mode || '');
     }
@@ -2727,7 +2727,7 @@
 
   // ================= 设置 → 清理内容(一次删掉测试时建的内容;规则在 /lib/schedule-actions.js 的 purge)=================
   const cl = { q: '', sel: new Set(), sure: 0 };
-  const CL_KINDS = [['campaign', '活动'], ['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', '合集置顶'], ['salelink', '促销链接'], ['callout', '产品页推广']];
+  const CL_KINDS = [['campaign', '活动'], ['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', 'Collection 置顶'], ['salelink', '促销链接'], ['callout', '产品页推广']];
   const clFollowers = (c) => all().filter((x) => x.campaign === c.id && x.start == null && x.end == null);
   const clMatch = (x) => { const q = cl.q.trim().toLowerCase(); return !q || [titleOf(x), x.name, x.slug, x.collection?.title].some((v) => String(v || '').toLowerCase().includes(q)); };
   const clItems = () => all().filter((x) => !x.isDefault && clMatch(x));
@@ -2735,7 +2735,7 @@
     const box = $('#st-clean'); if (!box) return;
     box.innerHTML = `<section class="panel">
         <div class="panel__h"><h3>清理内容</h3><span class="muted">一次删掉测试时建的内容</span></div>
-        <p class="muted">勾上要删的,点「删除选中的」。店铺里对应的条目会一起删掉:<b>正在网站上显示的会立刻消失</b>,合集置顶删了合集会恢复原来的顺序。
+        <p class="muted">勾上要删的,点「删除选中的」。店铺里对应的条目会一起删掉:<b>正在网站上显示的会立刻消失</b>,Collection 置顶删了 Collection 会恢复原来的顺序。
           默认样式和商品模块的「平时版本」不能删;改价计划在「改价」页里单独删。</p>
         <div class="cltools"><input class="inp" id="cl-q" placeholder="按名字筛选,比如 test、测试、bfcm" value="${esc(cl.q)}"/>
           <button class="btn btn-sm" data-clpick="draft" type="button">勾上所有草稿</button><button class="btn btn-sm" data-clpick="ended" type="button">勾上所有已结束</button>
@@ -2791,7 +2791,7 @@
       const r = await act({ type: 'purge', ids });
       if (!r) { drawCleanList(); return; }
       cl.sel.clear(); toast(r.message || `已删除 ${ids.length} 条`);
-      if (r.colRep?.failures?.length) toast('合集顺序恢复时出错:' + (r.colRep.failures[0].message || ''), false);
+      if (r.colRep?.failures?.length) toast('Collection 顺序恢复时出错:' + (r.colRep.failures[0].message || ''), false);
     });
   }
   async function clearRecords(b) {
@@ -2834,7 +2834,7 @@
         ${teamOn ? `<section class="panel">
           <div class="panel__h"><h3>默认审批人</h3><span class="muted">每类内容由谁审批</span></div>
           <p class="muted">一条内容没单独选审批人时,就由这里设的人审批;这里也没设 = 管理员审批。审批人自己提交的直接生效,轮播顺序也由他批。</p>
-          ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'salelink', 'callout', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: '合集排序', salelink: '促销链接', callout: '产品页推广', campaign: '活动' })[k]}</span>
+          ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'salelink', 'callout', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: 'Collection 排序', salelink: '促销链接', callout: '产品页推广', campaign: '活动' })[k]}</span>
             <select class="sel sel--sm" data-defappr="${k}" ${live && !isApprover() ? 'disabled' : ''}><option value="">管理员审批</option>${peopleFor(k).map((u) => `<option value="${esc(u.id)}" ${appr()[k] === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>`).join('')}
         </section>` : ''}
         <section class="panel">
@@ -2968,7 +2968,7 @@
 
   // ---- 店铺连接(真实接口):权限 / 4 个内容类型 / 定时器 ----
   // 只有在 Shopify 后台里打开才有 session token;本地预览会提示。
-  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: '合集置顶清单', cgp_sale_link: '促销链接', cgp_pdp_callout: '产品页推广块' };
+  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: 'Collection 置顶清单', cgp_sale_link: '促销链接', cgp_pdp_callout: '产品页推广块' };
   let connCache = null;
   async function renderConn(force) {
     const box = $('#st-conn'); if (!box) return;
@@ -3079,12 +3079,12 @@
       <div class="tabed__h"><b>页签 ${i + 1}</b>
         <span class="tabed__acts"><button type="button" class="btn btn-sm btn-ghost" data-tact="up" data-i="${i}" ${i ? '' : 'disabled'} aria-label="上移">${I.up}</button><button type="button" class="btn btn-sm btn-ghost" data-tact="down" data-i="${i}" ${i < edTabs.length - 1 ? '' : 'disabled'} aria-label="下移">${I.down}</button><button type="button" class="btn btn-sm btn-ghost btn-danger-t" data-tact="del" data-i="${i}">删除</button></span></div>
       <div class="fld2">
-        <label class="fld"><span>页签名</span><input class="inp" data-tf="title" data-i="${i}" value="${esc(t.title)}" placeholder="${esc(t.collection?.title || '如:Top Picks')}"/><em>留空 = 用合集名</em></label>
-        <div class="fld"><span>产品从哪来</span><div class="seg">${[['collection', '一个合集'], ['products', '手选产品']].map(([k, l]) => `<button type="button" data-tsrc="${k}" data-i="${i}" class="${t.source === k ? 'is-active' : ''}">${l}</button>`).join('')}</div></div>
+        <label class="fld"><span>页签名</span><input class="inp" data-tf="title" data-i="${i}" value="${esc(t.title)}" placeholder="${esc(t.collection?.title || '如:Top Picks')}"/><em>留空 = 用 Collection 名</em></label>
+        <div class="fld"><span>产品从哪来</span><div class="seg">${[['collection', '一个 Collection'], ['products', '手选产品']].map(([k, l]) => `<button type="button" data-tsrc="${k}" data-i="${i}" class="${t.source === k ? 'is-active' : ''}">${l}</button>`).join('')}</div></div>
       </div>
       <div class="tabed__pick">${t.source === 'collection'
-        ? `${t.collection ? `<span class="chip"><span class="chip__t">${esc(t.collection.title)}</span>${colCount(t.collection) != null ? `<span class="chip__n">${colCount(t.collection)} 个产品</span>` : ''}${linkPair('collections', t.collection)}</span>` : '<span class="muted">还没选合集</span>'}
-           <button type="button" class="chipadd" data-tpick="collection" data-i="${i}">${I.plus}${t.collection ? '换合集' : '选择合集'}</button>`
+        ? `${t.collection ? `<span class="chip"><span class="chip__t">${esc(t.collection.title)}</span>${colCount(t.collection) != null ? `<span class="chip__n">${colCount(t.collection)} 个产品</span>` : ''}${linkPair('collections', t.collection)}</span>` : '<span class="muted">还没选 Collection</span>'}
+           <button type="button" class="chipadd" data-tpick="collection" data-i="${i}">${I.plus}${t.collection ? '换 Collection' : '选择 Collection'}</button>`
         : `${(t.products || []).map((p) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span></span>`).join('')}
            <button type="button" class="chipadd" data-tpick="products" data-i="${i}">${I.plus}选择产品</button>`}</div>
       <div class="tabed__cks">${chk(i, 'onlyDiscounted', '只显示打折的')}${chk(i, 'sortByDiscount', '按折扣从大到小')}${chk(i, 'newestFirst', '最新上架在前')}${chk(i, 'countdown', '显示活动徽章和倒计时')}</div>
@@ -3092,9 +3092,9 @@
       <div class="tabed__row"><span class="muted">什么时候显示</span><select class="sel sel--sm" data-tf="campaign" data-i="${i}">${tabCampOpts(t.campaign)}</select>
         <span class="muted">${t.campaign ? '只在这个活动进行中时出现,没开始 / 结束了自动藏起来(比如 DZO 页签只在 DZO Early BF 期间)' : '跟着这个版本一直显示'}</span></div>
       <div class="tabed__row"><span class="muted">最多显示</span><div class="seg">${[[20, '20 个'], [0, '不限(最多 250)']].map(([n, l]) => `<button type="button" data-tlim="${n}" data-i="${i}" class="${Number(t.limit) === n ? 'is-active' : ''}">${l}</button>`).join('')}</div>
-        <span class="muted">${Number(t.limit) ? '首页更轻,其余的点 Shop All 去合集页看' : '合集里符合条件的都画在首页(Shopify 一次最多 250 个)'}</span></div>
+        <span class="muted">${Number(t.limit) ? '首页更轻,其余的点 Shop All 去 Collection 页看' : 'Collection 里符合条件的都画在首页(Shopify 一次最多 250 个)'}</span></div>
       <div class="fld2">
-        <label class="fld"><span>Shop All 链接</span><input class="inp" data-tf="shopAllUrl" data-i="${i}" value="${esc(t.shopAllUrl)}" placeholder="留空 = 这个合集的页面"/></label>
+        <label class="fld"><span>Shop All 链接</span><input class="inp" data-tf="shopAllUrl" data-i="${i}" value="${esc(t.shopAllUrl)}" placeholder="留空 = 这个 Collection 的页面"/></label>
         <label class="fld"><span>Shop All 文字</span><input class="inp" data-tf="shopAllText" data-i="${i}" value="${esc(t.shopAllText)}" placeholder="Shop All"/></label>
       </div>
     </div>`).join('') + `<button type="button" class="btn btn-sm" data-tact="add">${I.plus}加一个页签</button>`;
@@ -3115,7 +3115,7 @@
     const src = type === 'products' ? S.products : S.collections;
     const chosen = new Set(type === 'products' ? (t.products || []).map((x) => x.handle) : t.collection ? [t.collection.handle] : []);
     const box = document.createElement('div'); box.className = 'picker';
-    box.innerHTML = `<div class="picker__box"><div class="picker__h"><b>${type === 'products' ? '选择产品' : '选一个合集'}</b><input class="inp" placeholder="搜索" id="pk-q"/></div>
+    box.innerHTML = `<div class="picker__box"><div class="picker__h"><b>${type === 'products' ? '选择产品' : '选一个 Collection'}</b><input class="inp" placeholder="搜索" id="pk-q"/></div>
       <div class="picker__list" id="pk-list"></div>
       <div class="picker__f"><span class="muted">演示列表。在 Shopify 后台打开时会换成 Shopify 自带的选择器,可以搜全店。</span>
         <span class="picker__acts"><button class="btn btn-sm" data-pk="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-pk="ok" type="button">确定</button></span></div></div>`;
@@ -3217,9 +3217,9 @@
     const cnt = (n) => `<span class="chip__n ${n === 0 ? 'is-zero' : ''}">${n == null ? '? 个' : `${n} 个产品`}${n === 0 ? ' ⚠️' : ''}</span>`;
     const st = scopeTotal({ ...ed, counts: ed.counts });
     return `
-      <div class="scope__row"><span class="scope__k">合集</span>
+      <div class="scope__row"><span class="scope__k">Collection</span>
         <span class="chips">${ed.collections.map((c, i) => `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${cnt(colCount(c))}${linkPair('collections', c)}${rm('collections', i)}</span>`).join('')}
-          <button type="button" class="chipadd" data-pick="collections">${I.plus}选择合集</button></span></div>
+          <button type="button" class="chipadd" data-pick="collections">${I.plus}选择 Collection</button></span></div>
       <div class="scope__row"><span class="scope__k">标签</span>
         <span class="chips">${ed.tags.map((t, i) => `<span class="chip"><span class="chip__t mono">${esc(t)}</span>${cnt(tagCount(t))}${linkPair('tags', t)}${rm('tags', i)}</span>`).join('')}
           <input class="chipinp" id="sc-tag" list="sc-tags" placeholder="输入标签,回车添加"/>
@@ -3227,7 +3227,7 @@
       <div class="scope__row"><span class="scope__k">指定产品</span>
         <span class="chips">${ed.products.map((p, i) => `<span class="chip chip--p">${p.image ? `<img src="${esc(p.image)}" alt="">` : ''}<span class="chip__t">${esc(p.title)}</span>${linkPair('products', p)}${rm('products', i)}</span>`).join('')}
           <button type="button" class="chipadd" data-pick="products">${I.plus}选择产品</button></span></div>
-      <div class="scope__sum">${st.exact ? `合计 <b>${st.total}</b> 个产品(已去重,Shopify 实时计数)` : `合计约 <b>${st.total}${st.unknown ? '+' : ''}</b> 个产品${st.overlap ? (MODE === 'live' ? ',正在算去重后的准确数量…' : ',合集和标签之间可能有重叠(正式数据里会算出准确的去重数量)') : ''}`}</div>`;
+      <div class="scope__sum">${st.exact ? `合计 <b>${st.total}</b> 个产品(已去重,Shopify 实时计数)` : `合计约 <b>${st.total}${st.unknown ? '+' : ''}</b> 个产品${st.overlap ? (MODE === 'live' ? ',正在算去重后的准确数量…' : ',Collection 和标签之间可能有重叠(正式数据里会算出准确的去重数量)') : ''}`}</div>`;
   }
 
   // ================= v3 工作项:合集置顶清单 / 设计需求 / 宣传物料 =================
@@ -3360,29 +3360,29 @@
     const outside = wxAll && !wxAll.demo && !wxAll.error ? wx.order.filter((p) => !wxBase.includes(pidOf(p)) && !(wxAll.products || []).some((x) => pidOf(x) === pidOf(p))).length : 0;
     const removeN = wx.hidden.length + (wx.onlyN != null ? Math.max(0, wx.order.length - wx.onlyN) : 0);
     const warns = [];
-    const why = wxAll?.needsNewApi ? '(要让 app 能改带条件的合集,先把 API 版本升到 2026-07)' : wxAll?.sharedSource ? '(这个合集的条件来源是共享的,改了会连带改到别的合集,app 不碰)' : '';
-    if (outside && !realMember) warns.push(`有 <b>${outside} 个产品不在这个合集里</b> —— <b>它们显示不出来</b>${why}。要让它出现,先在 Shopify 后台把它单独加进这个合集。`);
-    if (outside && realMember) warns.push(`红框「新加」的 ${outside} 个产品本来不在这个合集里 —— 生效时会自动<b>加进合集</b>${wxAll?.selectionOk ? '(加进这个合集的「单独加的产品」名单,不动条件)' : ''},结束再拿掉。`);
-    if (realMode && !realMember && removeN) warns.push(`有 ${removeN} 个产品设成了「这段时间不显示」:它们<b>还留在 Shopify 的合集里</b>,只在顾客看到的页面上隐藏${why}${S.themePin === false ? '(正在用的主题还没装上前台代码,现在只在测试主题上有效)' : ''}。`);
-    if (realMember && wxAll?.selectionOk && removeN) warns.push(`「这段时间不显示」的 ${removeN} 个产品,生效时会加进这个合集的「排除」名单(不动条件),结束再拿掉。`);
+    const why = wxAll?.needsNewApi ? '(要让 app 能改带条件的 Collection,先把 API 版本升到 2026-07)' : wxAll?.sharedSource ? '(这个 Collection 的条件来源是共享的,改了会连带改到别的 Collection,app 不碰)' : '';
+    if (outside && !realMember) warns.push(`有 <b>${outside} 个产品不在这个 Collection 里</b> —— <b>它们显示不出来</b>${why}。要让它出现,先在 Shopify 后台把它单独加进这个 Collection。`);
+    if (outside && realMember) warns.push(`红框「新加」的 ${outside} 个产品本来不在这个 Collection 里 —— 生效时会自动<b>加进 Collection</b>${wxAll?.selectionOk ? '(加进这个 Collection 的「单独加的产品」名单,不动条件)' : ''},结束再拿掉。`);
+    if (realMode && !realMember && removeN) warns.push(`有 ${removeN} 个产品设成了「这段时间不显示」:它们<b>还留在 Shopify 的 Collection 里</b>,只在顾客看到的页面上隐藏${why}${S.themePin === false ? '(正在用的主题还没装上前台代码,现在只在测试主题上有效)' : ''}。`);
+    if (realMember && wxAll?.selectionOk && removeN) warns.push(`「这段时间不显示」的 ${removeN} 个产品,生效时会加进这个 Collection 的「排除」名单(不动条件),结束再拿掉。`);
     if (!realMode && wxAll && !wxAll.demo && prefix > 50) warns.push(`前台排序最多能固定前 50 个位置,你现在排到了第 ${prefix} 位 —— 第 51 位以后的调整前台不会生效。`);
     if (!realMember && wxAll && !wxAll.demo && wx.hidden.length > 50) warns.push(`前台排序最多能隐藏 50 个产品,你现在隐藏了 ${wx.hidden.length} 个。`);
-    if (realMember && removeN > 100) warns.push(`要临时移出合集的产品有 ${removeN} 个(超过 100 个)—— 这份清单会改用前台排序,不动店里的合集。`);
+    if (realMember && removeN > 100) warns.push(`要临时移出 Collection 的产品有 ${removeN} 个(超过 100 个)—— 这份清单会改用前台排序,不动店里的 Collection。`);
     // 合集这一行:几个短标签说清现在的方式,长说明收进「怎么生效?」(2026-10-20 改版)
     const how = (txt) => `<details class="hint"><summary>怎么生效?</summary><div>${txt}</div></details>`;
-    const colNote = !wx.collection ? '' : wxBusy ? '<em>正在读这个合集现在的顺序…</em>'
-      : wxAll?.error ? `<em class="warn">读不到这个合集的产品:${esc(wxAll.error)}</em>`
-        : wxAll?.demo ? `<div class="pgcol"><span class="tag tag--warn">演示:示例产品</span>${how(`演示模式读不到店里的合集,下面是<b>随便凑的示例产品,不是「${esc(wxAll.title)}」真正的成员</b>。切到正式数据(设置 → 店铺连接)后,这里会列出这个合集现在真正的产品和顺序。`)}</div>`
-          : wxAll ? `<div class="pgcol">${!wxAll.manualOk || !canWrite() || (realMember && removeN > 100) ? `<span class="tag tag--warn" title="Shopify 后台里这个合集的顺序不会变,只在网站前台按你排的显示">只在网站前台排序</span>` : ''}
+    const colNote = !wx.collection ? '' : wxBusy ? '<em>正在读这个 Collection 现在的顺序…</em>'
+      : wxAll?.error ? `<em class="warn">读不到这个 Collection 的产品:${esc(wxAll.error)}</em>`
+        : wxAll?.demo ? `<div class="pgcol"><span class="tag tag--warn">演示:示例产品</span>${how(`演示模式读不到店里的 Collection,下面是<b>随便凑的示例产品,不是「${esc(wxAll.title)}」真正的成员</b>。切到正式数据(设置 → 店铺连接)后,这里会列出这个 Collection 现在真正的产品和顺序。`)}</div>`
+          : wxAll ? `<div class="pgcol">${!wxAll.manualOk || !canWrite() || (realMember && removeN > 100) ? `<span class="tag tag--warn" title="Shopify 后台里这个 Collection 的顺序不会变,只在网站前台按你排的显示">只在网站前台排序</span>` : ''}
               ${!wxAll.manualOk && S.themePin === false ? '<span class="tag tag--danger">正在用的主题还没装前台排序代码</span>' : ''}
               <span class="tag">共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(只列出前 ${wxAll.products.length} 个)` : ''}</span>
               ${wxAll.takenBy ? `<span class="tag tag--accent">现在由「${esc(pinNm(wxAll.takenBy))}」接管</span>` : ''}
               ${how(`${!wxAll.manualOk
-            ? `这个合集现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的合集调顺序,所以这份清单<b>用前台排序</b>:后台里的顺序不会变,顾客看到的合集页和首页模块按你排的显示。想让后台也变,在 Shopify 后台把这个合集的排序改成「手动」(带条件的合集也可以)。`
-            : !canWrite() ? '手动排序的合集,但 app 现在<b>没有「改产品 / 合集」的权限</b> —— 先用前台排序;装上权限后就会真的改店里的合集。'
-              : wxAll.selectionOk ? '带条件的合集,排序方式是「手动」—— 到点会<b>真的</b>改店里的合集:顺序照网格,合集外的产品加进「单独加的产品」、不显示的加进「排除」名单,<b>你设的条件不动</b>;结束自动撤掉、顺序还原。'
-                : wxAll.automated ? `带条件的合集,排序方式是「手动」—— 到点会<b>真的</b>按网格里的顺序改店里的合集,结束自动还原;单个产品的加 / 移出交给前台${wxAll.needsNewApi ? '(把 API 版本升到 2026-07 后,app 就能直接改这个合集的「单独加的产品 / 排除」名单)' : wxAll.sharedSource ? '(这个合集的条件来源是共享的,app 不碰)' : ''}。`
-                : '手动合集 —— 到点会<b>真的</b>按网格里的顺序改店里的合集(包括加 / 移出产品),结束自动还原。'}${wxAll.takenBy ? `<br>网格里的对比基准是被「${esc(pinNm(wxAll.takenBy))}」接管前的原样。` : ''}存的时候只记你动过的部分,没动的照原来的顺序。`)}</div>` : '';
+            ? `这个 Collection 现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的 Collection 调顺序,所以这份清单<b>用前台排序</b>:后台里的顺序不会变,顾客看到的 Collection 页和首页模块按你排的显示。想让后台也变,在 Shopify 后台把这个 Collection 的排序改成「手动」(带条件的 Collection 也可以)。`
+            : !canWrite() ? '手动排序的 Collection,但 app 现在<b>没有「改产品 / Collection」的权限</b> —— 先用前台排序;装上权限后就会真的改店里的 Collection。'
+              : wxAll.selectionOk ? '带条件的 Collection,排序方式是「手动」—— 到点会<b>真的</b>改店里的 Collection:顺序照网格,Collection 外的产品加进「单独加的产品」、不显示的加进「排除」名单,<b>你设的条件不动</b>;结束自动撤掉、顺序还原。'
+                : wxAll.automated ? `带条件的 Collection,排序方式是「手动」—— 到点会<b>真的</b>按网格里的顺序改店里的 Collection,结束自动还原;单个产品的加 / 移出交给前台${wxAll.needsNewApi ? '(把 API 版本升到 2026-07 后,app 就能直接改这个 Collection 的「单独加的产品 / 排除」名单)' : wxAll.sharedSource ? '(这个 Collection 的条件来源是共享的,app 不碰)' : ''}。`
+                : '手动 Collection —— 到点会<b>真的</b>按网格里的顺序改店里的 Collection(包括加 / 移出产品),结束自动还原。'}${wxAll.takenBy ? `<br>网格里的对比基准是被「${esc(pinNm(wxAll.takenBy))}」接管前的原样。` : ''}存的时候只记你动过的部分,没动的照原来的顺序。`)}</div>` : '';
     const sum = OD.diffSummary(d);
     // 搜索引擎在合集页默认「手动前 N 个 + 其余新到旧」:没开「完全按我排的顺序」时,网格第 (前缀 + N) 位以后前台会按新到旧
     const rule = wxAll?.sortRule || { off: false, pinManual: 12, pinNew: 0 };
@@ -3391,27 +3391,27 @@
     const grid = wx.order.map((p, i) => {
       const cut = wx.onlyN != null && i >= wx.onlyN;
       const line = wx.onlyN != null && i === wx.onlyN ? `<div class="pg__cutline">—— 只显示前 ${wx.onlyN} 个,下面的这段时间不显示 ——</div>`
-        : newestFrom != null && i === newestFrom ? `<div class="pg__cutline pg__cutline--new">—— 前台从这里开始按新到旧显示(合集页默认只照顺序显示前 ${rule.pinManual} 个;打开「完全按我排的顺序」就一致)——</div>` : '';
+        : newestFrom != null && i === newestFrom ? `<div class="pg__cutline pg__cutline--new">—— 前台从这里开始按新到旧显示(Collection 页默认只照顺序显示前 ${rule.pinManual} 个;打开「完全按我排的顺序」就一致)——</div>` : '';
       return line + wxCard(p, i, d, cut);
     }).join('');
     const canPlans = window.cgpCanSee && window.cgpCanSee('price') && MODE === 'live';
     const stat = (cls, label, n) => (n ? `<span class="pgstat"><i class="lg ${cls}"></i>${label} ${n}</span>` : '');
     const changed = d.added.size + d.moved.size + removeN;
-    const collHtml = `<div class="fld"><span>合集</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
-        <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择合集'}</button>
+    const collHtml = `<div class="fld"><span>Collection</span><div class="rowin">${wx.collection ? `<span class="chip"><span class="chip__t">${esc(wx.collection.title)}</span>${linkPair('collections', wx.collection)}</span>` : '<span class="muted">还没选</span>'}
+        <button type="button" class="btn btn-sm" data-wx="pickcoll">${wx.collection ? '换一个' : '选择 Collection'}</button>
         ${wx.collection && wxAll && !wxAll.demo && !wxAll.error && MODE === 'live' ? `<button type="button" class="btn btn-sm btn-ghost" data-wx="hist">${I.clock}历史版本 / 回滚</button>` : ''}</div>${colNote}</div>`;
     if (part === 'coll') return collHtml;
-    if (part === 'opts') return !wx.collection ? '<span class="muted">先选合集</span>' : wxBusy || !wxAll ? '<span class="muted">读取中…</span>' : `
+    if (part === 'opts') return !wx.collection ? '<span class="muted">先选 Collection</span>' : wxBusy || !wxAll ? '<span class="muted">读取中…</span>' : `
       <div class="pset__tgls">
       <label class="tgl"><input type="checkbox" id="wx-only" ${wx.onlyN != null ? 'checked' : ''}/><span class="tgl__ui"></span>
         <span><b>只显示前 <input class="inp inp--xs" id="wx-onlyn" type="number" min="1" max="${Math.max(1, wx.order.length)}" value="${wx.onlyN ?? Math.max(1, Math.min(prefix || 5, wx.order.length))}" ${wx.onlyN != null ? '' : 'disabled'}/> 个产品</b>
         <span class="muted">后面的这段时间不显示(Flash 每天一组用)</span></span></label>
       <label class="tgl"><input type="checkbox" id="wx-full" ${wx.fullOrder || nativeAll ? 'checked' : ''} ${nativeAll ? 'disabled' : ''}/><span class="tgl__ui"></span>
         <span><b>完全按我排的顺序</b><span class="muted">${nativeAll ? '默认设置已经是完全按顺序,不用开'
-          : `整个合集页照下面的顺序;不开只有前 ${rule.pinManual} 个照顺序`}${rule.byPin ? `(现在由「${esc(rule.byPin)}」打开着)` : ''}</span></span></label>
+          : `整个 Collection 页照下面的顺序;不开只有前 ${rule.pinManual} 个照顺序`}${rule.byPin ? `(现在由「${esc(rule.byPin)}」打开着)` : ''}</span></span></label>
       </div>
-      ${!wx.fullOrder && !nativeAll && rule.pinNew ? `<div class="note note--warn note--sm">这个合集前台默认会把最新的 ${rule.pinNew} 个产品放最前,和下面的顺序不完全一样 —— 打开「完全按我排的顺序」就一模一样。</div>` : ''}`;
-    return `${!wx.collection ? '<p class="muted">先在上面选合集,这里会列出合集里现在的全部产品,可以拖到任意位置。</p>'
+      ${!wx.fullOrder && !nativeAll && rule.pinNew ? `<div class="note note--warn note--sm">这个 Collection 前台默认会把最新的 ${rule.pinNew} 个产品放最前,和下面的顺序不完全一样 —— 打开「完全按我排的顺序」就一模一样。</div>` : ''}`;
+    return `${!wx.collection ? '<p class="muted">先在上面选 Collection,这里会列出 Collection 里现在的全部产品,可以拖到任意位置。</p>'
         : wxBusy ? `<div class="pg">${Array.from({ length: 10 }, () => '<div class="pg__card pg__card--ph"><span class="pg__img"></span><span class="pg__t"></span><span class="pg__pr"></span></div>').join('')}</div>` : `
       <div class="pgtool">
         <div class="pgtool__l">${changed ? `${stat('lg--new', '新加', d.added.size)}${stat('lg--moved', '换了位置', d.moved.size)}${stat('lg--cut', '不显示', removeN)}` : '<span class="muted">顺序还没动</span>'}</div>
@@ -3426,7 +3426,7 @@
       ${canPlans ? `<div id="wx-plans">${wxPlansHtml()}</div>` : ''}
       ${wxStockNote ? `<p class="muted pg__stocknote">${esc(wxStockNote)}</p>` : ''}
       ${warns.map((w) => `<div class="note note--warn note--sm">${w}</div>`).join('')}
-      <div class="pg${pgCls()}" id="pg">${grid || '<p class="muted">这个合集里还没有产品</p>'}</div>
+      <div class="pg${pgCls()}" id="pg">${grid || '<p class="muted">这个 Collection 里还没有产品</p>'}</div>
       ${wx.hidden.length ? `<div class="pg__hidh">这段时间不显示的产品(${wx.hidden.length} 个)<em>只在这份清单生效时藏起来,结束自动恢复</em></div>
         <div class="pg pg--hidden${pgCls()}">${wx.hidden.map((p, i) => `<div class="pg__card is-cut">
           <span class="pg__img">${p.image ? `<img src="${esc(thumb(p.image, 240))}" alt="" loading="lazy">` : ''}</span>
@@ -3465,15 +3465,15 @@
       // 2026-10-21 用户:合集的默认设置和合集放在一起;清单自己的设置只有三项(产品排序 / 产品卡 / 显示时间);最下面只放全部产品的顺序。
       // 尽量两栏排,别浪费横向空间
       const blk = (h, sub, v, cls = '') => `<div class="pblk ${cls}"><div class="pblk__h">${h}${sub ? `<em>${sub}</em>` : ''}</div>${v}</div>`;
-      return `${edSec(1, '清单与合集', '', `<div class="pgrid2">
+      return `${edSec(1, '清单与 Collection', '', `<div class="pgrid2">
             ${fld('清单名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}
             <div id="wx-coll">${pinBoxHtml('coll')}</div>
           </div>
-          <div class="pdef"><span class="pdef__k">合集默认设置<em>合集自己的,没有清单生效时这样排;改了马上生效</em></span><div id="wx-cs"><span class="muted">先选合集</span></div></div>
-          <div class="pdef pdef--sl"><span class="pdef__k">这个合集的促销链接<em>只放打折产品的另一页(?onsale),会不会跟着这份清单排</em></span><div id="wx-sl">${wxSlHtml()}</div></div>`)}
+          <div class="pdef"><span class="pdef__k">Collection 默认设置<em>Collection 自己的,没有清单生效时这样排;改了马上生效</em></span><div id="wx-cs"><span class="muted">先选 Collection</span></div></div>
+          <div class="pdef pdef--sl"><span class="pdef__k">这个 Collection 的促销链接<em>只放打折产品的另一页(?onsale),会不会跟着这份清单排</em></span><div id="wx-sl">${wxSlHtml()}</div></div>`)}
         ${edSec(2, '清单设置', '', `<div class="pgrid2">
             ${blk('产品排序', '这份清单生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
-            ${blk('产品卡', '产品页、搜索和合集页', `<div class="pset__tgls">
+            ${blk('产品卡', '产品页、搜索和 Collection 页', `<div class="pset__tgls">
               <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到这份清单结束,到期自动消失</span></span></label>
               <label class="pset__inp"><span>徽章文字</span>${inp('badge', it.badge, '可留空,如:Flash Deal · 今日限时')}</label></div>`)}
           </div>
@@ -3590,15 +3590,15 @@
     const sec = edSec;
     return `
       ${sec(1, '活动', '', `${fld('活动名称', inp('name', it.name, '如:Autumn Sale'))}${parentFldHtml(it)}`)}
-      ${sec(2, '参加的产品', '在任一合集里、带任一标签、或单独指定的产品都算', `<div class="scope" id="ed-scope">${scopeHtml()}</div>
+      ${sec(2, '参加的产品', '在任一 Collection 里、带任一标签、或单独指定的产品都算', `<div class="scope" id="ed-scope">${scopeHtml()}</div>
         <p class="muted edsec__hint">点「后台↗ / 前台↗」可以核对具体是哪些产品。</p>`)}
-      ${sec(3, '产品上显示什么', '产品页、搜索 / 合集页的产品卡、首页商品模块都按这里显示,右边是预览', `
+      ${sec(3, '产品上显示什么', '产品页、搜索 / Collection 页的产品卡、首页商品模块都按这里显示,右边是预览', `
         ${fld('徽章文字', inp('badge', it.badge, '如:Autumn Sale -20%'), '留空 = 不显示徽章')}
-        <div class="fld"><span>徽章点了去哪 <em>自动 = 去这个产品所在的促销链接(没有就去参加的第一个合集);想统一去一个页面(比如 DZOFILM 总促销页)就选「指定链接」</em></span>
+        <div class="fld"><span>徽章点了去哪 <em>自动 = 去这个产品所在的促销链接(没有就去参加的第一个 Collection);想统一去一个页面(比如 DZOFILM 总促销页)就选「指定链接」</em></span>
           <div class="rowin">${blSelect(it.badgeLink, 'name="badgeLinkMode" id="ed-blmode"')}
           <input class="inp mono" name="badgeLinkUrl" id="ed-blurl" value="${esc(blMode(it.badgeLink) === 'url' ? it.badgeLink : '')}" placeholder="/collections/dzofilm?view=bfcm-dzo" ${blMode(it.badgeLink) === 'url' ? '' : 'hidden'}/></div></div>
         <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到活动结束,到期自动消失</span></span></label>
-        <div class="fld"><span>样式 <em>徽章和倒计时一起用;挂在这个活动下的合集置顶清单(Flash)也一样</em></span>
+        <div class="fld"><span>样式 <em>徽章和倒计时一起用;挂在这个活动下的 Collection 置顶清单(Flash)也一样</em></span>
           <div class="cdsty" id="ed-cdsty">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-cdsty="${k}" class="cdsty__i ${(it.countdownStyle || 'classic') === k ? 'is-active' : ''}">
             <span class="cdsty__demo" style="background:${x.bg};color:${x.fg};${k === 'minimal' ? '' : 'padding:4px 9px;'}border-radius:${k === 'classic' ? '6px' : '999px'}">${k === 'classic' || k === 'minimal' ? '' : CLOCK}${esc(x.lbl)} 2 days</span>
             <b>${x.name}</b><em>${x.hint}</em></button>`).join('')}</div></div>
@@ -3612,7 +3612,7 @@
       ${sec(5, '关联的飞书任务', '可不填 · 具体要求、设计、文案放在飞书任务里', `
         <div id="ed-lark">${larkEdHtml()}</div>
         <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字,如「设计」(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div>`)}
-      ${it.state === 'new' ? '<div class="note">保存后会打开这个活动的页面,在那里加 Banner、顶栏、首页商品模块、合集置顶、促销链接和改价。</div>'
+      ${it.state === 'new' ? '<div class="note">保存后会打开这个活动的页面,在那里加 Banner、顶栏、首页商品模块、Collection 置顶、促销链接和改价。</div>'
         : cpHub === it.id && isActive('campaigns') ? '' : `<div class="note">挂在这个活动下的内容(${attached} 条)在活动页里管理。<button type="button" class="linkbtn" data-hubgo="${it.id}">打开活动页</button></div>`}`;
   }
 
@@ -3636,7 +3636,7 @@
     const c = cdOf(v);
     const sep = badge && timeId ? (c.key === 'minimal' ? '<span class="pv-co__dot">·</span>' : '<span class="pv-co__bar"></span>') : '';
     const cd = timeId ? `<span class="pv-co__cd">${c.key === 'pill' || c.key === 'dark' ? CLOCK : ''}<span class="pv-co__lbl">${esc(c.lbl)}</span> <b id="${timeId}">${esc(timeText)}</b></span>` : '';
-    return `<div class="pv-co pv-co--${c.key}${badge && timeId ? ' pv-co--both' : ''}${timeId ? '' : ' pv-co--solo'}" style="${c.key === 'minimal' ? '' : `background:${c.bg};`}color:${c.fg}">${badge ? (() => { const link = v.badgeLink === 'none' ? '' : v.badgeLink ? v.badgeLink : v.collections?.length ? `合集 ${v.collections[0].title || ''}` : (S.salelinks || []).some((x) => x.campaign === v.id) ? '这个产品所在的促销链接' : '';
+    return `<div class="pv-co pv-co--${c.key}${badge && timeId ? ' pv-co--both' : ''}${timeId ? '' : ' pv-co--solo'}" style="${c.key === 'minimal' ? '' : `background:${c.bg};`}color:${c.fg}">${badge ? (() => { const link = v.badgeLink === 'none' ? '' : v.badgeLink ? v.badgeLink : v.collections?.length ? `Collection ${v.collections[0].title || ''}` : (S.salelinks || []).some((x) => x.campaign === v.id) ? '这个产品所在的促销链接' : '';
       return `<b class="${link ? 'is-link' : ''}" title="${link ? `点了去 ${esc(link)}` : '不能点'}">${esc(badge)}</b>`; })() : ''}${sep}${cd}</div>`;
   }
   function previewHtml(v) {
@@ -3683,7 +3683,7 @@
           <div class="pv-pdp__btn">Add to cart</div>
         </div>
       </div>
-      ${v.badge || (v.countdown && v.end) ? `<div class="pv-label">搜索 / 合集页的产品卡</div>
+      ${v.badge || (v.countdown && v.end) ? `<div class="pv-label">搜索 / Collection 页的产品卡</div>
       <div class="pv-card">
         <div class="pv-card__img" ${prod ? `style="background-image:url('${esc(prod.image)}')"` : ''}></div>
         ${(() => { const c = cdOf(v); const st = c.custom ? `background:${c.bg};color:${c.fg}` : '';
@@ -3726,9 +3726,9 @@
     const box = document.createElement('div');
     box.className = 'picker';
     box.innerHTML = `<div class="picker__box">
-      <div class="picker__h"><b>选择${isProd ? '产品' : '合集'}</b><input class="inp" placeholder="搜索" id="pk-q"/></div>
+      <div class="picker__h"><b>选择${isProd ? '产品' : ' Collection'}</b><input class="inp" placeholder="搜索" id="pk-q"/></div>
       <div class="picker__list" id="pk-list"></div>
-      <div class="picker__f"><span class="muted">演示:${isProd ? '列表是店里标了 New Gear 的真实产品' : '列表是首页链接里出现过的真实合集,数字是前台能看到的产品数'}。在 Shopify 后台打开时,这里会换成 Shopify 自带的选择器,可以搜全店。</span>
+      <div class="picker__f"><span class="muted">演示:${isProd ? '列表是店里标了 New Gear 的真实产品' : '列表是首页链接里出现过的真实 Collection,数字是前台能看到的产品数'}。在 Shopify 后台打开时,这里会换成 Shopify 自带的选择器,可以搜全店。</span>
         <span class="picker__acts"><button class="btn btn-sm" data-pk="cancel" type="button">取消</button><button class="btn btn-sm btn-primary" data-pk="ok" type="button">确定</button></span></div>
     </div>`;
     $('#drawer').appendChild(box);
@@ -3853,12 +3853,12 @@
   function validate(v) {
     if (v.kind === 'salelink') {
       if (!v.name) return '请填写名称';
-      if (!v.collection) return '请选合集';
+      if (!v.collection) return '请选 Collection';
       if (!SL.SLUG_RE.test(v.slug)) return '链接后缀只能用小写字母、数字和横线(不能以横线开头,最多 40 个字)';
     }
-    if (v.kind === 'pin' && !v.collection) return '请选要排序的合集';
+    if (v.kind === 'pin' && !v.collection) return '请选要排序的 Collection';
     if (v.kind === 'pin' && !v.products.length && !(v.hidden || []).length) return '还没做任何调整:拖动产品换位置,或者把某些产品设为「不显示」';
-    if (v.kind === 'pin' && wxAll && !wxAll.error && !wxAll.demo && wx.order.length === 0) return '合集里的产品全部设成了不显示,至少留一个';
+    if (v.kind === 'pin' && wxAll && !wxAll.error && !wxAll.demo && wx.order.length === 0) return 'Collection 里的产品全部设成了不显示,至少留一个';
     if (v.kind === 'banner' && !v.image) return '请选一张图片';
     if (v.kind === 'topbar' && !v.text) return '请填写公告文字';
     if ((v.kind === 'campaign' || v.kind === 'tbstyle' || v.kind === 'pmodule') && !v.name) return '请填写名称';
@@ -4381,15 +4381,15 @@
         if (a === 'nonew') { delete ed.newColl[co.dataset.t]; $(`#co-${co.dataset.t}`).innerHTML = coCollHtml(co.dataset.t); return; }
         if (a === 'mklensColl' || a === 'mkpromoColl') {
           const t = a.slice(2); const title = String(ed.newColl[t] || '').trim();
-          if (!title) { toast('请填合集名称', false); return; }
-          co.disabled = true; co.textContent = '建合集中…';
+          if (!title) { toast('请填 Collection 名称', false); return; }
+          co.disabled = true; co.textContent = '建 Collection 中…';
           api('POST', '/api/schedule/collection-create', { title, landing: t === 'lensColl' }).then((r) => {
             ed[CO_COLL[t]] = { id: r.collection.id, handle: r.collection.handle, title: r.collection.title }; delete ed.newColl[t];
             const adminUrl = `${ADMIN()}/collections/${numId(r.collection.id)}`;
             ed.collNote[t] = r.published ? { ok: true, html: '✓ 已建好并发布到网店,保存后 app 自动把产品放进去' }
               : { ok: false, html: `已建好 · 还没发布到网店(${esc(r.why || '')}) <a class="lk" href="${esc(adminUrl)}" target="_blank" rel="noopener">去后台勾选「网店」↗</a>` };
             $(`#co-${t}`).innerHTML = coCollHtml(t); $('#co-deal').innerHTML = coDealHtml(base);
-            toast(`合集「${r.collection.title}」已建好${r.published ? '' : ',还要在后台发布到网店'}`, r.published);
+            toast(`Collection「${r.collection.title}」已建好${r.published ? '' : ',还要在后台发布到网店'}`, r.published);
             $('#ed-form').dispatchEvent(new Event('change'));
           }).catch((err) => { toast(err.message, false); co.disabled = false; co.textContent = '建好并选上'; });
           return;
@@ -4402,7 +4402,7 @@
           api('POST', '/api/schedule/joint-sync', { id: base.id, force: a === 'syncforce' }).then((r) => {
             S.jointSync = r.jointSync; const box = $('#co-sync'); if (box) box.innerHTML = coSyncHtml(base);
             const bad = r.rep.error || r.rep.promo?.error;
-            toast(bad || `已同步${r.rep.promo ? ` · 推广产品合集现在 ${r.rep.promo.count} 个` : ''} · 兼容产品合集加了 ${r.rep.added} 个、移出 ${r.rep.removed} 个,现在 ${r.rep.count} 个`, !bad);
+            toast(bad || `已同步${r.rep.promo ? ` · 推广产品 Collection 现在 ${r.rep.promo.count} 个` : ''} · 兼容产品 Collection 加了 ${r.rep.added} 个、移出 ${r.rep.removed} 个,现在 ${r.rep.count} 个`, !bad);
           }).catch((err) => { toast(err.message, false); co.disabled = false; co.textContent = '立即同步'; });
           return;
         }
@@ -4452,8 +4452,8 @@
         const saved = byId(it.id); const st2 = saved ? status(saved) : '';
         const col = colSay(r.colRep, saved?.collection?.id);
         const jrep = (x, what) => (x.error ? `⚠️ ${what}没同步:${x.error}` : `🔁 ${what}「${x.collection?.title || ''}」现在 ${x.count} 个产品(加了 ${x.added}、移出 ${x.removed})`);
-        if (r.jointRep?.promo) col.push(jrep(r.jointRep.promo, '推广产品合集'));
-        if (r.jointRep) col.push(jrep(r.jointRep, '兼容产品合集'));
+        if (r.jointRep?.promo) col.push(jrep(r.jointRep.promo, '推广产品 Collection'));
+        if (r.jointRep) col.push(jrep(r.jointRep, '兼容产品 Collection'));
         toast([st2 === 'scheduled' ? `已排期 · ${fDT(win(saved).start)} 自动上线` : st2 === 'live' ? '已上线' : `已保存${st2 ? ' · ' + ST[st2] : ''}`, ...col].join(' · '), !(r.colRep?.failures?.length) && !r.jointRep?.error && !r.jointRep?.promo?.error);
       } else toast(mode === 'submit' ? `已提交给「${apprName({ ...it, ...v })}」审批${MODE === 'live' ? ' · 已私信通知' : '(演示)'}` : '已存草稿');
     }
@@ -4462,15 +4462,15 @@
   function colSay(rep, onlyCol) { // onlyCol:只说这个合集的(保存某份清单时,别把其他合集的情况也念一遍)
     if (!rep) return [];
     if (onlyCol) { const k = numId(onlyCol); const f = (x) => !x.collection || numId(x.collection) === k; rep = { applied: rep.applied.filter(f), restored: rep.restored.filter(f), skipped: rep.skipped.filter(f), holds: rep.holds.filter(f), failures: rep.failures.filter(f), sortOn: (rep.sortOn || []).filter(f), sortOff: (rep.sortOff || []).filter(f) }; }
-    const WHY = { 'too-many': '要临时移出的产品太多,改用前台排序(店里的合集不动)', 'no-scope': 'app 还没有「改产品 / 合集」的权限' };
-    const sortWhy = (x) => `这个合集的排序方式是「${SORT_CN[String(x.why).slice(5)] || String(x.why).slice(5)}」,不是「手动」→ 后台顺序没法改,只在前台按你排的显示(在 Shopify 后台把排序改成「手动」就能真的改)`;
+    const WHY = { 'too-many': '要临时移出的产品太多,改用前台排序(店里的 Collection 不动)', 'no-scope': 'app 还没有「改产品 / Collection」的权限' };
+    const sortWhy = (x) => `这个 Collection 的排序方式是「${SORT_CN[String(x.why).slice(5)] || String(x.why).slice(5)}」,不是「手动」→ 后台顺序没法改,只在前台按你排的显示(在 Shopify 后台把排序改成「手动」就能真的改)`;
     return [
-      ...rep.applied.map((x) => `✅ 店里的「${x.title}」已按「${x.pin}」排好:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了合集` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}${x.front?.hidden ? `;${x.front.hidden} 个「不显示」的由前台隐藏(产品还在合集里)` : ''}${x.front?.outside ? `;${x.front.outside} 个合集外的产品加不进去(要先在后台单独加进合集)` : ''}${x.front?.needsNewApi && (x.front.hidden || x.front.outside) ? '。把 API 版本升到 2026-07,app 就能直接改带条件的合集' : ''}${x.pending ? ';加进 / 排除的产品 Shopify 还在后台生效中,生效后会自动把顺序排好' : ''}`),
+      ...rep.applied.map((x) => `✅ 店里的「${x.title}」已按「${x.pin}」排好:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了 Collection` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}${x.front?.hidden ? `;${x.front.hidden} 个「不显示」的由前台隐藏(产品还在 Collection 里)` : ''}${x.front?.outside ? `;${x.front.outside} 个 Collection 外的产品加不进去(要先在后台单独加进 Collection)` : ''}${x.front?.needsNewApi && (x.front.hidden || x.front.outside) ? '。把 API 版本升到 2026-07,app 就能直接改带条件的 Collection' : ''}${x.pending ? ';加进 / 排除的产品 Shopify 还在后台生效中,生效后会自动把顺序排好' : ''}`),
       ...rep.restored.map((x) => `↩️ 「${x.title}」已还原成接管前的顺序`),
       ...rep.skipped.map((x) => `⏭ ${x.title ? `「${x.title}」` : ''}${WHY[x.why] || (String(x.why || '').startsWith('sort:') ? sortWhy(x) : x.why)}`),
       ...rep.holds.map((x) => `⏸ 「${x.title}」有人在后台手动改过,app 已停手`),
-      ...(rep.sortOn || []).map((x) => `📐 「${x.title}」合集页改成完全按清单顺序显示`),
-      ...(rep.sortOff || []).map((x) => `📐 「${x.title}」合集页的排序方式恢复成原来的设置`),
+      ...(rep.sortOn || []).map((x) => `📐 「${x.title}」Collection 页改成完全按清单顺序显示`),
+      ...(rep.sortOff || []).map((x) => `📐 「${x.title}」Collection 页的排序方式恢复成原来的设置`),
       ...rep.failures.map((x) => `❌ ${x.message}`),
     ];
   }
@@ -4481,16 +4481,16 @@
   async function openColHistory(cid, title) {
     hidePop();
     const fmtAt = (ms) => fmt(ms, { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-    $('#drawer').innerHTML = `<div class="drawer__h"><div><span class="kchip">合集排序</span> <b>${esc(title)} · 历史版本</b></div>
+    $('#drawer').innerHTML = `<div class="drawer__h"><div><span class="kchip">Collection 排序</span> <b>${esc(title)} · 历史版本</b></div>
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button></div>
       <div class="drawer__b drawer__b--hist"><div class="hist__list" id="hist-list"><p class="muted">读取中…</p></div><div class="hist__pv" id="hist-pv"></div></div>
-      <div class="drawer__f"><span class="muted">每一版只记产品的先后顺序;每个合集保留最近 100 版 / 90 天</span><div class="drawer__acts" id="hist-acts"></div></div>`;
+      <div class="drawer__f"><span class="muted">每一版只记产品的先后顺序;每个 Collection 保留最近 100 版 / 90 天</span><div class="drawer__acts" id="hist-acts"></div></div>`;
     $('#drawer').hidden = false; $('#drawer-mask').hidden = false; document.body.classList.add('no-scroll');
     $('#drawer').onclick = (e) => { if (e.target.closest('[data-act="close"]')) closeDrawer(); };
     let versions = [];
     try { versions = (await api('GET', `/api/schedule/col-history?id=${encodeURIComponent(cid)}`)).versions; }
     catch (e) { $('#hist-list').innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
-    if (!versions.length) { $('#hist-list').innerHTML = '<p class="muted">还没有记录。app 第一次接管这个合集时会先记下原样,之后每次改动都会记一版。</p>'; return; }
+    if (!versions.length) { $('#hist-list').innerHTML = '<p class="muted">还没有记录。app 第一次接管这个 Collection 时会先记下原样,之后每次改动都会记一版。</p>'; return; }
     $('#hist-list').innerHTML = versions.map((v, i) => `<button type="button" class="hist__i" data-at="${v.at}">
         <span class="hist__t"><b>${esc(fmtAt(v.at))}</b>${i === 0 ? '<span class="tag tag--ok">最新</span>' : ''}</span>
         <span class="hist__w">${esc(v.why || '')}${v.by ? ` · ${esc(v.by)}` : ''}</span>
@@ -4512,10 +4512,10 @@
           <span class="pg__img">${p.image ? `<img src="${esc(thumb(p.image, 240))}" alt="" loading="lazy">` : ''}</span>
           <span class="pg__t">${esc(p.title)}</span>
           ${priceRow(p)}
-          <span class="pg__m">${extra.has(id) ? '<span class="pg__b pg__b--cut">后来才加的,排到最后</span>' : d.added.has(id) ? '<span class="pg__b pg__b--new">会加回合集</span>' : d.moved.has(id) ? `<span class="pg__b pg__b--moved">现在 #${cur.indexOf(id) + 1}</span>` : ''}</span></div>`; };
+          <span class="pg__m">${extra.has(id) ? '<span class="pg__b pg__b--cut">后来才加的,排到最后</span>' : d.added.has(id) ? '<span class="pg__b pg__b--new">会加回 Collection</span>' : d.moved.has(id) ? `<span class="pg__b pg__b--moved">现在 #${cur.indexOf(id) + 1}</span>` : ''}</span></div>`; };
       const same = !d.added.size && !d.moved.size;
       $('#hist-pv').innerHTML = `<div class="hist__h"><b>${esc(fmtAt(r.version.at))} 那一版</b> <span class="muted">${esc(r.version.why || '')}</span></div>
-        <div class="pg__legend"><span class="lg lg--new"></span>会加回合集 <span class="lg lg--moved"></span>会换位置 <span class="lg lg--cut"></span>后来才加的(不删) <span class="lg"></span>不变
+        <div class="pg__legend"><span class="lg lg--new"></span>会加回 Collection <span class="lg lg--moved"></span>会换位置 <span class="lg lg--cut"></span>后来才加的(不删) <span class="lg"></span>不变
           <b class="pg__sum">${same ? '和现在一模一样' : `回滚会:${esc(OD.diffSummary(d))}`}</b></div>
         <div class="hist__bar">${viewToggleHtml()}</div>
         <div class="pg pg--ro${pgCls()}">${target.map(card).join('')}</div>`;
@@ -4523,11 +4523,11 @@
         $('#hist-acts').innerHTML = '<button class="btn btn-primary" id="hist-rb" type="button">回滚到这个版本</button>';
         $('#hist-rb').onclick = async (e) => {
           const b = e.currentTarget;
-          if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认回滚(会马上改店里的合集)'; b.classList.add('btn-danger'); return; }
+          if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认回滚(会马上改店里的 Collection)'; b.classList.add('btn-danger'); return; }
           b.disabled = true; b.textContent = '回滚中…';
           try {
             const x = await api('POST', '/api/schedule/col-rollback', { id: cid, at });
-            toast(`已回滚:${x.moved} 个换位置${x.added ? `、${x.added} 个加回合集` : ''}${x.extra ? `;${x.extra} 个后来加的排到了最后` : ''}${x.paused ? ';这个合集的清单接管已暂停' : ''}`);
+            toast(`已回滚:${x.moved} 个换位置${x.added ? `、${x.added} 个加回 Collection` : ''}${x.extra ? `;${x.extra} 个后来加的排到了最后` : ''}${x.paused ? ';这个 Collection 的清单接管已暂停' : ''}`);
             await load(); renderAll(); openColHistory(cid, title);
           } catch (err) { toast(err.message, false); b.disabled = false; b.textContent = '回滚到这个版本'; delete b.dataset.sure; b.classList.remove('btn-danger'); }
         };

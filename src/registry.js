@@ -12,7 +12,7 @@ export const OWNER_TYPES = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION'];
 const OWNER_LABEL = {
   PRODUCT: '产品',
   PRODUCTVARIANT: '变体',
-  COLLECTION: '合集',
+  COLLECTION: 'Collection',
 };
 
 // 已知三方 app / 平台的命名空间 → 来源。命名空间是判断归属最强的机器线索。

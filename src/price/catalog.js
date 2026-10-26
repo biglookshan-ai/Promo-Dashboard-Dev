@@ -41,7 +41,7 @@ export async function collectionProducts(ctx, collectionId) {
   do {
     const d = await q(ctx, (c) => `query($id: ID!, $after: String) { collection(id: $id) { title products(first: 50, after: $after) {
       pageInfo { hasNextPage endCursor } nodes { ${PRODUCT_FIELDS(c)} } } } }`, { id: collectionId, after });
-    if (!d.collection) throw new Error('找不到这个合集');
+    if (!d.collection) throw new Error('找不到这个 Collection');
     title = d.collection.title;
     out.push(...d.collection.products.nodes.map(shapeProduct));
     after = d.collection.products.pageInfo.hasNextPage ? d.collection.products.pageInfo.endCursor : null;
@@ -67,7 +67,7 @@ export async function searchProducts(ctx, by) {
     for (const p of d.products.nodes.map(shapeProduct)) (match(p) ? out.push(p) : dropped++);
     after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
     // 静默忽略的典型症状:前两页全是不符合的 → 停,别把全店翻一遍
-    if (!out.length && dropped >= 100 && !by.all) throw new Error('Shopify 没按这个条件筛选(返回的都不符合),请换个写法或改用合集');
+    if (!out.length && dropped >= 100 && !by.all) throw new Error('Shopify 没按这个条件筛选(返回的都不符合),请换个写法或改用 Collection');
   } while (after && out.length < MAX_PRODUCTS);
   return { products: out, dropped, truncated: !!after };
 }

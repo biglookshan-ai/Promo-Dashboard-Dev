@@ -176,7 +176,7 @@ test('同步商品模块:先写页签,版本按顺序引用页签;去掉的页�
   assert.deepEqual(removed, ['gid://old-tab']);
 });
 
-test('导入:首页两个商品模块 → 各一个平时版本(页签不限数量,和现在一样);找不到的合集跳过', async () => {
+test('导入:首页两个商品模块 → 各一个平时版本(页签不限数量,和现在一样);找不到的 Collection 跳过', async () => {
   const { findProductModules } = await import('../src/theme-content.js');
   const idx = { order: ['a', 'b'], sections: {
     a: { type: 'GPT-Custom-Product-List', settings: { title2: 'Autumn Sale', title2_color: '#ee8849', tab_active_bg_color: '#ee8849' }, block_order: ['x', 'y', 'z'], blocks: {
@@ -197,7 +197,7 @@ test('导入:首页两个商品模块 → 各一个平时版本(页签不限数�
   assert.equal(again.pmodules.length, 0);
 });
 
-test('合集置顶清单写成 cgp_collection_pin', async () => {
+test('Collection 置顶清单写成 cgp_collection_pin', async () => {
   const { fieldsFor } = await import('../src/metaobjects.js');
   const f = Object.fromEntries(fieldsFor({ kind: 'pin', name: 'Flash D1', collection: { id: '5', title: 'Flash' }, products: [{ id: '1' }, { id: 'gid://shopify/Product/2' }], onlyListed: true, countdown: true, badge: 'Flash Deal', start: 0, end: 1000 }).map((x) => [x.key, x.value]));
   assert.equal(f.collection, 'gid://shopify/Collection/5');

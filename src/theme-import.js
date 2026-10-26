@@ -74,7 +74,7 @@ export async function buildImport(ctx, { slider, topbar, style, modules = [] }, 
         shopAllUrl: t.shopAllUrl, shopAllText: t.shopAllText };
       if (t.source === 'collection') {
         tab.collection = await findCol(t.collectionHandle).catch(() => null);
-        if (!tab.collection) { skipped.push({ title: `${m.module === 'sale' ? '促销' : '推荐'}模块页签「${t.title || t.collectionHandle}」`, reason: `找不到合集 ${t.collectionHandle}` }); continue; }
+        if (!tab.collection) { skipped.push({ title: `${m.module === 'sale' ? '促销' : '推荐'}模块页签「${t.title || t.collectionHandle}」`, reason: `找不到 Collection ${t.collectionHandle}` }); continue; }
       } else {
         for (const h of t.productHandles) { const p = await findProd(h).catch(() => null); if (p) tab.products.push(p); }
         if (!tab.products.length) { skipped.push({ title: `页签「${t.title}」`, reason: '手选的产品都找不到' }); continue; }

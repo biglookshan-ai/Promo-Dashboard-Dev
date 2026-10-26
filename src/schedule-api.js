@@ -185,14 +185,14 @@ export function scheduleRouter() {
   // ---- 联合推广:在 app 里直接建合集(兼容产品那个套活动页模板;能发布就发布到网店)----
   r.post('/collection-create', wrap(async (req) => {
     const a = actorFor(load(req.ctx.shop), req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有管理员能建合集');
+    if (a.role !== 'approver') throw new ActionError('只有管理员能建 Collection');
     let out;
     try { out = await createJointCollection(req.ctx, { title: req.body?.title, landing: !!req.body?.landing }, graphql); }
-    catch (e) { throw new ActionError(`合集没建成:${e.message}`); }
+    catch (e) { throw new ActionError(`Collection 没建成:${e.message}`); }
     await withLock(req.ctx.shop, async () => {
       const s = load(req.ctx.shop);
       appendLog(s, { action: 'edit', kind: 'callout', title: out.collection.title, by: a.name,
-        note: `新建合集「${out.collection.title}」${out.landing ? '(活动页模板 joint-promo)' : ''}${out.published ? ',已发布到网店' : `,还没发布到网店:${out.why}`}` });
+        note: `新建 Collection「${out.collection.title}」${out.landing ? '(活动页模板 joint-promo)' : ''}${out.published ? ',已发布到网店' : `,还没发布到网店:${out.why}`}` });
       replace(req.ctx.shop, s);
     });
     return out;
@@ -209,9 +209,9 @@ export function scheduleRouter() {
   r.post('/joint-sync', wrap((req) => withLock(req.ctx.shop, async () => {
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有管理员能同步合集');
+    if (a.role !== 'approver') throw new ActionError('只有管理员能同步 Collection');
     const it = (s.callouts || []).find((x) => x.id === req.body?.id);
-    if (!isJoint(it)) throw new ActionError('这条不是联合推广,或者还没选兼容产品合集');
+    if (!isJoint(it)) throw new ActionError('这条不是联合推广,或者还没选兼容产品 Collection');
     if (it.state !== 'approved') throw new ActionError('先保存上线(或排期)再同步');
     const rep = await syncJoint(req.ctx, s, it, { gql: graphql, force: !!req.body?.force });
     for (const x of syncNotes(rep, { all: true })) appendLog(s, { action: 'edit', kind: 'callout', title: it.name, by: a.name, note: x.note });
@@ -409,9 +409,9 @@ export function scheduleRouter() {
     if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能重新接管');
     const key = String(req.body?.collection || '').split('/').pop();
     const st = (s.colState || {})[key];
-    if (!st) throw new ActionError('这个合集现在没有被接管');
-    if (req.body?.release) { delete s.colState[key]; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '放手不管这个合集的顺序(保持现在后台里的样子)', by: a.name }); }
-    else { delete st.hold; delete st.signature; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个合集的顺序(下一轮按清单重排)', by: a.name }); }
+    if (!st) throw new ActionError('这个 Collection 现在没有被接管');
+    if (req.body?.release) { delete s.colState[key]; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '放手不管这个 Collection 的顺序(保持现在后台里的样子)', by: a.name }); }
+    else { delete st.hold; delete st.signature; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个 Collection 的顺序(下一轮按清单重排)', by: a.name }); }
     replace(req.ctx.shop, s);
     return { ok: true };
   })));
@@ -427,20 +427,20 @@ export function scheduleRouter() {
   }));
   r.get('/col-sort', wrap(async (req) => {
     const row = await readColSort(req.ctx, String(req.query.id || ''), graphql);
-    if (!row) throw new ActionError('找不到这个合集');
+    if (!row) throw new ActionError('找不到这个 Collection');
     return { collection: withFlags([row], load(req.ctx.shop))[0] };
   }));
   r.post('/col-sort', wrap((req) => withLock(req.ctx.shop, async () => {
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有管理员能改合集的默认排序');
+    if (a.role !== 'approver') throw new ActionError('只有管理员能改 Collection 的默认排序');
     const { id, ...want } = req.body || {};
-    if (!id) throw new ActionError('还没选合集');
+    if (!id) throw new ActionError('还没选 Collection');
     let r2;
     try { r2 = await applyColSort(req.ctx, id, want, { gql: graphql, state: s }); } catch (e) { throw new ActionError(e.message); }
     if (r2.changed) {
       appendLog(s, { action: 'edit', kind: 'pin', title: r2.title, by: a.name,
-        note: `合集页平时的排序:${r2.before} → ${r2.after}${r2.sortChanged ? `(Shopify 后台的排序方式「${r2.sortChanged.from}」→「${r2.sortChanged.to}」)` : ''}${r2.held ? `;「${r2.row.held}」生效期间仍临时完全按清单顺序,结束后用新的` : ''}` });
+        note: `Collection 页平时的排序:${r2.before} → ${r2.after}${r2.sortChanged ? `(Shopify 后台的排序方式「${r2.sortChanged.from}」→「${r2.sortChanged.to}」)` : ''}${r2.held ? `;「${r2.row.held}」生效期间仍临时完全按清单顺序,结束后用新的` : ''}` });
       replace(req.ctx.shop, s);
       bust(req.ctx.shop, 'colsorts');
     }
@@ -495,14 +495,14 @@ export function scheduleRouter() {
   r.get('/sale-preview', wrap(async (req) => {
     const shop = req.ctx.shop;
     const handle = String(req.query.handle || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-    if (!handle) throw new ActionError('还没选合集');
+    if (!handle) throw new ActionError('还没选 Collection');
     const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
     const origin = (process.env.STOREFRONT_ORIGIN || info.domain).replace(/\/$/, '');
     return cached(shop, `sale:${handle}`, 120_000, async () => {
       const page = async (n) => {
         const res = await fetch(`${origin}/collections/${handle}?view=cgp-json${n > 1 ? `&page=${n}` : ''}&_cgp=${Date.now()}`, { headers: { 'User-Agent': 'CGP-Promo-Dashboard (preview)' } });
         const txt = await res.text();
-        try { return JSON.parse(txt); } catch { throw new ActionError(`前台没返回这个合集的产品数据(${res.status});合集页可能没在用搜索引擎`); }
+        try { return JSON.parse(txt); } catch { throw new ActionError(`前台没返回这个 Collection 的产品数据(${res.status});Collection 页可能没在用搜索引擎`); }
       };
       const first = await page(1);
       const pages = Math.min(first.pages || 1, 20); // 和搜索引擎一样最多读 20 页(1000 个)
@@ -566,8 +566,8 @@ export function scheduleRouter() {
     const v = (loadHistory(req.ctx.shop)[cid] || []).find((x) => String(x.at) === String(req.body?.at));
     if (!v) throw new ActionError('找不到这个版本');
     const col = await readCollection(req.ctx, cid, graphql);
-    if (!col) throw new ActionError('找不到这个合集');
-    if (!col.manualOk) throw new ActionError(`这个合集现在的排序方式是「${col.sortOrder}」,不是「手动」,Shopify 不让调顺序 —— 先在后台把排序改成「手动」再回滚`);
+    if (!col) throw new ActionError('找不到这个 Collection');
+    if (!col.manualOk) throw new ActionError(`这个 Collection 现在的排序方式是「${col.sortOrder}」,不是「手动」,Shopify 不让调顺序 —— 先在后台把排序改成「手动」再回滚`);
     const when = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Europe/London', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(v.at));
     recordVersion(req.ctx.shop, cid, col.ids, { why: `回滚前(准备回到 ${when} 那一版)`, by: a.name, title: col.title });
     // 那一版有、现在没有的产品:纯手动合集加回来;带条件的合集不去改它的条件,这些就排不回去
@@ -592,7 +592,7 @@ export function scheduleRouter() {
     const extra = now2.filter((id) => !v.ids.includes(id)).length;
     const movedN = diffOrder(now2, target).moved.size;
     appendLog(s, { action: 'edit', kind: 'pin', title: col.title, by: a.name,
-      note: `回滚到 ${when} 那一版:${movedN} 个换位置${missing.length ? `、${missing.length} 个加回合集` : ''}${extra ? `;${extra} 个后来才加进合集的排到最后(没删)` : ''}${st ? ';这个合集的清单接管已暂停' : ''}` });
+      note: `回滚到 ${when} 那一版:${movedN} 个换位置${missing.length ? `、${missing.length} 个加回 Collection` : ''}${extra ? `;${extra} 个后来才加进 Collection 的排到最后(没删)` : ''}${st ? ';这个 Collection 的清单接管已暂停' : ''}` });
     replace(req.ctx.shop, s);
     return { ok: true, moved: movedN, added: missing.length, extra, paused: !!st };
   })));

@@ -7,7 +7,7 @@
 // 价格内部一律用「分」做整数运算,对外存 '123.45' 字符串(和 Shopify 一致)。
 
 export const LAYERS = { flash: 30, brand: 20, sitewide: 10 };
-export const LAYER_CN = { flash: '限时抢购', brand: '品牌 / 合集', sitewide: '全场' };
+export const LAYER_CN = { flash: '限时抢购', brand: '品牌 / Collection', sitewide: '全场' };
 export const KIND_CN = { window: '限时(到期恢复)', permanent: '永久' };
 export const COMPARE_CN = { original: '划线价显示原价', keep: '划线价不动', clear: '清空划线价', set: '指定划线价' };
 

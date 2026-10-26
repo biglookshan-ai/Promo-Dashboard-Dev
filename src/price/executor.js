@@ -210,7 +210,7 @@ function writeLogs(state, rep, now) {
   for (const g of groups.values()) appendLog(state, { at: now, action: g.op, planId: g.planId, plan: g.plan, note: `${OP_CN[g.op] || g.op}:${g.n} 个变体`, by: '执行器' });
   if (rep.recovered.length) appendLog(state, { at: now, action: 'recover', plan: '', note: `上轮中断后核对:${rep.recovered.length} 个变体已生效,已补记`, by: '执行器' });
   for (const h of rep.holds) appendLog(state, { at: now, action: 'hold', planId: h.planId, plan: h.plan, note: `${h.title || h.variantId}:${HOLD_CN[h.reason] || h.reason}${h.seen ? `(店里现价 £${h.seen.price})` : ''}`, by: '执行器' });
-  for (const c of rep.collections) appendLog(state, { at: now, action: 'collection', plan: '', note: `合集「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`, by: '执行器' });
+  for (const c of rep.collections) appendLog(state, { at: now, action: 'collection', plan: '', note: `Collection「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`, by: '执行器' });
   if (rep.tags.length) {
     const a = rep.tags.reduce((n, t) => n + t.added.length, 0), d = rep.tags.reduce((n, t) => n + t.removed.length, 0);
     appendLog(state, { at: now, action: 'tag', plan: '', note: `产品标签:${rep.tags.length} 个产品${a ? `,加了 ${a} 个标签` : ''}${d ? `,去掉 ${d} 个标签` : ''}`, by: '执行器' });

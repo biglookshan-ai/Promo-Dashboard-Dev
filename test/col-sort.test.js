@@ -66,7 +66,7 @@ function fakeShop(col) {
   return { gql, calls, meta };
 }
 
-test('改一个合集:先改排序方式,再写 / 删字段', async () => {
+test('改一个 Collection:先改排序方式,再写 / 删字段', async () => {
   const f = fakeShop({ sortOrder: 'BEST_SELLING' });
   const r = await applyColSort({}, '42', { mode: 'manual' }, { gql: f.gql, state: {} });
   assert.deepEqual(f.calls, [['sort', 'MANUAL'], ['set', 'cgp_sort_off', 'true', 'boolean']]);
@@ -96,7 +96,7 @@ test('清单「完全按我排的顺序」正开着:不动字段,改「结束后
   assert.equal(r2.after, '前 8 个按手动顺序,其余按新到旧');
 });
 
-test('app 正在真的改这个合集的顺序:不许改成自动排序', async () => {
+test('app 正在真的改这个 Collection 的顺序:不许改成自动排序', async () => {
   const f = fakeShop({});
   const state = { colState: { 42: { pinName: 'BF 置顶' } } };
   await assert.rejects(applyColSort({}, '42', { mode: 'shopify', sortOrder: 'BEST_SELLING' }, { gql: f.gql, state }), /BF 置顶/);

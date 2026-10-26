@@ -9,7 +9,7 @@ import { itemStatus, campaignIndex, childrenOf } from './schedule-core.js';
 import { SLUG_RE, SALE_SORTS, VIEW_RE, AFTER_END, AFTER_URL_RE } from './sale-link.js';
 
 export const LIST = { banner: 'banners', topbar: 'topbar', tbstyle: 'tbstyles', campaign: 'campaigns', pmodule: 'pmodules', pin: 'pins', salelink: 'salelinks', callout: 'callouts' };
-export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: '合集置顶清单', salelink: '促销链接', callout: '产品页推广' };
+export const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶清单', salelink: '促销链接', callout: '产品页推广' };
 export const MODULE_CN = { sale: '促销模块', feature: '推荐 / 新品模块' };
 export const ORDERABLE = ['banner', 'topbar'];
 
@@ -78,16 +78,16 @@ export function validate(it) {
     if (!['sale', 'feature'].includes(it.module)) return '请选择是哪个模块';
     if (!(it.tabs || []).length) return '至少要有一个页签';
     for (const [i, t] of it.tabs.entries()) {
-      if (t.source === 'products' ? !(t.products || []).length : !t.collection) return `第 ${i + 1} 个页签还没选${t.source === 'products' ? '产品' : '合集'}`;
+      if (t.source === 'products' ? !(t.products || []).length : !t.collection) return `第 ${i + 1} 个页签还没选${t.source === 'products' ? '产品' : ' Collection'}`;
     }
   }
   if (it.kind === 'pin') {
-    if (!it.collection?.id) return '请选要排序的合集';
+    if (!it.collection?.id) return '请选要排序的 Collection';
     if (!(it.products || []).length) return '至少放一个要排在前面的产品';
   }
   if (it.kind === 'salelink') {
     if (!String(it.name || '').trim()) return '请填写名称';
-    if (!it.collection?.id) return '请选合集';
+    if (!it.collection?.id) return '请选 Collection';
     if (!SLUG_RE.test(String(it.slug || ''))) return '链接后缀只能用小写字母、数字和横线(不能以横线开头,最多 40 个字)';
     if (it.sort && !SALE_SORTS.some(([k]) => k === it.sort)) return '排序方式不对';
     if (it.view && !VIEW_RE.test(it.view)) return '页面模板的名字不对(主题里 collection.<名字> 的那个名字)';
@@ -100,10 +100,10 @@ export function validate(it) {
     if (it.link && !AFTER_URL_RE.test(String(it.link).trim())) return '链接不对:填站内路径(/products/…)或 https:// 开头的完整链接';
     if (!it.joint && !String(it.link || '').trim() && !it.promo?.id) return '请选推广的产品,或者填一个链接';
     if (it.joint) { // 联合推广:两边卡片都链到活动页(= 兼容产品合集的页面)
-      if (!it.lensCollection?.id) return '请选兼容产品的合集(app 会把命中的产品同步进去,它也是活动页)';
-      if (!it.promoCollection?.id) return '请选推广产品的合集(比如 Smart Fusion 全系列)';
-      if (String(it.lensCollection.id).split('/').pop() === String(it.promoCollection.id).split('/').pop()) return '兼容产品合集和推广产品合集不能是同一个';
-      if (!(it.promos || []).length) return '请选推广的产品(可以多选,app 会把它们放进推广产品合集)';
+      if (!it.lensCollection?.id) return '请选兼容产品的 Collection(app 会把命中的产品同步进去,它也是活动页)';
+      if (!it.promoCollection?.id) return '请选推广产品的 Collection(比如 Smart Fusion 全系列)';
+      if (String(it.lensCollection.id).split('/').pop() === String(it.promoCollection.id).split('/').pop()) return '兼容产品 Collection 和推广产品 Collection 不能是同一个';
+      if (!(it.promos || []).length) return '请选推广的产品(可以多选,app 会把它们放进推广产品 Collection)';
       if (it.promos.length > 50) return '推广的产品最多 50 个';
       if (!String(it.promoTitle || '').trim()) return '请填推广产品页上那张卡片的标题';
       const steps = it.lpSteps || [];
@@ -180,7 +180,7 @@ function run(input, action, actor, now) {
       }
       if (kind === 'pmodule') for (const t of merged.tabs || []) if (t.campaign && !doc.campaigns.some((c) => c.id === t.campaign)) fail(`页签「${t.title || ''}」跟随的活动不存在了,请重新选`);
       // 同一个合集的促销链接后缀不能重复(不同合集可以同名)
-      if (kind === 'salelink' && merged.slug && merged.collection?.id && list.some((x) => x !== it && x.slug === merged.slug && String(x.collection?.id).split('/').pop() === String(merged.collection.id).split('/').pop())) fail(`这个合集已经有后缀叫「${merged.slug}」的促销链接了,换一个`);
+      if (kind === 'salelink' && merged.slug && merged.collection?.id && list.some((x) => x !== it && x.slug === merged.slug && String(x.collection?.id).split('/').pop() === String(merged.collection.id).split('/').pop())) fail(`这个 Collection 已经有后缀叫「${merged.slug}」的促销链接了,换一个`);
       const approved = it.state === 'approved';
       // 不是管理员的人不能把自己设成审批人(否则等于自己批自己);这类内容的默认审批人本来就是他的除外
       if (v.approver && v.approver === actor.id && it.approver !== actor.id && !isApprover(actor) && doc.settings?.approvers?.[kind] !== actor.id) fail('审批人不能选你自己;要直接生效,请管理员在「设置」里把你设成这类内容的默认审批人');

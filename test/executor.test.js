@@ -129,7 +129,7 @@ test('巡检:活动中有人改价 → 暂停接管,结束不覆盖', async () =
   assert.ok(load(shop).log.some((l) => /手动改过价/.test(l.note)));
 });
 
-test('合集:Flash 两天交接共用产品,结束后只移出 app 加的,本来就在的保留', async () => {
+test('Collection:Flash 两天交接共用产品,结束后只移出 app 加的,本来就在的保留', async () => {
   // P-a 本来就在 flash 合集里;P-b 两天都参加;P-c 只第 2 天
   const io = fakeIO({ a: '100.00', b: '100.00', c: '100.00' }, { flash: ['P-a'] });
   const col = { id: 'flash', title: 'Flash Sale' };
@@ -147,7 +147,7 @@ test('合集:Flash 两天交接共用产品,结束后只移出 app 加的,本来
   assert.deepEqual(load(shop).collState, {});
 });
 
-test('合集加入报错:下一轮按店里实际重新核对,不会误记成已加入', async () => {
+test('Collection 加入报错:下一轮按店里实际重新核对,不会误记成已加入', async () => {
   const io = fakeIO({ a: '100.00', b: '100.00' }, { flash: [] });
   let fail = true;
   const realAdd = io.addToCollection;

@@ -20,16 +20,16 @@ export const INTERVAL_MS = 60_000;
 // 合集排序一轮的结果写进操作日志(定时器、保存后自动执行共用)
 export function logColReport(state, col, by, now = Date.now()) {
   for (const a of col.applied) appendLog(state, { at: now, action: 'up', kind: 'pin', title: a.title, by,
-    note: `按「${a.pin}」排了店里的合集:${a.moved} 个产品换位置${a.added ? `、${a.added} 个加进合集` : ''}${a.removed ? `、${a.removed} 个临时移出` : ''}${a.back ? `、${a.back} 个加回来` : ''}` });
+    note: `按「${a.pin}」排了店里的 Collection:${a.moved} 个产品换位置${a.added ? `、${a.added} 个加进 Collection` : ''}${a.removed ? `、${a.removed} 个临时移出` : ''}${a.back ? `、${a.back} 个加回来` : ''}` });
   for (const r of col.restored) appendLog(state, { at: now, action: 'down', kind: 'pin', title: r.title, by,
-    note: `「${r.pin}」结束,合集顺序已还原${r.added ? `(${r.added} 个产品加回合集)` : ''}` });
+    note: `「${r.pin}」结束,Collection 顺序已还原${r.added ? `(${r.added} 个产品加回 Collection)` : ''}` });
   for (const h of col.holds) if (h.fresh) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: h.title, by,
-    note: '有人在 Shopify 后台手动改过这个合集的顺序 —— 已暂停接管,不覆盖别人的改动' });
-  for (const f of col.failures) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: f.collection || '合集排序', note: f.message, by });
+    note: '有人在 Shopify 后台手动改过这个 Collection 的顺序 —— 已暂停接管,不覆盖别人的改动' });
+  for (const f of col.failures) appendLog(state, { at: now, action: 'failure', kind: 'pin', title: f.collection || 'Collection 排序', note: f.message, by });
   for (const x of col.sortOn || []) appendLog(state, { at: now, action: 'up', kind: 'pin', title: x.title, by,
-    note: `「${x.pin}」生效:合集页改成完全按清单顺序显示(不套「手动前 12 个 + 其余新到旧」)${x.already ? ',原来就是这样' : ''}` });
+    note: `「${x.pin}」生效:Collection 页改成完全按清单顺序显示(不套「手动前 12 个 + 其余新到旧」)${x.already ? ',原来就是这样' : ''}` });
   for (const x of col.sortOff || []) appendLog(state, { at: now, action: 'down', kind: 'pin', title: x.title, by,
-    note: `「${x.pin}」结束:合集页的排序方式恢复成原来的设置` });
+    note: `「${x.pin}」结束:Collection 页的排序方式恢复成原来的设置` });
 }
 
 // 跑一个店铺一轮。依赖都可以注入,方便测试。

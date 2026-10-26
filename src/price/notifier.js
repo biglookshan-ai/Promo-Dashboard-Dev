@@ -66,7 +66,7 @@ export function reportMessages(state, rep, { appUrl, now = Date.now(), members =
     out.push({ to: toPlan(g.planId), card: { title: restoring ? '🔙 改价已恢复' : '💷 改价已生效', color: restoring ? 'grey' : 'green', button: btn,
       lines: [`**${g.plan || '改价计划'}**`, Object.entries(g.ops).map(([op, c]) => `${OP_CN[op] || op} ${c} 个变体`).join(' · '), '全部已读回核对 ✓'] } });
   }
-  for (const c of rep.collections) if (n.start) out.push({ to: admins(members), card: { title: '🗂 合集已更新', color: 'blue', button: btn, lines: [`合集「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`] } });
+  for (const c of rep.collections) if (n.start) out.push({ to: admins(members), card: { title: '🗂 Collection 已更新', color: 'blue', button: btn, lines: [`Collection「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`] } });
   if (rep.holds.length && n.hold) {
     const groups = new Map();
     for (const h of rep.holds) { const k = h.planId || '-'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(h); }

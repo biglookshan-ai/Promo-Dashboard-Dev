@@ -107,9 +107,9 @@ test('不改动传入的数据(纯函数)', () => {
 const tab = (o = {}) => ({ id: 'tab1', title: 'Top Picks', source: 'collection', collection: { id: 1, title: 'Flash' }, products: [], limit: 20, ...o });
 const pmod = (o = {}) => ({ id: 'pm1', kind: 'pmodule', module: 'sale', name: 'Autumn', title: '', title2: 'Autumn Sale', tabs: [tab()], state: 'approved', start: null, end: null, campaign: null, order: 0, ...o });
 
-test('商品模块:至少一个页签,每个页签要选了合集或产品', () => {
+test('商品模块:至少一个页签,每个页签要选了 Collection 或产品', () => {
   assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [] } }, approver, T), /至少要有一个页签/);
-  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [tab({ collection: null })] } }, approver, T), /第 1 个页签还没选合集/);
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [tab({ collection: null })] } }, approver, T), /第 1 个页签还没选 Collection/);
   assert.throws(() => applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [tab({ source: 'products', products: [] })] } }, approver, T), /还没选产品/);
   const r = applyAction(doc(), { type: 'save', mode: 'publish', kind: 'pmodule', isNew: true, values: { id: 'pmx', module: 'sale', name: 'X', tabs: [tab()] } }, approver, T);
   assert.equal(r.doc.pmodules[0].state, 'approved');
@@ -143,8 +143,8 @@ test('商品模块:删除时把页签条目也删掉;活动批准时挂在下面
 });
 
 // ---- v3 活动总控台的工作项 ----
-test('合集置顶清单:要选合集和产品;批准后要写 Shopify;跟随活动时间', () => {
-  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'submit', kind: 'pin', isNew: true, values: { id: 'p1', name: 'x' } }, editor, T), /合集/);
+test('Collection 置顶清单:要选 Collection 和产品;批准后要写 Shopify;跟随活动时间', () => {
+  assert.throws(() => applyAction(doc(), { type: 'save', mode: 'submit', kind: 'pin', isNew: true, values: { id: 'p1', name: 'x' } }, editor, T), /Collection/);
   assert.throws(() => applyAction(doc(), { type: 'save', mode: 'submit', kind: 'pin', isNew: true, values: { id: 'p1', collection: { id: 'c1', title: 'Flash' } } }, editor, T), /产品/);
   const r = applyAction(doc({ campaigns: [{ id: 'c9', kind: 'campaign', state: 'approved', name: 'EBF', start: T, end: T + D }] }),
     { type: 'save', mode: 'publish', kind: 'pin', isNew: true, values: { id: 'p1', name: 'Flash 第 1 天', collection: { id: 'c1', title: 'Flash' }, products: [{ id: '1' }, { id: '2' }], onlyListed: true, campaign: 'c9' } }, approver, T);

@@ -7,7 +7,7 @@
 // 前台的产品数据来自主题的 cgp-json(每个产品:id、discount 折扣最大的变体的 %、status instock / preorder / oos、created、price)。
 
 export const SALE_SORTS = [
-  ['', '和合集平时一样'], ['discount', '折扣从大到小'], ['newest', '最新上架在前'], ['price-asc', '价格从低到高'], ['price-desc', '价格从高到低'],
+  ['', '和 Collection 平时一样'], ['discount', '折扣从大到小'], ['newest', '最新上架在前'], ['price-asc', '价格从低到高'], ['price-desc', '价格从高到低'],
 ];
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 export const slugOf = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
@@ -73,7 +73,7 @@ export function saleView(products, link = {}, opts = {}) {
   const shown = new Set(list.map((p) => nid(p.id)));
   const pins = (link.products || []).map((x) => {
     const p = all.get(nid(x.id));
-    const why = !p ? '不在这个合集里' : whyOut(p, link) || (shown.has(nid(x.id)) ? '' : `排在「最多 ${limit} 个」以外`);
+    const why = !p ? '不在这个 Collection 里' : whyOut(p, link) || (shown.has(nid(x.id)) ? '' : `排在「最多 ${limit} 个」以外`);
     return { id: x.id, title: x.title || p?.title || '', shown: !why, why };
   });
   return { list, total, pins };
@@ -81,7 +81,7 @@ export function saleView(products, link = {}, opts = {}) {
 
 // 结束后去哪(2026-10-17 用户):'' = 不跳转(退回「这个合集所有打折的产品」;短链接照样用模板打开)
 //   'collection' = 跳回合集原来的页面;'url' = 跳到指定链接(站内路径 /… 或 https://…)
-export const AFTER_END = [['', '不跳转'], ['collection', '跳回合集原来的页面'], ['url', '跳到指定链接']];
+export const AFTER_END = [['', '不跳转'], ['collection', '跳回 Collection 原来的页面'], ['url', '跳到指定链接']];
 export const AFTER_URL_RE = /^(\/[^\/\s][^\s]*|https:\/\/[^\s]+)$/;
 
 // 页面模板:?view= 后面那段(主题里 templates/collection.<名字>.json),留空 = 合集原来的模板

@@ -234,7 +234,7 @@ const RULE_MODES = {
   keep: { label: '售价不变(只改划线价)', unit: '', say: () => '售价不动,只调整划线价' },
   manual: { label: '逐个填价', unit: '', say: () => '每个产品的新价在下面「试算预览」的表格里一个个填' },
 };
-const SCOPE_MODES = { collections: '指定合集', products: '指定产品', search: '按品牌 / 标签 / 类型', all: '全店所有产品' };
+const SCOPE_MODES = { collections: '指定 Collection', products: '指定产品', search: '按品牌 / 标签 / 类型', all: '全店所有产品' };
 
 // 改价分组:一个计划里可以分几组,每组自己选产品、自己定规则(比如合集 A 打 85 折、品牌 B 打 7 折、几个产品逐个填价)
 function newGroup(kind, rule) {
@@ -272,7 +272,7 @@ const EG = () => E.plan.groups[Math.min(E.gi || 0, E.plan.groups.length - 1)]; /
 const ruleSay = (r) => `${RULE_MODES[r.mode]?.say(r.value) || ''}${r.rounding ? `,尾数取 ${r.rounding === '99' ? '.99' : '整数'}` : ''}${r.from === 'compare' ? ',按划线价算' : ''}`;
 function scopeSayOf(sc) {
   return sc.mode === 'all' ? '全店所有产品'
-    : sc.mode === 'collections' ? `合集 ${sc.collections.map((c) => c.title).join('、') || '(还没选)'}`
+    : sc.mode === 'collections' ? `Collection ${sc.collections.map((c) => c.title).join('、') || '(还没选)'}`
       : sc.mode === 'products' ? `手选的 ${sc.products.length} 个产品`
         : [sc.vendor && `品牌 ${sc.vendor}`, sc.tag && `标签 ${sc.tag}`, sc.type && `类型 ${sc.type}`].filter(Boolean).join(' + ') || '(还没选条件)';
 }
@@ -334,7 +334,7 @@ function editorHtml() {
         <span class="pr-colors">${COLORS.map((c) => `<button type="button" class="pr-color ${p.color === c ? 'is-on' : ''}" style="background:${c}" data-a="color" data-v="${c}" ${ro ? 'disabled' : ''}></button>`).join('')}</span>
         <input class="inp" data-f="name" value="${esc(p.name)}" placeholder="比如:Early Black Friday · 全场 85 折" ${ro ? 'disabled' : ''} style="flex:1;min-width:200px"/></div>`, '只有后台看得到,顾客看不到')}
 
-      ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如合集 A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
+      ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
 
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期自动恢复原价)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
@@ -343,16 +343,16 @@ function editorHtml() {
           <label class="pr-fld">开始<input class="inp" type="datetime-local" data-f="start" value="${toInput(sl.start)}" ${ro || started() || p.followCampaign ? 'disabled' : ''}/>${!ro && !started() && !p.followCampaign ? '<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">设成现在(批准后一分钟内执行)</button>' : ''}</label>
           ${p.kind === 'window' ? `<label class="pr-fld">结束(恢复原价)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
         </div>
-        ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进合集 <em>只能选手动合集;结束自动移出(原来就在的不动)。Flash 当天那一组常用</em>
+        ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>只能选手动 Collection;结束自动移出(原来就在的不动)。Flash 当天那一组常用</em>
           ${sl.collection ? `<div class="row"><span class="tag tag--accent">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>`
-            : ro ? '<span class="muted">不加</span>' : '<button class="btn btn-sm" data-a="panel" data-p="slotcoll" style="width:fit-content">选合集…</button>'}
+            : ro ? '<span class="muted">不加</span>' : '<button class="btn btn-sm" data-a="panel" data-p="slotcoll" style="width:fit-content">选 Collection…</button>'}
           ${E.panel === 'slotcoll' ? collPanel('slotcoll') : ''}</div>` : ''}
         <p class="muted">时间一律按英国时间(店铺时区),夏令时自动处理。</p>`)}
 
       ${sec('产品标签', `<div class="grid2">
         <div class="pr-fld">生效期间加上 <em>结束自动去掉;产品本来就有的不动</em>${tagChips('tagsAdd', ro)}</div>
         <div class="pr-fld">生效期间去掉 <em>结束自动加回来</em>${tagChips('tagsRemove', ro)}</div></div>
-        <p class="muted">用来驱动「按标签自动归类」的合集,比如 FlashDeal、TOP DEALS。</p>`, '可不填')}
+        <p class="muted">用来驱动「按标签自动归类」的 Collection,比如 FlashDeal、TOP DEALS。</p>`, '可不填')}
 
       ${sec(S.team ? '负责人与审批' : '关联活动与备注', `<div class="grid2">
         ${S.team ? `<label class="pr-fld">负责人<select class="sel" data-f="owner" ${ro ? 'disabled' : ''}><option value="">不指定</option>${S.people.map((u) => `<option value="${u.id}" ${p.owner === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>
@@ -362,8 +362,8 @@ function editorHtml() {
       </div>
       <label class="pr-fld" style="margin-top:10px">备注 <em>${S.team ? '给审批人看的说明' : '给同事看的说明'}</em><textarea class="inp" rows="2" data-f="note" ${ro ? 'disabled' : ''} placeholder="比如:配合首页 Banner,Flash 每天 0 点换">${esc(p.note || '')}</textarea></label>`)}
 
-      ${sec('划线价', `${p.kind === 'window' ? `<div class="pr-fld" style="margin-bottom:12px">层级 <em>只有两个限时计划同时改到同一个产品时才有用:层级高的那个说了算(限时抢购 > 品牌 / 合集 > 全场)。一般不用动</em>
-          <span class="pr-seg">${[['sitewide', '全场'], ['brand', '品牌 / 合集'], ['flash', '限时抢购']].map(([k, l]) => `<button type="button" class="${p.layer === k ? 'is-on' : ''}" data-a="layer" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>` : ''}
+      ${sec('划线价', `${p.kind === 'window' ? `<div class="pr-fld" style="margin-bottom:12px">层级 <em>只有两个限时计划同时改到同一个产品时才有用:层级高的那个说了算(限时抢购 > 品牌 / Collection > 全场)。一般不用动</em>
+          <span class="pr-seg">${[['sitewide', '全场'], ['brand', '品牌 / Collection'], ['flash', '限时抢购']].map(([k, l]) => `<button type="button" class="${p.layer === k ? 'is-on' : ''}" data-a="layer" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>` : ''}
         <select class="sel" data-f="compare" ${ro ? 'disabled' : ''}>${Object.entries(core.COMPARE_CN).map(([k, l]) => `<option value="${k}" ${(p.compare || (p.kind === 'window' ? 'original' : 'keep')) === k ? 'selected' : ''}>${l}${k === 'original' ? '(前台显示 was / now)' : ''}</option>`).join('')}</select>
         <p class="muted">主题里「只显示打折」「按折扣排序」「折扣角标」都看划线价,所以限时促销一般选「显示原价」。</p>`, '高级')}
 
@@ -423,8 +423,8 @@ function scopeHtml(ro) {
   const tab = (k) => `<button type="button" class="${sc.mode === k ? 'is-on' : ''}" data-a="smode" data-v="${k}" ${ro ? 'disabled' : ''}>${SCOPE_MODES[k]}</button>`;
   let body = '';
   if (sc.mode === 'collections') {
-    body = `<div class="row">${sc.collections.map((c, i) => `<span class="tag tag--accent">${esc(c.title)}${ro ? '' : `<button type="button" class="chip__x" data-a="rmcoll" data-i="${i}">✕</button>`}</span>`).join('') || '<span class="muted">还没选合集</span>'}
-      ${ro ? '' : '<button class="btn btn-sm" data-a="panel" data-p="coll">选合集…</button>'}</div>${E.panel === 'coll' ? collPanel('coll') : ''}`;
+    body = `<div class="row">${sc.collections.map((c, i) => `<span class="tag tag--accent">${esc(c.title)}${ro ? '' : `<button type="button" class="chip__x" data-a="rmcoll" data-i="${i}">✕</button>`}</span>`).join('') || '<span class="muted">还没选 Collection</span>'}
+      ${ro ? '' : '<button class="btn btn-sm" data-a="panel" data-p="coll">选 Collection…</button>'}</div>${E.panel === 'coll' ? collPanel('coll') : ''}`;
   } else if (sc.mode === 'products') {
     body = `<div class="row">${sc.products.length ? `<span class="tag tag--accent">已选 ${sc.products.length} 个产品</span>${ro ? '' : '<button class="linkbtn" data-a="clearprod">清空</button>'}` : '<span class="muted">还没选产品</span>'}
       ${ro ? '' : '<button class="btn btn-sm" data-a="pick">选产品</button>'}</div>
@@ -513,8 +513,8 @@ function diffLines(a, b) {
 
 function collPanel(which) {
   const list = cache.collSearch || [];
-  return `<div class="pr-panel"><div class="row"><input class="inp" id="coll-q" placeholder="搜合集名称" style="flex:1" value="${esc(cache.collQ || '')}"/><button class="btn btn-sm" data-a="collsearch" data-w="${which}">搜索</button><button class="btn btn-ghost btn-sm" data-a="panel" data-p="">取消</button></div>
-    <div class="results">${list.map((c) => `<div class="result"><b style="flex:1">${esc(c.title)}</b><span class="muted">${c.count ?? '?'} 个产品 · ${c.smart ? '智能合集' : '手动合集'}</span>
+  return `<div class="pr-panel"><div class="row"><input class="inp" id="coll-q" placeholder="搜 Collection 名称" style="flex:1" value="${esc(cache.collQ || '')}"/><button class="btn btn-sm" data-a="collsearch" data-w="${which}">搜索</button><button class="btn btn-ghost btn-sm" data-a="panel" data-p="">取消</button></div>
+    <div class="results">${list.map((c) => `<div class="result"><b style="flex:1">${esc(c.title)}</b><span class="muted">${c.count ?? '?'} 个产品 · ${c.smart ? '智能 Collection' : '手动 Collection'}</span>
       ${which === 'slotcoll' ? (c.smart ? '<span class="muted">按条件自动,不能加</span>' : `<button class="btn btn-sm" data-a="setcoll" data-id="${c.id}" data-t="${esc(c.title)}">选这个</button>`)
         : `<button class="btn btn-sm" data-a="addcoll" data-id="${c.id}" data-t="${esc(c.title)}">选这个</button>`}</div>`).join('') || '<span class="muted">输入名称搜索</span>'}</div></div>`;
 }
@@ -601,11 +601,11 @@ const toItem = (pr, v, rule) => {
 async function productsOf(sc) {
   let products = [];
   if (sc.mode === 'collections') {
-    if (!sc.collections.length) throw new Error('先选至少一个合集');
+    if (!sc.collections.length) throw new Error('先选至少一个 Collection');
     const seen = new Map();
     for (const c of sc.collections) {
       const d = await api('GET', `/api/price/catalog/collection?id=${encodeURIComponent(c.id)}`);
-      if (d.truncated) toast(`合集「${c.title}」太大,只取了前 5000 个产品`, false);
+      if (d.truncated) toast(`Collection「${c.title}」太大,只取了前 5000 个产品`, false);
       d.products.forEach((x) => seen.set(x.id, x));
     }
     products = [...seen.values()];
@@ -694,7 +694,7 @@ function vaultHtml() {
     ${live.map((v) => `<tr><td>${esc(v.title)}</td><td>${esc(v.sku || '')}</td><td class="num">${money(v.base?.price)}${v.base?.compareAt ? `<div><s>${money(v.base.compareAt)}</s></div>` : ''}</td>
       <td class="num"><b>${money(v.written.price)}</b>${v.written.compareAt ? `<div><s>${money(v.written.compareAt)}</s></div>` : ''}</td><td>${esc(plan(v.written.planId))}</td><td>${fmtT(v.since)}</td></tr>`).join('')}
   </tbody></table></div>` : '<div class="pr-empty">现在没有产品在活动价上</div>'}
-  ${colls.length ? `<h3>app 管着的合集成员</h3>${colls.map(([id, c]) => `<div class="pr-kv"><span>${esc(c.title || id)}</span>app 加进去 ${c.managed.length} 个产品(时段结束自动移出)${c.preexisting.length ? `;${c.preexisting.length} 个本来就在,不动` : ''}</div>`).join('')}` : ''}`;
+  ${colls.length ? `<h3>app 管着的 Collection 成员</h3>${colls.map(([id, c]) => `<div class="pr-kv"><span>${esc(c.title || id)}</span>app 加进去 ${c.managed.length} 个产品(时段结束自动移出)${c.preexisting.length ? `;${c.preexisting.length} 个本来就在,不动` : ''}</div>`).join('')}` : ''}`;
 }
 
 // ================= 价格账本 =================
@@ -718,7 +718,7 @@ async function loadLedger() {
 }
 
 // ================= 改价设置 =================
-const NOTIFY_CN = { submit: '有人提交审核(私信审批人)', decision: '批准 / 退回 / 暂停 / 提前结束(私信相关的人)', start: '改价生效、合集变化', end: '恢复原价、永久调价完成', hold: '产品暂停接管(有人手动改价)', failure: '改价失败', unapproved: '快开始了还没批准' };
+const NOTIFY_CN = { submit: '有人提交审核(私信审批人)', decision: '批准 / 退回 / 暂停 / 提前结束(私信相关的人)', start: '改价生效、Collection 变化', end: '恢复原价、永久调价完成', hold: '产品暂停接管(有人手动改价)', failure: '改价失败', unapproved: '快开始了还没批准' };
 function settingsHtml() {
   const s = S.settings; const ap = isAdmin();
   return `

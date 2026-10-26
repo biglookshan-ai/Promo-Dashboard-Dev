@@ -58,7 +58,7 @@ export async function addToCollection(ctx, collectionId, productIds) {
   for (const part of chunk(productIds, 250)) {
     const d = await graphql(ctx, `mutation($id: ID!, $p: [ID!]!) { collectionAddProducts(id: $id, productIds: $p) { userErrors { message } } }`, { id: collectionId, p: part });
     const e = d.collectionAddProducts?.userErrors?.[0];
-    if (e) throw new Error(`加入合集失败:${e.message}`);
+    if (e) throw new Error(`加入 Collection 失败:${e.message}`);
   }
 }
 
@@ -66,7 +66,7 @@ export async function removeFromCollection(ctx, collectionId, productIds) {
   for (const part of chunk(productIds, 250)) {
     const d = await graphql(ctx, `mutation($id: ID!, $p: [ID!]!) { collectionRemoveProducts(id: $id, productIds: $p) { userErrors { message } } }`, { id: collectionId, p: part });
     const e = d.collectionRemoveProducts?.userErrors?.[0];
-    if (e) throw new Error(`移出合集失败:${e.message}`);
+    if (e) throw new Error(`移出 Collection 失败:${e.message}`);
   }
 }
 

@@ -30,7 +30,7 @@ test('拿掉的产品不占位置,也不进前缀', () => {
   assert.deepEqual(expandOrder(B, [], { hidden: ['3'] }), D);
 });
 
-test('新加的(原来不在合集里)一定在前缀里', () => {
+test('新加的(原来不在 Collection 里)一定在前缀里', () => {
   const B = N(5); const D = ['1', '2', '99', '3', '4', '5'];
   const P = minimalPrefix(B, D);
   assert.deepEqual(P, ['1', '2', '99']);

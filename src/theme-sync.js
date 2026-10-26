@@ -127,7 +127,7 @@ export function applyThemeSync(state, plan, picks, { built = {}, now = Date.now(
       const it = r.id ? L.find((x) => x.id === r.id) : null;
       if (r.act === 'add') {
         const nb = builtOf[kind]?.find((x) => x.source === r.source);
-        if (!nb) { done.push(`⚠️ 没加上「${r.title}」(图片 / 合集在店里找不到)`); continue; }
+        if (!nb) { done.push(`⚠️ 没加上「${r.title}」(图片 / Collection 在店里找不到)`); continue; }
         if (L.some((x) => x.id === nb.id)) nb.id = `${nb.id}-${now.toString(36).slice(-4)}`;
         L.push({ ...nb, note: '上线前对照正式主题加的' }); sync(nb.id); done.push(`加了「${r.title}」`);
       } else if (r.act === 'update' && it) {
@@ -139,7 +139,7 @@ export function applyThemeSync(state, plan, picks, { built = {}, now = Date.now(
         else if (kind === 'tbstyle') Object.assign(it, { bg: r.bg, color: r.color });
         else if (kind === 'pmodules') {
           const nv = builtOf.pmodules.find((x) => x.source === r.source);
-          if (!nv) { done.push(`⚠️ 没改成「${r.title}」(页签的合集在店里找不到)`); continue; }
+          if (!nv) { done.push(`⚠️ 没改成「${r.title}」(页签的 Collection 在店里找不到)`); continue; }
           for (const k of ['title', 'title2', 'titleColor', 'title2Color', 'tabActiveBg', 'tabActiveText', 'tabs', 'source']) it[k] = nv[k];
         }
         it.pendingChange = null; sync(it.id); done.push(`改了「${r.title}」`);

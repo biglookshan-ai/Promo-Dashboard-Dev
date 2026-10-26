@@ -164,7 +164,7 @@ export async function productCampaigns(ctx, handleOrId, campaigns, gql = graphql
   const tags = new Set(p.tags);
   const hits = campaigns.map((c) => {
     const why = [];
-    for (const col of c.collections || []) if (colIds.has(toGid('Collection', col.id))) why.push(`在合集「${col.title}」里`);
+    for (const col of c.collections || []) if (colIds.has(toGid('Collection', col.id))) why.push(`在 Collection「${col.title}」里`);
     for (const t of c.tags || []) if (tags.has(t)) why.push(`带标签「${t}」`);
     if ((c.products || []).some((x) => toGid('Product', x.id) === p.id)) why.push('被单独指定');
     return why.length ? { id: c.id, name: c.name, why } : null;
@@ -211,7 +211,7 @@ export async function collectionProducts(ctx, id, gql = graphql) {
         sortOff: metafield(namespace: "custom", key: "cgp_sort_off") { value } pinManual: metafield(namespace: "custom", key: "cgp_pin_manual") { value } pinNew: metafield(namespace: "custom", key: "cgp_pin_new") { value }
         products(first: 100, after: $after, sortKey: COLLECTION_DEFAULT) { nodes { ${FIELDS} } pageInfo { hasNextPage endCursor } } } }`, { id: gid, after });
     const c = d.collection;
-    if (!c) throw new ActionError('找不到这个合集(可能已经删了)');
+    if (!c) throw new ActionError('找不到这个 Collection(可能已经删了)');
     title = c.title; sortOrder = c.sortOrder; ruleSet = hasRules(c); srcId = ownSource(c); total = c.productsCount?.count ?? null;
     // 搜索引擎在合集页的默认排法(主题默认「手动前 12 个 + 其余新到旧」,每个合集可以用这三个字段改)
     sortRule = { off: c.sortOff?.value === 'true', pinManual: c.pinManual?.value != null ? Number(c.pinManual.value) : 12, pinNew: c.pinNew?.value != null ? Number(c.pinNew.value) : 0 };

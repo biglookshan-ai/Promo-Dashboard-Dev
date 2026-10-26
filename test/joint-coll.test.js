@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJointCollection, jointDealStatus } from '../src/joint-coll.js';
 
-test('建合集:兼容产品那个套活动页模板;有发布权限就发布到网店', async () => {
+test('建 Collection:兼容产品那个套活动页模板;有发布权限就发布到网店', async () => {
   const calls = [];
   const gql = async (ctx, q, v) => {
     if (q.includes('collectionCreate')) { calls.push(['create', v.c]); return { collectionCreate: { collection: { id: 'gid://shopify/Collection/77', title: v.c.title, handle: 'sf-lenses' }, userErrors: [] } }; }
@@ -17,7 +17,7 @@ test('建合集:兼容产品那个套活动页模板;有发布权限就发布到
   assert.deepEqual(calls[1], ['publish', 'gid://shopify/Collection/77', 'gid://shopify/Publication/2']);
 });
 
-test('建合集:没有发布权限也照样建好,告诉人去后台勾「网店」', async () => {
+test('建 Collection:没有发布权限也照样建好,告诉人去后台勾「网店」', async () => {
   const gql = async (ctx, q, v) => {
     if (q.includes('collectionCreate')) return { collectionCreate: { collection: { id: 'gid://shopify/Collection/78', title: v.c.title, handle: 'sf' }, userErrors: [] } };
     throw new Error('Access denied for publications field. Required access: `read_publications` access scope.');
@@ -28,7 +28,7 @@ test('建合集:没有发布权限也照样建好,告诉人去后台勾「网店
   await assert.rejects(createJointCollection({}, { title: '  ' }, gql), /名称/);
 });
 
-test('KitBundle 加购优惠:兼容产品上有打折产品是推广合集的 deal 标记 = 已生效', async () => {
+test('KitBundle 加购优惠:兼容产品上有打折产品是推广 Collection 的 deal 标记 = 已生效', async () => {
   const stamp = (entries) => ({ value: JSON.stringify(entries) });
   const gql = async (ctx, q, v) => {
     if (v.id.endsWith('/1')) return { collection: { products: { nodes: [

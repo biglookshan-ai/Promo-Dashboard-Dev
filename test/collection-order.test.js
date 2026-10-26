@@ -14,19 +14,19 @@ test('排好的在最前面,其余照原顺序', () => {
   assert.deepEqual(d.remove, []);
 });
 
-test('勾了不显示的产品要移出合集,也不占位置', () => {
+test('勾了不显示的产品要移出 Collection,也不占位置', () => {
   const d = desiredOrder(CUR, CUR, pin({ products: [P(4)], hidden: [P(1)] }));
   assert.deepEqual(d.order, ['4', '2', '3', '5']);
   assert.deepEqual(d.remove, ['1']);
 });
 
-test('清单里排了合集以外的产品:算进顺序,并标成「要加进合集」', () => {
+test('清单里排了 Collection 以外的产品:算进顺序,并标成「要加进 Collection」', () => {
   const d = desiredOrder(CUR, ['2', '3'], pin({ products: [P(9), P(3)] }));
   assert.deepEqual(d.order, ['9', '3', '2']);
   assert.deepEqual(d.add, ['9']);
 });
 
-test('期间新加进合集的产品排到最后,不打乱原顺序', () => {
+test('期间新加进 Collection 的产品排到最后,不打乱原顺序', () => {
   const d = desiredOrder(CUR, ['1', '2', '3', '4', '5', '77'], pin({ products: [P(5)] }));
   assert.deepEqual(d.order, ['5', '1', '2', '3', '4', '77']);
 });
@@ -57,7 +57,7 @@ test('我们排在最前的那几个被人动了 → 算「有人手改过」', 
   assert.equal(driftedFrom(['4', '2'], ['1', '4', '2', '3', '5']), true);
 });
 
-test('同一个合集几份清单同时生效:开始最晚的赢', () => {
+test('同一个 Collection 几份清单同时生效:开始最晚的赢', () => {
   const a = pin({ id: 'a', start: 1000, end: 9000 });
   const b = pin({ id: 'b', start: 5000, end: 9000 });
   const m = livePins([a, b], [], 6000);
@@ -98,7 +98,7 @@ function fakeShop({ ids = ['1', '2', '3', '4', '5'], sortOrder = 'MANUAL', autom
 }
 const stateWith = (p) => ({ pins: [p], campaigns: [], colState: {} });
 
-test('整轮:到点真的改合集 → 结束自动还原', async () => {
+test('整轮:到点真的改 Collection → 结束自动还原', async () => {
   const shop = fakeShop();
   const p = pin({ products: [P(4), P(2)], hidden: [P(5)], start: 1000, end: 2000 });
   const state = stateWith(p);
@@ -144,7 +144,7 @@ test('整轮:有人在后台手动改过 → 暂停接管,不覆盖(刚写完的
   assert.equal(r2.holds.length, 1); assert.equal(r2.applied.length, 0);
 });
 
-test('不是「手动」排序的合集:不动店里的,交给前台排', async () => {
+test('不是「手动」排序的 Collection:不动店里的,交给前台排', async () => {
   for (const o of [{ sortOrder: 'BEST_SELLING' }, { sortOrder: 'BEST_SELLING', automated: true }]) {
     const shop = fakeShop(o);
     const state = stateWith(pin({ products: [P(4)], start: 1000, end: 9000 }));
@@ -155,7 +155,7 @@ test('不是「手动」排序的合集:不动店里的,交给前台排', async 
   }
 });
 
-test('带条件的合集,但排序设成了「手动」(Shopify 2026 新版合集):顺序真的改,加 / 移出产品交给前台', async () => {
+test('带条件的 Collection,但排序设成了「手动」(Shopify 2026 新版 Collection):顺序真的改,加 / 移出产品交给前台', async () => {
   const shop = fakeShop({ automated: true });
   const p = pin({ products: [P(99), P(4), P(2)], hidden: [P(5)], start: 1000, end: 9000 }); // 99 不在合集里,5 要隐藏
   const state = stateWith(p);
@@ -168,7 +168,7 @@ test('带条件的合集,但排序设成了「手动」(Shopify 2026 新版合�
   assert.deepEqual(shop.ids, ['1', '2', '3', '4', '5']);
 });
 
-test('要移出去太多(只显示清单里的 + 大合集)→ 不动店里的合集', async () => {
+test('要移出去太多(只显示清单里的 + 大 Collection)→ 不动店里的 Collection', async () => {
   const many = Array.from({ length: MAX_REMOVE + 20 }, (_, i) => String(i + 1));
   const shop = fakeShop({ ids: many });
   const state = stateWith(pin({ products: [P(7)], onlyListed: true, start: 1000, end: 9000 }));
@@ -188,7 +188,7 @@ test('写失败不炸,记下来下一轮重试', async () => {
   assert.equal(state.colState['99'], undefined); // 没写成功就不记接管
 });
 
-test('清单里排了合集以外的产品 → 真的加进合集,结束再移出去', async () => {
+test('清单里排了 Collection 以外的产品 → 真的加进 Collection,结束再移出去', async () => {
   const shop = fakeShop();                       // 合集里是 1..5
   const p = pin({ products: [P(99), P(2)], start: 1000, end: 2000 }); // 99 不在合集里
   const state = stateWith(p);
@@ -200,7 +200,7 @@ test('清单里排了合集以外的产品 → 真的加进合集,结束再移�
   assert.deepEqual(shop.ids, ['1', '2', '3', '4', '5']);          // 原样,加进来的那个移出去了
 });
 
-test('中途把合集外的产品从清单里删掉 → 下一轮从合集里移出去', async () => {
+test('中途把 Collection 外的产品从清单里删掉 → 下一轮从 Collection 里移出去', async () => {
   const shop = fakeShop();
   const p = pin({ products: [P(99)], start: 1000, end: 9000 });
   const state = stateWith(p);

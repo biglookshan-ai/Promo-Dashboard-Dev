@@ -42,14 +42,14 @@ function sourcesShop({ ids = ['1', '2', '3', '4', '5'], async = false, shareable
       shop.calls.push(['reorder', v.moves.length]);
       return { collectionReorderProducts: { job: { id: 'j' }, userErrors: [] } };
     }
-    if (q.includes('collectionAddProducts') || q.includes('collectionRemoveProducts')) throw new Error('带条件的合集不该用老的加减接口');
+    if (q.includes('collectionAddProducts') || q.includes('collectionRemoveProducts')) throw new Error('带条件的 Collection 不该用老的加减接口');
     throw new Error('没想到的查询 ' + q.slice(0, 50));
   };
   return shop;
 }
 const stateWith = (p) => ({ pins: [p], campaigns: [], colState: {} });
 
-test('带条件的合集:合集外的产品加进「单独加的产品」,不显示的加进「排除」,顺序真的改,条件不动', async () => {
+test('带条件的 Collection:Collection 外的产品加进「单独加的产品」,不显示的加进「排除」,顺序真的改,条件不动', async () => {
   const shop = sourcesShop();
   const state = stateWith(pin({ products: [P(99), P(4)], hidden: [P(2)] }));
   const r = await alignCollections({}, state, { now: 2000, gql: shop.gql });
@@ -98,7 +98,7 @@ test('中途改清单:只补差的那部分(多排除一个、少加一个)', as
   assert.deepEqual(shop.ids, ['99', '1', '4', '5']);
 });
 
-test('共享的条件来源(会连带改到别的合集):不碰,加减交给前台', async () => {
+test('共享的条件来源(会连带改到别的 Collection):不碰,加减交给前台', async () => {
   const shop = sourcesShop({ shareable: true });
   const state = stateWith(pin({ products: [P(99), P(4)], hidden: [P(2)] }));
   const r = await alignCollections({}, state, { now: 2000, gql: shop.gql });

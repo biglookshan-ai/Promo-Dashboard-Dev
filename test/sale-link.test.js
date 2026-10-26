@@ -10,7 +10,7 @@ const P = (id, discount, status = 'instock', created = id, price = 100000) => ({
 const col = [P(1, 0), P(2, 30), P(3, 10, 'oos'), P(4, 50, 'preorder'), P(5, 25), P(6, 15), P(7, 40)];
 const ids = (v) => v.list.map((p) => p.id);
 
-test('不带设置:只要打折的,顺序和合集平时一样', () => {
+test('不带设置:只要打折的,顺序和 Collection 平时一样', () => {
   assert.deepEqual(ids(saleView(col, {})), [2, 3, 4, 5, 6, 7]);
   assert.deepEqual(ids(saleView(col, {}, { sortRule: { off: false, pinManual: 2, pinNew: 0 } })), [2, 3, 7, 6, 5, 4], '默认规则:手动前 2 个 + 其余新到旧');
 });
@@ -26,13 +26,13 @@ test('只显示有货 / 最低折扣 / 排序 / 最多几个', () => {
 test('置顶:排最前,但照样要打折 / 有货;说清楚为什么没显示', () => {
   const v = saleView(col, { inStock: true, sort: 'discount', limit: 3, products: [{ id: 'gid://shopify/Product/6' }, { id: 1 }, { id: 4 }, { id: 99 }] });
   assert.deepEqual(ids(v), [6, 7, 2]);
-  assert.deepEqual(v.pins.map((p) => p.why), ['', '没打折', '预订(不算有货)', '不在这个合集里']);
+  assert.deepEqual(v.pins.map((p) => p.why), ['', '没打折', '预订(不算有货)', '不在这个 Collection 里']);
   const v2 = saleView(col, { sort: 'discount', limit: 1, products: [{ id: 7 }, { id: 2 }] });
   assert.deepEqual(v2.pins.map((p) => p.shown), [true, false]);
   assert.match(v2.pins[1].why, /最多 1 个/);
 });
 
-test('合集平时的顺序:生效中的置顶清单排最前', () => {
+test('Collection 平时的顺序:生效中的置顶清单排最前', () => {
   assert.deepEqual(featuredOrder(col, { pinIds: ['gid://shopify/Product/5'], sortRule: { off: true } }).map((p) => p.id), [5, 1, 2, 3, 4, 6, 7]);
   assert.equal(whyOut(P(1, 5), { minDiscount: 10 }), '折扣不到 10%');
 });
@@ -47,15 +47,15 @@ const admin = { id: 'a', name: '管理员', role: 'approver' };
 const doc = () => ({ banners: [], topbar: [], tbstyles: [], campaigns: [], pmodules: [], pins: [], salelinks: [], pendingOrder: null, log: [], staff: [], settings: {} });
 const link = (o = {}) => ({ id: 'sl-1', name: 'Autumn DZO', slug: 'autumn', collection: { id: 'gid://shopify/Collection/9', handle: 'dzofilm', title: 'DZOFiLM' }, products: [], ...o });
 
-test('保存:要名称 / 合集 / 合规的后缀;同一个合集后缀不能重复', () => {
+test('保存:要名称 / Collection / 合规的后缀;同一个 Collection 后缀不能重复', () => {
   const save = (d, v) => applyAction(d, { type: 'save', mode: 'publish', kind: 'salelink', isNew: true, values: v }, admin, 1);
   assert.throws(() => save(doc(), link({ slug: 'Bad Slug' })), /链接后缀/);
-  assert.throws(() => save(doc(), link({ collection: null })), /请选合集/);
+  assert.throws(() => save(doc(), link({ collection: null })), /请选 Collection/);
   const r = save(doc(), link());
   assert.equal(r.doc.salelinks[0].state, 'approved');
   assert.ok(r.effects.some((e) => e.type === 'sync'));
   assert.throws(() => save(r.doc, link({ id: 'sl-2', collection: { id: 9 } })), /已经有后缀叫「autumn」/);
-  assert.equal(save(r.doc, link({ id: 'sl-3', collection: { id: 10 } })).doc.salelinks.length, 2, '别的合集可以同名');
+  assert.equal(save(r.doc, link({ id: 'sl-3', collection: { id: 10 } })).doc.salelinks.length, 2, '别的 Collection 可以同名');
 });
 
 test('写进店铺的字段', () => {

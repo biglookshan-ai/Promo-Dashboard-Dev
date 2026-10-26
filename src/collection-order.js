@@ -292,7 +292,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
       const msg = String(e.message || e);
       if (/access denied|not approved|permission/i.test(msg)) { // 没权限:记一下,今天别再试了
         state.colNoScope = now;
-        rep.failures.push({ collection: cid, message: `${msg}(app 还没有「改产品 / 合集」的权限,这类清单暂时只能用前台排序)` });
+        rep.failures.push({ collection: cid, message: `${msg}(app 还没有「改产品 / Collection」的权限,这类清单暂时只能用前台排序)` });
         return rep;
       }
       rep.failures.push({ collection: cid, message: msg });
@@ -342,7 +342,7 @@ export async function alignSortFlags(ctx, state, { now = Date.now(), gql, rep })
         rep.sortOff.push({ collection: cid, title: fl.title, pin: fl.pinName });
       }
     } catch (e) {
-      rep.failures.push({ collection: cid, message: `合集页排序方式没改成:${e.message || e}` });
+      rep.failures.push({ collection: cid, message: `Collection 页排序方式没改成:${e.message || e}` });
     }
   }
 }

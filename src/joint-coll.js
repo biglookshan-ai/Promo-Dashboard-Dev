@@ -19,8 +19,8 @@ const denied = (e) => /access denied|read_publications|write_publications|not ap
 
 export async function createJointCollection(ctx, { title, landing = false }, gql) {
   const t = String(title || '').trim();
-  if (!t) throw new Error('请填合集名称');
-  if (t.length > 255) throw new Error('合集名称太长了');
+  if (!t) throw new Error('请填 Collection 名称');
+  if (t.length > 255) throw new Error('Collection 名称太长了');
   const input = { title: t, sortOrder: 'MANUAL', ...(landing ? { templateSuffix: LANDING_TEMPLATE } : {}) };
   const d = await gql(ctx, CREATE, { c: input });
   const e = d.collectionCreate?.userErrors?.[0];

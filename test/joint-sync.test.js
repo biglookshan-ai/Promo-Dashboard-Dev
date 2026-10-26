@@ -48,7 +48,7 @@ test('同步:按条件算出全部命中的产品,补差;推广产品自己那�
   assert.deepEqual([...f.promo].sort(), ['50', '51']);
 });
 
-test('推广的产品(多选)自动放进推广产品合集:正好这几个;兼容产品去掉它们', async () => {
+test('推广的产品(多选)自动放进推广产品 Collection:正好这几个;兼容产品去掉它们', async () => {
   const f = fakeShop({ members: [], promoMembers: ['50', '77'],
     hits: [{ id: 3, title: 'DZOFILM Catta 70' }, { id: 60, title: 'DZOFILM Smart Fusion bundle' }] });
   const state = {};
@@ -60,7 +60,7 @@ test('推广的产品(多选)自动放进推广产品合集:正好这几个;兼�
   assert.deepEqual(f.calls.filter((c) => c[0] !== 'search').map((c) => c.slice(0, 2)), [['add', '800'], ['remove', '800'], ['add', '900']]); // 先推广产品合集
 });
 
-test('推广产品合集的安全阀:带条件的不碰;移出太多先停手(兼容产品照常同步)', async () => {
+test('推广产品 Collection 的安全阀:带条件的不碰;移出太多先停手(兼容产品照常同步)', async () => {
   let f = fakeShop({ promoAutomated: true, hits: [{ id: 3, title: 'x' }] });
   let r = await syncJoint({}, {}, CO({ promos: [{ id: '50' }] }), { gql: f.gql });
   assert.match(r.promo.error, /手动/); assert.deepEqual([...f.mem], ['3']);
@@ -72,7 +72,7 @@ test('推广产品合集的安全阀:带条件的不碰;移出太多先停手(�
   assert.equal(r.held, false); assert.deepEqual([...f.promo], ['50']);
 });
 
-test('同步的安全阀:带条件的合集不碰;一个都没命中不清空;移出太多先停手', async () => {
+test('同步的安全阀:带条件的 Collection 不碰;一个都没命中不清空;移出太多先停手', async () => {
   let f = fakeShop({ automated: true, hits: [{ id: 3, title: 'x' }] });
   let r = await syncJoint({}, {}, CO(), { gql: f.gql });
   assert.match(r.error, /手动/); assert.equal(f.calls.filter((c) => c[0] !== 'search').length, 0);
@@ -102,8 +102,8 @@ test('联合推广的保存检查', () => {
   const P = { promos: [{ id: '50' }] };
   assert.equal(v({ joint: true, lensCollection: { id: '1' }, promoCollection: { id: '2' }, promoTitle: 'Pair with a lens', ...P }), '');
   assert.match(v({ joint: true, lensCollection: { id: '1' }, promoCollection: { id: '2' }, promoTitle: 'x' }), /推广的产品/);
-  assert.match(v({ joint: true, promoCollection: { id: '2' }, promoTitle: 'x' }), /兼容产品的合集/);
-  assert.match(v({ joint: true, lensCollection: { id: '1' }, promoTitle: 'x' }), /推广产品的合集/);
+  assert.match(v({ joint: true, promoCollection: { id: '2' }, promoTitle: 'x' }), /兼容产品的 Collection/);
+  assert.match(v({ joint: true, lensCollection: { id: '1' }, promoTitle: 'x' }), /推广产品的 Collection/);
   assert.match(v({ joint: true, lensCollection: { id: '1' }, promoCollection: { id: 'gid://shopify/Collection/1' }, promoTitle: 'x' }), /同一个/);
   assert.match(v({ joint: true, lensCollection: { id: '1' }, promoCollection: { id: '2' }, ...P }), /推广产品页上那张卡片/);
   assert.match(v({}), /推广的产品,或者填一个链接/); // 普通推广块照旧要推广产品或链接

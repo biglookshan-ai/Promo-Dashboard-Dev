@@ -41,13 +41,13 @@ export const promoIdsOf = (it) => [...new Set((it?.promos?.length ? it.promos : 
 async function syncMembers(ctx, gql, c, target, { force = false, emptyMsg = '' } = {}) {
   const r = { collection: { id: nid(c.id), title: c.title || '' }, count: 0, added: 0, removed: 0, held: false, error: '' };
   const col = await readCollection(ctx, c.id, gql);
-  if (!col) return { ...r, error: '找不到这个合集(可能在 Shopify 后台删掉了)' };
+  if (!col) return { ...r, error: '找不到这个 Collection(可能在 Shopify 后台删掉了)' };
   r.collection.title = col.title; r.count = col.ids.length;
-  if (col.automated) return { ...r, error: '这个合集带条件(自动归类),app 只能往「手动」合集里加减产品 —— 换一个手动合集(可以在这里新建)' };
+  if (col.automated) return { ...r, error: '这个 Collection 带条件(自动归类),app 只能往「手动」Collection 里加减产品 —— 换一个手动 Collection(可以在这里新建)' };
   if (!target.length) return { ...r, error: emptyMsg };
   const p = syncPlan(col.ids, target, { force });
   if (p.held) return { ...r, held: true, pending: { add: p.add.length, remove: p.remove.length },
-    error: `这次要从合集「${col.title}」移出 ${p.remove.length} 个产品(超过现在的一半),怕是设置改错了,先没动 —— 确认没问题就点「仍然同步」` };
+    error: `这次要从 Collection「${col.title}」移出 ${p.remove.length} 个产品(超过现在的一半),怕是设置改错了,先没动 —— 确认没问题就点「仍然同步」` };
   for (let i = 0; i < p.add.length; i += CHUNK) await run(ctx, gql, ADD, { id: gid(c.id), p: p.add.slice(i, i + CHUNK).map(pgid) }, 'collectionAddProducts');
   for (let i = 0; i < p.remove.length; i += CHUNK) await run(ctx, gql, REMOVE, { id: gid(c.id), p: p.remove.slice(i, i + CHUNK).map(pgid) }, 'collectionRemoveProducts');
   return { ...r, count: target.length, added: p.add.length, removed: p.remove.length };
@@ -69,7 +69,7 @@ export async function syncJoint(ctx, state, it, { gql, now = Date.now(), force =
       exCollections: it.promoCollection?.id ? [it.promoCollection.id] : [],
     }, gql);
     lens = await syncMembers(ctx, gql, it.lensCollection, capped ? [] : ids, { force,
-      emptyMsg: capped ? '条件命中的产品太多(超过 3000 个),没有同步 —— 把条件收窄一点' : '条件一个产品都没命中,合集没动' });
+      emptyMsg: capped ? '条件命中的产品太多(超过 3000 个),没有同步 —— 把条件收窄一点' : '条件一个产品都没命中,Collection 没动' });
   } catch (e) { lens = { ...fail(e), collection: { id: nid(it.lensCollection.id), title: it.lensCollection.title || '' } }; }
   const out = { at: now, ...lens, ...(promo ? { promo } : {}) };
   if (promo?.held) out.held = true;
@@ -80,7 +80,7 @@ export async function syncJoint(ctx, state, it, { gql, now = Date.now(), force =
 export function syncNotes(rep, { all = false } = {}) {
   const one = (x, what) => (x.error ? { failed: true, note: `同步${what}没成功:${x.error}` }
     : all || x.added || x.removed ? { failed: false, note: `${what}「${x.collection?.title || ''}」:加了 ${x.added} 个、移出 ${x.removed} 个,现在 ${x.count} 个` } : null);
-  return [rep.promo ? one(rep.promo, '推广产品合集') : null, one(rep, '兼容产品合集')].filter(Boolean);
+  return [rep.promo ? one(rep.promo, '推广产品 Collection') : null, one(rep, '兼容产品 Collection')].filter(Boolean);
 }
 
 // 定时器:每小时把所有要同步的联合推广对齐一次(新上架的兼容产品自动进名单)
