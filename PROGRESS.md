@@ -24,7 +24,8 @@
 - **联合推广版本 4:先教产品再讲促销**(2026-10-26,用户在效果图里定了版本 4,说「可以推送版本4」;选了「新内容放网站更新中心管」「先推测试主题」):
   - 🧩 推广块新字段(设置 → 店铺连接要点一次「补建」):小标签 `badge`、视频 `video`(YouTube)、兼容产品页弹窗标题 `pop_title`、卖点 `points`、兼容相机 `cameras` + 说明 `cameras_note`、套装说明 `kits`([{v: 款式 id, note, rec}],推荐只能一个);How it works 继续用 `lp_steps`(从「下单玩法」改成「产品怎么用」,下单三步主题按折扣自动写)
   - 🖊 编辑器「弹窗和活动页的内容」一段:上面这些 + 活动页标题 / 介绍 / 条款 / 大图;套装说明按推广产品的款式逐行写(新接口 `GET /api/schedule/product-variants`,只读款式名);右边卡片预览改成版本 4 的两张卡;推广产品页卡片说明支持 `{n}` = 兼容产品数量
-  - 🎨 主题(主题仓库 snippets/cgp-joint-popup / -about / -offer / -kits / -tc / -vid、sections/cgp-joint-promo、assets/cgp-joint.css / .js):照效果图版本 4 重做两张卡片、两个弹窗、活动页;样式从效果图里抽出来
+  - 🎨 主题(主题仓库 snippets/cgp-joint-popup / -about / -offer / -kits / -tc / -vid、sections/cgp-joint-promo、assets/cgp-joint.css / .js):照效果图版本 4 重做两张卡片、两个弹窗、活动页;样式从效果图里抽出来;**已推正式主题 + 测试主题**(主题仓库 docs/releases/2026-10-26-joint-v4/)
+  - ⏳ 等用户:设置 → 店铺连接点「补建」→ 照主题仓库 docs/releases/2026-10-26-joint-v4/CONTENT.md 填内容 → 联合推广重新上线(10/23 起一直是下线状态)
 - **联合推广:卡片一段话 + 弹窗直接加购 + 活动页重排**(2026-10-23,主题已推正式 + 测试主题,主题仓库 docs/releases/2026-10-23-joint-popup;用户:信息太多、要一两句话;点开弹窗直接加购物车不跳页;活动页不专业):
   - 💬 卡片 = 优惠一句 + 标题 + 链接文字,一段话;点开是弹窗(电脑居中 / 手机底部弹出)
   - 🔭 镜头页弹窗:介绍 + 「和这支镜头一起买 10% off」+ Smart Fusion 一行(四种套装按钮、原价 / 现价 / 搭配价、Pre-order / Add to cart),加完提示「再把这支镜头加进购物车」或「结账自动打折」
