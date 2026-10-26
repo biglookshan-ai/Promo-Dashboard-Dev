@@ -30,6 +30,8 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   'badgeLink',
   // 联合推广(产品页推广的升级,2026-10-22):两边卡片 + 兼容产品合集(app 同步、也是活动页)+ 推广产品合集 + 活动页内容
   'joint', 'lensCollection', 'promoCollection', 'promoTitle', 'promoText', 'promoLinkText', 'offer', 'lpTitle', 'lpText', 'lpImage', 'lpImageId', 'lpSteps', 'lpTerms', 'dealPct',
+  // 联合推广版本 4(2026-10-26):小标签、视频、弹窗标题、卖点、兼容相机、套装说明(How it works 仍存在 lpSteps)
+  'badge', 'video', 'popTitle', 'points', 'cameras', 'camerasNote', 'kits',
   // 产品页推广块:推广的产品、链接文字、品牌、排除的产品 / 标签(其余沿用 title / text / link / image / collections / tags / products / priority)
   'promo', 'promos', 'linkText', 'vendors', 'exProducts', 'exTags', 'rules',
   // 主活动 / 子活动:活动属于哪个主活动(活动 id;只有一层)
@@ -107,7 +109,10 @@ export function validate(it) {
       if (it.promos.length > 50) return '推广的产品最多 50 个';
       if (!String(it.promoTitle || '').trim()) return '请填推广产品页上那张卡片的标题';
       const steps = it.lpSteps || [];
-      if (!Array.isArray(steps) || steps.length > 4 || steps.some((x) => !x || typeof x.t !== 'string')) return '活动页的玩法最多 4 步';
+      if (!Array.isArray(steps) || steps.length > 4 || steps.some((x) => !x || typeof x.t !== 'string')) return 'How it works 最多 4 步';
+      const vid = String(it.video || '').trim();
+      if (vid && !/^(https?:\/\/)?(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(vid) && !/^[\w-]{11}$/.test(vid)) return '视频请填 YouTube 链接(youtube.com/watch?v=… 或 youtu.be/…)';
+      if (it.kits != null && (!Array.isArray(it.kits) || it.kits.length > 60 || it.kits.some((k) => !k || !k.v))) return '套装说明的格式不对';
     }
     const rules = (it.rules || []).filter((r) => (r.v || []).length);
     if (rules.length > 20) return '条件最多 20 行';

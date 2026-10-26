@@ -204,6 +204,14 @@ export const DEFINITIONS = [
       t('lp_image', '活动页 · 大图', 'file_reference', { validations: [{ name: 'file_type_options', value: '["Image"]' }] }),
       t('lp_steps', '活动页 · 玩法', 'json', { description: '[{t: 标题, d: 说明}],最多 4 步' }),
       t('lp_terms', '活动页 · 条款', 'multi_line_text_field', { description: '一行一条' }),
+      // 2026-10-26 版本 4(联合推广改版):先教产品再讲促销 —— 弹窗和活动页共用这些内容(主题 snippets/cgp-joint-about / -kits)
+      t('badge', '小标签', 'single_line_text_field', { description: '兼容产品页卡片和产品介绍上的小标签,比如 New;空 = 不显示' }),
+      t('video', '视频', 'single_line_text_field', { description: 'YouTube 链接:兼容产品页卡片的缩略图 + 弹窗 / 活动页里的视频' }),
+      t('pop_title', '兼容产品页弹窗 · 标题', 'single_line_text_field', { description: '空 = 用活动页标题' }),
+      t('points', '卖点', 'multi_line_text_field', { description: '一行一条' }),
+      t('cameras', '兼容相机', 'multi_line_text_field', { description: '一行一个' }),
+      t('cameras_note', '兼容相机 · 说明', 'single_line_text_field'),
+      t('kits', '套装说明', 'json', { description: '[{v: 款式 id, note: 一句说明, rec: 推荐}]' }),
     ],
   },
 ];
@@ -383,11 +391,22 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       lp_title: str(it.lpTitle), lp_text: str(it.lpText), lp_image: str(it.lpImageId),
       lp_steps: JSON.stringify((it.lpSteps || []).filter((x) => x && String(x.t || '').trim()).slice(0, 4).map((x) => ({ t: String(x.t).trim(), d: String(x.d || '').trim() }))),
       lp_terms: str(it.lpTerms),
+      badge: str(it.badge), video: str(it.video).trim(), pop_title: str(it.popTitle), points: str(it.points), cameras: str(it.cameras), cameras_note: str(it.camerasNote),
+      kits: JSON.stringify(kitsOut(it.kits)),
     });
     else Object.assign(f, { joint: 'false' });
   }
   if (it.kind !== 'campaign') Object.assign(f, { campaign: campaignGid || '', starts_at: iso(win.start), ends_at: iso(win.end) });
   return Object.entries(f).map(([key, value]) => ({ key, value }));
+}
+
+// 联合推广的套装说明:[{v: 款式 id(数字), note, rec}];只留有说明或标了推荐的,推荐只能一个
+export function kitsOut(kits) {
+  let rec = false;
+  return (kits || []).filter((k) => k && k.v).map((k) => {
+    const r = !!k.rec && !rec; if (r) rec = true;
+    return { v: String(k.v).split('/').pop(), note: String(k.note || '').trim().slice(0, 120), ...(r ? { rec: true } : {}) };
+  }).filter((k) => k.note || k.rec).slice(0, 60);
 }
 
 const UPSERT = `mutation($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {

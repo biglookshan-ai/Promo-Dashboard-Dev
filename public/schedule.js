@@ -1223,11 +1223,25 @@
   }
   // 产品页上那张小卡片(和主题同一个样子;列表和预览共用)
   // side = 'b':联合推广里推广产品(比如 Smart Fusion)页面上的那张 —— 图用活动页大图(没有就不放图)
+  // YouTube 链接 → 视频 id(和主题 snippets/cgp-joint-vid.liquid 认得的一样)
+  const ytIdOf = (u) => { u = String(u || '').trim(); const m = u.match(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/)([\w-]{11})/); return m ? m[1] : /^[\w-]{11}$/.test(u) ? u : ''; };
+  // 兼容产品 Collection 里有几个(最近一次同步的结果;没同步过 = 右边命中数;都没有 = N)
+  const coCount = (x) => (S.jointSync || {})[x.id]?.count ?? (coRes && coRes.total != null && ed?.__it?.id === x.id ? coRes.total : 'N');
   const coCardHtml = (x, side = 'a') => { const b = side === 'b'; const img = b ? x.lpImage || '' : coImg(x);
-    if (x.joint) { // 联合推广(2026-10-23):一段话 —— 优惠一句 + 标题 + 链接文字,点开是弹窗(主题 snippets/cgp-joint-popup.liquid)
-      const dot = (t) => { t = String(t || '').trim(); return t && !/[.!?]$/.test(t) ? `${t}.` : t; };
-      return `<span class="pv-callout">${img ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(img, 160))}')"></span>` : ''}<span class="pv-callout__p">
-        ${x.offer ? `<b class="pv-callout__o">${esc(dot(x.offer))}</b> ` : ''}${esc(dot(b ? x.promoTitle : x.title) || '(还没写标题)')} <span class="pv-callout__m">${esc((b ? x.promoLinkText || 'See compatible lenses' : x.linkText || 'See the offer'))} →</span></span></span>`;
+    if (x.joint) { // 联合推广版本 4(2026-10-26,主题 snippets/cgp-joint-popup.liquid):兼容产品页 = 视频卡;推广产品页 = 两支镜头图卡。百分比预览按这里填的折扣(前台读 KitBundle)
+      const pct = x.dealPct || 10, n = coCount(x), vid = ytIdOf(x.video);
+      const kicker = x.promoCollection?.title || x.promos?.[0]?.title || 'Smart Fusion';
+      if (b) {
+        const t = String(x.promoTitle || '').trim() || `Buy with a compatible lens and save ${pct}%`;
+        const sub = (String(x.promoText || '').trim() || '{n} compatible lenses qualify').replace('{n}', n);
+        const imgs = img ? [img] : (coRes && coRes.sample ? coRes.sample.filter((p) => p.image).slice(0, 2).map((p) => p.image) : []);
+        return `<span class="pv-jc"><span class="pv-jc__v pv-jc__v--img">${imgs.map((u) => `<i style="background-image:url('${esc(thumb(u, 160))}')"></i>`).join('')}</span>
+          <span class="pv-jc__b"><b><i class="pv-jc__hot">−${pct}%</i>${esc(t)}</b><span>${esc(sub)} · <u>${esc(x.promoLinkText || 'See compatible lenses')}</u></span></span></span>`;
+      }
+      const thumbBox = vid ? `<span class="pv-jc__v" style="background-image:url('https://i.ytimg.com/vi/${esc(vid)}/mqdefault.jpg')"><em>▶</em></span>`
+        : img ? `<span class="pv-jc__v pv-jc__v--img"><i style="background-image:url('${esc(thumb(img, 160))}')"></i></span>` : '';
+      return `<span class="pv-jc${thumbBox ? '' : ' pv-jc--nov'}">${thumbBox}<span class="pv-jc__b"><span class="pv-jc__k">${x.badge ? `<i class="pv-jc__hot">${esc(x.badge)}</i>` : ''}${esc(kicker)}</span>
+        <b>${esc(x.title || '(还没写标题)')}</b><span><em>Save ${pct}%</em> when you buy it with this lens · <u>${esc(x.linkText || 'Learn more')}</u></span></span></span>`;
     }
     return `<span class="pv-callout">${img ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(img, 160))}')"></span>` : ''}<span class="pv-callout__b">
     <span class="pv-callout__t">${esc(x.title || '(还没写标题)')}</span>${x.text ? `<span class="pv-callout__s">${esc(x.text)}</span>` : ''}${coLink(x) ? `<span class="pv-callout__m">${esc(x.linkText || 'Learn more')} →</span>` : ''}</span></span>`; };
@@ -1314,11 +1328,39 @@
     return `<div class="cosync ${r?.error || r?.promo?.error ? 'is-err' : ''}"><div class="cosync__lines">${lines.join('')}</div>
       ${canRun ? `<span class="cosync__acts"><button type="button" class="btn btn-sm" data-co="sync">立即同步</button>${r?.held ? '<button type="button" class="btn btn-sm btn-danger-t" data-co="syncforce">仍然同步</button>' : ''}</span>` : ''}</div>`;
   }
-  const LPS_DEFAULT = [{ t: 'Choose a compatible lens', d: '' }, { t: 'Add Smart Fusion to your cart', d: '' }, { t: 'Save at checkout automatically', d: '' }];
+  // How it works(2026-10-26 版本 4 起是「产品怎么用」,比如 Your camera focuses → Smart Fusion relays it → The motor turns the lens;下单三步主题自己按折扣写)
   const lpsHtml = () => `${ed.lpSteps.map((x, i) => `<div class="lps__row"><span class="lps__n">${i + 1}</span>
-      <input class="inp" data-lps="t:${i}" value="${esc(x.t)}" placeholder="这一步的标题"/><input class="inp" data-lps="d:${i}" value="${esc(x.d)}" placeholder="一句说明(可不填)"/>
+      <input class="inp" data-lps="t:${i}" value="${esc(x.t)}" placeholder="${['Your camera focuses', 'Smart Fusion relays it', 'The motor turns the lens', ''][i] || '这一步的标题'}"/><input class="inp" data-lps="d:${i}" value="${esc(x.d)}" placeholder="一句说明(可不填)"/>
       <button type="button" class="btn btn-sm btn-ghost" data-co="lpsdel" data-i="${i}" aria-label="删掉这一步">${I.x}</button></div>`).join('')}
     ${ed.lpSteps.length < 4 ? `<button type="button" class="chipadd" data-co="lpsadd">${I.plus}加一步</button>` : ''}`;
+  // 联合推广版本 4:套装说明 —— 推广产品的每个款式一行(一句说明 + 选一个 Recommended),款式从店里读(只读名字)
+  let coVars = null;
+  async function loadCoVars() {
+    if (!ed || !ed.co) return;
+    const ids = (ed.promos || []).map((p) => numId(p.id)).filter(Boolean); const key = ids.join(',');
+    if (coVars && coVars.key === key) return;
+    coVars = { key, list: MODE === 'live' && ids.length ? null : [] };
+    const paint = () => { const el = $('#co-kits'); if (el) el.innerHTML = coKitsHtml(); };
+    paint(); if (coVars.list) return;
+    let list;
+    try { list = (await api('GET', `/api/schedule/product-variants?ids=${ids.join(',')}`)).products; } catch (e) { list = { error: e.message }; }
+    if (coVars?.key === key) { coVars.list = list; paint(); }
+  }
+  function coKitsHtml() {
+    if (!(ed.promos || []).length) return '<span class="muted">先在上面选推广的产品</span>';
+    if (MODE !== 'live') return '<span class="muted">正式数据里这里会列出推广产品的每个款式,每个写一句说明、选一个 Recommended</span>';
+    const L = coVars?.list;
+    if (!L) return '<span class="muted">正在读款式…</span>';
+    if (L.error) return `<span class="warn">款式没读出来:${esc(L.error)}</span>`;
+    const rows = L.flatMap((p) => p.variants.map((v) => ({ v: v.id, title: p.single ? p.title : L.length > 1 ? `${p.title} · ${v.title}` : v.title })));
+    if (!rows.length) return '<span class="muted">推广的产品没有款式</span>';
+    const byV = new Map((ed.kits || []).map((k) => [String(k.v), k]));
+    return rows.map((r) => { const k = byV.get(String(r.v)) || {};
+      return `<div class="cokit"><span class="cokit__t">${esc(r.title)}</span><input class="inp" data-kit="note:${esc(r.v)}" value="${esc(k.note || '')}" placeholder="一句说明,比如 Everything you need for Sony AF"/>
+        <label class="cokit__rec"><input type="radio" data-kit="rec:${esc(r.v)}" ${k.rec ? 'checked' : ''}/>Recommended</label></div>`; }).join('')
+      + ((ed.kits || []).some((k) => k.rec) ? '<button type="button" class="btn btn-sm btn-ghost" data-co="kitnorec">不推荐任何一个</button>' : '');
+  }
+  const coKit = (v) => { let k = ed.kits.find((x) => String(x.v) === String(v)); if (!k) { k = { v: String(v), note: '', rec: false }; ed.kits.push(k); } return k; };
   function coFormHtml(it) {
     const sec = edSec; const J = !!it.joint; let n = 0; const N = () => ++n;
     return `
@@ -1327,15 +1369,15 @@
           <label class="tgl co-jtgl"><input type="checkbox" name="joint" ${J ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>联合推广</b><span class="muted">兼容产品和推广产品的页面互相推荐;卡片点开是弹窗,顾客在弹窗里直接加购物车,想看全部再去活动页;搭配 KitBundle 的加购优惠</span></span></label></div>
         <div class="${J ? 'co-cards' : ''}">
           <div class="co-cardf">${J ? '<div class="co-cardf__h">兼容产品页上的卡片 <em>比如手动镜头的页面</em></div>' : ''}
-            ${fld('标题', inp('title', it.title, 'Turn this manual lens into a Sony autofocus lens'), '加粗的那一句')}
-            ${fld('说明(可不填)', inp('text', it.text, 'With PDMOVIE SMART FUSION + LIVE AIR 4 SMART'), '灰色小字')}
+            ${fld('标题', inp('title', it.title, J ? 'Autofocus for this manual lens on Sony cameras' : 'Turn this manual lens into a Sony autofocus lens'), '加粗的那一句')}
+            ${fld('说明(可不填)', inp('text', it.text, J ? 'With PDMOVIE SMART FUSION + LIVE AIR 4 SMART' : 'With PDMOVIE SMART FUSION + LIVE AIR 4 SMART'), J ? '有折扣时第二行自动写「Save 10% when you buy it with this lens」,没折扣才显示这句' : '灰色小字')}
             ${fld('链接文字', inp('linkText', it.linkText, 'Learn more'), '留空 = Learn more')}</div>
           ${J ? `<div class="co-cardf"><div class="co-cardf__h">推广产品页上的卡片 <em>比如 Smart Fusion 的页面</em></div>
-            ${fld('标题', inp('promoTitle', it.promoTitle, 'Pair it with a compatible manual lens'), '加粗的那一句')}
-            ${fld('说明(可不填)', inp('promoText', it.promoText, 'Turn manual cine lenses into Sony AF lenses'), '灰色小字')}
+            ${fld('标题', inp('promoTitle', it.promoTitle, 'Buy with a compatible lens and save 10%'), '加粗的那一句,前面自动加红色 −10% 标签')}
+            ${fld('说明(可不填)', inp('promoText', it.promoText, '{n} manual lenses qualify'), '{n} 会换成兼容产品的数量;空 = {n} compatible lenses qualify')}
             ${fld('链接文字', inp('promoLinkText', it.promoLinkText, 'See compatible lenses'), '留空 = See compatible products')}</div>` : ''}
         </div>
-        ${J ? fld('优惠一句话', inp('offer', it.offer, '10% OFF Smart Fusion with any compatible lens'), '两边卡片和活动页都显示。真正的折扣在 KitBundle 的加购优惠里设,数字要和这里一致') : ''}
+        ${J ? fld('优惠一句话', inp('offer', it.offer, '10% off PDMOVIE Smart Fusion with any compatible lens'), '活动页顶部深色细条上的一句。真正的折扣在 KitBundle 的加购优惠里设,数字要和这里一致') : ''}
         ${J ? '' : `<div class="fld"><span>推广的产品 <em>图片和链接默认用它的</em></span><div class="rowin" id="co-promo">${coPromoHtml()}</div></div>`}
         ${J ? '' : fld('链接(可不填)', `<input class="inp mono" name="link" value="${esc(it.link || '')}" placeholder="留空 = 推广产品的页面"/>`, '要指定款式就粘贴完整链接,如 /products/pdmovie-smart-fusion?variant=…')}
         <div class="fld"><span>图片</span><div class="rowin coimgrow"><span class="rowin" id="co-imgsrc">${coImgSrcHtml(it)}</span>
@@ -1351,14 +1393,21 @@
         <div id="co-sync">${coSyncHtml(it)}</div>
         <div class="fld"><span>折扣 <em>在 KitBundle 结账时自动打,每件兼容产品配 1 件推广产品</em></span><div id="co-deal">${coDealHtml(it)}</div></div>`) : ''}
       ${sec(N(), J ? '兼容产品(按条件)' : '放在哪些产品', '按条件自动算,以后新上架的产品符合条件就自动带上', `<div class="scope" id="ed-scope">${coScopeHtml()}</div>`)}
-      ${J ? sec(N(), '活动页', '兼容产品 Collection 页面的顶部:大图、介绍、玩法、条款;下面接着是全部兼容产品', `
-        <div class="fld2">${fld('标题', inp('lpTitle', it.lpTitle, 'Turn your manual lens into a Sony autofocus lens'))}
-          <div class="fld"><span>大图</span><div class="rowin coimgrow">${it.lpImage ? `<span class="coimg" style="background-image:url('${esc(thumb(it.lpImage, 120))}')"></span><button type="button" class="btn btn-sm btn-ghost" data-co="nolpimg">不用大图</button>` : '<span class="muted">没有大图(只显示文字)</span>'}
-            ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-upto="lpImage" hidden/></label>' : ''}</div>
-            <input type="hidden" name="lpImage" value="${esc(it.lpImage || '')}"/><input type="hidden" name="lpImageId" value="${esc(it.lpImageId || '')}"/></div></div>
-        ${fld('介绍', `<textarea class="inp" name="lpText" rows="3" placeholder="PDMOVIE Smart Fusion adds fast, accurate autofocus to manual cine lenses on Sony E-mount…">${esc(it.lpText || '')}</textarea>`, '可以写几行;空行分段')}
-        <div class="fld"><span>玩法 <em>最多 4 步</em></span><div class="lps" id="co-lps">${lpsHtml()}</div></div>
-        ${fld('条款', `<textarea class="inp" name="lpTerms" rows="4" placeholder="One discounted Smart Fusion per compatible lens in the same order.&#10;Discount applies to Smart Fusion only.">${esc(it.lpTerms || '')}</textarea>`, '一行一条,活动页上会排成列表')}`) : ''}
+      ${J ? sec(N(), '弹窗和活动页的内容', '先教产品再讲促销:两张卡片点开的弹窗、活动页(兼容产品 Collection 页面顶部)都用这里的内容;哪块没填就不显示', `
+        <div class="fld2">${fld('小标签', inp('badge', it.badge, 'New'), '兼容产品页卡片和产品介绍上的小标签;空 = 不显示')}
+          ${fld('视频', `<input class="inp mono" name="video" value="${esc(it.video || '')}" placeholder="https://www.youtube.com/watch?v=…"/>`, 'YouTube 链接:兼容产品页卡片的缩略图 + 弹窗 / 活动页里的视频(点了才加载)')}</div>
+        <div class="fld2">${fld('活动页标题', inp('lpTitle', it.lpTitle, 'Turn your manual lens into a Sony autofocus lens'))}
+          ${fld('兼容产品页弹窗标题', inp('popTitle', it.popTitle, 'Make this lens autofocus on your Sony camera'), '空 = 用活动页标题')}</div>
+        ${fld('介绍', `<textarea class="inp" name="lpText" rows="3" placeholder="Smart Fusion is a tiny module that sits inside your Sony E-mount…">${esc(it.lpText || '')}</textarea>`, '弹窗和活动页都显示;可以写几行')}
+        ${fld('卖点', `<textarea class="inp" name="points" rows="4" placeholder="Sony autofocus on manual lenses&#10;Just 1.2 g and 0.6 mm thin&#10;No battery, no camera modification">${esc(it.points || '')}</textarea>`, '一行一条,前面自动加对勾')}
+        <div class="fld"><span>How it works <em>产品怎么用,最多 4 步;下单三步不用写,按折扣自动生成</em></span><div class="lps" id="co-lps">${lpsHtml()}</div></div>
+        <div class="fld2">${fld('兼容相机', `<textarea class="inp" name="cameras" rows="4" placeholder="FX3&#10;FX6&#10;A7S III">${esc(it.cameras || '')}</textarea>`, '一行一个;显示成「Compatible cameras」按钮,点开才展开')}
+          ${fld('兼容相机 · 说明', inp('camerasNote', it.camerasNote, 'Not compatible with FX9 or BURANO.'), '相机列表下面一句灰字(可不填)')}</div>
+        <div class="fld"><span>套装说明 <em>推广产品的每个款式一句说明;选一个 Recommended,弹窗打开时默认选它</em></span><div class="cokits" id="co-kits">${coKitsHtml()}</div></div>
+        ${fld('条款', `<textarea class="inp" name="lpTerms" rows="4" placeholder="One discounted Smart Fusion per compatible lens in the same order.&#10;Discount applies to Smart Fusion only.">${esc(it.lpTerms || '')}</textarea>`, '一行一条;促销框里的「Offer terms」点开显示')}
+        <div class="fld"><span>大图 <em>没填视频时,活动页放这张</em></span><div class="rowin coimgrow">${it.lpImage ? `<span class="coimg" style="background-image:url('${esc(thumb(it.lpImage, 120))}')"></span><button type="button" class="btn btn-sm btn-ghost" data-co="nolpimg">不用大图</button>` : '<span class="muted">没有大图</span>'}
+          ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-upto="lpImage" hidden/></label>' : ''}</div>
+          <input type="hidden" name="lpImage" value="${esc(it.lpImage || '')}"/><input type="hidden" name="lpImageId" value="${esc(it.lpImageId || '')}"/></div>`) : ''}
       ${sec(N(), '什么时候显示', '', `${timeBlock(it, 'callout')}
         ${fld('优先级', `<input class="inp inp--num" type="number" name="priority" value="${esc(it.priority ?? 10)}"/>`, '一个产品同时符合几张推广块时,只显示数字大的那张')}`)}`;
   }
@@ -3770,7 +3819,7 @@
   }
   function refreshScope(fromCounts) {
     const el = $('#ed-scope'); if (!el) return;
-    if (ed.co) { const pe = $('#co-promos'); if (pe) pe.innerHTML = coPromosHtml(); fetchCoScope(); el.innerHTML = coScopeHtml(); $('#ed-form').dispatchEvent(new Event('change')); return; } // 产品页推广块
+    if (ed.co) { const pe = $('#co-promos'); if (pe) pe.innerHTML = coPromosHtml(); fetchCoScope(); el.innerHTML = coScopeHtml(); if ($('#co-kits')) loadCoVars(); $('#ed-form').dispatchEvent(new Event('change')); return; } // 产品页推广块
     if (!fromCounts) delete ed.counts;
     el.innerHTML = scopeHtml(); $('#ed-form').dispatchEvent(new Event('change'));
     if (!fromCounts) fetchCounts();
@@ -3841,6 +3890,7 @@
       if (v.joint) { v.promos = ed.promos.map(slim); v.promo = v.promos[0] || null; } else v.promos = []; // 联合推广:推广的产品多选,第一个兼当 promo(卡片默认图)
       v.lensCollection = slimC(ed.lensCollection); v.promoCollection = slimC(ed.promoCollection); v.dealPct = ed.dealPct || 10;
       v.lpSteps = ed.lpSteps.filter((x) => x.t.trim()).map((x) => ({ t: x.t.trim(), d: x.d.trim() }));
+      v.kits = (ed.kits || []).filter((k) => String(k.note || '').trim() || k.rec).map((k) => ({ v: String(k.v), note: String(k.note || '').trim(), ...(k.rec ? { rec: true } : {}) }));
     }
     if (base.kind === 'salelink') {
       const num = (n) => { const x = Math.round(Number(g(n)?.value)); return x > 0 ? x : null; };
@@ -3904,7 +3954,9 @@
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])],
       co: base.kind === 'callout', vendors: [], exProducts: [...(base.exProducts || [])], exTags: [], promo: base.promo || null, promos: [...(base.promos?.length ? base.promos : base.promo ? [base.promo] : [])], rules: [], coLegacy: false,
       lensCollection: base.lensCollection || null, promoCollection: base.promoCollection || null, dealPct: base.dealPct || 10, newColl: {}, collNote: {}, __it: base,
-      lpSteps: (base.lpSteps && base.lpSteps.length ? base.lpSteps : base.joint ? [] : LPS_DEFAULT).map((x) => ({ t: x.t || '', d: x.d || '' })) };
+      lpSteps: (base.lpSteps || []).map((x) => ({ t: x.t || '', d: x.d || '' })),
+      kits: (base.kits || []).map((k) => ({ v: String(k.v), note: k.note || '', rec: !!k.rec })) };
+    coVars = null;
     coRes = null;
     if (ed.co) { // 推广块:条件放 ed.rules;第一版「满足任一」的设置换成条件(两种以上一起用时提示一下)
       const legacy = !coRulesOf(base).length && coLegacyRules(base).length;
@@ -3994,14 +4046,14 @@
       }
     };
     refreshPv();
+    if (kind === 'callout' && ed.co && base.joint) loadCoVars(); // 联合推广:套装说明要读推广产品的款式
     if (kind === 'campaign' && MODE === 'live' && !ed.counts) fetchCounts();
     const f = $('#ed-form');
     // 推广块:开关「联合推广」/ 换了活动页大图 → 按现在填的内容重画整个表单(分段不一样)
-    const rerenderCo = () => { const v = readForm(base); f.innerHTML = `${notes.join('')}${formHtml(v)}${assignHtml(v)}`; refreshScope(); refreshPv(); };
+    const rerenderCo = () => { const v = readForm(base); f.innerHTML = `${notes.join('')}${formHtml(v)}${assignHtml(v)}`; refreshScope(); refreshPv(); if (v.joint) loadCoVars(); };
     if (kind === 'callout') {
       f.addEventListener('change', (e) => {
         if (e.target.name !== 'joint') return;
-        if (e.target.checked && !ed.lpSteps.length) ed.lpSteps = LPS_DEFAULT.map((x) => ({ ...x }));
         if (e.target.checked && !ed.promos.length && ed.promo) ed.promos = [ed.promo]; // 单个 ↔ 多个 推广产品互相带过去
         if (!e.target.checked && !ed.promo && ed.promos.length) ed.promo = ed.promos[0];
         rerenderCo();
@@ -4014,6 +4066,16 @@
           if (a && coDeal?.status !== 'active') a.href = coDealUrl();
           if (st && coDeal?.status === 'active') { const el = $('#co-deal'); const keep = e.target.value; el.innerHTML = coDealHtml(base); const ni = el.querySelector('[data-co-pct]'); ni.value = keep; ni.focus(); }
         }
+      });
+      f.addEventListener('input', (e) => { // 套装说明的一句话
+        const kk = e.target.dataset?.kit; if (!kk || !kk.startsWith('note:')) return;
+        coKit(kk.slice(5)).note = e.target.value;
+      });
+      f.addEventListener('change', (e) => { // 套装说明:Recommended 只能选一个
+        const kk = e.target.dataset?.kit; if (!kk || !kk.startsWith('rec:')) return;
+        const vid = kk.slice(4); ed.kits.forEach((k) => { k.rec = false; }); coKit(vid).rec = true;
+        $$('#co-kits [data-kit^="rec:"]').forEach((r) => { r.checked = r.dataset.kit === kk; });
+        const el = $('#co-kits'); if (el) el.innerHTML = coKitsHtml();
       });
       f.addEventListener('input', (e) => { // 活动页玩法
         const lp = e.target.dataset?.lps; if (!lp) return;
@@ -4405,6 +4467,7 @@
           return;
         }
         if (a === 'nolpimg') { f.querySelector('[name="lpImage"]').value = ''; f.querySelector('[name="lpImageId"]').value = ''; return rerenderCo(); }
+        if (a === 'kitnorec') { ed.kits.forEach((k) => { k.rec = false; }); const el = $('#co-kits'); if (el) el.innerHTML = coKitsHtml(); }
         if (a === 'lpsadd' && ed.lpSteps.length < 4) { ed.lpSteps.push({ t: '', d: '' }); $('#co-lps').innerHTML = lpsHtml(); $(`#co-lps [data-lps="t:${ed.lpSteps.length - 1}"]`)?.focus(); }
         if (a === 'lpsdel') { ed.lpSteps.splice(+co.dataset.i, 1); $('#co-lps').innerHTML = lpsHtml(); }
         if (a === 'sync' || a === 'syncforce') {

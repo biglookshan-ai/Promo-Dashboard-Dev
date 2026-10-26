@@ -278,6 +278,15 @@ export async function productsInfo(ctx, ids, gql = graphql) {
   return out;
 }
 
+// 联合推广编辑器的「套装说明」:推广产品的款式(只读名字,不读图 —— 编辑器里每个款式一行写一句说明、选一个推荐)
+export async function productVariants(ctx, ids, gql = graphql) {
+  const gids = [...new Set(ids.map((id) => toGid('Product', id)).filter(Boolean))].slice(0, 50);
+  if (!gids.length) return [];
+  const d = await gql(ctx, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id title hasOnlyDefaultVariant variants(first: 30) { nodes { id title } } } } }`, { ids: gids });
+  return d.nodes.filter(Boolean).map((p) => ({ id: p.id, title: p.title, single: !!p.hasOnlyDefaultVariant,
+    variants: (p.variants?.nodes || []).map((v) => ({ id: String(v.id).split('/').pop(), title: v.title })) }));
+}
+
 // 产品卡上显示的价格:有打折的 → 折扣最大的那个变体的「原价(划线价)/ 现价」;没打折 → 最低价,变体价格不一样时标「起」
 function priceOf(p) {
   const vs = p.variants?.nodes || [];

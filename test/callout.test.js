@@ -43,3 +43,22 @@ test('保存检查 + 写进店里的 rules', () => {
   const f = Object.fromEntries(fieldsFor({ ...base, rules: [{ f: 'collection', n: true, v: [{ id: 'gid://shopify/Collection/77', handle: 'pavo', title: 'Pavo', count: 3 }] }, { f: 'tag', v: [] }] }).map((x) => [x.key, x.value]));
   assert.deepEqual(JSON.parse(f.rules), [{ f: 'collection', n: true, v: [{ id: 77, handle: 'pavo', title: 'Pavo' }] }]);
 });
+
+test('联合推广版本 4:视频 / 套装说明的检查,写进店里的新字段', () => {
+  const j = { kind: 'callout', name: 'x', title: 't', joint: true, lensCollection: { id: 1 }, promoCollection: { id: 2 }, promos: [{ id: 9 }], promoTitle: 'p', rules: [{ f: 'vendor', v: ['DZOFILM'] }] };
+  assert.equal(validate(j), '');
+  assert.equal(validate({ ...j, video: 'https://www.youtube.com/watch?v=RR-Y4iSNlvY' }), '');
+  assert.equal(validate({ ...j, video: 'youtu.be/RR-Y4iSNlvY' }), '');
+  assert.equal(validate({ ...j, video: 'RR-Y4iSNlvY' }), '');
+  assert.match(validate({ ...j, video: 'https://vimeo.com/123' }), /YouTube/);
+  assert.match(validate({ ...j, kits: 'x' }), /套装说明/);
+  const f = Object.fromEntries(fieldsFor({ ...j, badge: 'New', video: ' https://youtu.be/RR-Y4iSNlvY ', popTitle: 'Make it AF', points: 'a\nb', cameras: 'FX3\nFX6', camerasNote: 'n',
+    kits: [{ v: 'gid://shopify/ProductVariant/11', note: ' Module only ' }, { v: 12, note: '', rec: true }, { v: 13, note: '' }, { v: 14, note: 'x', rec: true }] }).map((x) => [x.key, x.value]));
+  assert.equal(f.badge, 'New'); assert.equal(f.video, 'https://youtu.be/RR-Y4iSNlvY'); assert.equal(f.pop_title, 'Make it AF');
+  assert.equal(f.points, 'a\nb'); assert.equal(f.cameras, 'FX3\nFX6'); assert.equal(f.cameras_note, 'n');
+  // 只留有说明或推荐的;id 只要数字;推荐只能一个(第一个)
+  assert.deepEqual(JSON.parse(f.kits), [{ v: '11', note: 'Module only' }, { v: '12', note: '', rec: true }, { v: '14', note: 'x' }]);
+  // 不是联合推广的推广块不写这些
+  const g = Object.fromEntries(fieldsFor({ kind: 'callout', name: 'x', title: 't', promo: { id: 1 }, badge: 'New' }).map((x) => [x.key, x.value]));
+  assert.equal(g.badge, undefined);
+});

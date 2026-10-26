@@ -74,7 +74,7 @@ function fakeLark(req, res, body) {
 const fakeProduct = (p) => {
   const price = 100 + (p.id % 900), off = p.id % 3 === 0 ? 0 : 10 + (p.id % 30);
   return { id: `gid://shopify/Product/${p.id}`, title: p.title, handle: p.handle, publishedAt: null, status: 'ACTIVE', featuredMedia: { preview: { image: { url: p.image } } },
-    variants: { nodes: [{ price: String(price), compareAtPrice: off ? String(Math.round(price / (1 - off / 100))) : null }] } };
+    hasOnlyDefaultVariant: true, variants: { nodes: [{ id: `gid://shopify/ProductVariant/${p.id}01`, title: 'Default Title', price: String(price), compareAtPrice: off ? String(Math.round(price / (1 - off / 100))) : null }] } };
 };
 const SCOPES = args.has('--no-scopes') ? ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions']
   : ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions', 'write_metaobject_definitions', 'write_metaobjects', 'write_files', 'write_products', 'read_inventory'];

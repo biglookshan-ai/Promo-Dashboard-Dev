@@ -8,7 +8,7 @@ import { schedulerInfo, logColReport } from './scheduler.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
 import { uploadImage } from './files.js';
-import { scopeCounts, calloutScope, calloutOptions, productCampaigns, tabProducts, collectionProducts, productsInfo, productsStock } from './counts.js';
+import { scopeCounts, calloutScope, calloutOptions, productCampaigns, tabProducts, collectionProducts, productsInfo, productsStock, productVariants } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
 import { actorOf, pagesOf, isAdmin } from './members.js';
@@ -539,6 +539,7 @@ export function scheduleRouter() {
   r.get('/products-info', wrap(async (req) => ({ products: await productsInfo(req.ctx, String(req.query.ids || '').split(',').filter(Boolean).slice(0, 250)) })));
   // ---- 合集排序网格:产品的库存(款式字段 UK Inventory / EW Inventory,所有款式加起来)----
   r.post('/products-stock', wrap(async (req) => productsStock(req.ctx, (req.body?.ids || []).slice(0, 300))));
+  r.get('/product-variants', wrap(async (req) => ({ products: await productVariants(req.ctx, String(req.query.ids || '').split(',').filter(Boolean)) })));
 
   // ---- 合集顺序的历史版本 / 回滚 ----
   r.get('/col-history', wrap((req) => {
