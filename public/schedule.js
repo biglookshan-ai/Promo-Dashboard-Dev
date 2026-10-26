@@ -1506,7 +1506,7 @@
       ${edSec(2, '显示哪些产品', '', `      <label class="tgl"><input type="checkbox" name="inStock" ${it.inStock ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示有货的</b><span class="muted">预订(Pre Order)和缺货的不显示,和前台卡片上的「In Stock」一致</span></span></label>
       <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
         ${fld('最多显示几个', `<input class="inp" type="number" min="0" name="limit" value="${esc(it.limit ?? '')}" placeholder="不限"/>`, '按下面的排法取前面几个')}</div>
-      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和合集平时一样」= 合集页默认的 Featured 顺序(包括生效中的合集排序清单)。顾客自己选了 Sort by 就按他选的')}
+      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '「和合集平时一样」= 跟着合集本来那一页:生效中的合集排序清单 → 合集默认设置(右边「顾客看到的顺序」第 2、3 层);选别的就不看合集排序。顾客自己选了 Sort by 就按他选的')}
       ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
 `)}
       ${edSec(3, '产品顺序', '拖动产品卡片调整顾客看到的顺序', `      <div class="fld"><span>固定位置的产品 <em>拖动产品卡片排序:右边直接拖,或点「放大排序」铺满整个窗口来排;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span>
@@ -1547,6 +1547,7 @@
     catch (e) { slPrev[k] = { error: e.message, at: now() }; }
     if (sl?.collection?.handle === k) done?.();
   }
+  const slSnap = (base) => { try { return JSON.stringify([readForm(base), (sl?.products || []).map((p) => numId(p.id))]); } catch { return ''; } };
   async function slAct(b, done) {
     const a = b.dataset.sl; const i = +b.dataset.i;
     const m = (x) => ({ id: x.id, handle: x.handle, title: x.title, image: x.images?.[0]?.originalSrc || x.image || '' });
@@ -1572,6 +1573,11 @@
     if (a === 'rm') sl.products.splice(i, 1);
     if (a === 'up' && i > 0) [sl.products[i - 1], sl.products[i]] = [sl.products[i], sl.products[i - 1]];
     if (a === 'reload') { slLoad(done, true); return; }
+    if (a === 'openpin') { // 打开合集排序清单会关掉这个窗口:有没保存的修改先提醒一次
+      const x = byId(b.dataset.id); if (!x) return;
+      if (ed?.__it && sl.snap && slSnap(ed.__it) !== sl.snap && !b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '有没保存的修改,再点一次丢掉并打开'; return; }
+      closeDrawer(); openEditor(x.kind, x.id); return;
+    }
     if (a === 'big') { // 大图排序:藏起左边的设置,产品网格铺满整个窗口(2026-10-19 用户:右边那一栏太小不方便看)
       sl.big = !sl.big; slQ = '';
       const body = $('#drawer .drawer__b'); body?.classList.toggle('drawer__b--slsort', sl.big);
@@ -1594,14 +1600,14 @@
     return { list: [...head, ...base.filter((p) => !hs.has(numId(p.id)))], baseIds: base.map((p) => numId(p.id)) };
   }
   const SL_ST = { instock: 'In Stock', preorder: 'Pre Order', oos: 'Out of Stock' };
-  const slCardHtml = (p, pos, why, pin, over) => {
+  const slCardHtml = (p, pos, why, pin, over, lst) => {
     const id = numId(p.id);
     const dim = slQ && !String(p.title || '').toLowerCase().includes(slQ.toLowerCase());
-    return `<div class="slcard${pin ? ' is-pin' : ''}${why ? ' is-out' : ''}${over ? ' is-overlimit' : ''}${dim ? ' is-dim' : ''}" draggable="true" data-slid="${id}">
+    return `<div class="slcard${pin ? ' is-pin' : lst ? ' is-list' : ''}${why ? ' is-out' : ''}${over ? ' is-overlimit' : ''}${dim ? ' is-dim' : ''}" draggable="true" data-slid="${id}">
       ${slPos === id ? `<input class="slcard__pos" type="number" min="1" data-slposin="${id}" value="${pos || ''}" aria-label="移到第几位"/>`
         : `<button type="button" class="slcard__n" data-slpos="${id}" title="点一下,输入要移到第几位">${pos || '—'}</button>`}
       <span class="slcard__img" ${p.image ? `style="background-image:url('${esc(p.image)}')"` : ''}>${p.discount > 0 ? `<span class="slcard__off">${p.discount}% OFF</span>` : ''}</span>
-      <span class="slcard__t">${esc(p.title)}</span><span class="slcard__p">${p.compareStr ? `<s>${esc(p.compareStr)}</s> ` : ''}<b>${esc(p.priceStr || '')}</b></span>
+      <span class="slcard__t">${esc(p.title)}</span>${lst && !pin ? '<span class="slcard__src">来自合集排序</span>' : ''}<span class="slcard__p">${p.compareStr ? `<s>${esc(p.compareStr)}</s> ` : ''}<b>${esc(p.priceStr || '')}</b></span>
       ${why ? `<span class="slcard__why">现在不会出现:${esc(why)}</span>` : `<span class="slcard__s slcard__s--${esc(p.status)}">${SL_ST[p.status] || esc(p.status)}</span>`}
       <span class="slcard__acts"><button type="button" data-sltop="${id}" title="移到第 1 位">置顶</button><a href="${esc((S.store?.domain || '') + (p.url || ''))}" target="_blank" rel="noopener" draggable="false">前台↗</a></span></div>`;
   };
@@ -1622,12 +1628,13 @@
     const { list } = slOrder(d, link, opts, all);
     const limit = Math.max(0, parseInt(v.limit, 10) || 0);
     const pinned = new Set(sl.products.map((p) => numId(p.id)));
+    const fromPin = new Set(ap && !v.sort ? (ap.products || []).map((p) => numId(p.id)) : []); // 蓝框:顺序来自合集排序清单
     const lost = sl.products.filter((x) => !list.some((p) => numId(p.id) === numId(x.id)));
     const MAXC = 150; let n = 0;
     const cards = list.slice(0, MAXC).map((p) => {
       const why = SL.whyOut(p, link); const pos = why ? null : ++n;
       return (limit && pos === limit + 1 ? `<div class="slcut">—— 最多显示 ${limit} 个,下面的不显示(拖到这条线上面就会显示)——</div>` : '')
-        + slCardHtml(p, pos, why, pinned.has(numId(p.id)), !!(limit && pos > limit));
+        + slCardHtml(p, pos, why, pinned.has(numId(p.id)), !!(limit && pos > limit), fromPin.has(numId(p.id)));
     }).join('');
     const bigBar = sl.big ? `<div class="slbig__bar"><button type="button" class="btn btn-sm" data-sl="big">← 返回链接设置</button><b>排序 · ${esc(v.name || c.title)}</b>
         <input class="inp inp--sm" data-slq placeholder="找产品(不会打乱顺序)" value="${esc(slQ)}"/><button type="button" class="btn btn-sm btn-ghost" data-sl="reload">刷新</button></div>` : '';
@@ -1635,12 +1642,12 @@
       <p class="slsum">显示 <b>${view.list.length}</b> 个产品${view.total > view.list.length ? `(符合条件的有 ${view.total} 个,只取前 ${view.list.length} 个)` : ''} · 这个合集一共 ${d.total} 个产品,打折的 ${onSale} 个${d.truncated ? ' · ⚠️ 合集太大,前台只读前 1000 个' : ''}</p>
       ${view.pins.some((p) => !p.shown) && !all ? `<div class="note note--warn note--sm">${view.pins.filter((p) => !p.shown).map((p) => `固定了位置的「${esc(p.title)}」现在不会显示:${esc(p.why)}`).join('<br>')}${lost.length ? '<br>符合条件后(比如开始打折)会出现在你排的位置;不过在下面拖动别的产品时,它们会挪到固定部分的最后 —— 想一起排,勾上「也显示现在不会出现的产品」。' : ''}</div>` : ''}
       ${sl.products.length > 50 ? `<div class="note note--warn note--sm">前台最多固定前 50 个位置,你现在固定了 ${sl.products.length} 个 —— 第 51 个以后按「排序」排。</div>` : ''}
-      ${ap && !v.sort ? `<p class="muted">「和合集平时一样」包括正在生效的合集排序清单「${esc(titleOf(ap))}」。</p>` : ''}
+      ${slSrcHtml(c, v, d, view, pinned)}
       <div class="slord">
         <label class="tgl tgl--sm"><input type="checkbox" data-slall ${all ? 'checked' : ''}/><span class="tgl__ui"></span><span>也显示现在不会出现的产品<span class="muted">(没打折 / 没货 / 折扣不够的,灰色;活动前先排好,开始打折后就在这个位置出现)</span></span></label>
         ${sl.products.length ? `<span class="slord__sum">固定了前 <b>${sl.products.length}</b> 个位置</span><button type="button" class="btn btn-sm btn-ghost" data-slclear title="清掉手动排的顺序">全部按排序规则</button>` : ''}
       </div>
-      <p class="muted pv-cap">拖动卡片调整顾客看到的顺序,或点左上角的序号输入第几位;红框 = 固定了位置。没动过的按左边的「排序」排,以后新打折的产品排在固定的后面。</p>
+      <p class="muted pv-cap">拖动卡片调整顾客看到的顺序,或点左上角的序号输入第几位;红框 = 这条链接固定了位置${fromPin.size ? ',蓝框 = 位置来自合集排序清单' : ''}。没动过的按左边的「排序」排,以后新打折的产品排在固定的后面。</p>
       ${cards ? `<div class="slgrid${sl.big ? ' slgrid--big' : ''}">${cards}</div>${list.length > MAXC ? `<p class="muted">……还有 ${list.length - MAXC} 个,按排序规则排在后面</p>` : ''}` : '<p class="muted">按现在的设置一个产品都没有,顾客打开会看到「没有产品」。</p>'}
       <p class="muted pv-cap">数据来自前台(和顾客看到的一样),两分钟内不重复读;刚改过价格 / 库存就点「刷新」。</p>`;
   }
@@ -1660,6 +1667,43 @@
     const out = [];
     for (const v of S.pmodules || []) for (const t of v.tabs || []) if (t.source !== 'products' && t.collection && numId(t.collection.id) === numId(cid)) out.push({ v, t });
     return out;
+  }
+  // 这个合集还没结束的促销链接(2026-10-26 用户:看不出促销链接的置顶和合集排序是什么关系)
+  //   排序留空(和合集平时一样)= 链接里打折的产品沿用合集排序清单的顺序,链接自己固定的排在更前面;选了别的排序 = 不跟合集排序
+  const salesOf = (cid) => (S.salelinks || []).filter((x) => x.collection && numId(x.collection.id) === numId(cid) && !['ended', 'rejected'].includes(status(x)));
+  // 置顶清单编辑器第 1 段:这个合集的促销链接各自跟不跟这份清单
+  function wxSlHtml() {
+    if (!wx?.collection) return '<span class="muted">先选合集</span>';
+    const links = salesOf(wx.collection.id);
+    if (!links.length) return '<span class="muted">没有 —— 这份清单只管合集本来那一页</span>';
+    return `<div class="slrel">${links.map((x) => {
+      const k = (x.products || []).length;
+      return `<div class="slrel__i"><span class="slrel__t">${badge(x)}<b>${esc(titleOf(x))}</b><span class="mono muted">?onsale${x.slug ? `=${esc(x.slug)}` : ''}</span></span>
+        <span class="slrel__w">${!x.sort
+          ? `<span class="tag tag--accent">跟着这里的顺序</span>这份清单生效时,链接里<b>打折的</b>产品也照这里排${k ? `;链接自己固定的 ${k} 个排在它们前面` : ''}`
+          : `<span class="tag">不受这里影响</span>链接用自己的排序「${esc(SORT_LABEL()[x.sort] || x.sort)}」${k ? `,另外固定了 ${k} 个` : ''}`}</span>
+        <button type="button" class="btn btn-sm btn-ghost" data-wx="opensl" data-id="${esc(x.id)}">打开</button></div>`;
+    }).join('')}</div>`;
+  }
+  // 促销链接预览上面:顾客看到的顺序怎么来的(三层,和 sale-link.js 的 saleView 同一个顺序)
+  function slSrcHtml(c, v, d, view, pinned) {
+    const ap = activePin(numId(c.id));
+    const k = pinned.size;
+    const follow = !v.sort;
+    const apIds = new Set(follow && ap ? (ap.products || []).map((p) => numId(p.id)) : []);
+    const fromList = view.list.filter((p) => apIds.has(numId(p.id)) && !pinned.has(numId(p.id))).length;
+    const next = follow && !ap ? pinsOf(numId(c.id)).filter((p) => status(p) === 'scheduled').sort((a, b) => (win(a).start ?? 0) - (win(b).start ?? 0))[0] : null;
+    const r = d.sortRule || { off: false, pinManual: 12, pinNew: 0 };
+    const rule = r.off ? '按合集后台的顺序' : CS.describe({ ...r, sortOrder: 'MANUAL' });
+    const li = (n, body, cls = '') => `<li class="slsrc__i${cls}"><i>${n}</i><div>${body}</div></li>`;
+    return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序(从上往下)</li>
+      ${li(1, `<b>这条链接固定的</b> ${k ? `${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
+      ${li(2, follow
+        ? ap ? `<b>合集排序清单「${esc(titleOf(ap))}」</b>里打折的 ${fromList} 个 <span class="slsrc__lg slsrc__lg--list"></span>蓝框<em>${win(ap).end != null ? `到 ${fDT(win(ap).end)} 结束,之后这一层就没有了` : '长期生效'};要改在「合集排序」里改 <button type="button" class="linkbtn" data-sl="openpin" data-id="${esc(ap.id)}">打开这份清单</button></em>`
+          : `<b>合集排序清单</b> <span class="muted">这一刻没有生效的</span>${next ? `<em>「${esc(titleOf(next))}」${fDT(win(next).start)} 开始,到时这里会跟着变</em>` : ''}`
+        : `<b>合集排序清单</b> <span class="muted">不跟</span><em>${ap ? `「${esc(titleOf(ap))}」正在生效,但` : ''}这条链接的排序选了「${esc(SORT_LABEL()[v.sort] || v.sort)}」,不看合集排序;想跟着就把排序改回「和合集平时一样」</em>`, follow ? '' : ' is-off')}
+      ${li(3, `<b>其余打折的</b> ${follow ? `按合集默认设置:${esc(rule)}` : `按「${esc(SORT_LABEL()[v.sort] || v.sort)}」`}`)}
+    </ol>`;
   }
   // ================= 合集默认排序(合集页「平时」怎么排;规则在 /lib/col-sort.js,和服务器同一份)=================
   // 没有置顶清单生效、顾客也没选别的 Sort by 时,搜索引擎在合集页默认怎么排。三种:
@@ -1903,7 +1947,7 @@
         need ? '' : `${MODE === 'live' && isApprover() ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶清单</button>`)}
       ${subTabsHtml('pnview', pnView, [['pins', '置顶清单', (S.pins || []).length], ['defsort', '默认设置']])}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
-      <div class="note note--sm">💡 只想排<b>促销链接里</b>的顺序(只显示打折产品的那页)?打开那条促销链接,右边的产品直接拖就行,不用在这里排整个合集。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
+      <div class="note note--sm">💡 这里排的是<b>合集本来那一页</b>。促销链接(?onsale,只放打折产品)是另一页:它的排序选「和合集平时一样」时,打折的产品会<b>沿用这里的顺序</b>,链接自己固定的再排到最前;选了别的排序就不受这里影响。只想排打折那一页?打开那条促销链接直接拖。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
       ${alertsHtml(['pin'])}
       <section class="panel">
         <div class="panel__h"><h3>这一刻各合集的排序</h3><span class="muted">${pnAt == null ? '现在' : `${fDT(T)} · ${relDay(T)}`}</span></div>
@@ -1915,6 +1959,7 @@
         const act = activePin(g.cid, T);
         // 首页哪些模块页签也吃这个合集(同名的只说一次)
         const used = [...new Set(modTabsUsing(g.cid).map((u) => `${MODULE_CN[u.v.module]}·${tabLabel(u.t)}`))];
+        const sls = g.cid === '?' ? [] : salesOf(g.cid); const slFollow = sls.filter((x) => !x.sort);
         const cs = (S.colState || {})[String(g.cid)];
         const sf = (S.sortFlags || {})[String(g.cid)];
         const open = pnOpen.has(g.cid);
@@ -1928,6 +1973,7 @@
             ${sf ? `<span class="tag tag--accent" title="「${esc(pinNm(sf))}」生效期间合集页完全按清单顺序显示,结束自动恢复默认设置">完全按清单顺序</span>` : ''}
             ${!act ? '<span class="muted">这一刻没有清单生效</span>' : ''}
             ${used.length ? `<span class="muted" title="${esc(used.map((u) => `首页「${u}」`).join('、'))}也用这个合集">首页${esc(used[0])}${used.length > 1 ? ` 等 ${used.length} 个页签` : ''}也用</span>` : ''}
+            ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${x.sort ? '用自己的排序,不跟这里' : '跟着这里的顺序(只看打折的)'}`).join('\n'))}">${slFollow.length ? `促销链接${slFollow.length === 1 ? `「${esc(titleOf(slFollow[0]))}」` : ` ${slFollow.length} 条`}也跟着这个顺序` : `${sls.length} 条促销链接用自己的排序`}</span>` : ''}
             ${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm btn-ghost" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本</button></span>` : ''}</div>
           ${cs?.hold ? `<div class="note note--warn note--sm">有人在 Shopify 后台手动改过这个合集的顺序,<b>app 已经停手</b>,不会覆盖别人的改动。
               <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按清单重新排</button>
@@ -3423,7 +3469,8 @@
             ${fld('清单名称', inp('name', it.name, '如:Flash Sale 第 1 天'))}
             <div id="wx-coll">${pinBoxHtml('coll')}</div>
           </div>
-          <div class="pdef"><span class="pdef__k">合集默认设置<em>合集自己的,没有清单生效时这样排;改了马上生效</em></span><div id="wx-cs"><span class="muted">先选合集</span></div></div>`)}
+          <div class="pdef"><span class="pdef__k">合集默认设置<em>合集自己的,没有清单生效时这样排;改了马上生效</em></span><div id="wx-cs"><span class="muted">先选合集</span></div></div>
+          <div class="pdef pdef--sl"><span class="pdef__k">这个合集的促销链接<em>只放打折产品的另一页(?onsale),会不会跟着这份清单排</em></span><div id="wx-sl">${wxSlHtml()}</div></div>`)}
         ${edSec(2, '清单设置', '', `<div class="pgrid2">
             ${blk('产品排序', '这份清单生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
             ${blk('产品卡', '产品页、搜索和合集页', `<div class="pset__tgls">
@@ -4125,13 +4172,14 @@
       const cb = $('#wx-coll'); if (cb) cb.innerHTML = pinBoxHtml('coll');
       const ob = $('#wx-opts'); if (ob) ob.innerHTML = pinBoxHtml('opts');
       syncWxCs(redrawWx);
+      const slb = $('#wx-sl'); if (slb) slb.innerHTML = wxSlHtml();
       const pb = $('#wx-plans'); if (pb) pb.innerHTML = wxPlansHtml();
       if (had) { const q = $('#wx-q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
       refreshPv();
       wxStockTick(redrawWx);
     };
     if (it.kind === 'pin' && wx.collection) loadWxAll(redrawWx); // 打开就去读这个合集现在的顺序
-    if (it.kind === 'salelink') { redrawSl(); slLoad(refreshPv); slLoadTpl(); }
+    if (it.kind === 'salelink') { redrawSl(); slLoad(refreshPv); slLoadTpl(); sl.snap = slSnap(base); }
     if (it.kind === 'callout') { refreshScope(); coLoadOptions(); coDeal = null; coLoadDeal(it); }
     f.addEventListener('click', async (e) => {
       const lk = e.target.closest('[data-lk]');
@@ -4176,9 +4224,10 @@
         toast(`${pl.prods.length} 个产品放到了最前面(按改价计划里的顺序)`);
         redrawWx(); return;
       }
-      if (a === 'hist') { // 打开历史会关掉编辑窗口:有没保存的调整就先提醒一次
+      if (a === 'hist' || a === 'opensl') { // 打开历史 / 促销链接会关掉编辑窗口:有没保存的调整就先提醒一次
         const key = (o) => JSON.stringify([(o.products || []).map((p) => numId(p.id)), (o.hidden || []).map((p) => numId(p.id)), !!o.onlyListed]);
-        if (key(readForm(base)) !== key(base) && !w.dataset.sure) { w.dataset.sure = '1'; w.textContent = '有还没保存的调整,再点一次会丢掉并打开历史'; return; }
+        if (key(readForm(base)) !== key(base) && !w.dataset.sure) { w.dataset.sure = '1'; w.textContent = a === 'hist' ? '有还没保存的调整,再点一次会丢掉并打开历史' : '有没保存的调整,再点一次丢掉并打开'; return; }
+        if (a === 'opensl') { const x = byId(w.dataset.id); if (x) { closeDrawer(); openEditor(x.kind, x.id); } return; }
         const c = wx.collection; closeDrawer(); openColHistory(numId(c.id), c.title); return;
       }
       if (a === 'pos') { wxPosEdit = i; redrawWx(); const inpEl = $('#pg-posin'); if (inpEl) { inpEl.focus(); inpEl.select(); } return; }

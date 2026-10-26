@@ -163,6 +163,8 @@
 - **促销链接**(2026-10-15,`salelink` / `cgp_sale_link`):`/collections/<合集>?onsale[=<后缀>]`。规则在 `src/sale-link.js`(纯函数,浏览器经 `/lib/sale-link.js` 共用),
   **和主题 `assets/cgp-search-app.js` 的 `SALE` 必须一致**(只要打折的 → 有货 / 最低折扣 → 「和合集平时一样」或指定排序 → 置顶放最前 → 最多几个),改一边要同步另一边。
   置顶只决定顺序,不绕过打折 / 有货条件。同一个合集后缀不能重复(不同合集可以同名)。没生效时主题拿不到这条设置,`?onsale=后缀` 自动等于不带后缀。
+  **和合集排序的关系要摆在界面上**(2026-10-26 用户:看不出两边的置顶什么关系):顺序三层 = ① 链接自己固定的(红框)→ ② 排序选「和合集平时一样」时,生效中的合集排序清单里打折的(蓝框「来自合集排序」)→ ③ 其余按合集默认设置 / 选的排序。
+  促销链接预览上面画这三层(`slSrcHtml`);置顶清单编辑器第 1 段列出这个合集的促销链接、各自跟不跟这份清单(`wxSlHtml`,`salesOf`);合集排序列表每个合集标「促销链接 X 也跟着这个顺序」。两个编辑器能互相「打开」,有没保存的修改先提醒一次。
   编辑器预览 `GET /api/schedule/sale-preview` 读**前台**主题的 cgp-json(`STOREFRONT_ORIGIN` 或店铺主域名;harness 里是假前台),两分钟缓存。
 - **历史记录**(2026-10-13):网站内容 `src/item-history.js`(`<店>.itemhist.json`,每条 60 版 / 180 天)、改价计划 `src/price/plan-history.js`(`price/<店>.planhist.json`,每个 40 版)、
   合集顺序 `src/col-history.js`(`<店>.colhist.json`)。`/api/schedule/act`、`/api/price/act` 动作前后对比,动过的那条记一版(状态、能编辑的全部字段、待审核的修改);一样的不重复记;删掉的保留。
