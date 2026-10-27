@@ -19,6 +19,9 @@ const vShape = (v) => ({ id: v.gid, title: v.title, sku: v.sku, price: v.price, 
   inventoryItem: { unitCost: { amount: (Number(v.orig.price) * 0.55).toFixed(2) } } });
 const pShape = (p) => ({ id: p.gid, title: p.title, handle: p.handle, vendor: p.vendor, productType: p.type, tags: p.tags, status: 'ACTIVE',
   featuredMedia: p.image ? { preview: { image: { url: p.image } } } : null,
+  // 选项(联合推广的卡口过滤要看):按款式名「A / B」逐位拆开
+  options: [0, 1, 2].map((i) => [...new Set(p.variants.map((v) => String(v.title || '').split(' / ')[i]).filter(Boolean))]).filter((vs) => vs.length)
+    .map((vs, i) => ({ name: i ? `Option ${i + 1}` : 'Choose', optionValues: vs.map((name) => ({ name })) })),
   variants: { nodes: p.variants.map((v) => vShape(variants.get(G('ProductVariant', v.id)))) } });
 const page = (list, first, after) => {
   const start = after ? Number(after) : 0; const nodes = list.slice(start, start + first);

@@ -1893,6 +1893,14 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .slsrc .warn { color: var(--danger); }
 /* 联合推广的条件组(每个牌子一组):页签 + 当前组的名字 */
 .cogroups { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px dashed var(--line, #e3e6ea); }
+/* 联合推广的卡口过滤(2026-10-27) */
+.comount { display: flex; align-items: center; gap: 10px; margin: 2px 0 4px; }
+.comount .inp { flex: 1; min-width: 0; }
+.comount__h { font-size: 12px; margin: 0 0 10px; }
+.comount__d { margin-top: 8px; font-size: 13px; }
+.comount__d summary { cursor: pointer; }
+.comount__list { display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow: auto; margin: 6px 0 0 14px; font-size: 12px; }
+.comount__list a { color: inherit; }
 .cogtabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .cogtab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--line, #e3e6ea); border-radius: 6px; background: #fff; color: inherit; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .cogtab em { font-style: normal; font-size: 12px; font-weight: 500; color: var(--muted, #6b7280); }

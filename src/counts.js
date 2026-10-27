@@ -9,6 +9,7 @@ import { toGid } from './metaobjects.js';
 import { ActionError } from './schedule-actions.js';
 import { RULES, hasRules, ownSource } from './collection-order.js';
 import { NEW_COLLECTIONS } from './shopify.js';
+import { mountVerdict, mountFilterOf } from './mounts.js';
 
 const numId = (id) => String(id || '').split('/').pop();
 const q = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -65,28 +66,48 @@ const promoEx = (promo, promos) => [...(Array.isArray(promos) ? promos : []), pr
 //   ruleGroups = [{ name, rules }],组和组之间「或」(命中任一组就算),组里还是每条都要满足。没有 ruleGroups = 只有 rules 这一组。
 export const ruleGroupsOf = ({ rules = [], ruleGroups = null } = {}) =>
   (Array.isArray(ruleGroups) && ruleGroups.length ? ruleGroups.map((g) => coRules(g?.rules)) : [coRules(rules)]).filter((rs) => rs.length);
+// 卡口过滤(2026-10-27,src/mounts.js):开着时连产品的选项一起拉(Shopify 一个产品最多 3 个选项),每页 50 个免得查询太贵
+const MOUNT_SEL = 'options(first: 3) { name optionValues { name } }';
+const mountOf = (p, mf) => mountVerdict({ title: p.title, options: (p.options || []).map((o) => ({ name: o.name, values: (o.optionValues || []).map((v) => v.name) })) }, mf);
+const brief = (p) => ({ id: p.id, title: p.title, handle: p.handle });
 // 一组条件命中的全部产品(逐页拉,标题条件在这里比):id → { id, title, handle, status }
-async function groupHits(ctx, gql, rs, exIds, cap) {
+//   mf = 不兼容卡口名单(卡口过滤开着时):只有不兼容卡口的产品不算,记进 mount.out;选项和标题都没写卡口的照算,记进 mount.unknown
+async function groupHits(ctx, gql, rs, exIds, cap, mf = null, mount = null) {
   const hits = new Map(); let after = null; let scanned = 0; let capped = false;
   const query = calloutQuery(rs);
   do {
-    const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { products(first: 250, after: $after, query: $q, sortKey: TITLE) { nodes { id title handle status } pageInfo { hasNextPage endCursor } } }`, { q: query, after });
-    for (const p of d.products.nodes) if (!exIds.has(numId(p.id)) && calloutTitleOk(rs, p.title)) hits.set(numId(p.id), p);
+    const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { products(first: ${mf ? 50 : 250}, after: $after, query: $q, sortKey: TITLE) { nodes { id title handle status${mf ? ' ' + MOUNT_SEL : ''} } pageInfo { hasNextPage endCursor } } }`, { q: query, after });
+    for (const p of d.products.nodes) {
+      if (exIds.has(numId(p.id)) || !calloutTitleOk(rs, p.title)) continue;
+      if (mf) {
+        const v = mountOf(p, mf);
+        if (v === 'out') { mount?.out.set(numId(p.id), brief(p)); continue; }
+        if (v === 'unknown') mount?.unknown.set(numId(p.id), brief(p));
+      }
+      hits.set(numId(p.id), p);
+    }
     after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
     scanned += d.products.nodes.length;
     if (after && scanned >= cap) { capped = true; break; }
   } while (after);
   return { hits, capped };
 }
-export async function calloutScope(ctx, { rules = [], ruleGroups = null, products = [], exProducts = [], promo = null, promos = [] }, gql = graphql) {
+export async function calloutScope(ctx, { rules = [], ruleGroups = null, products = [], exProducts = [], promo = null, promos = [], joint = false, mountFilter, badMounts } = {}, gql = graphql) {
   const groups = ruleGroupsOf({ rules, ruleGroups });
-  if (groups.length > 1) { // 好几组:每组逐页拉,合在一起(同一个产品命中两组只算一次);每组各命中多少个也带回去给编辑器
+  const mf = mountFilterOf({ joint, mountFilter, badMounts });
+  if (groups.length > 1 || (mf && groups.length)) { // 好几组 / 开了卡口过滤:每组逐页拉,合在一起(同一个产品命中两组只算一次);每组各命中多少个也带回去给编辑器
     const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), ...promoEx(promo, promos)].filter(Boolean));
     const incIds = products.map((p) => numId(p.id || p)).filter((id) => id && !exIds.has(id));
     const all = new Map(); const per = []; let capped = false;
-    for (const rs of groups) { const r = await groupHits(ctx, gql, rs, exIds, 2000); per.push(r.hits.size); if (r.capped) capped = true; r.hits.forEach((v, k) => all.set(k, v)); }
-    incIds.forEach((id) => { if (!all.has(id)) all.set(id, null); });
-    return { total: all.size, sample: await coSample(ctx, gql, [...all.keys()], 12), capped, groups: per };
+    const mount = mf ? { out: new Map(), unknown: new Map() } : null;
+    for (const rs of groups) { const r = await groupHits(ctx, gql, rs, exIds, 2000, mf, mount); per.push(r.hits.size); if (r.capped) capped = true; r.hits.forEach((v, k) => all.set(k, v)); }
+    incIds.forEach((id) => { if (!all.has(id)) all.set(id, null); mount?.out.delete(id); }); // 「一定显示」的不管卡口
+    const res = { total: all.size, sample: await coSample(ctx, gql, [...all.keys()], 12), capped, ...(groups.length > 1 ? { groups: per } : {}) };
+    if (mount) {
+      const list = (m) => [...m.values()].sort((a, b) => String(a.title).localeCompare(String(b.title))).slice(0, 300);
+      res.mount = { bad: mf, outN: mount.out.size, out: list(mount.out), unknownN: mount.unknown.size, unknown: list(mount.unknown) };
+    }
+    return res;
   }
   const rs = groups[0] || [];
   const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), ...promoEx(promo, promos)].filter(Boolean));
@@ -127,8 +148,9 @@ export async function calloutScope(ctx, { rules = [], ruleGroups = null, product
 }
 // 联合推广(2026-10-22):按条件算出**全部**命中的产品 id(同步进「兼容产品」合集用),和 calloutScope 同一套判断。
 //   exCollections = 这些合集里的产品不算(比如推广产品自己那个系列:Smart Fusion 的套装不能算进「兼容镜头」)
-export async function calloutIds(ctx, { rules = [], ruleGroups = null, products = [], exProducts = [], promo = null, promos = [], exCollections = [] }, gql = graphql, { cap = 3000 } = {}) {
+export async function calloutIds(ctx, { rules = [], ruleGroups = null, products = [], exProducts = [], promo = null, promos = [], exCollections = [], joint = false, mountFilter, badMounts }, gql = graphql, { cap = 3000 } = {}) {
   const groups = ruleGroupsOf({ rules, ruleGroups });
+  const mf = mountFilterOf({ joint, mountFilter, badMounts }); const outIds = new Set();
   const exIds = new Set([...exProducts.map((p) => numId(p.id || p)), ...promoEx(promo, promos)].filter(Boolean));
   for (const c of exCollections) {
     let after = null;
@@ -144,15 +166,19 @@ export async function calloutIds(ctx, { rules = [], ruleGroups = null, products 
     const query = calloutQuery(rs);
     let after = null; let scanned = 0;
     do {
-      const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { products(first: 250, after: $after, query: $q, sortKey: TITLE) { nodes { id title } pageInfo { hasNextPage endCursor } } }`, { q: query, after });
-      for (const p of d.products.nodes) if (!exIds.has(numId(p.id)) && calloutTitleOk(rs, p.title)) ids.add(numId(p.id));
+      const d = await gqlRetry(ctx, gql, `query($q: String!, $after: String) { products(first: ${mf ? 50 : 250}, after: $after, query: $q, sortKey: TITLE) { nodes { id title${mf ? ' ' + MOUNT_SEL : ''} } pageInfo { hasNextPage endCursor } } }`, { q: query, after });
+      for (const p of d.products.nodes) {
+        if (exIds.has(numId(p.id)) || !calloutTitleOk(rs, p.title)) continue;
+        if (mf && mountOf(p, mf) === 'out') { outIds.add(numId(p.id)); continue; } // 只有不兼容卡口:不放进兼容产品 Collection
+        ids.add(numId(p.id));
+      }
       after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
       scanned += d.products.nodes.length;
       if (after && scanned >= cap) { capped = true; break; }
     } while (after);
   }
-  for (const p of products) { const id = numId(p.id || p); if (id && !exIds.has(id)) ids.add(id); }
-  return { ids: [...ids], capped };
+  for (const p of products) { const id = numId(p.id || p); if (id && !exIds.has(id)) { ids.add(id); outIds.delete(id); } } // 「一定显示」的不管卡口
+  return { ids: [...ids], capped, ...(mf ? { mountOut: outIds.size } : {}) };
 }
 // 前几个命中的产品(带图,给编辑器看)
 async function coSample(ctx, gql, ids, n) {

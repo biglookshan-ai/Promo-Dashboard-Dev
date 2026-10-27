@@ -34,6 +34,8 @@ export const EDIT_KEYS = ['image', 'imageId', 'title', 'subtitle', 'description'
   'badge', 'video', 'popTitle', 'points', 'cameras', 'camerasNote', 'kits',
   // 联合推广的条件组(2026-10-26):[{ id, name, rules }],组和组之间「或」;rules 仍存第一组(老代码 / 店里 rules 字段用)
   'ruleGroups',
+  // 联合推广的卡口过滤(2026-10-27,src/mounts.js):mountFilter = false 才关(没存 = 开);badMounts = 不兼容卡口名单(空 = 默认 RF / L / X / Z / MFT / EF-M / DL)
+  'mountFilter', 'badMounts',
   // 产品页推广块:推广的产品、链接文字、品牌、排除的产品 / 标签(其余沿用 title / text / link / image / collections / tags / products / priority)
   'promo', 'promos', 'linkText', 'vendors', 'exProducts', 'exTags', 'rules',
   // 主活动 / 子活动:活动属于哪个主活动(活动 id;只有一层)
@@ -119,6 +121,7 @@ export function validate(it) {
     // 联合推广可以有好几组条件(每个牌子一组,组和组之间「或」);普通推广块只有 rules 一组
     if (it.ruleGroups != null && (!Array.isArray(it.ruleGroups) || it.ruleGroups.length > 20 || it.ruleGroups.some((g) => !g || !Array.isArray(g.rules)))) return '条件组的格式不对(最多 20 组)';
     if (it.ruleGroups?.length && !it.joint) return '只有联合推广能分好几组条件';
+    if (it.badMounts != null && (!Array.isArray(it.badMounts) || it.badMounts.length > 30 || it.badMounts.some((m) => typeof m !== 'string' || !m.trim() || m.length > 30))) return '不兼容卡口的写法不对(用逗号隔开,最多 30 个,比如 RF, L, X, Z, MFT)';
     const groups = (it.ruleGroups?.length ? it.ruleGroups.map((g) => g.rules) : [it.rules || []]).map((rs) => (rs || []).filter((r) => (r.v || []).length));
     const rules = groups.flat();
     for (const g of groups) {

@@ -24,7 +24,7 @@ function fakeShop({ members = [], hits = [], promoMembers = [], automated = fals
       return { collection: { id: v.id, title: c === '900' ? 'Smart Fusion 兼容镜头' : 'Smart Fusion', sortOrder: 'MANUAL', ruleSet: auto ? { appliedDisjunctively: false } : null, sources: [],
         products: { nodes: [...cols[c]].map((id) => ({ id: `gid://shopify/Product/${id}` })), pageInfo: { hasNextPage: false } } } }; }
     if (q.includes('collection(id: $id) { products')) return { collection: { products: { nodes: [...cols[cid(v.id)]].map((id) => ({ id: `gid://shopify/Product/${id}` })), pageInfo: { hasNextPage: false } } } };
-    if (q.includes('products(first: 250')) { calls.push(['search', v.q]); return { products: { nodes: hits.map((h) => ({ id: `gid://shopify/Product/${h.id}`, title: h.title })), pageInfo: { hasNextPage: false } } }; }
+    if (/products\(first: (250|50),/.test(q)) { calls.push(['search', v.q]); return { products: { nodes: hits.map((h) => ({ id: `gid://shopify/Product/${h.id}`, title: h.title })), pageInfo: { hasNextPage: false } } }; }
     throw new Error('没想到的查询 ' + q.slice(0, 80));
   };
   return { gql, calls, mem: cols[900], promo: cols[800] };

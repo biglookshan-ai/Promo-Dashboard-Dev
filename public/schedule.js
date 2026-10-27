@@ -1418,8 +1418,21 @@
     if (MODE !== 'live') return '正式数据里会算出命中多少个产品,并在右边列出前几个';
     if (coRes == null || coRes === 'loading') return '正在算命中多少个产品…';
     if (coRes.error) return `没算出来:${esc(coRes.error)}`;
-    return `命中 <b>${coRes.total}${coRes.capped ? '+' : ''}</b> 个上架中的产品${coRes.capped ? '(条件太宽,只看了前 2000 个)' : ''};右边列出前几个,点开可以去前台核对`;
+    const m = coRes.mount;
+    const plist = (arr, n) => `<div class="comount__list">${arr.map((p) => `<a href="${esc(frontUrl(`/products/${p.handle}`))}" target="_blank" rel="noopener">${esc(p.title)}</a>`).join('')}${n > arr.length ? `<span class="muted">…还有 ${n - arr.length} 个</span>` : ''}</div>`;
+    const mh = m ? `${m.outN ? `<details class="comount__d"><summary>卡口不兼容、没算进去的 <b>${m.outN}</b> 个</summary>${plist(m.out, m.outN)}</details>` : ''}
+      ${m.unknownN ? `<details class="comount__d"><summary>选项和标题都没写卡口的 <b>${m.unknownN}</b> 个(照样算兼容,点开核对;不对的放进「排除产品」)</summary>${plist(m.unknown, m.unknownN)}</details>` : ''}` : '';
+    return `命中 <b>${coRes.total}${coRes.capped ? '+' : ''}</b> 个上架中的产品${coRes.capped ? '(条件太宽,只看了前 2000 个)' : ''};右边列出前几个,点开可以去前台核对${mh}`;
   };
+  // 联合推广的卡口过滤(2026-10-27 用户,规则在 src/mounts.js):只有不兼容卡口的产品不放进兼容产品 Collection
+  const CO_BAD_DEF = ['RF', 'L', 'X', 'Z', 'MFT', 'EF-M', 'DL'];
+  function coMountHtml() {
+    const on = ed.mountFilter !== false;
+    return `<div class="scope__lbl">卡口过滤 <em>看产品的选项和标题:只有不兼容卡口的产品不算兼容(产品页卡片、弹窗、活动页都不出现,KitBundle 也就不打折);有兼容款式的多卡口产品照算</em></div>
+      <div class="comount"><label class="tgl tgl--sm"><input type="checkbox" data-co-mf ${on ? 'checked' : ''}/><span class="tgl__ui"></span><span>${on ? '开着' : '关着'}</span></label>
+        <input class="inp" data-co-bad value="${esc((ed.badMounts || CO_BAD_DEF).join(', '))}" placeholder="${CO_BAD_DEF.join(', ')}" ${on ? '' : 'disabled'} aria-label="不兼容的卡口"/></div>
+      <p class="muted comount__h">不兼容的卡口,用逗号隔开(不分大小写,写 MFT 也认 M43 / Micro 4/3);写了 E、FE、PL、LPL、EF、Leica M 的算兼容。最好和 KitBundle 加购优惠里「Variants with these option values」写成一样。</p>`;
+  }
   const coDlHtml = () => {
     const o = coOpts || { vendors: [], types: [], tags: Object.keys(S.tagCounts || {}) };
     const dl = (id, arr) => `<datalist id="co-dl-${id}">${arr.map((v) => `<option value="${esc(v)}"></option>`).join('')}</datalist>`;
@@ -1466,6 +1479,7 @@
       <div class="scope__lbl">另外 <em>不看上面的条件</em></div>
       ${row('一定显示', `${ed.products.map((p, i) => pchip(p, 'products', i)).join('')}<button type="button" class="chipadd" data-pick="products">${I.plus}选择产品</button>`)}
       ${row('排除产品', `${ed.exProducts.map((p, i) => pchip(p, 'exProducts', i)).join('')}<button type="button" class="chipadd" data-pick="exProducts">${I.plus}选择产品</button>`)}
+      ${ed.joint ? coMountHtml() : ''}
       <div id="co-dls">${coDlHtml()}</div>
       <div class="scope__sum">${coSumHtml()}</div>`;
   }
@@ -1480,7 +1494,8 @@
       try {
         const joint = !!$('#ed-form [name="joint"]')?.checked;
         const r = await api('POST', '/api/schedule/callout-scope', { rules: coRulesOf(mine), ...(joint && mine.groups?.length > 1 ? { ruleGroups: mine.groups.map((g) => ({ name: g.name, rules: coRulesOf(g) })) } : {}),
-          products: mine.products, exProducts: mine.exProducts, promo: mine.promo, promos: joint ? mine.promos : [] });
+          products: mine.products, exProducts: mine.exProducts, promo: mine.promo, promos: joint ? mine.promos : [],
+          ...(joint ? { joint: true, mountFilter: mine.mountFilter !== false, badMounts: mine.badMounts || undefined } : {}) });
         if (ed !== mine) return; coRes = r;
       } catch (e) { if (ed !== mine) return; coRes = { error: e.message || String(e) }; }
       const sum = $('#ed-scope .scope__sum'); if (sum) sum.innerHTML = coSumHtml();
@@ -3271,6 +3286,7 @@
   const fld = (label, html, hint = '') => `<label class="fld"><span>${label}</span>${html}${hint ? `<em>${hint}</em>` : ''}</label>`;
   // 保存失败时把错误标到对应的字段上(2026-10-20 改版:以前只弹一句红字,不知道是哪一项)
   const ERR_FIELD = [
+    [/不兼容卡口/, '[data-co-bad]'],
     [/图片/, '[name="image"]'], [/公告文字/, '[name="text"]'], [/名称/, '[name="name"]'], [/标题/, '[name="title"]'],
     [/开始时间|开始/, '[name="start"]'], [/结束时间|晚于开始/, '[name="end"]'], [/选合集|请选合集|要排序的合集/, '#sl-coll, #wx-coll > .fld'], [/后缀/, '[name="slug"]'],
     [/页面模板/, '[name="view"]'], [/结束后要跳到/, '[name="afterEndUrl"]'], [/徽章链接/, '[name="badgeLinkUrl"]'], [/链接/, '[name="link"]'],
@@ -3930,6 +3946,10 @@
         v.ruleGroups = gs.length === 1 && g('joint')?.checked && String(gs[0].name || '').trim() ? [{ id: gs[0].id, name: String(gs[0].name).trim(), rules: slimR(gs[0].rules) }] : [];
         v.rules = slimR(gs.length ? gs[0].rules : ed.rules);
       }
+      if (g('joint')?.checked) { // 卡口过滤:没存 = 开;名单空 = 默认(没改过就不写,免得没动也算改了)
+        v.mountFilter = ed.mountFilter === false ? false : base.mountFilter != null ? true : undefined;
+        v.badMounts = ed.badMounts?.length ? ed.badMounts : base.badMounts != null ? [] : undefined;
+      }
       v.collections = []; v.tags = []; v.vendors = []; v.exTags = []; // 第一版的字段不再用(条件都在 rules 里)
       v.products = ed.products.map(slim); v.exProducts = ed.exProducts.map(slim); v.promo = slim(ed.promo);
       v.link = String(v.link || '').trim(); if (g('priority')) v.priority = +g('priority').value || 0;
@@ -4002,6 +4022,7 @@
     ed = { collections: [...(base.collections || [])], tags: [...(base.tags || [])], products: [...(base.products || [])], counts: base.pendingChange ? null : base.counts, larkLinks: [...(base.larkLinks || [])],
       co: base.kind === 'callout', vendors: [], exProducts: [...(base.exProducts || [])], exTags: [], promo: base.promo || null, promos: [...(base.promos?.length ? base.promos : base.promo ? [base.promo] : [])], rules: [], coLegacy: false,
       lensCollection: base.lensCollection || null, promoCollection: base.promoCollection || null, dealPct: base.dealPct || 10, newColl: {}, collNote: {}, __it: base,
+      mountFilter: base.mountFilter !== false, badMounts: Array.isArray(base.badMounts) && base.badMounts.length ? [...base.badMounts] : null,
       lpSteps: (base.lpSteps || []).map((x) => ({ t: x.t || '', d: x.d || '' })),
       kits: (base.kits || []).map((k) => ({ v: String(k.v), note: k.note || '', rec: !!k.rec })) };
     coVars = null;
@@ -4119,6 +4140,20 @@
           const st = $('#co-deal .codeal__st'); const a = $('#co-deal a.btn');
           if (a && coDeal?.status !== 'active') a.href = coDealUrl();
           if (st && coDeal?.status === 'active') { const el = $('#co-deal'); const keep = e.target.value; el.innerHTML = coDealHtml(base); const ni = el.querySelector('[data-co-pct]'); ni.value = keep; ni.focus(); }
+        }
+      });
+      f.addEventListener('change', (e) => { // 卡口过滤:开关 / 不兼容卡口名单
+        if (e.target.hasAttribute?.('data-co-mf')) {
+          ed.mountFilter = e.target.checked;
+          const inp = $('#ed-scope [data-co-bad]'); if (inp) inp.disabled = !ed.mountFilter;
+          const t = e.target.closest('.tgl')?.querySelector('span:last-child'); if (t) t.textContent = ed.mountFilter ? '开着' : '关着';
+          fetchCoScope(); return;
+        }
+        if (e.target.hasAttribute?.('data-co-bad')) {
+          const arr = [...new Set(String(e.target.value || '').split(/[,，;；\n]+/).map((x) => x.trim()).filter(Boolean))];
+          ed.badMounts = arr.length && arr.join(',').toUpperCase() !== CO_BAD_DEF.join(',') ? arr : null;
+          e.target.value = (ed.badMounts || CO_BAD_DEF).join(', ');
+          fetchCoScope();
         }
       });
       f.addEventListener('input', (e) => { // 条件组的名字(页签跟着变,不重画输入框)

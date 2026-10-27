@@ -21,6 +21,11 @@
 - 阶段 3:73 个产品的 `offer_*` 按日期并入活动、`promotion_tag` 并入活动、清理 `product_activity_event`(写产品数据,单独问用户)。
 
 ## 🏁 最近完成
+- **联合推广:卡口过滤**(2026-10-27,用户:兼容产品按牌子拉进来,会把只做 MFT / RF / 富士 X 的镜头也带进来,装不上 Sony E 的 Smart Fusion):
+  - 🔍 同步兼容产品 Collection 时逐个看产品的选项和标题(`src/mounts.js`):只有不兼容卡口的产品不放进去 —— 产品页卡片、弹窗、活动页都不出现;KitBundle 的加购优惠按这个 Collection 触发,也就不打折
+  - ✅ 有兼容款式的多卡口产品照算(不兼容的款式仍由 KitBundle「Variants with these option values」只让兼容款式打折);选项和标题都没写卡口的照算,编辑器里单独列出来给人核对;「一定显示」的不管卡口
+  - ⚙️ 联合推广默认开着,编辑器「兼容产品」一段可以关、改不兼容卡口名单(默认 RF / L / X / Z / MFT / EF-M / DL;MFT 也认 M43 / Micro 4/3);命中数后面列「卡口不兼容、没算进去的 N 个」「没写卡口的 N 个」
+  - 📊 线上实测(460 个):342 个有兼容卡口、38 个只有不兼容卡口(其中 27 个之前一直在打折:卡口只写在标题里,KitBundle 只看选项)、80 个没写卡口(多是 PL / 可换卡口的电影镜头)
 - **联合推广:多接口镜头只认兼容的款式**(2026-10-26,用户:RF / L / X / Z 这些无反卡口不兼容,老卡口能转接;不兼容的款式隐藏卡片、结账也不打折;弹窗镜头卡默认 E 口):
   - 名单在 KitBundle(加购优惠「Exclude → Variants with these option values」,KitBundle c9118f2),写进产品标记 triggerVariants,结账和主题都读它
   - 这里「一键去 KitBundle 建加购优惠」预填 `exopt=RF,L,X,Z,MFT,EF-M,DL`;主题:镜头页卡片按选中款式显示 / 隐藏,弹窗镜头卡默认兼容接口(E 口优先)

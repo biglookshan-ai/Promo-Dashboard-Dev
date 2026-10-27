@@ -64,12 +64,14 @@ export async function syncJoint(ctx, state, it, { gql, now = Date.now(), force =
   }
   let lens;
   try {
-    const { ids, capped } = await calloutIds(ctx, {
+    const { ids, capped, mountOut } = await calloutIds(ctx, {
       rules: it.rules, ruleGroups: it.ruleGroups, products: it.products, exProducts: it.exProducts, promos: (it.promos?.length ? it.promos : it.promo ? [it.promo] : []),
       exCollections: it.promoCollection?.id ? [it.promoCollection.id] : [],
+      joint: it.joint, mountFilter: it.mountFilter, badMounts: it.badMounts, // 卡口过滤(src/mounts.js):只有不兼容卡口的产品不放进去
     }, gql);
     lens = await syncMembers(ctx, gql, it.lensCollection, capped ? [] : ids, { force,
       emptyMsg: capped ? '条件命中的产品太多(超过 3000 个),没有同步 —— 把条件收窄一点' : '条件一个产品都没命中,Collection 没动' });
+    if (mountOut != null) lens.mountOut = mountOut;
   } catch (e) { lens = { ...fail(e), collection: { id: nid(it.lensCollection.id), title: it.lensCollection.title || '' } }; }
   const out = { at: now, ...lens, ...(promo ? { promo } : {}) };
   if (promo?.held) out.held = true;
@@ -79,7 +81,7 @@ export async function syncJoint(ctx, state, it, { gql, now = Date.now(), force =
 // 写进操作日志的几句话(保存后 / 立即同步 / 定时器共用):两个合集各一句;all = 没变化也写
 export function syncNotes(rep, { all = false } = {}) {
   const one = (x, what) => (x.error ? { failed: true, note: `同步${what}没成功:${x.error}` }
-    : all || x.added || x.removed ? { failed: false, note: `${what}「${x.collection?.title || ''}」:加了 ${x.added} 个、移出 ${x.removed} 个,现在 ${x.count} 个` } : null);
+    : all || x.added || x.removed ? { failed: false, note: `${what}「${x.collection?.title || ''}」:加了 ${x.added} 个、移出 ${x.removed} 个,现在 ${x.count} 个${x.mountOut ? `(卡口不兼容、没放进去的 ${x.mountOut} 个)` : ''}` } : null);
   return [rep.promo ? one(rep.promo, '推广产品 Collection') : null, one(rep, '兼容产品 Collection')].filter(Boolean);
 }
 

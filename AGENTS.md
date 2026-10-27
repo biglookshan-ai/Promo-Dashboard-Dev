@@ -161,6 +161,9 @@
   **条件组**(2026-10-26 用户:每个牌子筛选方法不一样,不想每个牌子复制一条推广):联合推广可以有 `ruleGroups = [{ id, name, rules }]`,组和组之间「或」、组里每条都要满足;
   `calloutScope` / `calloutIds` 用 `ruleGroupsOf()` 逐组拉再合并(scope 额外回 `groups` = 每组命中数),同步进同一个兼容产品合集;`rules` 仍存第一组(店里 rules 字段 / 普通推广块用)。
   只有联合推广能分组(普通推广块的条件主题要在 Liquid 里判断,没做分组)。编辑器:条件区上面一排组页签(`coGroupsHtml`,`ed.rules` 就是当前组的数组),「从别的推广块复制条件」把那张的条件变成新的一组、排除 / 一定显示的产品并进来。
+  **卡口过滤**(2026-10-27,`src/mounts.js`,纯函数):同步 / 算命中时看产品**选项和标题**,只有不兼容卡口的产品不算兼容(不进兼容产品 Collection → 卡片 / 弹窗 / 活动页 / KitBundle 折扣一起没了);
+  有兼容卡口(E / FE / PL / LPL / EF / Leica M / PV)的照算,都没写卡口的照算并在编辑器列出来。联合推广默认开(`mountFilter !== false`),`badMounts` 空 = 默认名单(和 KitBundle 预填的一样)。
+  开着时查询多拉 `options(first: 3) { name optionValues { name } }`、每页 50 个(查询费用);单个字母(E / L / X / Z / M)只在明显是卡口的上下文里算(写了 Mount、前面是相机牌子、旁边有别的卡口名、选项名叫 Mount、选项值只有这一个词),别让「1.33 x」变成富士 X。
   2026-10-23 主题改成「一段话卡片 + 点开弹窗」(主题仓库 snippets/cgp-joint-popup.liquid / cgp-joint-product.liquid / cgp-joint-pct.liquid,assets/cgp-joint.css / .js):
   卡片 = 优惠一句 + 标题 + 链接文字;A 面弹窗里推广产品一行一个(选套装、直接加购物车、显示搭配价),B 面弹窗里 8 张兼容产品卡片可直接加购;弹窗底部才链到活动页。
   **搭配价的百分比主题直接读 KitBundle 写在兼容产品上的 `custom.gift_trigger`(kind = deal)**,不读这里的 dealPct —— 两边不一致时以 KitBundle 为准(编辑器折扣行会提醒)。
