@@ -1232,7 +1232,7 @@
       const pct = x.dealPct || 10, n = coCount(x), vid = ytIdOf(x.video);
       const kicker = x.promoCollection?.title || x.promos?.[0]?.title || 'Smart Fusion';
       if (b) {
-        const t = String(x.promoTitle || '').trim() || `Buy with a compatible lens and save ${pct}%`;
+        const t = String(x.promoTitle || '').trim() || `Buy with a compatible lens and save an extra ${pct}%`;
         const sub = (String(x.promoText || '').trim() || '{n} compatible lenses qualify').replace('{n}', n);
         const imgs = img ? [img] : (coRes && coRes.sample ? coRes.sample.filter((p) => p.image).slice(0, 2).map((p) => p.image) : []);
         return `<span class="pv-jc"><span class="pv-jc__v pv-jc__v--img">${imgs.map((u) => `<i style="background-image:url('${esc(thumb(u, 160))}')"></i>`).join('')}</span>
@@ -1241,7 +1241,7 @@
       const thumbBox = vid ? `<span class="pv-jc__v" style="background-image:url('https://i.ytimg.com/vi/${esc(vid)}/mqdefault.jpg')"><em>▶</em></span>`
         : img ? `<span class="pv-jc__v pv-jc__v--img"><i style="background-image:url('${esc(thumb(img, 160))}')"></i></span>` : '';
       return `<span class="pv-jc${thumbBox ? '' : ' pv-jc--nov'}">${thumbBox}<span class="pv-jc__b"><span class="pv-jc__k">${x.badge ? `<i class="pv-jc__hot">${esc(x.badge)}</i>` : ''}${esc(kicker)}</span>
-        <b>${esc(x.title || '(还没写标题)')}</b><span><em>Save ${pct}%</em> when you buy it with this lens · <u>${esc(x.linkText || 'Learn more')}</u></span></span></span>`;
+        <b>${esc(x.title || '(还没写标题)')}</b><span><em>Save an extra ${pct}%</em> when you buy it with this lens · <u>${esc(x.linkText || 'Learn more')}</u></span></span></span>`;
     }
     return `<span class="pv-callout">${img ? `<span class="pv-callout__img" style="background-image:url('${esc(thumb(img, 160))}')"></span>` : ''}<span class="pv-callout__b">
     <span class="pv-callout__t">${esc(x.title || '(还没写标题)')}</span>${x.text ? `<span class="pv-callout__s">${esc(x.text)}</span>` : ''}${coLink(x) ? `<span class="pv-callout__m">${esc(x.linkText || 'Learn more')} →</span>` : ''}</span></span>`; };
@@ -1375,11 +1375,11 @@
             ${fld('说明(可不填)', inp('text', it.text, J ? 'With PDMOVIE SMART FUSION + LIVE AIR 4 SMART' : 'With PDMOVIE SMART FUSION + LIVE AIR 4 SMART'), J ? '有折扣时第二行自动写「Save 10% when you buy it with this lens」,没折扣才显示这句' : '灰色小字')}
             ${fld('链接文字', inp('linkText', it.linkText, 'Learn more'), '留空 = Learn more')}</div>
           ${J ? `<div class="co-cardf"><div class="co-cardf__h">推广产品页上的卡片 <em>比如 Smart Fusion 的页面</em></div>
-            ${fld('标题', inp('promoTitle', it.promoTitle, 'Buy with a compatible lens and save 10%'), '加粗的那一句,前面自动加红色 −10% 标签')}
+            ${fld('标题', inp('promoTitle', it.promoTitle, 'Buy with a compatible lens and save an extra 10%'), '加粗的那一句,前面自动加红色 −10% 标签。推广产品本身在打折时写 an extra 10%(前台网站自己的字会按有没有划线原价自动写 extra)')}
             ${fld('说明(可不填)', inp('promoText', it.promoText, '{n} manual lenses qualify'), '{n} 会换成兼容产品的数量;空 = {n} compatible lenses qualify')}
             ${fld('链接文字', inp('promoLinkText', it.promoLinkText, 'See compatible lenses'), '留空 = See compatible products')}</div>` : ''}
         </div>
-        ${J ? fld('优惠一句话', inp('offer', it.offer, '10% off PDMOVIE Smart Fusion with any compatible lens'), '活动页顶部深色细条上的一句。真正的折扣在 KitBundle 的加购优惠里设,数字要和这里一致') : ''}
+        ${J ? fld('优惠一句话', inp('offer', it.offer, 'Get an extra 10% off PDMOVIE Smart Fusion with any compatible lens'), '活动页顶部深色细条上的一句。真正的折扣在 KitBundle 的加购优惠里设,数字要和这里一致') : ''}
         ${J ? '' : `<div class="fld"><span>推广的产品 <em>图片和链接默认用它的</em></span><div class="rowin" id="co-promo">${coPromoHtml()}</div></div>`}
         ${J ? '' : fld('链接(可不填)', `<input class="inp mono" name="link" value="${esc(it.link || '')}" placeholder="留空 = 推广产品的页面"/>`, '要指定款式就粘贴完整链接,如 /products/pdmovie-smart-fusion?variant=…')}
         <div class="fld"><span>图片</span><div class="rowin coimgrow"><span class="rowin" id="co-imgsrc">${coImgSrcHtml(it)}</span>
@@ -1406,7 +1406,7 @@
         <div class="fld2">${fld('兼容相机', `<textarea class="inp" name="cameras" rows="4" placeholder="FX3&#10;FX6&#10;A7S III">${esc(it.cameras || '')}</textarea>`, '一行一个;显示成「Compatible cameras」按钮,点开才展开')}
           ${fld('兼容相机 · 说明', inp('camerasNote', it.camerasNote, 'Not compatible with FX9 or BURANO.'), '相机列表下面一句灰字(可不填)')}</div>
         <div class="fld"><span>套装说明 <em>推广产品的每个款式一句说明;选一个 Recommended,弹窗打开时默认选它</em></span><div class="cokits" id="co-kits">${coKitsHtml()}</div></div>
-        ${fld('条款', `<textarea class="inp" name="lpTerms" rows="4" placeholder="One discounted Smart Fusion per compatible lens in the same order.&#10;Discount applies to Smart Fusion only.">${esc(it.lpTerms || '')}</textarea>`, '一行一条;促销框里的「Offer terms」点开显示')}
+        ${fld('条款', `<textarea class="inp" name="lpTerms" rows="4" placeholder="One discounted Smart Fusion per compatible lens in the same order.&#10;The extra 10% comes off the current Smart Fusion sale price; lens prices are unchanged.">${esc(it.lpTerms || '')}</textarea>`, '一行一条;促销框里的「Offer terms」点开显示')}
         <div class="fld"><span>大图 <em>没填视频时,活动页放这张</em></span><div class="rowin coimgrow">${it.lpImage ? `<span class="coimg" style="background-image:url('${esc(thumb(it.lpImage, 120))}')"></span><button type="button" class="btn btn-sm btn-ghost" data-co="nolpimg">不用大图</button>` : '<span class="muted">没有大图</span>'}
           ${MODE === 'live' ? '<label class="btn btn-sm upl">上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-upto="lpImage" hidden/></label>' : ''}</div>
           <input type="hidden" name="lpImage" value="${esc(it.lpImage || '')}"/><input type="hidden" name="lpImageId" value="${esc(it.lpImageId || '')}"/></div>`) : ''}
