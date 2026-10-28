@@ -322,3 +322,16 @@ test('划线价单独例外(2026-10-28):表格里改过的变体不管选哪种�
   const w = itemWarnings(plan, { price: '70.00', refPrice: '80.00', refCompareAt: null, cmpManual: true, compareAt: '65.00' });
   assert.ok(w.some((x) => x.code === 'low-strike'));
 });
+
+test('划线价按分组设(2026-10-28):条目用自己那一组的方式;没设的组用计划的;老计划(没有分组)照旧', async () => {
+  const { targetFor, cmpModeOf } = await import('../src/price/price-core.js');
+  const base = { price: '80.00', compareAt: '100.00' };
+  const plan = { kind: 'window', compare: 'original', groups: [{ id: 'a', compare: 'original' }, { id: 'b', compare: 'clear' }, { id: 'c' }] };
+  assert.deepEqual(targetFor(base, plan, { price: '70.00', group: 'a' }), { price: '70.00', compareAt: '100.00' });
+  assert.deepEqual(targetFor(base, plan, { price: '70.00', group: 'b' }), { price: '70.00', compareAt: null });
+  assert.equal(cmpModeOf(plan, { group: 'c' }), 'original');                     // 组没设 → 计划的
+  assert.equal(cmpModeOf({ kind: 'window' }, { group: 'x' }), 'original');       // 都没设 → 限时默认
+  assert.equal(cmpModeOf({ kind: 'permanent' }, {}), 'keep');
+  // 组里的例外照样优先
+  assert.deepEqual(targetFor(base, plan, { price: '70.00', group: 'b', cmpManual: true, compareAt: '90.00' }), { price: '70.00', compareAt: '90.00' });
+});

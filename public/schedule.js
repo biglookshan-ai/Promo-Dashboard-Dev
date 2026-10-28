@@ -2521,7 +2521,7 @@
         search: `按品牌 / 标签 / 类型:${[v.vendor, v.tag, v.type].filter(Boolean).join(' / ')}`, all: '全店所有产品' }[v.mode];
       return esc(m || v.mode || '');
     }
-    if (k === 'groups') return v.map((g, i) => `<div>${v.length > 1 ? `第 ${i + 1} 组:` : ''}${pShowVal('scope', g.scope)} · ${pShowVal('rule', g.rule)}</div>`).join('');
+    if (k === 'groups') return v.map((g, i) => `<div>${v.length > 1 ? `第 ${i + 1} 组:` : ''}${pShowVal('scope', g.scope)} · ${pShowVal('rule', g.rule)}${g.compare ? ` · ${pShowVal('compare', g.compare)}` : ''}</div>`).join('');
     if (k === 'slots') return v.map((x) => {
       const ps = (x.items || []).map((i) => Number(i.price)).filter((n) => n > 0);
       const lo = ps.length ? Math.min(...ps) : null; const hi = ps.length ? Math.max(...ps) : null;

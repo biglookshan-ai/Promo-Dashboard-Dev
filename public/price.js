@@ -250,6 +250,13 @@ const CMP_OPTS = [
 const cmpDefault = (p) => (p.kind === 'window' ? 'original' : 'keep');
 const cmpOf = (p) => p.compare || cmpDefault(p);
 const cmpOpts = () => CMP_OPTS;
+const CMP_SHORT = { original: '划线价:原划线价或原价', keep: '划线价:只用原划线价', price: '划线价:原来的现价', clear: '不显示划线价', set: '划线价逐个填' };
+const gCmp = (p, g) => g?.compare || cmpOf(p);
+function cmpHtml(ro, g) {
+  const p = P(); const cur = gCmp(p, g);
+  return `<div class="cmpopts">${CMP_OPTS.map(([k, t, d]) => `<label class="cmpopt ${cur === k ? 'is-on' : ''}"><input type="radio" name="cmp-${g.id}" data-f="compare" value="${k}" ${cur === k ? 'checked' : ''} ${ro || started() ? 'disabled' : ''}/><span><b>${t}${k === cmpDefault(p) ? ' <span class="muted">(默认)</span>' : ''}</b><em>${d}</em></span></label>`).join('')}</div>
+    ${started() ? '<p class="muted">计划已经开始,划线价方式不能再改。</p>' : ''}`;
+}
 // 改价倒计时(2026-10-27 用户):倒数到这个计划恢复原价;写在产品字段 custom.cgp_price_cd,主题里比活动的倒计时优先
 const CD_STY = { classic: ['经典红框', '#ffefef', '#d10000', 'Deals Expires in :'], pill: ['胶囊', '#fdecec', '#c8102e', 'Deal ends in'],
   dark: ['黑金', '#111111', '#f5c518', 'Deal ends in'], minimal: ['只有文字', 'transparent', '#d10000', 'Ends in'] };
@@ -274,9 +281,10 @@ function cdHtml(p, ro) {
 const SCOPE_MODES = { collections: '指定 Collection', products: '指定产品', search: '按品牌 / 标签 / 类型', all: '全店所有产品' };
 
 // 改价分组:一个计划里可以分几组,每组自己选产品、自己定规则(比如合集 A 打 85 折、品牌 B 打 7 折、几个产品逐个填价)
-function newGroup(kind, rule) {
+function newGroup(kind, rule, compare) {
   return { id: uid('g_'), scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
-    rule: rule ? { ...rule } : { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' } };
+    rule: rule ? { ...rule } : { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' },
+    compare: compare || (kind === 'permanent' ? 'keep' : 'original') }; // 划线价按分组设(2026-10-28)
 }
 function newPlan(kind) {
   return {
@@ -299,6 +307,7 @@ function openEditor(plan, isNew) {
   if (p.kind === 'window') p.priority = core.prioOf(p); // 老计划的层级换成数字(限时抢购 10 / 品牌 9 / 全场 8)
   p.countdown = { on: false, label: '', days: 0, style: 'classic', ...(p.countdown || {}) };
   if (!p.groups?.length) p.groups = [{ id: uid('g_'), scope: p.scope, rule: p.rule }]; // 老计划只有一组
+  for (const g of p.groups) g.compare ||= p.compare || cmpDefault(p); // 老计划:各组用计划的划线价方式
   E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0, resolvedKey: isNew ? '' : scopeKey(p) };
   renderChrome(); render(); window.scrollTo(0, 0);
 }
@@ -342,10 +351,10 @@ function summaryHtml() {
   return `<div class="pr-sum">
     <div class="pr-sum__h"><span class="pr-dot" style="background:${esc(p.color)}"></span><b>${esc(p.name || '(还没起名字)')}</b></div>
     <ul>
-      ${gs.map((g, i) => line(`${gs.length > 1 ? `<b>第 ${i + 1} 组</b>:` : ''}${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>`)).join('')}
+      ${gs.map((g, i) => line(`${gs.length > 1 ? `<b>第 ${i + 1} 组</b>:` : ''}${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${gs.length > 1 ? ` · ${CMP_SHORT[gCmp(p, g)]}` : ''}`)).join('')}
       ${gs.length > 1 ? line('<span class="muted">同一个产品在几组里时,以排在下面的那组为准</span>') : ''}
       ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束并<b>自动恢复原价</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
-      ${line(`${cmpOpts(p).find((o) => o[0] === cmpOf(p))?.[1] || '显示原来的划线价'}${(() => { const n = items().filter((i) => i.cmpManual).length; return n ? `,另有 <b>${n}</b> 个变体单独设了划线价` : ''; })()}`)}
+      ${line(`${gs.length > 1 ? '划线价按分组设' : cmpOpts(p).find((o) => o[0] === gCmp(p, gs[0]))?.[1] || '显示原来的划线价'}${(() => { const n = items().filter((i) => i.cmpManual).length; return n ? `,另有 <b>${n}</b> 个变体单独设了划线价` : ''; })()}`)}
       ${p.kind === 'window' && core.prioOf(p) !== core.PRIO_MAX ? line(`优先级 ${core.prioOf(p)}(和别的限时计划改到同一个产品时,数字大的说了算)`) : ''}
       ${p.kind === 'window' && p.countdown?.on ? line(`产品上显示倒计时「${esc(cdLabel(p))}」${Number(p.countdown.days) ? `,最后 ${Number(p.countdown.days)} 天才显示` : ',一直显示'}`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
@@ -377,9 +386,6 @@ function editorHtml() {
 
       ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
 
-      ${sec('划线价', `<div class="cmpopts">${cmpOpts(p).map(([k, t, d]) => { const on = cmpOf(p) === k;
-          return `<label class="cmpopt ${on ? 'is-on' : ''}"><input type="radio" name="cmp" data-f="compare" value="${k}" ${on ? 'checked' : ''} ${ro || started() ? 'disabled' : ''}/><span><b>${t}${k === cmpDefault(p) ? ' <span class="muted">(默认)</span>' : ''}</b><em>${d}</em></span></label>`; }).join('')}</div>
-        ${started() ? '<p class="muted">计划已经开始,划线价方式不能再改。</p>' : ''}`, '改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样')}
 
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期自动恢复原价)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
@@ -442,7 +448,7 @@ function groupsHtml(ro) {
       <div class="pr-group__h" data-a="gopen" data-i="${i}">
         <span class="pr-group__no">${i + 1}</span>
         <span class="pr-group__n">${multi ? `第 ${i + 1} 组` : '改价规则'}</span>
-        <span class="pr-group__s">${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个变体</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
+        <span class="pr-group__s">${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b> · ${CMP_SHORT[gCmp(P(), g)] || ''}${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个变体</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
         ${open ? '' : '<span class="pr-group__go">点开修改</span>'}
         ${ro || !multi ? '' : `<span class="pr-group__acts">
           <button type="button" class="btn btn-ghost btn-xs" data-a="gup" data-i="${i}" ${i ? '' : 'disabled'} title="上移">↑</button>
@@ -452,6 +458,7 @@ function groupsHtml(ro) {
       ${open ? `<div class="pr-group__b">
         <div class="pr-group__lab">改哪些产品</div>${scopeHtml(ro)}
         <div class="pr-group__lab">改什么价</div>${ruleHtml(ro)}
+        <div class="pr-group__lab">划线价 <span class="muted">这一组改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样</span></div>${cmpHtml(ro, g)}
         <div class="pr-group__lab">试算预览 <span class="muted">${multi ? '这一组的产品和新价(所有分组一起算)' : '每个产品的新价'}</span></div>
         <div class="row"><button class="btn btn-sm ${its.length && !stale() ? '' : 'btn-primary'}" data-a="resolve" ${ro ? 'disabled' : ''}>${its.length ? '重新试算' : '试算预览'}</button>
           ${stale() && its.length ? '<span class="tx-warn">设置改过了,请重新试算</span>' : ''}
@@ -500,7 +507,7 @@ function previewHtml(ro, gid) {
   const needFill = its.some((i) => i.price == null && !ex.has(i.variantId)) && p.kind === 'window';
   const all = (E.showAllG || {})[gid];
   const show = all || needFill ? its : its.slice(0, 10);
-  const setCompare = (p.compare || '') === 'set';
+  const setCompare = gCmp(p, groupsOf(p).find((g) => g.id === gid)) === 'set';
   let lastPid = null;
   const rows = show.map((it) => {
     const first = it.productId !== lastPid; lastPid = it.productId;
@@ -565,7 +572,7 @@ function diffLines(a, b) {
   const add = [...mb.keys()].filter((k) => !ma.has(k)).length, del = [...ma.keys()].filter((k) => !mb.has(k)).length;
   const chg = [...mb.keys()].filter((k) => ma.has(k) && ma.get(k).price !== mb.get(k).price).length;
   if (add || del || chg) out.push([add && `加 ${add} 个变体`, del && `删 ${del} 个`, chg && `改价 ${chg} 个`].filter(Boolean).join('、'));
-  if ((a.compare || '') !== (b.compare || '')) out.push(`划线价改成「${core.COMPARE_CN[b.compare]}」`);
+  { const ma = core.groupCmpModes(a), mb = core.groupCmpModes(b); if (JSON.stringify(ma) !== JSON.stringify(mb)) out.push(`划线价改成「${mb.map((m) => core.COMPARE_CN[m]).join(' / ')}」`); }
   if (JSON.stringify(a.tagsAdd || []) !== JSON.stringify(b.tagsAdd || []) || JSON.stringify(a.tagsRemove || []) !== JSON.stringify(b.tagsRemove || [])) out.push('改了产品标签');
   if ((a.approver || '') !== (b.approver || '')) out.push(`审批人改成 ${b.approver ? nameOf(b.approver) : '管理员'}`);
   return out;
@@ -718,7 +725,7 @@ function values() {
   return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer || null : null,
     priority: p.kind === 'window' ? core.prioOf(p) : null,
     countdown: p.kind === 'window' ? { on: !!p.countdown?.on, label: String(p.countdown?.label || '').trim(), days: Number(p.countdown?.days) || 0, style: p.countdown?.style || 'classic' } : null,
-    compare: cmpOf(p), campaign: p.campaign, note: p.note, slots: p.slots,
+    compare: p.groups?.[0]?.compare || cmpOf(p), campaign: p.campaign, note: p.note, slots: p.slots,
     groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
     owner: p.owner || null, approver: p.approver || null, cc: p.cc || [] };
 }
@@ -818,6 +825,7 @@ document.addEventListener('click', async (ev) => {
         if (el.disabled) return;
         const k = el.dataset.v; E.plan.kind = k;
         E.plan.compare = k === 'window' ? 'original' : 'keep';
+        for (const g of E.plan.groups) g.compare = E.plan.compare;
         for (const g of E.plan.groups) if (!['manual', 'keep', 'fixed', 'amount_off'].includes(g.rule.mode)) g.rule.mode = k === 'window' ? 'percent_off' : 'percent_up';
         const s = E.plan.slots[0];
         if (k === 'permanent') { s.end = null; s.collection = null; } else if (!s.end) s.end = s.start + 7 * DAY;
@@ -851,7 +859,7 @@ document.addEventListener('click', async (ev) => {
       // ---- 改价分组 ----
       case 'gopen': if (ev.target.closest('button')) return; E.gi = +el.dataset.i; E.panel = null; render(); break;
       case 'gadd': {
-        const g = newGroup(E.plan.kind, EG().rule); g.scope.mode = 'products';
+        const g = newGroup(E.plan.kind, EG().rule, EG().compare); g.scope.mode = 'products';
         E.plan.groups.push(g); E.gi = E.plan.groups.length - 1; E.panel = null; E.resolvedKey = ''; touch(); render(); break;
       }
       case 'gdel': {
@@ -934,7 +942,7 @@ document.addEventListener('change', async (ev) => {
   switch (f) {
     case 'name': E.plan.name = el.value; touch(); break;
     case 'note': E.plan.note = el.value; touch(); break;
-    case 'compare': E.plan.compare = el.value; E.resolvedKey = ''; touch(); render(); break;
+    case 'compare': EG().compare = el.value; E.plan.compare = E.plan.groups[0].compare; touch(); render(); break; // 改的是正在编辑的那一组
     case 'cdon': E.plan.countdown.on = el.checked; touch(); render(); break;
     case 'cdlabel': E.plan.countdown.label = el.value.slice(0, 60); touch(); render(); break;
     case 'cddays': E.plan.countdown.days = Number(el.value) || 0; touch(); render(); break;
@@ -960,7 +968,7 @@ document.addEventListener('change', async (ev) => {
       const v = norm(el.value); if (v === undefined) { toast('价格格式不对', false); render(); return; }
       const it = s.items.find((i) => i.variantId === el.dataset.v);
       if (f === 'iprice') { it.price = v; it.manual = true; } // 手改过的,重新试算时保留
-      else if (cmpOf(E.plan) === 'set' && !it.cmpManual) it.compareAt = v;
+      else if (core.cmpModeOf(E.plan, it) === 'set' && !it.cmpManual) it.compareAt = v;
       else if (String(el.value).trim() === '') { it.cmpManual = false; delete it.compareAt; } // 清空 = 回到上面选的方式
       else { it.cmpManual = true; it.compareAt = Number(v) > 0 ? v : null; }              // 单独例外(0 = 这个变体不显示划线价)
       touch(); render(); break;

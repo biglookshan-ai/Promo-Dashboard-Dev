@@ -173,3 +173,11 @@ test('处理异常只有审核人能做', () => {
   const doc = { ...empty(), vault: { v1: { hold: { reason: 'manual', seen: { price: '1' } } } } };
   assert.throws(() => applyAction(doc, { type: 'resolve', variantId: 'v1', choice: 'keep' }, ed), /审批人/);
 });
+
+test('划线价按分组:开始后改某一组的方式不行;老计划打开后各组补上计划的方式再保存不算改', () => {
+  let doc = run(empty(), { type: 'save', mode: 'submit', isNew: true, values: values({ compare: 'original' }) }, boss);
+  const now = 15 * H; // 已开始
+  const withGroups = (cmp) => values({ compare: 'original', groups: [{ id: 'g1', scope: {}, rule: { mode: 'manual' }, compare: cmp }] });
+  assert.doesNotThrow(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: withGroups('original') }, ed, now)); // 补上的一样
+  assert.throws(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: withGroups('clear') }, ed, now), /划线价方式不能再改/);
+});

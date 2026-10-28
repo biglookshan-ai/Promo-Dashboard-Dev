@@ -2,7 +2,7 @@
 // 纯函数,服务器和浏览器共用(浏览器通过 /lib/price-actions.js 加载);权限只在这里检查。
 // doc:{ plans, vault, staff, log, settings }   actor:{ id, name, role: 'approver' | 'editor' }
 // 返回 { doc, effects, message };effects 交给服务器(发飞书、立刻跑一轮引擎)。
-import { planStatus, itemWarnings, toCents, isLive } from './price-core.js';
+import { planStatus, itemWarnings, toCents, isLive, cmpModeOf, groupCmpModes } from './price-core.js';
 
 export class ActionError extends Error {}
 const fail = (msg) => { throw new ActionError(msg); };
@@ -44,7 +44,7 @@ export function validate(p, settings = {}) {
       if (seen.has(it.variantId)) return `${name}里有重复的变体:${it.title || it.variantId}`;
       seen.add(it.variantId);
       if (it.price == null && p.kind === 'window') return `${name}「${it.title || it.variantId}」还没设活动价`;
-      if (it.price == null && p.compare !== 'set' && p.compare !== 'clear' && !it.cmpManual) return `${name}「${it.title || it.variantId}」没有任何改动(售价和划线价都没变)`;
+      if (it.price == null && !['set', 'clear'].includes(cmpModeOf(p, it)) && !it.cmpManual) return `${name}「${it.title || it.variantId}」没有任何改动(售价和划线价都没变)`;
       const err = itemWarnings(p, it, settings).find((w) => w.level === 'error');
       if (err) return `${name}「${it.title || it.variantId}」:${err.text}`;
     }
@@ -72,7 +72,12 @@ function checkLocked(plan, next, now) {
     if (slotKey(n) !== slotKey(s)) fail('已经开始的时段不能改(时间、产品、价格都锁定了);只能暂停、停止或排除产品');
   }
   // 优先级开始后也能改(发现和别的计划重叠时要能调);类型 / 划线价方式开始后锁定
-  if (['kind', 'compare'].some((k) => k in next && next[k] !== plan[k]) && plan.slots.some((s) => s.start <= now)) fail('计划已经开始,类型 / 划线价方式不能再改');
+  if (plan.slots.some((s) => s.start <= now)) {
+    if ('kind' in next && next.kind !== plan.kind) fail('计划已经开始,类型不能再改');
+    // 划线价按每组实际用的方式比(老计划打开后各组会补上计划的方式,这不算改)
+    const merged = { ...plan, ...next };
+    if (('compare' in next || 'groups' in next) && JSON.stringify(groupCmpModes(merged)) !== JSON.stringify(groupCmpModes(plan))) fail('计划已经开始,划线价方式不能再改');
+  }
 }
 
 export function applyAction(input, action, actor, now = Date.now()) {

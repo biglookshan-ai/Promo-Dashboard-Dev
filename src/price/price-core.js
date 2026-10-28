@@ -19,6 +19,14 @@ export const KIND_CN = { window: '限时(到期恢复)', permanent: '永久' };
 // 划线价(2026-10-28 用户定的五种):original 原来的划线价,没有就用原来的现价(限时默认)/ keep 只用原来的划线价(没有就不显示,永久默认)
 //   / price 只用原来的现价 / clear 不显示 / set 逐个指定
 export const COMPARE_CN = { original: '显示原来的划线价,没有就显示原来的现价', keep: '只显示原来的划线价', price: '只显示原来的现价', clear: '不显示划线价', set: '逐个指定划线价' };
+// 划线价按分组设(2026-10-28 用户):条目所在那一组的 compare > 计划的 compare(老计划只有这个)> 限时 original / 永久 keep
+export const cmpDefaultOf = (plan) => (plan?.kind === 'permanent' ? 'keep' : 'original');
+export const cmpModeOf = (plan, item) => {
+  const g = item?.group != null ? (plan.groups || []).find((x) => x.id === item.group) : null;
+  return g?.compare || plan.compare || cmpDefaultOf(plan);
+};
+// 每组实际用的划线价方式(给「开始后不能改」比较用)
+export const groupCmpModes = (plan) => (plan.groups?.length ? plan.groups : [{}]).map((g) => g.compare || plan.compare || cmpDefaultOf(plan));
 
 export const toCents = (v) => {
   if (v == null || v === '') return null;
@@ -74,7 +82,7 @@ export function targetFor(base, plan, item) {
   // 单独例外(2026-10-28 用户):试算表格里给这个变体改过划线价 → 不管上面选哪种都用它(compareAt 空 = 这个变体不显示划线价)
   if (item.cmpManual) return pair(price, cmpCents(item.compareAt) ? item.compareAt : null);
   let compareAt = null;
-  switch (plan.compare || (plan.kind === 'permanent' ? 'keep' : 'original')) {
+  switch (cmpModeOf(plan, item)) {
     case 'original': { const o = Math.max(toCents(base.price), cmpCents(base.compareAt) || 0); compareAt = o > pc ? fromCents(o) : null; break; }
     case 'keep': compareAt = cmpCents(base.compareAt) ? base.compareAt : null; break;
     case 'price': { const o = toCents(base.price); compareAt = o > pc ? fromCents(o) : null; break; } // 原来的现价(比新价高才显示)
