@@ -44,7 +44,7 @@ export function validate(p, settings = {}) {
       if (seen.has(it.variantId)) return `${name}里有重复的变体:${it.title || it.variantId}`;
       seen.add(it.variantId);
       if (it.price == null && p.kind === 'window') return `${name}「${it.title || it.variantId}」还没设活动价`;
-      if (it.price == null && p.compare !== 'set' && p.compare !== 'clear') return `${name}「${it.title || it.variantId}」没有任何改动(售价和划线价都没变)`;
+      if (it.price == null && p.compare !== 'set' && p.compare !== 'clear' && !it.cmpManual) return `${name}「${it.title || it.variantId}」没有任何改动(售价和划线价都没变)`;
       const err = itemWarnings(p, it, settings).find((w) => w.level === 'error');
       if (err) return `${name}「${it.title || it.variantId}」:${err.text}`;
     }
@@ -61,7 +61,7 @@ export function validate(p, settings = {}) {
 }
 
 // 已经开始的时段锁死:不能改时间、不能改价格、不能删(要停就用暂停 / 停止 / 排除产品)
-const slotKey = (s) => JSON.stringify({ start: s.start, end: s.end, collection: s.collection?.id || null, items: s.items.map((i) => [i.variantId, i.price ?? null, i.compareAt ?? null]) });
+const slotKey = (s) => JSON.stringify({ start: s.start, end: s.end, collection: s.collection?.id || null, items: s.items.map((i) => [i.variantId, i.price ?? null, i.compareAt ?? null, ...(i.cmpManual ? [1] : [])]) });
 function checkLocked(plan, next, now) {
   if (plan.state !== 'approved') return;
   if (plan.kind === 'permanent' && Object.keys(plan.applied || {}).length) fail('这个永久调价已经开始执行,不能再改;要停就点「停止」');

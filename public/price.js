@@ -245,7 +245,7 @@ const CMP_OPTS = [
   ['keep', '只显示原来的划线价', '只用产品原来的划线价;<b>原来没有划线价的就不显示</b> —— 这些产品前台看不出在打折,也不会出现在促销链接、「只显示打折」里'],
   ['price', '只显示原来的现价', '划线价 = 改价前的售价,不管原来有没有划线价:原来卖 £80、改成 £70 → <s>£80</s> £70'],
   ['clear', '不显示划线价', '改价期间去掉划线价,只显示新价;这些产品不算打折'],
-  ['set', '逐个指定划线价', '在每一组的「试算预览」表格里给每个变体填划线价'],
+  ['set', '逐个指定划线价', '在每一组的「试算预览」表格里给每个变体填划线价(选别的方式时,个别变体也能在表格里单独改,算例外)'],
 ];
 const cmpDefault = (p) => (p.kind === 'window' ? 'original' : 'keep');
 const cmpOf = (p) => p.compare || cmpDefault(p);
@@ -345,7 +345,7 @@ function summaryHtml() {
       ${gs.map((g, i) => line(`${gs.length > 1 ? `<b>第 ${i + 1} 组</b>:` : ''}${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>`)).join('')}
       ${gs.length > 1 ? line('<span class="muted">同一个产品在几组里时,以排在下面的那组为准</span>') : ''}
       ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束并<b>自动恢复原价</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
-      ${line(cmpOpts(p).find((o) => o[0] === cmpOf(p))?.[1] || '显示原来的划线价')}
+      ${line(`${cmpOpts(p).find((o) => o[0] === cmpOf(p))?.[1] || '显示原来的划线价'}${(() => { const n = items().filter((i) => i.cmpManual).length; return n ? `,另有 <b>${n}</b> 个变体单独设了划线价` : ''; })()}`)}
       ${p.kind === 'window' && core.prioOf(p) !== core.PRIO_MAX ? line(`优先级 ${core.prioOf(p)}(和别的限时计划改到同一个产品时,数字大的说了算)`) : ''}
       ${p.kind === 'window' && p.countdown?.on ? line(`产品上显示倒计时「${esc(cdLabel(p))}」${Number(p.countdown.days) ? `,最后 ${Number(p.countdown.days)} 天才显示` : ',一直显示'}`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
@@ -514,13 +514,22 @@ function previewHtml(ro, gid) {
       <td class="num">${money(it.refPrice)}${it.refCompareAt && Number(it.refCompareAt) > Number(it.refPrice) ? `<div><s>${money(it.refCompareAt)}</s></div>` : ''}${it.cost != null ? `<div class="pcell__s">成本 ${money(it.cost)}</div>` : ''}</td>
       <td class="num">${ro || gone ? `<b>${it.price != null ? money(it.price) : '不变'}</b>` : `<input class="inp ${it.price == null && p.kind === 'window' ? 'is-todo' : ''}" data-f="iprice" data-v="${it.variantId}" value="${it.price ?? ''}" placeholder="${p.kind === 'window' ? '填新价' : '不变'}"/>`}
         ${it.manual && !ro && !gone ? `<div><span class="pr-mtag">手改</span><button class="linkbtn" data-a="unmanual" data-v="${it.variantId}" title="回到这一组规则算出来的价">用规则价</button></div>` : ''}</td>
-      <td class="num">${setCompare && !ro && !gone ? `<input class="inp" data-f="icompare" data-v="${it.variantId}" value="${it.compareAt ?? ''}" placeholder="无"/>` : t?.compareAt ? `<s>${money(t.compareAt)}</s>` : '<span class="muted">无</span>'}</td>
+      <td class="num">${(() => {
+        if (setCompare && !ro && !gone && !it.cmpManual) return `<input class="inp" data-f="icompare" data-v="${it.variantId}" value="${it.compareAt ?? ''}" placeholder="无"/>`;
+        const shown = t?.compareAt ? `<s>${money(t.compareAt)}</s>` : '<span class="muted">无</span>';
+        if (ro || gone) return `${shown}${it.cmpManual ? '<div><span class="pr-mtag">例外</span></div>' : ''}`;
+        // 按规则算出来的划线价(没单独改时显示成占位提示)
+        const byRule = (() => { try { return core.targetFor({ price: it.refPrice, compareAt: it.refCompareAt }, p, { ...it, cmpManual: false }).compareAt; } catch { return null; } })();
+        return `<input class="inp ${it.cmpManual ? 'is-exc' : ''}" data-f="icompare" data-v="${it.variantId}" value="${it.cmpManual ? (it.compareAt ?? '0') : ''}" placeholder="${byRule ? money(byRule) : '无'}" title="填数字 = 这个变体单独用这个划线价;填 0 = 这个变体不显示划线价;清空 = 按上面选的方式"/>
+          ${it.cmpManual ? `<div><span class="pr-mtag">例外</span><button class="linkbtn" data-a="uncmp" data-v="${it.variantId}" title="回到上面选的划线价方式">用规则</button></div>` : ''}`;
+      })()}</td>
       <td class="num">${d == null ? '' : d > 0 ? `<span class="off">-${d}%</span>` : d < 0 ? `<span class="up">+${-d}%</span>` : '0%'}</td>
       <td>${gone ? '<span class="w w--warn">已移出</span>' : ''}${w.map((x) => `<span class="w w--${x.level}">${esc(x.text)}</span>`).join('')}</td>
       <td>${gone || ro ? '' : started() ? `<button class="linkbtn" data-a="exclude" data-v="${it.variantId}" title="移出后下一分钟恢复原价">移出</button>` : `<button class="linkbtn" data-a="rm" data-v="${it.variantId}">✕</button>`}</td>
     </tr>`;
   }).join('');
-  return `${ro ? '' : '<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,重新试算也会保留;点「用规则价」恢复)。</p>'}
+  return `${ro ? '' : `<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,重新试算也会保留;点「用规则价」恢复)。
+      ${setCompare ? '' : '划线价也能<b>单独例外</b>:灰字是按上面方式算出来的;填数字 = 这个变体用这个划线价,填 0 = 不显示,清空 = 回到上面的方式(标「例外」)。'}</p>`}
     <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     ${its.length > 10 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 10 个' : `展开这一组全部 ${its.length} 个变体`}</button>` : ''}`;
 }
@@ -690,6 +699,7 @@ async function resolveScope() {
       const o = old.get(v.id);
       if (o && o.manual && o.price != null) { it.price = o.price; it.manual = true; } // 手改过的保留
       if (o && o.compareAt != null) it.compareAt = o.compareAt;
+      if (o?.cmpManual) { it.cmpManual = true; it.compareAt = o.compareAt ?? null; } // 划线价单独例外也保留
       byVariant.set(v.id, it);
     }
   }
@@ -863,6 +873,7 @@ document.addEventListener('click', async (ev) => {
         touch(); render(); break;
       }
       case 'resolve': await withBusy(el, async () => { const n = await resolveScope(); toast(`算好了:${n} 个变体`); render(); }); break;
+      case 'uncmp': { const it = curSlot().items.find((i) => i.variantId === el.dataset.v); if (it) { it.cmpManual = false; delete it.compareAt; } touch(); render(); break; }
       case 'showall': E.showAllG ||= {}; E.showAllG[el.dataset.g] = !E.showAllG[el.dataset.g]; render(); break;
       case 'rm': { const s = curSlot(); s.items = s.items.filter((i) => i.variantId !== el.dataset.v); touch(); render(); break; }
       case 'startnow': curSlot().start = now() + 60_000; touch(); render(); break;
@@ -948,7 +959,10 @@ document.addEventListener('change', async (ev) => {
     case 'iprice': case 'icompare': {
       const v = norm(el.value); if (v === undefined) { toast('价格格式不对', false); render(); return; }
       const it = s.items.find((i) => i.variantId === el.dataset.v);
-      if (f === 'iprice') { it.price = v; it.manual = true; } else it.compareAt = v; // 手改过的,重新试算时保留
+      if (f === 'iprice') { it.price = v; it.manual = true; } // 手改过的,重新试算时保留
+      else if (cmpOf(E.plan) === 'set' && !it.cmpManual) it.compareAt = v;
+      else if (String(el.value).trim() === '') { it.cmpManual = false; delete it.compareAt; } // 清空 = 回到上面选的方式
+      else { it.cmpManual = true; it.compareAt = Number(v) > 0 ? v : null; }              // 单独例外(0 = 这个变体不显示划线价)
       touch(); render(); break;
     }
     default: break;

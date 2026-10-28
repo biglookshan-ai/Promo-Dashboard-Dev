@@ -71,6 +71,8 @@ export function priceByRule(base, rule) {
 export function targetFor(base, plan, item) {
   const price = item.price ?? base.price;
   const pc = toCents(price);
+  // 单独例外(2026-10-28 用户):试算表格里给这个变体改过划线价 → 不管上面选哪种都用它(compareAt 空 = 这个变体不显示划线价)
+  if (item.cmpManual) return pair(price, cmpCents(item.compareAt) ? item.compareAt : null);
   let compareAt = null;
   switch (plan.compare || (plan.kind === 'permanent' ? 'keep' : 'original')) {
     case 'original': { const o = Math.max(toCents(base.price), cmpCents(base.compareAt) || 0); compareAt = o > pc ? fromCents(o) : null; break; }
@@ -283,6 +285,7 @@ export function itemWarnings(plan, item, { maxDiscountPct = 60 } = {}) {
   try {
     const t = targetFor(pair(ref.price, ref.compareAt), plan, item);
     if (toCents(t.price) < toCents(ref.price) && !t.compareAt) out.push({ level: 'warn', code: 'no-strike', text: '降价了但没有划线价,前台看不出在打折' });
+    if (t.compareAt && toCents(t.compareAt) <= toCents(t.price)) out.push({ level: 'warn', code: 'low-strike', text: '划线价不比新价高,前台不会显示成打折' });
   } catch (e) { out.push({ level: 'error', code: 'bad', text: e.message }); }
   return out;
 }

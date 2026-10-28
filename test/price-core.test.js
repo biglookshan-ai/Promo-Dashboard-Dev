@@ -310,3 +310,15 @@ test('划线价五种(2026-10-28):原来的划线价没有就用现价(默认)/ 
   assert.deepEqual(t(withRrp, 'original'), { price: '70.00', compareAt: '100.00' }); // 默认:有划线价用划线价
   assert.deepEqual(t(noRrp, 'original'), { price: '70.00', compareAt: '80.00' });    // 没有就用原来的现价
 });
+
+test('划线价单独例外(2026-10-28):表格里改过的变体不管选哪种都用它;0 = 不显示;划线价不比新价高要提醒', async () => {
+  const { targetFor, itemWarnings } = await import('../src/price/price-core.js');
+  const base = { price: '80.00', compareAt: null };
+  const plan = { kind: 'window', compare: 'original' };
+  assert.deepEqual(targetFor(base, plan, { price: '70.00' }), { price: '70.00', compareAt: '80.00' });
+  assert.deepEqual(targetFor(base, plan, { price: '70.00', cmpManual: true, compareAt: '99.00' }), { price: '70.00', compareAt: '99.00' });
+  assert.deepEqual(targetFor(base, plan, { price: '70.00', cmpManual: true, compareAt: null }), { price: '70.00', compareAt: null });
+  assert.deepEqual(targetFor(base, { kind: 'window', compare: 'clear' }, { price: '70.00', cmpManual: true, compareAt: '90.00' }), { price: '70.00', compareAt: '90.00' });
+  const w = itemWarnings(plan, { price: '70.00', refPrice: '80.00', refCompareAt: null, cmpManual: true, compareAt: '65.00' });
+  assert.ok(w.some((x) => x.code === 'low-strike'));
+});
