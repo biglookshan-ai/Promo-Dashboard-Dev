@@ -1,13 +1,20 @@
 // 定时改价的规则(纯函数,服务器和浏览器共用):
 //   - 价格怎么算:打几折 / 减多少 / 指定价 / 涨几 %,尾数 .99 / 整数
 //   - 划线价怎么处理:显示原价 / 不动 / 清空 / 指定
-//   - 此刻每个变体「应该」是什么价:多个计划重叠时按层级(限时抢购 > 品牌/合集 > 全场)
+//   - 此刻每个变体「应该」是什么价:多个限时计划重叠时按优先级(1–10,数字大的说了算;一样大开始晚的说了算)
 //   - 定时器这一轮要做什么(开始 / 切换 / 恢复 / 永久改价 / 改原价),拿到店里现价后再定最终写什么
 //     (有人手动改过 → 暂停接管这个变体,绝不覆盖)
 // 价格内部一律用「分」做整数运算,对外存 '123.45' 字符串(和 Shopify 一致)。
 
 export const LAYERS = { flash: 30, brand: 20, sitewide: 10 };
-export const LAYER_CN = { flash: '限时抢购', brand: '品牌 / Collection', sitewide: '全场' };
+export const LAYER_CN = { flash: '限时抢购', brand: '品牌 / Collection', sitewide: '全场' }; // 老计划的「层级」,只用来显示历史版本
+// 优先级(2026-10-26 用户:层级改成数字优先级,默认最高):1–10,数字大的说了算;一样大开始晚的说了算,再看批准晚的。
+// 老计划只有 layer:限时抢购 10 / 品牌 9 / 全场 8(保持原来的先后)
+export const PRIO_MAX = 10;
+export const prioOf = (plan) => {
+  const n = Math.round(Number(plan?.priority));
+  return n >= 1 && n <= PRIO_MAX ? n : ({ flash: 10, brand: 9, sitewide: 8 }[plan?.layer] ?? PRIO_MAX);
+};
 export const KIND_CN = { window: '限时(到期恢复)', permanent: '永久' };
 export const COMPARE_CN = { original: '划线价显示原价', keep: '划线价不动', clear: '清空划线价', set: '指定划线价' };
 
@@ -114,10 +121,10 @@ export function indexItems(plans) {
   return m;
 }
 
-const rankOf = ({ plan, slot }) => [LAYERS[plan.layer] || 0, slot.start || 0, plan.approvedAt || 0];
+const rankOf = ({ plan, slot }) => [prioOf(plan), slot.start || 0, plan.approvedAt || 0];
 const higher = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
 
-// 此刻这个变体归哪个限时时段管(层级最高的;同层开始晚的;再看批准晚的)
+// 此刻这个变体归哪个限时时段管(优先级最高的;一样高开始晚的;再看批准晚的)
 export function assignmentAt(entries, now) {
   let best = null;
   for (const e of entries || []) {
@@ -277,7 +284,7 @@ export function itemWarnings(plan, item, { maxDiscountPct = 60 } = {}) {
   return out;
 }
 
-// 和别的计划重叠的时段(同一变体、时间有交集)。返回 [{ variantId, other: { planId, name, layer }, wins }]
+// 和别的计划重叠的时段(同一变体、时间有交集)。返回 [{ variantId, other: { planId, name, priority }, wins }]
 export function overlaps(plan, plans) {
   const out = [];
   const others = plans.filter((p) => p.id !== plan.id && p.kind === 'window' && ['approved', 'pending'].includes(p.state) && !p.stopped);
@@ -289,12 +296,37 @@ export function overlaps(plan, plans) {
           const hit = s.items.some((i) => i.variantId === item.variantId) && (s.end == null || s.end > slot.start) && (slot.end == null || slot.end > s.start);
           if (!hit) continue;
           const wins = higher(rankOf({ plan, slot }), rankOf({ plan: p, slot: s }));
-          out.push({ variantId: item.variantId, slotId: slot.id, other: { planId: p.id, name: p.name, layer: p.layer }, wins });
+          out.push({ variantId: item.variantId, slotId: slot.id, other: { planId: p.id, name: p.name, priority: prioOf(p), start: s.start }, wins });
         }
       }
     }
   }
   return out;
+}
+
+// 列表页用:还没结束的限时计划之间,谁和谁改到了同一个产品、时间又重叠(2026-10-26 用户:这种情况要有提示)
+// 返回 Map(计划 id → [{ planId, name, n: 重叠的变体数, wins: 这个计划说了算 }])
+export function overlapIndex(plans, now = Date.now()) {
+  const live = plans.filter((p) => p.kind === 'window' && ['approved', 'pending'].includes(p.state) && !p.stopped
+    && (p.slots || []).some((s) => s.end == null || s.end > now));
+  const out = new Map();
+  for (const [vid, es] of indexItems(live)) {
+    if (es.length < 2) continue;
+    for (let i = 0; i < es.length; i++) for (let j = i + 1; j < es.length; j++) {
+      const a = es[i], b = es[j];
+      if (a.plan.id === b.plan.id) continue;
+      const hit = (a.slot.end == null || a.slot.end > (b.slot.start ?? 0)) && (b.slot.end == null || b.slot.end > (a.slot.start ?? 0));
+      if (!hit) continue;
+      const aw = higher(rankOf(a), rankOf(b));
+      for (const [x, y, w] of [[a, b, aw], [b, a, !aw]]) {
+        if (!out.has(x.plan.id)) out.set(x.plan.id, new Map());
+        const m = out.get(x.plan.id);
+        if (!m.has(y.plan.id)) m.set(y.plan.id, { planId: y.plan.id, name: y.plan.name, n: new Set(), wins: w });
+        m.get(y.plan.id).n.add(vid);
+      }
+    }
+  }
+  return new Map([...out].map(([k, m]) => [k, [...m.values()].map((o) => ({ ...o, n: o.n.size }))]));
 }
 
 // ---------- 写前意图(防止改到一半重启后把活动价误当原价)----------

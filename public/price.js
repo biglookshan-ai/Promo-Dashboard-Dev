@@ -67,8 +67,8 @@ const nameOf = (id) => S.people.find((u) => u.id === id)?.name || '同事';
 const planById = (id) => S.plans.find((p) => p.id === id);
 const STATUS_TAG = { draft: '', pending: 'tag--warn', rejected: 'tag--danger', scheduled: 'tag--accent', running: 'tag--ok', paused: 'tag--warn', ended: '', done: '' };
 const statusOf = (p) => core.planStatus(p, now());
-const layerCls = (p) => (p.kind === 'permanent' ? 'L-perm' : `L-${p.layer}`);
-const kindLabel = (p) => (p.kind === 'permanent' ? '永久调价' : `${core.LAYER_CN[p.layer] || ''} · 限时`);
+const layerCls = (p) => (p.kind === 'permanent' ? 'L-perm' : 'L-window');
+const kindLabel = (p) => (p.kind === 'permanent' ? '永久调价' : `限时${core.prioOf(p) !== core.PRIO_MAX ? ` · 优先级 ${core.prioOf(p)}` : ''}`);
 const holdsOf = (planId) => S.vault.filter((v) => v.hold && (!planId || v.hold.planId === planId));
 
 async function load() {
@@ -105,11 +105,11 @@ function render() {
 
 // ================= 改价计划列表 =================
 const FILTERS = [
-  ['active', '进行中 + 待执行', (s) => ['running', 'paused', 'scheduled', 'pending'].includes(s)],
+  ['active', '未结束', (s) => ['running', 'paused', 'scheduled', 'pending'].includes(s)],
   ['running', '进行中', (s) => ['running', 'paused'].includes(s)],
   ['scheduled', '已排期', (s) => s === 'scheduled'],
   ['pending', '待审核', (s, p) => s === 'pending' || !!p.pendingChange],
-  ['draft', '草稿 / 被退回', (s) => ['draft', 'rejected'].includes(s)],
+  ['draft', '草稿', (s) => ['draft', 'rejected'].includes(s)],
   ['ended', '已结束', (s) => ['ended', 'done'].includes(s)],
   ['all', '全部', () => true],
 ];
@@ -119,13 +119,15 @@ function plansHtml() {
   const st = S.plans.map((p) => ({ p, s: statusOf(p) }));
   const count = (f) => st.filter(({ p, s }) => f(s, p)).length;
   const live = S.vault.filter((v) => v.written && !v.hold).length;
+  const showPending = !!S.team || count(FILTERS[3][2]) > 0; // 多人协作关着时,所有人都能直接批准,基本不会有待审核
   const f = FILTERS.find((x) => x[0] === filter) || FILTERS[0];
+  const ovIdx = core.overlapIndex(S.plans, now()); // 还没结束的限时计划之间,改到同一个产品又时间重叠的
   const list = st.filter(({ p, s }) => f[2](s, p)).sort((a, b) => ORDER[a.s] - ORDER[b.s] || A.planSummary(a.p).start - A.planSummary(b.p).start);
   return `
   <div class="stats">
     <button class="stat" data-a="filter" data-f="running"><div class="stat__n">${count(FILTERS[1][2])}</div><div class="stat__l">进行中的计划</div></button>
     <button class="stat" data-a="filter" data-f="scheduled"><div class="stat__n">${count(FILTERS[2][2])}</div><div class="stat__l">已排期</div></button>
-    <button class="stat ${count(FILTERS[3][2]) ? 'stat--danger' : ''}" data-a="filter" data-f="pending"><div class="stat__n">${count(FILTERS[3][2])}</div><div class="stat__l">待审核</div></button>
+    ${showPending ? `<button class="stat ${count(FILTERS[3][2]) ? 'stat--danger' : ''}" data-a="filter" data-f="pending"><div class="stat__n">${count(FILTERS[3][2])}</div><div class="stat__l">待审核</div></button>` : ''}
     <button class="stat" data-a="tab" data-t="vault"><div class="stat__n">${live}</div><div class="stat__l">正在活动价上的变体</div></button>
     <button class="stat ${holdsOf().length ? 'stat--danger' : ''}" data-a="tab" data-t="vault"><div class="stat__n">${holdsOf().length}</div><div class="stat__l">暂停接管(要处理)</div></button>
   </div>
@@ -136,8 +138,8 @@ function plansHtml() {
     <span class="muted">Flash 每天一组:建好第一天,在计划里点「复制成下一天」</span>
     <span class="spacer"></span>
   </div>
-  <div class="pr-tabs">${FILTERS.map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
-  ${list.length ? list.map(({ p, s }) => planRow(p, s)).join('') : '<div class="pr-empty">这里还没有计划</div>'}`;
+  <div class="pr-tabs">${FILTERS.filter(([k]) => k !== 'pending' || showPending).map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
+  ${list.length ? list.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id))).join('') : '<div class="pr-empty">这里还没有计划</div>'}`;
 }
 
 const leftTxt = (ms) => {
@@ -154,7 +156,7 @@ function planSay(p) {
   const how = gs.length > 1 ? `分 ${gs.length} 组改价(${gs.map((g) => RULE_MODES[g.rule.mode]?.label || '').join(' / ')})` : r ? r.say(gs[0].rule.value) : '按逐个产品设定的价格';
   return `把 <b>${n}</b> 个产品${p.kind === 'permanent' ? '永久' : '在活动期间'}:${how}`;
 }
-function planRow(p, s) {
+function planRow(p, s, ovs = []) {
   const sum = A.planSummary(p);
   const items = p.slots.flatMap((x) => x.items).filter((i) => i.price != null);
   const maxOff = items.reduce((m, i) => Math.max(m, core.discountPct(i.refPrice, i.price)), 0);
@@ -181,6 +183,7 @@ function planRow(p, s) {
         <span class="tag ${p.kind === 'window' ? 'tag--' + layerCls(p) : ''}">${kindLabel(p)}</span>
         ${p.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${holds ? `<span class="tag tag--danger">${holds} 个暂停接管</span>` : ''}
+        ${ovs.length ? `<span class="tag tag--warn" title="${esc(ovs.map((o) => `「${o.name}」:${o.n} 个变体,重叠时用「${o.wins ? p.name : o.name}」的价`).join('\n'))}">⚠️ 和「${esc(ovs[0].name)}」${ovs.length > 1 ? `等 ${ovs.length} 个计划` : ''}改到同一批产品(${ovs.reduce((n, o) => n + o.n, 0)} 个变体)</span>` : ''}
         ${p.campaign ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : ''}
         ${S.team ? `<span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}` : ''}
       </div>
@@ -216,8 +219,8 @@ function ganttHtml() {
       <div class="gantt__lane">${p.slots.map((s, i) => {
         const end = s.end ?? s.start + DAY / 3;
         if (end <= t0 || s.start >= t1) return '';
-        return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''}" style="left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
-          title="${esc(p.name)} · ${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个变体">${p.kind === 'permanent' ? '永久' : p.slots.length > 1 ? `第 ${i + 1} 段` : esc(core.LAYER_CN[p.layer])}</div>`;
+        return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''}" style="${p.color ? `background:${esc(p.color)};` : ''}left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
+          title="${esc(p.name)} · ${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个变体">${p.kind === 'permanent' ? '永久' : p.slots.length > 1 ? `第 ${i + 1} 段` : esc(p.name)}</div>`;
       }).join('')}<div class="gantt__now" style="left:${nowLeft}"></div></div>`).join('')}
   </div></div>`;
 }
@@ -234,6 +237,13 @@ const RULE_MODES = {
   keep: { label: '售价不变(只改划线价)', unit: '', say: () => '售价不动,只调整划线价' },
   manual: { label: '逐个填价', unit: '', say: () => '每个产品的新价在下面「试算预览」的表格里一个个填' },
 };
+// 划线价四种方式(2026-10-26 用户:说清楚各自什么时候用;「显示原价」= 原来有划线价就用它,没有才用改价前的售价)
+const CMP_OPTS = [
+  ['original', '显示改价前的价格(was / now)', '划线价 = 改价前的价格:产品原来就有划线价(比如建议零售价 £100、现在卖 £80)就继续用 £100;原来没有划线价,就用改价前的售价。<b>限时促销选这个</b> —— 「只显示打折」、促销链接、折扣角标都靠划线价判断'],
+  ['keep', '划线价不动', '保留产品原来的划线价,原来没有就不显示。只改售价、不想让产品看起来在打折时用(永久调价默认)'],
+  ['clear', '不显示划线价', '改价期间去掉划线价,只显示新价;这些产品不算打折,不会出现在促销链接、「只显示打折」里'],
+  ['set', '逐个指定划线价', '在下面「试算预览」的表格里给每个变体填划线价'],
+];
 const SCOPE_MODES = { collections: '指定 Collection', products: '指定产品', search: '按品牌 / 标签 / 类型', all: '全店所有产品' };
 
 // 改价分组:一个计划里可以分几组,每组自己选产品、自己定规则(比如合集 A 打 85 折、品牌 B 打 7 折、几个产品逐个填价)
@@ -243,7 +253,7 @@ function newGroup(kind, rule) {
 }
 function newPlan(kind) {
   return {
-    id: uid('p_'), name: '', color: COLORS[0], kind, layer: 'sitewide',
+    id: uid('p_'), name: '', color: COLORS[0], kind, layer: null, priority: core.PRIO_MAX,
     compare: kind === 'window' ? 'original' : 'keep', campaign: null, note: '',
     rule: { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' },
     scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
@@ -258,6 +268,7 @@ function openEditor(plan, isNew) {
   p.rule ||= { mode: p.kind === 'permanent' ? 'percent_up' : 'percent_off', value: 15, rounding: '', from: 'price' };
   p.scope ||= { mode: 'products', collections: [], products: [], vendor: '', tag: '', type: '' };
   p.color ||= COLORS[0]; p.tagsAdd ||= []; p.tagsRemove ||= []; p.followCampaign = !!p.followCampaign;
+  if (p.kind === 'window') p.priority = core.prioOf(p); // 老计划的层级换成数字(限时抢购 10 / 品牌 9 / 全场 8)
   if (!p.groups?.length) p.groups = [{ id: uid('g_'), scope: p.scope, rule: p.rule }]; // 老计划只有一组
   E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0, resolvedKey: isNew ? '' : scopeKey(p) };
   renderChrome(); render(); window.scrollTo(0, 0);
@@ -305,8 +316,8 @@ function summaryHtml() {
       ${gs.map((g, i) => line(`${gs.length > 1 ? `<b>第 ${i + 1} 组</b>:` : ''}${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>`)).join('')}
       ${gs.length > 1 ? line('<span class="muted">同一个产品在几组里时,以排在下面的那组为准</span>') : ''}
       ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束并<b>自动恢复原价</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
-      ${line(core.COMPARE_CN[p.compare] || '划线价不动')}
-      ${p.kind === 'window' && p.layer !== 'sitewide' ? line(`层级:${core.LAYER_CN[p.layer]}(和别的限时计划撞到同一个产品时用)`) : ''}
+      ${line(CMP_OPTS.find((o) => o[0] === (p.compare || (p.kind === 'window' ? 'original' : 'keep')))?.[1] || '划线价不动')}
+      ${p.kind === 'window' && core.prioOf(p) !== core.PRIO_MAX ? line(`优先级 ${core.prioOf(p)}(和别的限时计划改到同一个产品时,数字大的说了算)`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
       ${p.tagsRemove.length ? line(`生效期间去掉标签 <b>${p.tagsRemove.map(esc).join('、')}</b>,结束自动加回`) : ''}
       ${S.team ? line(`审批人:<b>${p.approver ? esc(nameOf(p.approver)) : '管理员'}</b>${p.owner ? ` · 负责人 ${esc(nameOf(p.owner))}` : ''}`) : ''}
@@ -336,6 +347,10 @@ function editorHtml() {
 
       ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
 
+      ${sec('划线价', `<div class="cmpopts">${CMP_OPTS.map(([k, t, d]) => { const on = (p.compare || (p.kind === 'window' ? 'original' : 'keep')) === k;
+          return `<label class="cmpopt ${on ? 'is-on' : ''}"><input type="radio" name="cmp" data-f="compare" value="${k}" ${on ? 'checked' : ''} ${ro || started() ? 'disabled' : ''}/><span><b>${t}${k === (p.kind === 'window' ? 'original' : 'keep') ? ' <span class="muted">(默认)</span>' : ''}</b><em>${d}</em></span></label>`; }).join('')}</div>
+        ${started() ? '<p class="muted">计划已经开始,划线价方式不能再改。</p>' : ''}`, '改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样')}
+
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期自动恢复原价)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
         ${p.campaign ? `<label class="row" style="margin-bottom:10px;font-size:13px"><input type="checkbox" data-f="followcamp" ${p.followCampaign ? 'checked' : ''} ${ro ? 'disabled' : ''}/> 跟随活动「${esc(p.campaign.name)}」的时间 <span class="muted">活动改时间,这个计划跟着一起改</span></label>` : ''}
@@ -347,6 +362,8 @@ function editorHtml() {
           ${sl.collection ? `<div class="row"><span class="tag tag--accent">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>`
             : ro ? '<span class="muted">不加</span>' : '<button class="btn btn-sm" data-a="panel" data-p="slotcoll" style="width:fit-content">选 Collection…</button>'}
           ${E.panel === 'slotcoll' ? collPanel('slotcoll') : ''}</div>` : ''}
+        ${p.kind === 'window' ? `<label class="pr-fld" style="margin-top:12px">优先级 <em>1–10,默认 10(最高)。只有两个限时计划改到同一个产品、时间又重叠时才用得到:<b>数字大的说了算,一样大时开始晚的说了算</b>(比如黑五期间加一天 Flash,那天自动用 Flash 的价,过了回到黑五的价)。想让这个计划让位就调低</em>
+          <input class="inp" type="number" min="1" max="${core.PRIO_MAX}" step="1" data-f="priority" value="${core.prioOf(p)}" ${ro ? 'disabled' : ''} style="width:90px"/></label>` : ''}
         <p class="muted">时间一律按英国时间(店铺时区),夏令时自动处理。</p>`)}
 
       ${sec('产品标签', `<div class="grid2">
@@ -362,10 +379,6 @@ function editorHtml() {
       </div>
       <label class="pr-fld" style="margin-top:10px">备注 <em>${S.team ? '给审批人看的说明' : '给同事看的说明'}</em><textarea class="inp" rows="2" data-f="note" ${ro ? 'disabled' : ''} placeholder="比如:配合首页 Banner,Flash 每天 0 点换">${esc(p.note || '')}</textarea></label>`)}
 
-      ${sec('划线价', `${p.kind === 'window' ? `<div class="pr-fld" style="margin-bottom:12px">层级 <em>只有两个限时计划同时改到同一个产品时才有用:层级高的那个说了算(限时抢购 > 品牌 / Collection > 全场)。一般不用动</em>
-          <span class="pr-seg">${[['sitewide', '全场'], ['brand', '品牌 / Collection'], ['flash', '限时抢购']].map(([k, l]) => `<button type="button" class="${p.layer === k ? 'is-on' : ''}" data-a="layer" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>` : ''}
-        <select class="sel" data-f="compare" ${ro ? 'disabled' : ''}>${Object.entries(core.COMPARE_CN).map(([k, l]) => `<option value="${k}" ${(p.compare || (p.kind === 'window' ? 'original' : 'keep')) === k ? 'selected' : ''}>${l}${k === 'original' ? '(前台显示 was / now)' : ''}</option>`).join('')}</select>
-        <p class="muted">主题里「只显示打折」「按折扣排序」「折扣角标」都看划线价,所以限时促销一般选「显示原价」。</p>`, '高级')}
 
       ${sec('试算预览', `<p class="muted">按上面的设置算出每个产品的新价,确认没问题再提交。${stale() && items().length ? '<b class="tx-warn">设置改过了,结果可能不是最新的,请重新试算。</b>' : ''}</p>
         <div class="row"><button class="btn ${items().length && !stale() ? '' : 'btn-primary'}" data-a="resolve" ${ro ? 'disabled' : ''}>${items().length ? '重新试算' : '试算预览'}</button>
@@ -548,7 +561,7 @@ function checkHtml() {
     </div>
     ${todo && p.kind === 'window' ? `<div class="banner banner--warn" style="margin-bottom:6px">还有 <b>${todo}</b> 个变体没填新价(在「试算预览」表格里填)。</div>` : ''}
     ${roundWarn}
-    ${[...byOther.values()].map((o) => `<div class="banner banner--info" style="margin-bottom:6px">${o.n.size} 个变体同时在「${esc(o.name)}」(${core.LAYER_CN[o.layer] || ''})里:重叠期间以「${o.wins ? esc(p.name || '本计划') : esc(o.name)}」的价格为准${o.wins ? `,本计划结束后回到「${esc(o.name)}」的价` : ''}。</div>`).join('')}
+    ${[...byOther.values()].map((o) => `<div class="banner banner--warn" style="margin-bottom:6px">⚠️ <b>${o.n.size} 个变体</b>也在「${esc(o.name)}」(优先级 ${o.priority})里,时间有重叠:重叠期间用<b>「${o.wins ? esc(p.name || '这个计划') : esc(o.name)}」</b>的价格${o.wins ? `,这个计划结束后回到「${esc(o.name)}」的价` : ',这个计划在重叠的这段时间里对这些变体不起作用'}。不对就改上面的「优先级」(数字大的说了算,一样大时开始晚的说了算)。</div>`).join('')}
     ${err && !readonly() ? `<div class="banner banner--warn" style="margin:0">还不能提交:${esc(err)}</div>` : ''}
   </div>`;
 }
@@ -652,7 +665,8 @@ async function withBusy(btn, fn) {
 }
 function values() {
   const p = E.plan;
-  return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer : null,
+  return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer || null : null,
+    priority: p.kind === 'window' ? core.prioOf(p) : null,
     compare: p.compare || (p.kind === 'window' ? 'original' : 'keep'), campaign: p.campaign, note: p.note, slots: p.slots,
     groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
     owner: p.owner || null, approver: p.approver || null, cc: p.cc || [] };
@@ -869,6 +883,7 @@ document.addEventListener('change', async (ev) => {
     case 'name': E.plan.name = el.value; touch(); break;
     case 'note': E.plan.note = el.value; touch(); break;
     case 'compare': E.plan.compare = el.value; E.resolvedKey = ''; touch(); render(); break;
+    case 'priority': { const n = Math.round(Number(el.value)); E.plan.priority = n >= 1 && n <= core.PRIO_MAX ? n : core.PRIO_MAX; touch(); render(); break; }
     case 'rvalue': EG().rule.value = el.value; E.resolvedKey = ''; touch(); render(); break;
     case 'rrounding': EG().rule.rounding = el.value; E.resolvedKey = ''; touch(); render(); break;
     case 'rfrom': EG().rule.from = el.value; E.resolvedKey = ''; touch(); render(); break;

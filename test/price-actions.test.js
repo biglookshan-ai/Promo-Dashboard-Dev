@@ -55,7 +55,10 @@ test('已开始的时段锁死;没开始的时段可以改(编辑改要审核,�
   changed.slots[0].items[0].price = '80.00';
   assert.throws(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: changed }, ed, now), /锁定/);
   assert.throws(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: { ...values(), slots: [values().slots[1]] } }, ed, now), /不能删除/);
-  assert.throws(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: { ...values(), layer: 'flash' } }, ed, now), /不能再改/);
+  assert.throws(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: { ...values(), compare: 'clear' } }, ed, now), /不能再改/);
+  // 优先级开始后也能改(发现重叠时要能调,2026-10-26)
+  assert.doesNotThrow(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: { ...values(), priority: 5 } }, ed, now));
+  assert.throws(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: { ...values(), priority: 11 } }, ed, now), /1–10/);
 
   const future = values();
   future.slots[1].items[0].price = '75.00';

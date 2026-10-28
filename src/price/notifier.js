@@ -3,7 +3,7 @@
 //   即时:提交审核 / 批准或退回 / 暂停、继续、停止 / 改价生效、恢复 / 暂停接管 / 失败 / 快开始了还没批准
 // 去重:state.notified(同一个失败一小时只报一次,同一计划的「还没批准」只报一次)。
 import { sendDMs } from '../lark-bot.js';
-import { LAYER_CN, planStatus } from './price-core.js';
+import { prioOf, PRIO_MAX, planStatus } from './price-core.js';
 import { planSummary } from './price-actions.js';
 
 const TZ = 'Europe/London';
@@ -11,7 +11,7 @@ const HOUR = 3600_000;
 const fmt = (ms) => new Intl.DateTimeFormat('zh-CN', { timeZone: TZ, month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
 const nameOf = (members, id) => members.find((m) => m.id === id)?.name || '同事';
 const admins = (members) => members.filter((m) => m.status === 'active' && (m.roles || []).includes('admin')).map((m) => m.id);
-const planLine = (p) => `**${p.name}** · ${p.kind === 'window' ? `${LAYER_CN[p.layer] || ''} · 限时` : '永久调价'}`;
+const planLine = (p) => `**${p.name}** · ${p.kind === 'window' ? `限时${prioOf(p) !== PRIO_MAX ? ` · 优先级 ${prioOf(p)}` : ''}` : '永久调价'}`;
 function windowLine(p) {
   const s = planSummary(p);
   return `${s.products} 个产品 / ${s.variants} 个变体 · ${fmt(s.start)}${s.end ? ` → ${fmt(s.end)}` : ' 起'}${s.slots > 1 ? `(${s.slots} 个时段)` : ''}`;

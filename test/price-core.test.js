@@ -276,3 +276,22 @@ test('跟随活动时间:活动改了时间,计划跟着改;没勾的不动;永�
   assert.equal(st.plans[3].slots[0].end, null); // 永久调价没有结束时间
   assert.deepEqual(syncCampaignTimes(st, [{ id: 'c1', name: 'EBF', start: 1000, end: 2000 }]), []); // 已经一致就不重复改
 });
+
+test('优先级(2026-10-26):数字大的说了算,一样大开始晚的说了算;老计划的层级换成 10 / 9 / 8', async () => {
+  const { prioOf, assignmentAt, overlapIndex, indexItems } = await import('../src/price/price-core.js');
+  assert.equal(prioOf({ priority: 3 }), 3);
+  assert.equal(prioOf({}), 10);                                   // 新计划默认最高
+  assert.deepEqual([prioOf({ layer: 'flash' }), prioOf({ layer: 'brand' }), prioOf({ layer: 'sitewide' })], [10, 9, 8]);
+  const mk = (id, priority, start, end) => ({ id, name: id, kind: 'window', state: 'approved', priority, approvedAt: 1,
+    slots: [{ id: id + 's', start, end, items: [{ variantId: 'v1', price: '1.00' }] }] });
+  const bf = mk('bf', 10, 0, 100), flash = mk('flash', 10, 50, 60);
+  const idx = indexItems([bf, flash]);
+  assert.equal(assignmentAt(idx.get('v1'), 55).plan.id, 'flash'); // 一样高:开始晚的(Flash 当天)说了算
+  assert.equal(assignmentAt(idx.get('v1'), 70).plan.id, 'bf');    // Flash 结束回到黑五的价
+  const low = mk('flash', 5, 50, 60);
+  assert.equal(assignmentAt(indexItems([bf, low]).get('v1'), 55).plan.id, 'bf'); // 调低了就让位
+  const ov = overlapIndex([bf, flash], 10);
+  assert.deepEqual(ov.get('bf').map((o) => [o.planId, o.n, o.wins]), [['flash', 1, false]]);
+  assert.deepEqual(ov.get('flash').map((o) => [o.planId, o.n, o.wins]), [['bf', 1, true]]);
+  assert.equal(overlapIndex([bf, mk('later', 10, 200, 300)], 10).size, 0); // 时间不重叠不算
+});

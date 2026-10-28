@@ -1910,3 +1910,15 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .cogcur { display: flex; align-items: center; gap: 8px; }
 .cogcur .inp { max-width: 320px; }
 .slsrc__tip { padding-top: 6px; margin-top: 2px; border-top: 1px dashed var(--border); font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+
+/* 改价:不再按层级上色(2026-10-26 层级改成数字优先级);划线价四个选项直接写清楚什么时候用 */
+#section-price .L-window { background: #2f5cff; }
+#section-price .tag--L-window { color: var(--accent); background: var(--accent-soft); border-color: #d5dcff; }
+#section-price .cmpopts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#section-price .cmpopt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; cursor: pointer; }
+#section-price .cmpopt.is-on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--accent-soft); }
+#section-price .cmpopt input { margin-top: 3px; flex: none; }
+#section-price .cmpopt b { display: block; font-size: 13px; }
+#section-price .cmpopt em { display: block; margin-top: 2px; font-style: normal; font-size: 12px; line-height: 1.55; color: var(--text-2); }
+@media (max-width: 900px) { #section-price .cmpopts { grid-template-columns: minmax(0, 1fr); } }
+#section-price .cmpopt em b { display: inline; font-size: inherit; }

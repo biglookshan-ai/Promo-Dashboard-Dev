@@ -12,7 +12,7 @@ const isAdminActor = (a) => a?.role === 'approver';
 export const canApprove = (a, plan) => !!a && (isAdminActor(a) || (!!plan?.approver && plan.approver === a.id));
 
 // 计划里可编辑的字段
-export const EDIT_KEYS = ['name', 'kind', 'layer', 'compare', 'campaign', 'note', 'slots', 'rule', 'approver', 'owner', 'cc',
+export const EDIT_KEYS = ['name', 'kind', 'layer', 'priority', 'compare', 'campaign', 'note', 'slots', 'rule', 'approver', 'owner', 'cc',
   'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups'];
 const pick = (v) => Object.fromEntries(EDIT_KEYS.filter((k) => k in v).map((k) => [k, clone(v[k])]));
 
@@ -25,7 +25,7 @@ export function addLog(doc, now, action, plan, note, actor) {
 export function validate(p, settings = {}) {
   if (!String(p.name || '').trim()) return '请填写计划名称';
   if (!['window', 'permanent'].includes(p.kind)) return '请选择类型(限时 / 永久)';
-  if (p.kind === 'window' && !['flash', 'brand', 'sitewide'].includes(p.layer)) return '请选择层级';
+  if (p.kind === 'window' && p.priority != null && !(Number.isInteger(Number(p.priority)) && Number(p.priority) >= 1 && Number(p.priority) <= 10)) return '优先级填 1–10 的整数(数字大的优先)';
   if (p.followCampaign && !p.campaign?.id) return '勾了「跟随活动时间」就要先选一个活动';
   const slots = p.slots || [];
   if (!slots.length) return '至少要有一个时段';
@@ -67,7 +67,8 @@ function checkLocked(plan, next, now) {
     if (!n) fail('已经开始的时段不能删除;要提前结束请用「停止」或「排除产品」');
     if (slotKey(n) !== slotKey(s)) fail('已经开始的时段不能改(时间、产品、价格都锁定了);只能暂停、停止或排除产品');
   }
-  if (['kind', 'layer', 'compare'].some((k) => k in next && next[k] !== plan[k]) && plan.slots.some((s) => s.start <= now)) fail('计划已经开始,类型 / 层级 / 划线价方式不能再改');
+  // 优先级开始后也能改(发现和别的计划重叠时要能调);类型 / 划线价方式开始后锁定
+  if (['kind', 'compare'].some((k) => k in next && next[k] !== plan[k]) && plan.slots.some((s) => s.start <= now)) fail('计划已经开始,类型 / 划线价方式不能再改');
 }
 
 export function applyAction(input, action, actor, now = Date.now()) {
