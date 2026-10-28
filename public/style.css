@@ -1949,3 +1949,6 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 #section-price .cdpv svg { flex: none; }
 #section-price .cdpv--classic b, #section-price .cdpv b { font-weight: 600; }
 #section-price .pcell__all { display: block; margin-top: 2px; font-size: 12px; }
+/* 试算表最后一栏「移出 / 去掉」、产品下面「整个产品移出」不换行(2026-10-28 用户:竖着排了) */
+#section-price .pr-tbl td:last-child { white-space: nowrap; }
+#section-price .pr-tbl .linkbtn { white-space: nowrap; }
