@@ -262,6 +262,14 @@ const CD_STY = { classic: ['经典红框', '#ffefef', '#d10000', 'Deals Expires 
   dark: ['黑金', '#111111', '#f5c518', 'Deal ends in'], minimal: ['只有文字', 'transparent', '#d10000', 'Ends in'] };
 const CD_DAYS_CN = [[0, '一直显示'], [1, '最后 1 天'], [3, '最后 3 天'], [7, '最后 7 天'], [15, '最后 15 天']];
 const cdLabel = (p) => String(p.countdown?.label || '').trim() || (CD_STY[p.countdown?.style] || CD_STY.classic)[3];
+// 预览照主题 snippets/cgp-campaign-offer.liquid 画:经典 = 方框「2d 4h 12m 30s」;胶囊 / 黑金 = 圆角 + 时钟图标「2 days 04:12:30」,最后一天反色;只有文字 = 没底色
+function cdPreview(p, sty, bg, fg) {
+  const flip = sty === 'pill' || sty === 'dark';
+  const icon = flip ? '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>' : '';
+  const chip = (inv, time) => `<span class="cdpv cdpv--${sty}" style="--cd-bg:${inv ? fg : bg};--cd-fg:${inv ? bg : fg}">${icon}${esc(cdLabel(p))} <b>${time}</b></span>`;
+  return `<div class="cdpvs"><span class="cdpvs__k">平时</span>${chip(false, sty === 'classic' ? '2d 4h 12m 30s' : '2 days 04:12:30')}
+    ${flip ? `<span class="cdpvs__k">最后一天</span>${chip(true, '04:12:30')}` : ''}</div>`;
+}
 function cdHtml(p, ro) {
   const c = p.countdown || {}; const sty = CD_STY[c.style] ? c.style : 'classic'; const [, bg, fg] = CD_STY[sty];
   return `<label class="row" style="gap:8px;margin-bottom:10px;font-size:13px"><input type="checkbox" data-f="cdon" ${c.on ? 'checked' : ''} ${ro ? 'disabled' : ''}/> <b>在产品上显示倒计时</b>
@@ -273,7 +281,7 @@ function cdHtml(p, ro) {
         <select class="sel" data-f="cddays" ${ro ? 'disabled' : ''}>${CD_DAYS_CN.map(([d, l]) => `<option value="${d}" ${Number(c.days || 0) === d ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="pr-fld">样式 <em>和活动倒计时同一套</em>
         <select class="sel" data-f="cdstyle" ${ro ? 'disabled' : ''}>${Object.entries(CD_STY).map(([k, v]) => `<option value="${k}" ${sty === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
-      <div class="pr-fld">预览<span class="cdpv cdpv--${sty}" style="--cd-bg:${bg};--cd-fg:${fg}">${esc(cdLabel(p))} <b>2d 4h 12m 30s</b></span></div>
+      <div class="pr-fld">预览 <em>和网站上一模一样${sty === 'pill' || sty === 'dark' ? ';胶囊 / 黑金最后一天会整条变实心(反色),提醒快结束了' : ''}</em>${cdPreview(p, sty, bg, fg)}</div>
     </div>
     <p class="muted">显示在产品页、搜索页和 Collection 页的产品卡上。同一个产品也在活动里时,<b>活动的徽章照常显示,倒计时换成这个</b>;没改价的产品还是显示活动的倒计时。
       只给真的在这个价格上的产品(有人在后台手动改过价的不显示),计划结束、暂停、提前结束时自动去掉。</p>` : ''}`;

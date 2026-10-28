@@ -1944,3 +1944,7 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 /* 划线价:默认那个占一整行,其余两两一行 */
 #section-price .cmpopts .cmpopt:first-child { grid-column: 1 / -1; }
 #section-price .pr-tbl .inp.is-exc { border-color: #e0a300; background: #fffbea; }
+#section-price .cdpvs { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6px 10px; margin-top: 4px; }
+#section-price .cdpvs__k { font-size: 12px; color: var(--text-3); }
+#section-price .cdpv svg { flex: none; }
+#section-price .cdpv--classic b, #section-price .cdpv b { font-weight: 600; }
