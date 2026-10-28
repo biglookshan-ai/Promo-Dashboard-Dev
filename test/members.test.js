@@ -31,11 +31,25 @@ test('管理员分配角色 → 自动启用,按角色看页面;设置 / 工具�
   upsertOnLogin(s, u('ou_ops', '运营'), { fromAdmin: false });
   const m = updateMember(s, boss, 'ou_ops', { roles: ['ops', 'pricing'] });
   assert.equal(m.status, 'active');
-  assert.deepEqual(pagesOf(s, m), ['overview', 'campaigns', 'banners', 'topbar', 'pmodules', 'reviews', 'price']);
+  assert.deepEqual(pagesOf(s, m), ['overview', 'campaigns', 'banners', 'topbar', 'pmodules', 'callouts', 'pins', 'salelinks', 'price', 'history']);
   assert.ok(!canSee(s, m, 'settings'));
   assert.ok(canSee(s, boss, 'settings'));
+  // 2026-10-28 起默认不审批:每个人都按审核人算(保存直接生效),开了 APPROVALS=on 才分编辑 / 审核人
   assert.equal(actorOf(boss).role, 'approver');
-  assert.equal(actorOf(m).role, 'editor');
+  assert.equal(actorOf(m).role, 'approver');
+  process.env.APPROVALS = 'on';
+  try { assert.equal(actorOf(m).role, 'editor'); assert.ok(canSee(s, m, 'reviews')); } finally { delete process.env.APPROVALS; }
+  assert.ok(!canSee(s, m, 'reviews'));
+});
+
+test('老角色(拆页面之前存的):「商品模块」照样能看 Collection 排序 / 促销链接 / 产品页推广,「总览」照样能看历史记录;改过一次就按新的', () => {
+  const s = { members: [], roles: [{ key: 'admin', name: '管理员', pages: [] }, { key: 'ops', name: '运营', pages: ['overview', 'pmodules', 'reviews'] }, { key: 'x', name: '只看改价', pages: ['price'] }] };
+  const boss = upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: true });
+  upsertOnLogin(s, u('ou_ops', '运营'), { fromAdmin: false });
+  const m = updateMember(s, boss, 'ou_ops', { roles: ['ops'] });
+  assert.deepEqual(pagesOf(s, m), ['overview', 'pmodules', 'callouts', 'pins', 'salelinks', 'history']);
+  saveRoles(s, boss, [{ key: 'admin' }, { key: 'ops', name: '运营', pages: ['overview', 'pmodules'] }]); // 管理员把 Collection 排序等去掉了
+  assert.deepEqual(pagesOf(s, m), ['overview', 'pmodules']);                                          // 不会又被迁移加回来
 });
 
 test('非管理员不能管成员;不能撤掉最后一个管理员;停用后看不到任何页面', () => {

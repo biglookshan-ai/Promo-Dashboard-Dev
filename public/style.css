@@ -1952,3 +1952,17 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 /* 试算表最后一栏「移出 / 去掉」、产品下面「整个产品移出」不换行(2026-10-28 用户:竖着排了) */
 #section-price .pr-tbl td:last-child { white-space: nowrap; }
 #section-price .pr-tbl .linkbtn { white-space: nowrap; }
+
+/* 操作记录(2026-10-28) */
+.au-day { display: flex; align-items: baseline; gap: 8px; margin: 16px 0 6px; font-size: 13px; font-weight: 600; color: var(--text); }
+.au-day:first-of-type { margin-top: 4px; }
+.au-day .muted { font-weight: 400; font-size: 12px; }
+.au-row { display: grid; grid-template-columns: 46px 150px 110px minmax(0, 1fr); align-items: center; gap: 10px; padding: 7px 4px; border-top: 1px solid var(--border); font-size: 13px; }
+.au-row.is-bad { background: #fff6f5; }
+.au-t { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.au-who { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.au-who b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-who .avatar, .au-who .avatar-img { flex: none; width: 22px; height: 22px; font-size: 11px; }
+.au-mod { justify-self: start; }
+.au-x { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (max-width: 760px) { .au-row { grid-template-columns: 46px minmax(0, 1fr); } .au-mod, .au-x { grid-column: 2; } }

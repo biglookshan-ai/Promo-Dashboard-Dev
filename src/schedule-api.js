@@ -11,7 +11,8 @@ import { uploadImage } from './files.js';
 import { scopeCounts, calloutScope, calloutOptions, productCampaigns, tabProducts, collectionProducts, productsInfo, productsStock, productVariants } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
-import { actorOf, pagesOf, isAdmin } from './members.js';
+import { actorOf, pagesOf, isAdmin, canSee, pageNames, approvalsOn } from './members.js';
+import { KIND_MOD } from './audit.js';
 import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
 import { listColSorts, readColSort, applyColSort } from './col-sort-shop.js';
@@ -121,7 +122,8 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
     // 飞书模式下「成员」代替旧的 Shopify 员工名单(名字 / 角色给页面显示用)
     // pages:每人能看哪些页面(分工里选审批人 / 负责人时,只列看得到这类内容的人)
     staff: teamEnabled() ? (state.members || []).filter((m) => m.status === 'active').map((m) => ({ ...actorOf(m), avatar: m.avatar || '', admin: isAdmin(m), pages: pagesOf(state, m) })) : state.staff.map((u) => ({ ...u, role: 'approver' })),
-    lark: teamEnabled(), // 页面按它显示 / 隐藏分工、我的工作、成员与角色
+    lark: teamEnabled(), // 页面按它显示 / 隐藏飞书登录、成员与角色
+    approvals: approvalsOn(), // 2026-10-28 起默认关:审批人 / 分工 / 我的工作 / 审核页 / 审批私信都不显示,保存直接生效
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
     pins: state.pins || [], salelinks: state.salelinks || [], callouts: state.callouts || [],
     // 哪些合集现在被真的改了顺序(含「暂停接管」);原始顺序快照留在服务器,不发给页面
@@ -143,6 +145,13 @@ export function scheduleRouter() {
       if (e instanceof ActionError) return res.status(400).json({ error: e.message });
       console.error('[schedule]', e); res.status(500).json({ error: String(e.message || e) });
     }
+  };
+  // 2026-10-28 用户:按人限制能看的页面,能看到就能改 —— 服务器也拦,不只是界面上藏起来
+  const needPage = (req, pages) => {
+    if (!teamEnabled()) return;
+    const list = [].concat(pages).filter(Boolean);
+    const m = req.ctx.member; const s = load(req.ctx.shop);
+    if (!m || !list.some((p) => canSee(s, m, p))) throw new ActionError(`你没有「${list.map((p) => pageNames()[p] || p).join(' / ')}」页面的权限,请找管理员开通`);
   };
   const needApprover = (state, req) => { const a = actorFor(state, req.ctx.user); if (a.role !== 'approver') throw new ActionError('只有审核人能做这个操作'); return a; };
 
@@ -169,6 +178,11 @@ export function scheduleRouter() {
   r.post('/act', wrap(async (req) => {
     const shop = req.ctx.shop;
     const action = req.body?.action || {};
+    { // 页面权限:新建 / 排序看 kind,其余按要动的那条内容的类型
+      const s0 = load(shop);
+      const kind = action.kind || findItem(s0, action.id)?.kind;
+      needPage(req, action.type === 'purge' ? 'settings' : KIND_MOD[kind] || 'overview');
+    }
     const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
     let before = null; let who = '';
     const out = await performAction(shop, req.ctx, (state) => { before = state; const a = actorFor(state, req.ctx.user); who = a.name; return applyAction(state, action, a); }, { appUrl: info.appUrl });
@@ -177,6 +191,10 @@ export function scheduleRouter() {
       const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', delete: '删除', purge: '批量清理' };
       const it = findItem(out.state, action.id || out.id);
       const name = action.type === 'save' ? ACT[action.mode] : action.type === 'pause' ? (it?.paused ? '暂停' : '恢复显示') : ACT[action.type] || action.type;
+      const KCN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶清单', salelink: '促销链接', callout: '产品页推广' };
+      const k = it?.kind || action.kind;
+      req.audit = action.type === 'purge' ? { mod: 'settings', text: `批量删除 ${(out.ids || []).length} 条内容` }
+        : { mod: KIND_MOD[k] || 'other', text: `${action.type === 'save' && action.isNew ? '新建' : name === '直接保存' ? '保存' : name}${KCN[k] || '内容'}${it ? `「${titleOf(it)}」` : ''}` };
       const ids = action.type === 'purge' ? out.ids || [] : [action.id, out.id];
       try { recordAction(shop, before, out.state, ids, { action: action.historyNote ? '回滚' : name, by: who, note: action.historyNote || '' }); }
       catch (e) { console.error('[item-history]', e.message); }
@@ -220,6 +238,7 @@ export function scheduleRouter() {
 
   // ---- 联合推广:在 app 里直接建合集(兼容产品那个套活动页模板;能发布就发布到网店)----
   r.post('/collection-create', wrap(async (req) => {
+    needPage(req, 'callouts');
     const a = actorFor(load(req.ctx.shop), req.ctx.user);
     if (a.role !== 'approver') throw new ActionError('只有管理员能建 Collection');
     let out;
@@ -243,6 +262,7 @@ export function scheduleRouter() {
 
   // ---- 联合推广:立即同步一次兼容产品合集(force = 移出太多时确认「仍然同步」)----
   r.post('/joint-sync', wrap((req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'callouts');
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
     if (a.role !== 'approver') throw new ActionError('只有管理员能同步 Collection');
@@ -257,6 +277,7 @@ export function scheduleRouter() {
 
   // ---- 设置 / 成员 ----
   r.post('/settings', wrap(async (req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'settings');
     const s = load(req.ctx.shop); const a = needApprover(s, req);
     const { larkWebhook, larkSecret, notify, approvers } = req.body || {};
     // 各类内容的默认审批人:只能选启用中的成员;空 = 管理员审批
@@ -281,6 +302,7 @@ export function scheduleRouter() {
     replace(req.ctx.shop, s); return view(req, s);
   })));
   r.post('/staff', wrap(async (req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'settings');
     const s = load(req.ctx.shop); const a = actorFor(s, req.ctx.user);
     const { id, name, role } = req.body || {};
     const u = s.staff.find((x) => x.id === id) || (() => { throw new ActionError('找不到这个成员'); })();
@@ -298,6 +320,7 @@ export function scheduleRouter() {
   })));
   // 清理(设置 →「清理内容」):清空操作日志 / 删掉已删除内容的历史版本。还在的内容的历史版本不动
   r.post('/clear-history', wrap(async (req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'settings');
     const s = load(req.ctx.shop); const a = needApprover(s, req);
     const { log, deleted } = req.body || {};
     if (!log && !deleted) throw new ActionError('没选要清理什么');
@@ -309,6 +332,7 @@ export function scheduleRouter() {
     return { ...(await view(req, s)), message: [log ? '操作日志已清空' : '', deleted ? `已删掉 ${n} 条已删除内容的历史` : ''].filter(Boolean).join(',') };
   })));
   r.post('/lark-test', wrap(async (req) => {
+    needPage(req, 'settings');
     const s = load(req.ctx.shop); const a = needApprover(s, req);
     if (!s.settings.larkWebhook) throw new ActionError('还没填飞书 webhook 地址');
     const info = await cached(req.ctx.shop, 'shop', 3600_000, () => shopInfo(req.ctx));
@@ -326,6 +350,7 @@ export function scheduleRouter() {
       items: Object.fromEntries(Object.values(LIST).map((k) => [k, st[k].length])) };
   }));
   r.post('/setup', wrap(async (req) => {
+    needPage(req, 'settings');
     const missing = missingScopes(await grantedScopes(req.ctx));
     if (missing.length) throw new ActionError(`还缺权限:${missing.join(', ')}。请先在应用配置里加上并在店铺里同意。`);
     const out = await ensureDefinitions(req.ctx);
@@ -354,6 +379,7 @@ export function scheduleRouter() {
       topbarMessages: t.topbar?.messages.length || 0, modules: t.modules.map((m) => ({ module: m.module, title: `${m.title} ${m.title2}`.trim(), tabs: m.tabs.length })) };
   }));
   r.post('/import', wrap(async (req) => {
+    needPage(req, 'settings');
     const shop = req.ctx.shop;
     const setup = await setupStatus(req.ctx);
     if (!setup.ready) throw new ActionError('先在「店铺连接」里建好内容类型,再导入');
@@ -390,6 +416,7 @@ export function scheduleRouter() {
     return { theme: theme.theme.name, plan, total: planCount(plan), compare: compareView(s, theme) };
   }));
   r.post('/theme-sync', wrap(async (req) => {
+    needPage(req, 'settings');
     const shop = req.ctx.shop;
     const theme = await readMainTheme(req.ctx);
     const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
@@ -418,6 +445,7 @@ export function scheduleRouter() {
 
   // ---- 图片上传(Banner)----
   r.post('/upload', express.raw({ type: 'image/*', limit: '20mb' }), wrap(async (req) => {
+    needPage(req, ['banners', 'callouts', 'campaigns', 'topbar']);
     if (!req.body?.length) throw new ActionError('没收到图片');
     const name = String(req.query.filename || 'banner.jpg').replace(/[^\w.\-]+/g, '_').slice(0, 80);
     return uploadImage(req.ctx, req.body, name, req.headers['content-type']);
@@ -440,6 +468,7 @@ export function scheduleRouter() {
 
   // ---- 合集排序:有人在后台手改过被暂停接管了,点「重新接管」清掉 ----
   r.post('/col-hold', wrap((req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'pins');
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
     if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能重新接管');
@@ -468,6 +497,7 @@ export function scheduleRouter() {
     return { collection: withFlags([row], load(req.ctx.shop))[0] };
   }));
   r.post('/col-sort', wrap((req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'pins');
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
     if (a.role !== 'approver') throw new ActionError('只有管理员能改 Collection 的默认排序');
@@ -487,6 +517,7 @@ export function scheduleRouter() {
   // ---- 照另一个 Collection 的顺序排(2026-10-28 用户:Black Friday 的顺序完全照 Autumn Sale)----
   // 一次性:目标店里的手动顺序排成和来源一样,「平时怎么排」也照来源设;排之前 / 之后各记一版历史,可以回滚。preview = 只看会怎么排
   r.post('/col-copy-order', wrap((req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'pins');
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
     if (a.role !== 'approver') throw new ActionError('只有管理员能改 Collection 的顺序');
@@ -505,6 +536,7 @@ export function scheduleRouter() {
 
   // ---- 合集排序:立即跑一次(不用等定时器那一分钟),顺便把结果说清楚 ----
   r.post('/col-run', wrap((req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'pins');
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
     if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能手动执行');
@@ -616,6 +648,7 @@ export function scheduleRouter() {
   }));
   // 回滚:把合集的顺序改回某一版(那一版有、现在没有的加回来;后来新加进合集的不删,排到最后)
   r.post('/col-rollback', wrap((req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'pins');
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
     if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能回滚');

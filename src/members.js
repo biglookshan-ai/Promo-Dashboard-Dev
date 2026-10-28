@@ -3,30 +3,45 @@
 //   角色:{ key, name, pages: [页面 key], builtin? }。管理员(admin)永远能看全部页面、管成员。
 // 第一次登录的人 = 待分配(什么都看不到),管理员分配角色后才能用。
 
+// 2026-10-28 用户:不要审批(每个人保存直接生效),页面和左边导航一一对应;「操作记录」所有登录的人都能看,不算页面权限。
+// 审批只在 Railway 设了 APPROVALS=on 时才开(以后想要再开),开着才有「审核」页
+export const approvalsOn = () => process.env.APPROVALS === 'on';
 export const PAGES = {
-  overview: '总览', campaigns: '活动', banners: 'Banner', topbar: '顶栏', pmodules: '商品模块',
-  reviews: '审核', price: '改价', settings: '设置', tools: '工具',
+  overview: '总览', campaigns: '活动', banners: '首页 Banner', topbar: '顶栏', pmodules: '首页商品模块',
+  callouts: '产品页推广', pins: 'Collection 排序', salelinks: '促销链接', price: '改价', history: '历史记录',
+  settings: '设置', tools: '工具',
 };
+export const pageNames = () => (approvalsOn() ? { ...PAGES, reviews: '审核' } : PAGES);
 
 export const DEFAULT_ROLES = [
-  { key: 'admin', name: '管理员', pages: Object.keys(PAGES), builtin: true },
-  { key: 'ops', name: '运营', pages: ['overview', 'campaigns', 'banners', 'topbar', 'pmodules', 'reviews'] },
-  { key: 'pricing', name: '定价', pages: ['overview', 'campaigns', 'price', 'reviews'] },
-  { key: 'design', name: '设计', pages: ['overview', 'campaigns', 'reviews'] },
-  { key: 'copy', name: '文案 / 社媒', pages: ['overview', 'campaigns', 'reviews'] },
+  { key: 'admin', name: '管理员', pages: Object.keys(PAGES), builtin: true, v: 2 },
+  { key: 'ops', name: '运营', pages: ['overview', 'campaigns', 'banners', 'topbar', 'pmodules', 'callouts', 'pins', 'salelinks', 'history'], v: 2 },
+  { key: 'pricing', name: '定价', pages: ['overview', 'campaigns', 'price', 'pins', 'salelinks', 'history'], v: 2 },
+  { key: 'design', name: '设计', pages: ['overview', 'campaigns', 'banners', 'history'], v: 2 },
+  { key: 'copy', name: '文案 / 社媒', pages: ['overview', 'campaigns', 'banners', 'topbar', 'callouts', 'history'], v: 2 },
 ];
 
-export const rolesOf = (state) => (state.roles?.length ? state.roles : DEFAULT_ROLES);
+// 老的角色(v1):「商品模块」以前包含 Collection 排序 / 促销链接 / 产品页推广,「总览」包含历史记录 —— 拆开后照样给,谁都不会突然看不到
+function migrateRole(r) {
+  if (r.v === 2 || r.key === 'admin') return r.key === 'admin' ? DEFAULT_ROLES[0] : r;
+  const pages = new Set(r.pages || []);
+  if (pages.has('pmodules')) ['callouts', 'pins', 'salelinks'].forEach((k) => pages.add(k));
+  if (pages.has('overview')) pages.add('history');
+  return { ...r, pages: [...pages], v: 2 };
+}
+export const rolesOf = (state) => (state.roles?.length ? state.roles.map(migrateRole) : DEFAULT_ROLES);
 export const isAdmin = (m) => !!m && m.status === 'active' && (m.roles || []).includes('admin');
 
 // 这个成员能看哪些页面(管理员 = 全部;待分配 / 停用 = 没有)
 export function pagesOf(state, m) {
   if (!m || m.status !== 'active') return [];
-  if (isAdmin(m)) return Object.keys(PAGES);
+  const names = pageNames();
+  if (isAdmin(m)) return Object.keys(names);
   const set = new Set();
   for (const r of rolesOf(state)) if ((m.roles || []).includes(r.key)) r.pages.forEach((p) => set.add(p));
   set.delete('settings'); set.delete('tools'); // 设置、工具只给管理员,角色里勾了也不算
-  return Object.keys(PAGES).filter((p) => set.has(p));
+  if (approvalsOn()) set.add('reviews');       // 开了审批:谁都能看「审核」(只列他能批的)
+  return Object.keys(names).filter((p) => set.has(p));
 }
 export const canSee = (state, m, page) => pagesOf(state, m).includes(page);
 
@@ -91,7 +106,7 @@ export function saveRoles(state, actor, roles) {
     seen.add(key);
     if (key === 'admin') { out.push(DEFAULT_ROLES[0]); continue; }
     const name = String(r.name || '').trim().slice(0, 20) || key;
-    out.push({ key, name, pages: (r.pages || []).filter((p) => PAGES[p] && p !== 'settings' && p !== 'tools') });
+    out.push({ key, name, pages: (r.pages || []).filter((p) => PAGES[p] && p !== 'settings' && p !== 'tools'), v: 2 });
   }
   if (!out.some((r) => r.key === 'admin')) out.unshift(DEFAULT_ROLES[0]);
   // 被删掉的角色从成员身上去掉
@@ -101,8 +116,9 @@ export function saveRoles(state, actor, roles) {
   return out;
 }
 
-// 给现有审核流用的身份:管理员 = 审核人,其他 = 编辑(3.2 改成「每项指定审批人」)
-export const actorOf = (m) => ({ id: m.id, name: m.name, role: isAdmin(m) ? 'approver' : 'editor' });
+// 给审核流用的身份。2026-10-28 起默认不审批:每个人都按「审核人」算(保存直接生效);
+// 能不能动某一类内容改由页面权限管(schedule-api 的 needPage)。开了审批(APPROVALS=on)才回到 管理员 = 审核人、其他 = 编辑
+export const actorOf = (m) => ({ id: m.id, name: m.name, role: !approvalsOn() || isAdmin(m) ? 'approver' : 'editor' });
 
 // ---------- 测试模式(临时关掉飞书登录)----------
 // 打开后:**从 Shopify 后台里**打开 app 的人不用登录飞书,直接是管理员。

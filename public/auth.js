@@ -6,7 +6,8 @@
 // 其他脚本用 window.cgpHeaders() 拿请求头,启动前 await window.CGP_AUTH。
 (function () {
   const KEY = 'cgp-app-session';
-  const SECTION_PAGE = { overview: 'overview', mywork: 'overview', campaigns: 'campaigns', banners: 'banners', topbar: 'topbar', pmodules: 'pmodules', pins: 'pmodules', salelinks: 'pmodules', callouts: 'pmodules', reviews: 'reviews', history: 'overview', price: 'price', settings: 'settings', metafields: 'tools' };
+  // 左边导航 → 页面权限(2026-10-28 拆细:Collection 排序 / 促销链接 / 产品页推广 / 历史记录各自一项;「操作记录」登录的人都能看 = '*')
+  const SECTION_PAGE = { overview: 'overview', mywork: 'overview', campaigns: 'campaigns', banners: 'banners', topbar: 'topbar', pmodules: 'pmodules', pins: 'pins', salelinks: 'salelinks', callouts: 'callouts', reviews: 'reviews', history: 'history', audit: '*', price: 'price', settings: 'settings', metafields: 'tools' };
   const embedded = () => !!(window.shopify && window.shopify.idToken);
 
   window.cgpHeaders = async function () {
@@ -93,7 +94,7 @@
   // 按角色隐藏看不到的页面;当前页看不到就跳到第一个能看的
   function applyPages(pages) {
     const ok = new Set(pages);
-    document.querySelectorAll('#modnav .modnav__item').forEach((b) => { b.hidden = !ok.has(SECTION_PAGE[b.dataset.section]); });
+    document.querySelectorAll('#modnav .modnav__item').forEach((b) => { const pg = SECTION_PAGE[b.dataset.section]; b.hidden = pg !== '*' && !ok.has(pg); });
     const first = [...document.querySelectorAll('#modnav .modnav__item')].find((b) => !b.hidden);
     const active = document.querySelector('#modnav .modnav__item.is-active');
     if (first && (!active || active.hidden)) setTimeout(() => window.showSection && window.showSection(first.dataset.section), 0);

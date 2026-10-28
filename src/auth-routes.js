@@ -2,6 +2,7 @@
 //   公开(不用登录):/auth/lark/start(直接开网页时跳飞书)、/auth/lark/callback(飞书跳回来)、/api/auth/config
 //   要登录:/api/auth/lark/start(后台里点登录 → 拿授权地址,弹窗打开)、/api/auth/lark/poll(轮询弹窗结果)、/api/me、/api/members、/api/roles
 import express from 'express';
+import { appendAudit } from './audit.js';
 import { load, replace, appendLog } from './schedule-store.js';
 import { withLock } from './sync.js';
 import { knownShops } from './token-store.js';
@@ -60,6 +61,7 @@ export function publicAuthRouter() {
         return { ...m };
       });
       const session = issueSession({ uid: member.id, shop: st.shop });
+      appendAudit(st.shop, { who: { id: member.id, name: member.name }, mod: 'login', text: `用飞书登录${member.status === 'active' ? '' : '(新成员,等分配角色)'}`, ok: true, path: '/auth/lark/callback' });
       const hello = member.status === 'active' ? '' : '<p>你是第一次登录,管理员给你分配角色后就能用了。</p>';
       if (st.mode === 'popup') {
         const code = finishLoginState(id, { session });
@@ -131,8 +133,18 @@ export function apiAuthRouter() {
   r.put('/members/:id', wrap((req) => withLock(req.ctx.shop, async () => {
     const s = load(req.ctx.shop);
     const me = (s.members || []).find((x) => x.id === needRealLogin(req).id);
+    const before = { ...((s.members || []).find((x) => x.id === req.params.id) || {}) };
     const m = updateMember(s, me, req.params.id, req.body || {});
     replace(req.ctx.shop, s);
+    { // 操作记录:写清楚改了谁、改成什么
+      const rn = Object.fromEntries(rolesOf(s).map((r) => [r.key, r.name]));
+      const ST = { active: '启用', pending: '待分配', disabled: '停用' };
+      const parts = [];
+      if (req.body?.roles) parts.push(`角色 → ${(m.roles || []).map((k) => rn[k] || k).join('、') || '无'}`);
+      if (req.body?.status && req.body.status !== before.status) parts.push(`状态 → ${ST[m.status] || m.status}`);
+      if (req.body?.name != null && m.name !== before.name) parts.push(`改名 → ${m.name}`);
+      req.audit = { mod: 'members', text: `改成员「${before.name || m.name}」:${parts.join(',') || '没变'}` };
+    }
     return { ok: true, member: m };
   })));
   // 测试模式:临时关掉飞书登录(只有名单里的管理员能开,到点自动失效)
@@ -153,6 +165,7 @@ export function apiAuthRouter() {
     const me = (s.members || []).find((x) => x.id === needRealLogin(req).id);
     const roles = saveRoles(s, me, req.body?.roles || []);
     replace(req.ctx.shop, s);
+    req.audit = { mod: 'members', text: `改角色能看的页面:${roles.filter((r) => r.key !== 'admin').map((r) => `${r.name}(${r.pages.length} 个页面)`).join('、')}` };
     return { ok: true, roles };
   })));
   return r;

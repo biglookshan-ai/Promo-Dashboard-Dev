@@ -7,7 +7,7 @@ import { runOnce } from './executor.js';
 import { eventMessages, deliver } from './notifier.js';
 import * as catalog from './catalog.js';
 import { load as loadSchedule } from '../schedule-store.js';
-import { actorOf, isAdmin, canSee } from '../members.js';
+import { actorOf, isAdmin, canSee, approvalsOn } from '../members.js';
 import { loadPlanHistory, recordPlanAction } from './plan-history.js';
 import { changedKeys } from '../item-history.js';
 import { teamEnabled } from '../lark-login.js';
@@ -48,7 +48,7 @@ export function priceRouter() {
     const all = req.query.all === '1'; const now = Date.now();
     const ended = (p) => ['ended', 'done'].includes(planStatus(p, now));
     return {
-      me: { id: me.id, name: me.name, admin: me.role === 'approver' }, people: pricePeople(req.ctx.shop), team: teamEnabled(),
+      me: { id: me.id, name: me.name, admin: me.role === 'approver' }, people: pricePeople(req.ctx.shop), team: teamEnabled(), approvals: approvalsOn(),
       plans: all ? state.plans : state.plans.filter((p) => !ended(p)), allPlans: all,
       endedCount: state.plans.filter(ended).length, planNames: state.plans.map((p) => ({ id: p.id, name: p.name })),
       vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState,
@@ -64,6 +64,12 @@ export function priceRouter() {
       const part = { plans: state.plans, vault: state.vault, log: state.log, settings: state.settings };
       const action = req.body?.action || {}; const actor = actorOfReq(req);
       const { doc, effects, message, id } = applyAction(part, action, actor, Date.now());
+      { // 操作记录:写上是哪个改价计划
+        const pl = doc.plans.find((x) => x.id === (action.id || id)) || state.plans.find((x) => x.id === action.id);
+        const V = { draft: '存草稿', submit: '提交审核', publish: '保存', approve: '批准', reject: '退回', pause: '暂停', resume: '继续', stop: '提前结束', delete: '删除', exclude: `移出 ${(action.variantIds || []).length} 个变体`, resolve: '处理暂停接管' };
+        const verb = action.type === 'save' ? (action.isNew ? '新建' : V[action.mode] || '保存') : V[action.type] || action.type;
+        req.audit = { mod: 'price', text: `${verb}${action.type === 'exclude' ? ':' : ''}改价计划${pl ? `「${pl.name}」` : ''}` };
+      }
       const beforePlans = state.plans;
       Object.assign(state, { plans: doc.plans, vault: doc.vault, log: doc.log });
       save(shop, state);

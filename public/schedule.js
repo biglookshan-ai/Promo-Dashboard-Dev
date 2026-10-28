@@ -161,7 +161,9 @@
   // 「多人协作」(飞书登录、分工、我的工作、审核流程)开没开:服务器说了算(Railway 的 TEAM_MODE),演示数据里没有 = 关。
   // 关着时打开 app 的人都是管理员:改动直接生效,不显示负责人 / 审批人 / 抄送、我的工作、成员与角色
   const team = () => !!S.lark;
-  const me = () => { const u = S.staff.find((x) => x.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' }; return team() ? u : { ...u, role: 'approver' }; };
+  // 审批(审批人 / 分工 / 我的工作 / 审核页 / 审批私信):2026-10-28 起默认关,飞书登录开着也不审批,保存直接生效
+  const approvalsOn = () => !!S.approvals;
+  const me = () => { const u = S.staff.find((x) => x.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' }; return approvalsOn() ? u : { ...u, role: 'approver' }; };
   const isApprover = () => me().role === 'approver'; // 管理员
   const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
   // ---- v3 分工:每条内容的负责人 / 审批人 / 抄送 / 截止(规则在 /lib/schedule-actions.js)----
@@ -646,7 +648,7 @@
         ${stat(liveN, '上线中', 'stat--ok', 'banners')}
         ${stat(soonN, '7 天内上线', '', 'overview')}
         ${stat(endN, '7 天内到期', endN ? 'stat--warn' : '', 'overview')}
-        ${team() || pendN ? stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews') : ''}
+        ${approvalsOn() || pendN ? stat(pendN, '待审核', pendN ? 'stat--danger' : '', 'reviews') : ''}
       </div>
       ${campStripHtml()}
       ${alertsHtml(['banner', 'topbar', 'campaign', 'tbstyle', 'pmodule', 'pin', 'salelink', 'callout'])}
@@ -967,7 +969,7 @@
     }
     if (cs != null && cs > now() && cs - now() < 2 * DAY) {
       const notYet = content.filter((x) => x.state !== 'approved').length + livePlans.filter((p) => p.state !== 'approved').length;
-      if (notYet) out.push({ level: 'warn', text: team() ? `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项没批准` : `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项是草稿(没保存生效)` });
+      if (notYet) out.push({ level: 'warn', text: approvalsOn() ? `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项没批准` : `活动 ${relSpan(cs - now())}后开始,还有 ${notYet} 项是草稿(没保存生效)` });
     }
     return out;
   }
@@ -1121,7 +1123,7 @@
       <span class="hrow__s">${p.kind === 'permanent' ? '永久调价' : '限时'} · ${new Set(p.slots.flatMap((s) => s.items.map((i) => i.productId))).size} 个产品 · ${fDT(Math.min(...p.slots.map((s) => s.start)))}</span></span><span class="tag">${PLAN_ST[p.state === 'approved' ? 'scheduled' : p.state] || p.state}</span></button>`).join('');
     // 审批进度:只在「多人协作」开着时有意义
     let prog = '';
-    if (team()) {
+    if (approvalsOn()) {
       const done = content.filter((x) => x.state === 'approved').length + plans.filter((p) => p.state === 'approved').length;
       const total = content.length + plans.length;
       const waiting = content.filter((x) => x.state === 'pending' || x.pendingChange).length + plans.filter((p) => p.state === 'pending' || p.pendingChange).length;
@@ -2456,6 +2458,58 @@
     } catch (e) { hsRows = []; toast(e.message, false); }
     hsBusy = false; renderHistory();
   }
+  // ================= 操作记录 =================
+  // 2026-10-28 用户:每个同事用飞书登录,所有操作都记下来,所有人都能看全部。服务器统一记(src/audit.js),这里按人 / 模块 / 时间 / 文字筛
+  let auRows = null, auPeople = [], auMods = {}, auMore = false, auBusy = false, auErr = '';
+  const auF = { who: '', mod: '', days: 7, q: '' };
+  async function loadAudit(more) {
+    if (MODE !== 'live') { auRows = []; return renderAudit(); }
+    auBusy = true; if (!more) renderAudit();
+    try {
+      const since = auF.days ? now() - auF.days * DAY : 0;
+      const before = more && auRows?.length ? auRows[auRows.length - 1].at : 0;
+      const e = encodeURIComponent;
+      const r = await api('GET', `/api/audit?who=${e(auF.who)}&mod=${e(auF.mod)}&since=${since}&before=${before}&q=${e(auF.q)}&limit=200`);
+      auRows = more ? [...(auRows || []), ...r.rows] : r.rows; auPeople = r.people || []; auMods = r.mods || {}; auMore = !!r.more; auErr = '';
+    } catch (err) { auErr = err.message; }
+    auBusy = false; renderAudit();
+  }
+  function renderAudit() {
+    const root = $('#au-root'); if (!root) return;
+    const avatarOf = (id) => (S.staff || []).find((u) => u.id === id)?.avatar || '';
+    const byDay = new Map();
+    for (const r of auRows || []) { const d = fDate(r.at); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(r); }
+    const time = (ms) => fmt(ms, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const row = (r) => `<div class="au-row${r.ok === false ? ' is-bad' : ''}">
+        <span class="au-t">${time(r.at)}</span>
+        <span class="au-who">${avatarOf(r.who?.id) ? `<img class="avatar-img" src="${esc(avatarOf(r.who.id))}" alt=""/>` : `<span class="avatar">${esc((r.who?.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(r.who?.name || '未知')}</b></span>
+        <span class="kchip au-mod">${esc(auMods[r.mod] || r.mod || '')}</span>
+        <span class="au-x">${esc(r.text || '')}${r.ok === false ? `<span class="tag tag--danger" title="${esc(r.err || '')}">没成功${r.err ? ':' + esc(r.err.slice(0, 60)) : ''}</span>` : ''}</span>
+      </div>`;
+    const modOpts = Object.entries(auMods).filter(([k]) => !['overview', 'history', 'reviews'].includes(k));
+    root.innerHTML = `${pageHead('操作记录', '每个人在网站更新中心做的每一次改动 —— 新建、保存、删除、上下线、改价、Collection 排序、设置、成员、登录 —— 都记在这里,所有人都能看。到点自动执行的(定时器 / 改价执行器)不在这里,在各页面自己的日志里。')}
+      <section class="panel">
+        <div class="hs-f">
+          <select class="sel" id="au-who"><option value="">所有人</option>${auPeople.map((p) => `<option value="${esc(p.id)}" ${auF.who === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+          <select class="sel" id="au-mod"><option value="">所有模块</option>${modOpts.map(([k, l]) => `<option value="${k}" ${auF.mod === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+          <select class="sel" id="au-days">${[[1, '今天'], [7, '最近 7 天'], [30, '最近 30 天'], [0, '全部']].map(([d, l]) => `<option value="${d}" ${auF.days === d ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          <input class="inp" id="au-q" placeholder="搜索内容或人名,回车" value="${esc(auF.q)}"/>
+          <button class="btn btn-sm btn-ghost" id="au-reload" type="button">刷新</button>
+        </div>
+        ${MODE !== 'live' ? '<p class="muted">演示模式没有操作记录;正式数据里每个人的每一次改动都会记在这里。</p>' : ''}
+        ${auErr ? `<div class="note note--danger">${esc(auErr)}</div>` : ''}
+        ${auBusy && !auRows ? '<p class="muted">读取中…</p>' : auRows && !auRows.length && MODE === 'live' ? '<p class="muted">这段时间没有符合条件的操作。</p>' : ''}
+        ${[...byDay].map(([d, rows]) => `<div class="au-day">${esc(d)}<span class="muted">${rows.length} 条</span></div>${rows.map(row).join('')}`).join('')}
+        ${auMore ? `<button class="btn btn-sm" id="au-more" type="button" style="margin-top:10px" ${auBusy ? 'disabled' : ''}>${auBusy ? '读取中…' : '再看更早的'}</button>` : ''}
+      </section>`;
+    $('#au-who').onchange = (e) => { auF.who = e.target.value; loadAudit(); };
+    $('#au-mod').onchange = (e) => { auF.mod = e.target.value; loadAudit(); };
+    $('#au-days').onchange = (e) => { auF.days = Number(e.target.value); loadAudit(); };
+    $('#au-q').onkeydown = (e) => { if (e.key === 'Enter') { auF.q = e.target.value.trim(); loadAudit(); } };
+    $('#au-reload').onclick = () => loadAudit();
+    const mo = $('#au-more'); if (mo) mo.onclick = () => loadAudit(true);
+  }
+
   function renderHistory() {
     const root = $('#hs-root'); if (!root) return;
     const kinds = [['', '全部类型'], ['banner', 'Banner'], ['topbar', '顶栏'], ['tbstyle', '顶栏样式'], ['pmodule', '商品模块'], ['pin', 'Collection 排序'], ['campaign', '活动'],
@@ -3003,12 +3057,13 @@
     const N = S.settings.notify; if (N.due === undefined) N.due = true;
     const live = MODE === 'live';
     const larkOn = !!window.CGP_ME?.larkEnabled; // 开了飞书登录:成员管理和数据模式无关,一直显示
-    const teamOn = team(); // 多人协作关着:不显示成员与角色、默认审批人、只跟分工有关的通知
+    const teamOn = team(); // 多人协作关着:不显示成员与角色
+    const apprOn = approvalsOn(); // 没开审批:不显示默认审批人、只跟审批 / 分工有关的通知
     const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''} ${live && !isApprover() ? 'disabled' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
     const hookVal = live ? '' : esc(S.settings.larkWebhook || '');
     const hookPh = live && S.settings.larkWebhookSet ? `已设置(结尾 ${esc(S.settings.larkWebhookTail)}),要换就粘贴新地址` : 'https://open.larksuite.com/open-apis/bot/v2/hook/…';
     $('#st-root').innerHTML = `
-      ${pageHead('设置', teamOn ? '店铺连接、成员与审核、飞书通知、定时器、清理和操作日志' : '店铺连接、飞书通知、定时器、清理测试内容和操作日志')}
+      ${pageHead('设置', teamOn ? `店铺连接、成员与${apprOn ? '审核' : '角色'}、飞书通知、定时器、清理和操作日志` : '店铺连接、飞书通知、定时器、清理测试内容和操作日志')}
       <section class="panel conn" id="st-conn"><div class="panel__h"><h3>店铺连接(正式数据)</h3></div><p class="muted">检查中…</p></section>
       ${larkOn ? larkPanelsHtml() : ''}
       <div class="stgrid">
@@ -3027,7 +3082,7 @@
             ${live && u.lastSeen ? `<span class="muted">${fAgo(u.lastSeen)}来过</span>` : ''}
             <select class="sel sel--sm" data-role="${u.id}" ${live && !isApprover() ? 'disabled' : ''}><option value="approver" ${u.role === 'approver' ? 'selected' : ''}>审核人</option><option value="editor" ${u.role === 'editor' ? 'selected' : ''}>编辑</option></select></div>`).join('')}
         </section>`}
-        ${teamOn ? `<section class="panel">
+        ${apprOn ? `<section class="panel">
           <div class="panel__h"><h3>默认审批人</h3><span class="muted">每类内容由谁审批</span></div>
           <p class="muted">一条内容没单独选审批人时,就由这里设的人审批;这里也没设 = 管理员审批。审批人自己提交的直接生效,轮播顺序也由他批。</p>
           ${['banner', 'topbar', 'tbstyle', 'pmodule', 'pin', 'salelink', 'callout', 'campaign'].map((k) => `<label class="kv kv--sel"><span>${({ banner: '首页 Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', pmodule: '首页商品模块', pin: 'Collection 排序', salelink: '促销链接', callout: '产品页推广', campaign: '活动' })[k]}</span>
@@ -3042,13 +3097,13 @@
             <input class="inp" id="st-secret" type="password" placeholder="${live && S.settings.larkSecretSet ? '已设置,要换就粘贴新的' : '没开签名校验就留空'}" ${live && !isApprover() ? 'disabled' : ''}/></label>
           ${live && isApprover() ? '<button class="btn btn-sm" id="st-hook-save" type="button">保存飞书设置</button>' : ''}
           <div class="tgls">
-            ${teamOn ? tg('submit', '有人提交审核', '私信这条内容的审批人;群里也发') : ''}
-            ${teamOn ? tg('decision', '批准 / 退回', '私信提交人、负责人和抄送的人,附退回意见') : ''}
-            ${tg('dayBefore', '上线前一天提醒', teamOn ? '每天 10:00 汇总明天要上线的,没批准的会标出来' : '每天 10:00 汇总明天要上线的')}
+            ${apprOn ? tg('submit', '有人提交审核', '私信这条内容的审批人;群里也发') : ''}
+            ${apprOn ? tg('decision', '批准 / 退回', '私信提交人、负责人和抄送的人,附退回意见') : ''}
+            ${tg('dayBefore', '上线前一天提醒', apprOn ? '每天 10:00 汇总明天要上线的,没批准的会标出来' : '每天 10:00 汇总明天要上线的')}
             ${tg('endingSoon', `下架前 ${ENDING_DAYS} 天提醒`, '每天 10:00 汇总快到期的 Banner / 公告 / 活动,方便决定延长还是准备替换')}
-            ${tg('upDown', '上线 / 下线', teamOn ? '定时器每次自动切换都通知;负责人和抄送的人收到私信' : '定时器每次自动切换都通知')}
-            ${teamOn ? tg('unapproved', '到点还没批准', '快到上线时间还没批时私信审批人') : ''}
-            ${teamOn ? tg('due', '截止提醒', '截止前一天、过了截止还没提交,私信负责人(过期也告诉审批人)') : ''}
+            ${tg('upDown', '上线 / 下线', apprOn ? '定时器每次自动切换都通知;负责人和抄送的人收到私信' : '定时器每次自动切换都通知')}
+            ${apprOn ? tg('unapproved', '到点还没批准', '快到上线时间还没批时私信审批人') : ''}
+            ${apprOn ? tg('due', '截止提醒', '截止前一天、过了截止还没提交,私信负责人(过期也告诉审批人)') : ''}
             ${tg('failure', '定时切换失败', '附错误原因;同一小时只报一次')}
           </div>
           <button class="btn btn-sm" id="st-test" type="button" ${live && !isApprover() ? 'disabled' : ''}>发送测试消息</button>
@@ -3215,7 +3270,7 @@
       </div>
       ${st.app ? `<p class="muted conn__ver">app 版本 <span class="mono">${esc(st.app.commit)}</span> · 启动于 ${fDT(st.app.startedAt)}</p>` : ''}
       ${st.ready ? `<div class="conn__mode">${MODE === 'live'
-        ? `现在看到的是店里的正式数据,所有改动${team() ? '按审核规则' : '保存后直接'}写进店铺。<button class="linkbtn" data-conn="demo" type="button">临时看演示数据</button>`
+        ? `现在看到的是店里的正式数据,所有改动${approvalsOn() ? '按审核规则' : '保存后直接'}写进店铺。<button class="linkbtn" data-conn="demo" type="button">临时看演示数据</button>`
         : '<b>内容类型已建好。</b><button class="btn btn-sm btn-primary" data-conn="live" type="button">切换到正式数据</button><span class="muted">切换后你在这里的操作会真的写进店铺,正式网站马上按这些内容显示。</span>'}</div>` : ''}`;
     box.querySelector('[data-conn=live]')?.addEventListener('click', () => { localStorage.removeItem(FORCE_DEMO); location.reload(); });
     box.querySelector('[data-conn=demo]')?.addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
@@ -3707,7 +3762,7 @@
   const larkEdHtml = () => (ed.larkLinks.length ? `<div class="chips">${ed.larkLinks.map((l, i) => `<span class="chip"><span class="chip__t">${esc(l.label || '飞书任务')}</span><a class="lk" href="${esc(l.url)}" target="_blank" rel="noopener">打开↗</a><button type="button" class="chip__x" data-lk="rm" data-i="${i}" aria-label="移除">${I.x}</button></span>`).join('')}</div>` : '<span class="muted">还没关联</span>');
   // 分工:负责人 / 审批人 / 截止 / 抄送(所有内容都有,放在表单最后)
   function assignHtml(it) {
-    if (it.isDefault || !team()) return '';
+    if (it.isDefault || !approvalsOn()) return ''; // 分工(负责人 / 审批人 / 截止 / 抄送)只在开了审批时有
     const P = peopleFor(it.kind); const mine = me().id;
     const def = appr()[it.kind];
     const opt = (u, sel) => `<option value="${esc(u.id)}" ${sel === u.id ? 'selected' : ''}>${esc(u.name)}${u.admin || u.role === 'approver' ? '(管理员)' : ''}</option>`;
@@ -4825,7 +4880,7 @@
     renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderSaleLinks(); renderCallouts(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
     if (isActive('history')) renderHistory();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
-    if (!team()) { // 多人协作关着:不显示「我的工作」;「审核」只在还有遗留的待审核时显示
+    if (!approvalsOn()) { // 没开审批:不显示「我的工作」;「审核」只在还有遗留的待审核时显示
       const navOf = (k) => document.querySelector(`#modnav [data-section="${k}"]`);
       navOf('mywork').hidden = true; navOf('reviews').hidden = !n;
       if (['mywork', 'reviews'].some((k) => navOf(k).hidden && isActive(k))) showSection('overview');
@@ -4884,6 +4939,7 @@
     $$('#modnav .modnav__item').forEach((b) => { if (!b.title) b.title = b.querySelector('span')?.textContent.trim() || ''; });
   })();
   document.querySelector('#modnav [data-section="history"]')?.addEventListener('click', () => loadHistoryPage());
+  document.querySelector('#modnav [data-section="audit"]')?.addEventListener('click', () => loadAudit());
   // 我的工作:点开时画一遍,顺便读改价计划(一分钟内不重复读)
   document.querySelector('#modnav [data-section="mywork"]')?.addEventListener('click', () => { renderMyWork(); loadMwPrice(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#drawer').hidden) closeDrawer(); });
@@ -4894,7 +4950,7 @@
     const bar = $('#demobar'); if (!bar) return;
     if (MODE === 'live') {
       bar.className = 'demobar demobar--live';
-      bar.innerHTML = `<span class="demobar__tag">正式数据</span><span>改动${team() ? '按审核规则' : '保存后直接'}写进店铺 ${esc(S.store?.name || '')},正式网站跟着变。</span>
+      bar.innerHTML = `<span class="demobar__tag">正式数据</span><span>改动${approvalsOn() ? '按审核规则' : '保存后直接'}写进店铺 ${esc(S.store?.name || '')},正式网站跟着变。</span>
         <button class="linkbtn" id="mode-demo" type="button">临时看演示数据</button>`;
       $('#mode-demo').addEventListener('click', () => { localStorage.setItem(FORCE_DEMO, '1'); location.reload(); });
     } else if (liveSetup?.ready) {
