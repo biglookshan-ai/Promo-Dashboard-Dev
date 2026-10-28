@@ -72,18 +72,29 @@ const kindLabel = (p) => (p.kind === 'permanent' ? '永久调价' : `限时${cor
 const holdsOf = (planId) => S.vault.filter((v) => v.hold && (!planId || v.hold.planId === planId));
 
 // 改价数据(2026-10-28 用户:系统慢)—— 同一时间只读一次,「我的工作」/ 活动页 / Collection 排序里要用也共用这一份
-let psInflight = null, psLast = null; // psLast = { at, value }
-function priceState(maxAge = 0) {
-  if (psLast && Date.now() - psLast.at <= maxAge) return Promise.resolve(psLast.value);
-  return (psInflight ||= api('GET', '/api/price/state')
-    .then((v) => { psLast = { at: Date.now(), value: v }; return v; })
-    .finally(() => { psInflight = null; }));
+// 默认只读没结束的计划;all = 连已结束的一起(看「已结束 / 全部」、从活动页 / 历史打开旧计划时)
+const psInflight = {}, psLast = {}; // 按 all / cur 分开
+function priceState(maxAge = 0, all = false) {
+  const k = all ? 'all' : 'cur'; const last = psLast[k] || (all ? null : psLast.all); // 有全部的也能当「没结束的」用
+  if (last && Date.now() - last.at <= maxAge) return Promise.resolve(last.value);
+  return (psInflight[k] ||= api('GET', `/api/price/state${all ? '?all=1' : ''}`)
+    .then((v) => { psLast[k] = { at: Date.now(), value: v }; return v; })
+    .finally(() => { psInflight[k] = null; }));
 }
 window.cgpPriceState = priceState;
-async function load() {
-  S = await priceState();
+const wantAll = () => ['ended', 'all'].includes(filter);
+let loadingAll = false; // 正在补读已结束的计划
+async function load(all = wantAll()) {
+  S = await priceState(0, all);
   renderChrome();
 }
+// 旧计划(已结束的)默认没读进来:要打开时先补读全部
+async function planByIdAll(id) {
+  let p = planById(id);
+  if (!p && !S.allPlans) { await load(true); p = planById(id); }
+  return p;
+}
+const planName = (id) => (S.planNames || []).find((x) => x.id === id)?.name || planById(id)?.name || '';
 
 // ================= 外框 =================
 function renderChrome() {
@@ -126,7 +137,8 @@ const ORDER = { running: 0, paused: 1, scheduled: 2, pending: 3, rejected: 4, dr
 
 function plansHtml() {
   const st = S.plans.map((p) => ({ p, s: statusOf(p) }));
-  const count = (f) => st.filter(({ p, s }) => f(s, p)).length;
+  // 已结束的没读进来时,「已结束 / 全部」的数字用服务器给的
+  const count = (f) => st.filter(({ p, s }) => f(s, p)).length + (!S.allPlans && f === FILTERS[5][2] ? S.endedCount || 0 : !S.allPlans && f === FILTERS[6][2] ? S.endedCount || 0 : 0);
   const live = S.vault.filter((v) => v.written && !v.hold).length;
   const showPending = !!S.team || count(FILTERS[3][2]) > 0; // 多人协作关着时,所有人都能直接批准,基本不会有待审核
   const f = FILTERS.find((x) => x[0] === filter) || FILTERS[0];
@@ -148,7 +160,7 @@ function plansHtml() {
     <span class="spacer"></span>
   </div>
   <div class="pr-tabs">${FILTERS.filter(([k]) => k !== 'pending' || showPending).map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
-  ${list.length ? list.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id))).join('') : '<div class="pr-empty">这里还没有计划</div>'}`;
+  ${loadingAll ? '<div class="pr-empty">正在读已结束的计划…</div>' : list.length ? list.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id))).join('') : '<div class="pr-empty">这里还没有计划</div>'}`;
 }
 
 const leftTxt = (ms) => {
@@ -770,7 +782,7 @@ const REASON = { manual: '有人在后台手动改过价,app 已暂停接管这�
 function vaultHtml() {
   const holds = holdsOf();
   const live = S.vault.filter((v) => v.written && !v.hold);
-  const plan = (id) => planById(id)?.name || '—';
+  const plan = (id) => planName(id) || '—';
   const colls = Object.entries(S.collState || {});
   return `
   <div class="toolbar"><button class="btn" data-a="dlvault">导出还原表格(CSV)</button>${isAdmin() ? '<button class="btn" data-a="runnow">立即对齐一次</button>' : ''}
@@ -802,7 +814,7 @@ async function loadLedger() {
     const d = await api('GET', `/api/price/ledger?${qs}`);
     el.innerHTML = `<div class="toolbar">
       <div class="field-search"><input type="search" id="lq" placeholder="搜产品 / SKU / 计划" value="${esc(ledgerQ.q)}"/></div>
-      <select class="sel" id="lplan"><option value="">全部计划</option>${S.plans.map((p) => `<option value="${p.id}" ${ledgerQ.plan === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+      <select class="sel" id="lplan"><option value="">全部计划</option>${(S.planNames || S.plans).map((p) => `<option value="${p.id}" ${ledgerQ.plan === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
       <button class="btn" data-a="dlledger">导出 CSV</button></div>
       ${d.rows.length ? `<div class="tblwrap"><table class="pr-tbl"><thead><tr><th>时间(英国)</th><th>产品</th><th>SKU</th><th>动作</th><th class="num">改前</th><th class="num">改后</th><th>计划</th><th>备注</th></tr></thead><tbody>
       ${d.rows.map((x) => `<tr><td>${fmtT(x.at)}</td><td>${esc(x.title)}</td><td>${esc(x.sku || '')}</td><td>${OP_CN[x.op] || x.op}</td>
@@ -839,10 +851,14 @@ document.addEventListener('click', async (ev) => {
   const a = el.dataset.a;
   try {
     switch (a) {
-      case 'filter': filter = el.dataset.f; render(); break;
+      case 'filter': {
+        filter = el.dataset.f;
+        if (wantAll() && !S.allPlans) { loadingAll = true; render(); try { await load(true); } catch (e) { toast(e.message, false); } loadingAll = false; }
+        render(); break;
+      }
       case 'tab': if (E && E.dirty && !armed(el, '有未保存的改动,再点一次离开')) return; E = null; tab = el.dataset.t; renderChrome(); render(); break;
       case 'new': openEditor(newPlan(el.dataset.kind), true); loadCampaigns(); break;
-      case 'open': { const p = planById(el.dataset.id); if (p) { openEditor(p, false); loadCampaigns(); } break; }
+      case 'open': { const p = await planByIdAll(el.dataset.id); if (p) { openEditor(p, false); loadCampaigns(); } break; }
       case 'close': if (E.dirty && !E.isNew && !armed(el, '有未保存的改动,再点一次放弃')) return; E = null; renderChrome(); render(); break;
       case 'color': E.plan.color = el.dataset.v; touch(); render(); break;
       case 'kind': {
@@ -1047,7 +1063,7 @@ window.cgpPriceCopy = async (vals, when) => {
   loadCampaigns(); toast(`已复制 ${when || ''} 那一版,改好时间再提交`);
 };
 window.cgpPriceRefresh = async () => { await load(); render(); };
-window.cgpPriceOpen = async (id) => { await start(); const p = planById(id); if (p) { openEditor(p, false); loadCampaigns(); } };
+window.cgpPriceOpen = async (id) => { await start(); const p = await planByIdAll(id); if (p) { openEditor(p, false); loadCampaigns(); } };
 window.cgpPriceNew = async (campaign) => { await start(); const p = newPlan('window', false); p.campaign = campaign; p.name = campaign.name; openEditor(p, true); loadCampaigns(); };
 const show0 = window.showSection;
 window.showSection = (name) => { show0(name); if (name === 'price') start(); };

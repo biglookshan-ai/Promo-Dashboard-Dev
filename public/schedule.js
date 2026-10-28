@@ -914,7 +914,7 @@
   let hubPrice = { plans: null, err: '', at: 0 };
   async function loadHubPrice() {
     if (MODE !== 'live' || !(window.cgpCanSee && window.cgpCanSee('price'))) { hubPrice = { plans: null, err: '', at: now() }; return; }
-    try { hubPrice = { plans: (await (window.cgpPriceState ? window.cgpPriceState(15000) : api('GET', '/api/price/state'))).plans, err: '', at: now() }; }
+    try { hubPrice = { plans: (await (window.cgpPriceState ? window.cgpPriceState(15000, true) : api('GET', '/api/price/state?all=1'))).plans, err: '', at: now() }; } // 活动页要看到这个活动所有的改价(包括已结束的)
     catch (e) { hubPrice = { plans: null, err: e.message, at: now() }; }
     if (cpHub) renderCampaigns();
   }

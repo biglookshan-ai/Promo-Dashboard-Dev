@@ -1,6 +1,7 @@
 // 改价模块的接口(挂在 /api/price 下;server.js 里已经限定:只有能看「改价」页面的人 —— 定价角色和管理员)。
 import express from 'express';
 import { load, save, withLock } from './store.js';
+import { planStatus } from './price-core.js';
 import { applyAction, ActionError } from './price-actions.js';
 import { runOnce } from './executor.js';
 import { eventMessages, deliver } from './notifier.js';
@@ -43,9 +44,14 @@ export function priceRouter() {
     const me = actorOfReq(req);
     const appUrl = loadSchedule(req.ctx.shop).appUrl || '';
     if (appUrl && state.appUrl !== appUrl) { state.appUrl = appUrl; save(req.ctx.shop, state); }
+    // 2026-10-28 用户:打开当前页面要的数据就好 —— 默认只给没结束的计划(已结束的常常是大头),?all=1 才给全部;名字全给(账本筛选、受管产品要用)
+    const all = req.query.all === '1'; const now = Date.now();
+    const ended = (p) => ['ended', 'done'].includes(planStatus(p, now));
     return {
       me: { id: me.id, name: me.name, admin: me.role === 'approver' }, people: pricePeople(req.ctx.shop), team: teamEnabled(),
-      plans: state.plans, vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState,
+      plans: all ? state.plans : state.plans.filter((p) => !ended(p)), allPlans: all,
+      endedCount: state.plans.filter(ended).length, planNames: state.plans.map((p) => ({ id: p.id, name: p.name })),
+      vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState,
       log: state.log.slice(0, 300), engine: state.engine, ledgerCount: state.ledger.length,
       settings: { maxDiscountPct: state.settings.maxDiscountPct, sweepMinutes: state.settings.sweepMinutes, notify: state.settings.notify },
     };
