@@ -90,4 +90,31 @@ export async function removeTags(ctx, id, tags) {
   const e = d.tagsRemove?.userErrors?.[0]; if (e) throw new Error(`去标签失败:${e.message}`);
 }
 
-export const realIO = { readVariants, writeProductVariants, productsInCollection, addToCollection, removeFromCollection, readProductTags, addTags, removeTags };
+// ---- 改价倒计时:产品字段 custom.cgp_price_cd(json),计划开始改价时写、结束 / 暂停 / 提前结束时删(2026-10-27 用户同意)----
+const CD_KEY = { namespace: 'custom', key: 'cgp_price_cd' };
+const productGid = (id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/Product/${id}`);
+// list = [{ productId, value }];返回写成功的 productId
+export async function setCountdowns(ctx, list) {
+  const ok = [];
+  for (const part of chunk(list, 25)) {
+    const d = await graphql(ctx, `mutation($m: [MetafieldsSetInput!]!) { metafieldsSet(metafields: $m) { metafields { owner { ... on Product { id } } } userErrors { field message } } }`,
+      { m: part.map((x) => ({ ownerId: productGid(x.productId), ...CD_KEY, type: 'json', value: x.value })) });
+    const e = d.metafieldsSet?.userErrors?.[0];
+    if (e) throw new Error(`写倒计时失败:${e.message}`);
+    ok.push(...part.map((x) => x.productId));
+  }
+  return ok;
+}
+export async function deleteCountdowns(ctx, productIds) {
+  const ok = [];
+  for (const part of chunk(productIds, 25)) {
+    const d = await graphql(ctx, `mutation($m: [MetafieldIdentifierInput!]!) { metafieldsDelete(metafields: $m) { deletedMetafields { key } userErrors { field message } } }`,
+      { m: part.map((id) => ({ ownerId: productGid(id), ...CD_KEY })) });
+    const e = d.metafieldsDelete?.userErrors?.[0];
+    if (e) throw new Error(`删倒计时失败:${e.message}`);
+    ok.push(...part);
+  }
+  return ok;
+}
+
+export const realIO = { readVariants, writeProductVariants, productsInCollection, addToCollection, removeFromCollection, readProductTags, addTags, removeTags, setCountdowns, deleteCountdowns };

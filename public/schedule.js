@@ -2505,7 +2505,7 @@
   }
 
   // ---- 改价计划的历史版本(字段和网站内容不一样,单独一套显示)----
-  const PFIELD = { name: '名称', kind: '类型', layer: '层级', priority: '优先级', groups: '改价分组', rule: '改价规则', scope: '改哪些产品', slots: '时间段和产品', compare: '划线价', campaign: '所属活动',
+  const PFIELD = { name: '名称', kind: '类型', layer: '层级', priority: '优先级', countdown: '倒计时', groups: '改价分组', rule: '改价规则', scope: '改哪些产品', slots: '时间段和产品', compare: '划线价', campaign: '所属活动',
     followCampaign: '跟随活动时间', tagsAdd: '生效时加标签', tagsRemove: '生效时去标签', approver: '审批人', owner: '负责人', cc: '抄送', note: '备注', color: '颜色' };
   const RULE_CN = { percent_off: (v) => `降价 ${v}%`, amount_off: (v) => `每个减 £${v}`, fixed: (v) => `统一改成 £${v}`, percent_up: (v) => `涨价 ${v}%`, keep: () => '售价不变,只改划线价', manual: () => '逐个填价' };
   const planChangedText = (keys) => (keys == null ? '第一版' : keys.length ? `改了:${keys.slice(0, 5).map((k) => PFIELD[k] || k).join('、')}${keys.length > 5 ? ` 等 ${keys.length} 项` : ''}` : '');
@@ -2513,7 +2513,8 @@
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '<span class="muted">(空)</span>';
     if (k === 'kind') return v === 'permanent' ? '永久调价' : '限时(到期恢复原价)';
     if (k === 'layer') return esc({ flash: '限时抢购', brand: '品牌 / Collection', sitewide: '全场' }[v] || v);
-    if (k === 'compare') return esc({ original: '原价作为划线价', keep: '划线价不变', none: '不显示划线价' }[v] || v);
+    if (k === 'compare') return esc({ original: '显示改价前的价格', keep: '划线价不动', clear: '不显示划线价', set: '逐个指定划线价', none: '不显示划线价' }[v] || v);
+    if (k === 'countdown') return v.on ? esc(`显示「${v.label || '默认文字'}」,${Number(v.days) ? `最后 ${v.days} 天` : '一直显示'},样式 ${({ classic: '经典红框', pill: '胶囊', dark: '黑金', minimal: '只有文字' })[v.style] || v.style || '经典红框'}`) : '不显示';
     if (k === 'rule') return `${esc((RULE_CN[v.mode] || ((x) => `${v.mode} ${x}`))(v.value))}${v.rounding ? `,尾数 ${esc(v.rounding)}` : ''}`;
     if (k === 'scope') {
       const m = { collections: `指定 Collection:${(v.collections || []).map((c) => c.title || c.id).join('、')}`, products: `指定产品 ${(v.products || []).length} 个`,

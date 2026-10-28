@@ -1922,3 +1922,8 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 #section-price .cmpopt em { display: block; margin-top: 2px; font-style: normal; font-size: 12px; line-height: 1.55; color: var(--text-2); }
 @media (max-width: 900px) { #section-price .cmpopts { grid-template-columns: minmax(0, 1fr); } }
 #section-price .cmpopt em b { display: inline; font-size: inherit; }
+/* 改价倒计时预览(颜色和主题 cgp-campaign-offer.liquid 的四种样式一样) */
+#section-price .cdpv { display: inline-flex; align-items: center; gap: 6px; width: fit-content; margin-top: 4px; padding: 5px 10px; border-radius: 4px; background: var(--cd-bg); color: var(--cd-fg); font-size: 13px; }
+#section-price .cdpv--pill, #section-price .cdpv--dark { border-radius: 999px; padding: 4px 12px; }
+#section-price .cdpv--minimal { padding: 0; }
+#section-price .cdpv b { font-variant-numeric: tabular-nums; }

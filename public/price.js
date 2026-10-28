@@ -244,6 +244,27 @@ const CMP_OPTS = [
   ['clear', '不显示划线价', '改价期间去掉划线价,只显示新价;这些产品不算打折,不会出现在促销链接、「只显示打折」里'],
   ['set', '逐个指定划线价', '在下面「试算预览」的表格里给每个变体填划线价'],
 ];
+// 改价倒计时(2026-10-27 用户):倒数到这个计划恢复原价;写在产品字段 custom.cgp_price_cd,主题里比活动的倒计时优先
+const CD_STY = { classic: ['经典红框', '#ffefef', '#d10000', 'Deals Expires in :'], pill: ['胶囊', '#fdecec', '#c8102e', 'Deal ends in'],
+  dark: ['黑金', '#111111', '#f5c518', 'Deal ends in'], minimal: ['只有文字', 'transparent', '#d10000', 'Ends in'] };
+const CD_DAYS_CN = [[0, '一直显示'], [1, '最后 1 天'], [3, '最后 3 天'], [7, '最后 7 天'], [15, '最后 15 天']];
+const cdLabel = (p) => String(p.countdown?.label || '').trim() || (CD_STY[p.countdown?.style] || CD_STY.classic)[3];
+function cdHtml(p, ro) {
+  const c = p.countdown || {}; const sty = CD_STY[c.style] ? c.style : 'classic'; const [, bg, fg] = CD_STY[sty];
+  return `<label class="row" style="gap:8px;margin-bottom:10px;font-size:13px"><input type="checkbox" data-f="cdon" ${c.on ? 'checked' : ''} ${ro ? 'disabled' : ''}/> <b>在产品上显示倒计时</b>
+      <span class="muted">倒数到这个计划恢复原价(一天一段的,倒数到当天这一段结束)</span></label>
+    ${c.on ? `<div class="grid2">
+      <label class="pr-fld">文字 <em>显示在时间前面,比如 Black Friday ends in、Pre-Order Offer ends in;留空用样式默认的</em>
+        <input class="inp" data-f="cdlabel" maxlength="60" value="${esc(c.label || '')}" placeholder="${esc(CD_STY[sty][3])}" ${ro ? 'disabled' : ''}/></label>
+      <label class="pr-fld">什么时候开始显示
+        <select class="sel" data-f="cddays" ${ro ? 'disabled' : ''}>${CD_DAYS_CN.map(([d, l]) => `<option value="${d}" ${Number(c.days || 0) === d ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="pr-fld">样式 <em>和活动倒计时同一套</em>
+        <select class="sel" data-f="cdstyle" ${ro ? 'disabled' : ''}>${Object.entries(CD_STY).map(([k, v]) => `<option value="${k}" ${sty === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
+      <div class="pr-fld">预览<span class="cdpv cdpv--${sty}" style="--cd-bg:${bg};--cd-fg:${fg}">${esc(cdLabel(p))} <b>2d 4h 12m 30s</b></span></div>
+    </div>
+    <p class="muted">显示在产品页、搜索页和 Collection 页的产品卡上。同一个产品也在活动里时,<b>活动的徽章照常显示,倒计时换成这个</b>;没改价的产品还是显示活动的倒计时。
+      只给真的在这个价格上的产品(有人在后台手动改过价的不显示),计划结束、暂停、提前结束时自动去掉。</p>` : ''}`;
+}
 const SCOPE_MODES = { collections: '指定 Collection', products: '指定产品', search: '按品牌 / 标签 / 类型', all: '全店所有产品' };
 
 // 改价分组:一个计划里可以分几组,每组自己选产品、自己定规则(比如合集 A 打 85 折、品牌 B 打 7 折、几个产品逐个填价)
@@ -261,6 +282,7 @@ function newPlan(kind) {
     groups: [newGroup(kind)],
     slots: [{ id: uid('s_'), start: dayAt(1), end: kind === 'permanent' ? null : dayAt(8), items: [], collection: null }],
     followCampaign: false, state: 'new', excluded: [], owner: S.me.id, approver: null, cc: [],
+    countdown: { on: false, label: '', days: 0, style: 'classic' },
   };
 }
 function openEditor(plan, isNew) {
@@ -269,6 +291,7 @@ function openEditor(plan, isNew) {
   p.scope ||= { mode: 'products', collections: [], products: [], vendor: '', tag: '', type: '' };
   p.color ||= COLORS[0]; p.tagsAdd ||= []; p.tagsRemove ||= []; p.followCampaign = !!p.followCampaign;
   if (p.kind === 'window') p.priority = core.prioOf(p); // 老计划的层级换成数字(限时抢购 10 / 品牌 9 / 全场 8)
+  p.countdown = { on: false, label: '', days: 0, style: 'classic', ...(p.countdown || {}) };
   if (!p.groups?.length) p.groups = [{ id: uid('g_'), scope: p.scope, rule: p.rule }]; // 老计划只有一组
   E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0, resolvedKey: isNew ? '' : scopeKey(p) };
   renderChrome(); render(); window.scrollTo(0, 0);
@@ -318,6 +341,7 @@ function summaryHtml() {
       ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束并<b>自动恢复原价</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
       ${line(CMP_OPTS.find((o) => o[0] === (p.compare || (p.kind === 'window' ? 'original' : 'keep')))?.[1] || '划线价不动')}
       ${p.kind === 'window' && core.prioOf(p) !== core.PRIO_MAX ? line(`优先级 ${core.prioOf(p)}(和别的限时计划改到同一个产品时,数字大的说了算)`) : ''}
+      ${p.kind === 'window' && p.countdown?.on ? line(`产品上显示倒计时「${esc(cdLabel(p))}」${Number(p.countdown.days) ? `,最后 ${Number(p.countdown.days)} 天才显示` : ',一直显示'}`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
       ${p.tagsRemove.length ? line(`生效期间去掉标签 <b>${p.tagsRemove.map(esc).join('、')}</b>,结束自动加回`) : ''}
       ${S.team ? line(`审批人:<b>${p.approver ? esc(nameOf(p.approver)) : '管理员'}</b>${p.owner ? ` · 负责人 ${esc(nameOf(p.owner))}` : ''}`) : ''}
@@ -365,6 +389,8 @@ function editorHtml() {
         ${p.kind === 'window' ? `<label class="pr-fld" style="margin-top:12px">优先级 <em>1–10,默认 10(最高)。只有两个限时计划改到同一个产品、时间又重叠时才用得到:<b>数字大的说了算,一样大时开始晚的说了算</b>(比如黑五期间加一天 Flash,那天自动用 Flash 的价,过了回到黑五的价)。想让这个计划让位就调低</em>
           <input class="inp" type="number" min="1" max="${core.PRIO_MAX}" step="1" data-f="priority" value="${core.prioOf(p)}" ${ro ? 'disabled' : ''} style="width:90px"/></label>` : ''}
         <p class="muted">时间一律按英国时间(店铺时区),夏令时自动处理。</p>`)}
+
+      ${p.kind === 'window' ? sec('倒计时', cdHtml(p, ro), '产品页和产品卡上倒数到恢复原价;比活动的倒计时优先') : ''}
 
       ${sec('产品标签', `<div class="grid2">
         <div class="pr-fld">生效期间加上 <em>结束自动去掉;产品本来就有的不动</em>${tagChips('tagsAdd', ro)}</div>
@@ -667,6 +693,7 @@ function values() {
   const p = E.plan;
   return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer || null : null,
     priority: p.kind === 'window' ? core.prioOf(p) : null,
+    countdown: p.kind === 'window' ? { on: !!p.countdown?.on, label: String(p.countdown?.label || '').trim(), days: Number(p.countdown?.days) || 0, style: p.countdown?.style || 'classic' } : null,
     compare: p.compare || (p.kind === 'window' ? 'original' : 'keep'), campaign: p.campaign, note: p.note, slots: p.slots,
     groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
     owner: p.owner || null, approver: p.approver || null, cc: p.cc || [] };
@@ -883,6 +910,10 @@ document.addEventListener('change', async (ev) => {
     case 'name': E.plan.name = el.value; touch(); break;
     case 'note': E.plan.note = el.value; touch(); break;
     case 'compare': E.plan.compare = el.value; E.resolvedKey = ''; touch(); render(); break;
+    case 'cdon': E.plan.countdown.on = el.checked; touch(); render(); break;
+    case 'cdlabel': E.plan.countdown.label = el.value.slice(0, 60); touch(); render(); break;
+    case 'cddays': E.plan.countdown.days = Number(el.value) || 0; touch(); render(); break;
+    case 'cdstyle': E.plan.countdown.style = el.value; touch(); render(); break;
     case 'priority': { const n = Math.round(Number(el.value)); E.plan.priority = n >= 1 && n <= core.PRIO_MAX ? n : core.PRIO_MAX; touch(); render(); break; }
     case 'rvalue': EG().rule.value = el.value; E.resolvedKey = ''; touch(); render(); break;
     case 'rrounding': EG().rule.rounding = el.value; E.resolvedKey = ''; touch(); render(); break;

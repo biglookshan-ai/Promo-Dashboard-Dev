@@ -13,7 +13,7 @@ export const canApprove = (a, plan) => !!a && (isAdminActor(a) || (!!plan?.appro
 
 // 计划里可编辑的字段
 export const EDIT_KEYS = ['name', 'kind', 'layer', 'priority', 'compare', 'campaign', 'note', 'slots', 'rule', 'approver', 'owner', 'cc',
-  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups'];
+  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups', 'countdown'];
 const pick = (v) => Object.fromEntries(EDIT_KEYS.filter((k) => k in v).map((k) => [k, clone(v[k])]));
 
 export function addLog(doc, now, action, plan, note, actor) {
@@ -27,6 +27,10 @@ export function validate(p, settings = {}) {
   if (!['window', 'permanent'].includes(p.kind)) return '请选择类型(限时 / 永久)';
   if (p.kind === 'window' && p.priority != null && !(Number.isInteger(Number(p.priority)) && Number(p.priority) >= 1 && Number(p.priority) <= 10)) return '优先级填 1–10 的整数(数字大的优先)';
   if (p.followCampaign && !p.campaign?.id) return '勾了「跟随活动时间」就要先选一个活动';
+  if (p.countdown?.on) {
+    if (p.kind !== 'window') return '只有限时改价能显示倒计时(永久调价没有结束时间)';
+    if (String(p.countdown.label || '').length > 60) return '倒计时文字最多 60 个字';
+  }
   const slots = p.slots || [];
   if (!slots.length) return '至少要有一个时段';
   if (p.kind === 'permanent' && slots.length !== 1) return '永久调价只能有一个生效时间';

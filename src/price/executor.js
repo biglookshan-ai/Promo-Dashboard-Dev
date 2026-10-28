@@ -4,10 +4,11 @@
 //   2. 巡检:正在接管的变体有没有被人手动改过(每 N 分钟一次)
 //   3. 算这一轮要改的 → 读现价 → 定最终写什么 → 先存意图 → 写 Shopify → 读回核对 → 记账
 //   4. 时段的「加入合集」:多了移出(只移 app 加的)、少了加入
+//   4c. 改价倒计时:产品字段 custom.cgp_price_cd 对齐到「此刻在哪个计划的价格上」(写 / 删)
 //   5. 永久计划全部执行完 → 标记完成
 // 规则都在 price-core.js;这里只管调用、读写 Shopify、存盘、记日志。
 import { load, save, withLock, appendLedger, appendLog, listShops } from './store.js';
-import { planWork, decide, commit, holdVariant, sweep, setIntent, clearIntent, recoverIntents, planCollections, planTags, syncCampaignTimes, finishPlans, samePair, pair } from './price-core.js';
+import { planWork, decide, commit, holdVariant, sweep, setIntent, clearIntent, recoverIntents, planCollections, planTags, planCountdowns, syncCampaignTimes, finishPlans, samePair, pair } from './price-core.js';
 import { realIO } from './shop-io.js';
 import { getToken } from '../token-store.js';
 import { reportMessages, deliver as realDeliver } from './notifier.js';
@@ -26,7 +27,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
   return withLock(shop, async () => {
     const state = load(shop);
     const ctx = { shop, token };
-    const rep = { at: now, written: [], failures: [], holds: [], recovered: [], collections: [], tags: [], moved: [], finished: [] };
+    const rep = { at: now, written: [], failures: [], holds: [], recovered: [], collections: [], tags: [], moved: [], finished: [], countdowns: { set: 0, del: 0 } };
     const planOf = (rec) => rec.asg?.plan || rec.perm?.plan || null;
     const planName = (id) => state.plans.find((p) => p.id === id)?.name || '';
     const brief = (rec, extra = {}) => {
@@ -181,6 +182,20 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
         }
       }
 
+      // 4c. 改价倒计时(只动 custom.cgp_price_cd 这一个产品字段;写成功的才记账,失败的下一轮重试)
+      if (io.setCountdowns) {
+        const cd = planCountdowns(state, now);
+        state.cdState ||= {};
+        if (cd.set.length) {
+          try { for (const pid of await io.setCountdowns(ctx, cd.set)) state.cdState[pid] = cd.set.find((x) => x.productId === pid).value; rep.countdowns.set = cd.set.length; }
+          catch (e) { rep.failures.push({ message: String(e.message || e) }); }
+        }
+        if (cd.del.length) {
+          try { for (const pid of await io.deleteCountdowns(ctx, cd.del)) delete state.cdState[pid]; rep.countdowns.del = cd.del.length; }
+          catch (e) { rep.failures.push({ message: String(e.message || e) }); }
+        }
+      }
+
       // 5. 永久计划
       rep.finished = finishPlans(state, now).map((p) => ({ planId: p.id, plan: p.name }));
     } catch (e) {
@@ -217,6 +232,7 @@ function writeLogs(state, rep, now) {
   }
   for (const f of rep.failures.slice(0, 20)) appendLog(state, { at: now, action: 'failure', planId: f.planId || null, plan: f.plan || '', note: `${f.title || f.collection || ''}${f.title || f.collection ? ':' : ''}${f.message}`, by: '执行器' });
   if (rep.failures.length > 20) appendLog(state, { at: now, action: 'failure', plan: '', note: `另有 ${rep.failures.length - 20} 条失败,下一轮自动重试`, by: '执行器' });
+  if (rep.countdowns?.set || rep.countdowns?.del) appendLog(state, { at: now, action: 'countdown', plan: '', note: `改价倒计时:${rep.countdowns.set ? `${rep.countdowns.set} 个产品写上 / 更新` : ''}${rep.countdowns.set && rep.countdowns.del ? ',' : ''}${rep.countdowns.del ? `${rep.countdowns.del} 个产品去掉` : ''}`, by: '执行器' });
   for (const f of rep.finished) appendLog(state, { at: now, action: 'done', planId: f.planId, plan: f.plan, note: '永久调价全部执行完成', by: '执行器' });
 }
 

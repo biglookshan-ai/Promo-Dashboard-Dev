@@ -33,7 +33,10 @@ function parseQuery(q) {
 }
 
 // 改价的查询 → 结果;不是改价的查询 → undefined
+export const countdowns = new Map(); // 产品 gid → 改价倒计时(custom.cgp_price_cd),GET /__price 里能看到
 export function priceGql(q, v = {}) {
+  if (q.includes('metafieldsSet') && v.m?.[0]?.key === 'cgp_price_cd') { v.m.forEach((m) => countdowns.set(m.ownerId, JSON.parse(m.value))); return { metafieldsSet: { metafields: [], userErrors: [] } }; }
+  if (q.includes('metafieldsDelete') && v.m?.[0]?.key === 'cgp_price_cd') { v.m.forEach((m) => countdowns.delete(m.ownerId)); return { metafieldsDelete: { deletedMetafields: v.m.map((m) => ({ key: m.key })), userErrors: [] } }; }
   if (q.includes('productVariantsBulkUpdate')) {
     const userErrors = [];
     v.variants.forEach((x, i) => {
@@ -69,13 +72,14 @@ export function priceGql(q, v = {}) {
 
 // GET /__price 看改过价的变体和合集成员;GET /__price/set?variant=<id>&price=79 模拟同事手动改价
 export function priceState() {
+  const cds = Object.fromEntries([...countdowns].map(([id, x]) => [products.get(id)?.title || id, x]));
   const tagged = [...products.values()].filter((p) => JSON.stringify(p.tags || []) !== JSON.stringify(cat.products.find((x) => x.id === Number(num(p.gid)))?.tags || []))
     .map((p) => ({ product: p.title, tags: p.tags }));
   const changed = [...variants.values()].filter((x) => x.price !== x.orig.price || (x.compareAt || null) !== (x.orig.compareAt || null))
     .map((x) => ({ variant: num(x.gid), product: products.get(x.productGid).title, sku: x.sku, orig: x.orig, now: { price: x.price, compareAt: x.compareAt } }));
   const cols = [...collections.values()].filter((c) => c.members.size !== c.products.length || c.products.some((id) => !c.members.has(G('Product', id))))
     .map((c) => ({ collection: c.title, before: c.products.length, now: c.members.size }));
-  return { products: products.size, changed, collections: cols, tagged };
+  return { products: products.size, changed, collections: cols, tagged, countdowns: cds };
 }
 export function priceSet(params) {
   const id = params.get('variant'); const vv = variants.get(id?.startsWith('gid') ? id : G('ProductVariant', id));

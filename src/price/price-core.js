@@ -329,6 +329,41 @@ export function overlapIndex(plans, now = Date.now()) {
   return new Map([...out].map(([k, m]) => [k, [...m.values()].map((o) => ({ ...o, n: o.n.size }))]));
 }
 
+// ---------- 改价倒计时(2026-10-27 用户)----------
+// 限时计划可以在产品上显示倒计时,倒数到这一段结束(恢复原价)。只给「此刻真的在这个计划价格上」的产品
+// (保险库里 written.planId = 这个计划、没暂停接管);一个产品几个变体在不同计划里 → 用最早结束的那个。
+// 写在产品字段 custom.cgp_price_cd(json):{ e: 结束秒, s: 开始显示秒(0 = 一直显示), l: 文字, st: 样式 }。
+// 主题 snippets/cgp-campaign-offer.liquid 读它:比合集置顶清单 / 活动的倒计时优先(活动的徽章照常显示)。
+export const CD_DAYS = [0, 1, 3, 7, 15];
+export const CD_STYLES = ['classic', 'pill', 'dark', 'minimal'];
+const CD_DAY = 86_400_000;
+export function cdValue(plan, slot) {
+  const c = plan.countdown || {};
+  const days = CD_DAYS.includes(Number(c.days)) ? Number(c.days) : 0;
+  return { e: Math.floor(slot.end / 1000), s: days ? Math.floor((slot.end - days * CD_DAY) / 1000) : 0,
+    l: String(c.label || '').trim().slice(0, 60), st: CD_STYLES.includes(c.style) ? c.style : 'classic' };
+}
+// → { set: [{ productId, value(json 字符串) }], del: [productId] }(和 state.cdState 比,只给有变化的)
+export function planCountdowns(state, now) {
+  const plans = new Map((state.plans || []).map((p) => [p.id, p]));
+  const want = new Map();
+  for (const v of Object.values(state.vault || {})) {
+    if (!v?.written || v.hold || !v.productId) continue;
+    const plan = plans.get(v.written.planId);
+    if (!plan || plan.kind !== 'window' || !plan.countdown?.on || !isLive(plan)) continue;
+    const slot = (plan.slots || []).find((s) => s.id === v.written.slotId);
+    if (!slot?.end || slot.end <= now) continue;
+    const val = cdValue(plan, slot);
+    const cur = want.get(v.productId);
+    if (!cur || val.e < cur.e) want.set(v.productId, val);
+  }
+  const have = state.cdState || {};
+  const set = [], del = [];
+  for (const [productId, val] of want) { const value = JSON.stringify(val); if (have[productId] !== value) set.push({ productId, value }); }
+  for (const productId of Object.keys(have)) if (!want.has(productId)) del.push(productId);
+  return { set, del };
+}
+
 // ---------- 写前意图(防止改到一半重启后把活动价误当原价)----------
 // 调 Shopify 之前先把「从多少改成多少」存进保险库;读回核对成功后由 commit 清掉。
 export function setIntent(state, w, now) {

@@ -227,3 +227,44 @@ test('标签:计划暂停 → 标签还原;继续 → 再加回来', async () =>
   await run(shop, io, 3 * H);
   assert.deepEqual(io.tags['P-a'], ['TOP DEALS']);
 });
+
+test('改价倒计时(2026-10-27):开了倒计时的计划改价时给产品写 custom.cgp_price_cd,结束 / 暂停时删掉;没开的不写', async () => {
+  const io = fakeIO({ v1: '100.00', v2: '100.00', v3: '100.00' });
+  io.cd = {}; io.cdCalls = 0;
+  io.setCountdowns = async (ctx, list) => { io.cdCalls++; list.forEach((x) => { io.cd[x.productId] = JSON.parse(x.value); }); return list.map((x) => x.productId); };
+  io.deleteCountdowns = async (ctx, ids) => { io.cdCalls++; ids.forEach((id) => delete io.cd[id]); return ids; };
+  const bf = { ...plan('bf', null, [{ id: 's', start: 0, end: 10 * H, items: [item('v1', '85.00'), item('v2', '85.00')] }]), countdown: { on: true, label: 'Black Friday ends in', days: 3, style: 'dark' } };
+  const quiet = plan('quiet', null, [{ id: 'q', start: 0, end: 10 * H, items: [item('v3', '90.00')] }]);
+  const shop = setup([bf, quiet]);
+  await run(shop, io, 1 * H);
+  assert.deepEqual(Object.keys(io.cd).sort(), ['P-v1', 'P-v2']);          // 没开倒计时的 v3 不写
+  assert.deepEqual(io.cd['P-v1'], { e: 36000, s: 36000 - 3 * 86400, l: 'Black Friday ends in', st: 'dark' });
+  const calls = io.cdCalls;
+  await run(shop, io, 2 * H);
+  assert.equal(io.cdCalls, calls);                                         // 没变化就不再写
+  // 改了文字 → 重写
+  const st = load(shop); st.plans[0].countdown.label = 'Pre-Order Offer ends in'; save(shop, st);
+  await run(shop, io, 3 * H);
+  assert.equal(io.cd['P-v1'].l, 'Pre-Order Offer ends in');
+  // 暂停 = 恢复原价 → 倒计时也去掉
+  const st2 = load(shop); st2.plans[0].paused = true; save(shop, st2);
+  await run(shop, io, 4 * H);
+  assert.deepEqual(io.cd, {});
+  assert.deepEqual(load(shop).cdState, {});
+});
+
+test('改价倒计时:有人手动改了价(暂停接管)的产品不显示;计划结束自动去掉', async () => {
+  const io = fakeIO({ v1: '100.00', v2: '100.00' });
+  io.cd = {};
+  io.setCountdowns = async (ctx, list) => { list.forEach((x) => { io.cd[x.productId] = JSON.parse(x.value); }); return list.map((x) => x.productId); };
+  io.deleteCountdowns = async (ctx, ids) => { ids.forEach((id) => delete io.cd[id]); return ids; };
+  const shop = setup([{ ...plan('fl', null, [{ id: 's', start: 0, end: 5 * H, items: [item('v1', '80.00'), item('v2', '80.00')] }]), countdown: { on: true, label: '', days: 0 } }]);
+  await run(shop, io, 1 * H);
+  assert.equal(io.cd['P-v1'].s, 0); assert.equal(io.cd['P-v1'].st, 'classic');
+  io.v.set('v2', { ...io.v.get('v2'), price: '77.00' });                  // 同事在后台手动改了 v2
+  const st = load(shop); st.engine.lastSweep = 0; save(shop, st);
+  await run(shop, io, 2 * H);
+  assert.deepEqual(Object.keys(io.cd), ['P-v1']);
+  await run(shop, io, 6 * H);                                              // 结束
+  assert.deepEqual(Object.keys(io.cd), []);
+});

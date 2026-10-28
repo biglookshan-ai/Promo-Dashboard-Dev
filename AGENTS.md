@@ -101,6 +101,11 @@
   两个限时计划改到同一产品、时间重叠 → 列表行标黄「和 X 改到同一批产品」(`overlapIndex`),编辑页检查区黄色提醒用谁的价。
   划线价从「高级」挪到改价分组下面,四个选项带说明(「显示改价前的价格」= 原来有划线价就用它,没有才用改价前的售价)。
   列表分类:未结束 / 进行中 / 已排期 / 草稿 / 已结束 / 全部;「待审核」只有多人协作开着或真有待审核的计划时才显示。
+  **改价倒计时**(2026-10-27 用户要、同意新增写入):限时计划的 `countdown` = { on, label, days: 0/1/3/7/15, style: classic/pill/dark/minimal },默认关。
+  执行器每轮 `planCountdowns` 算「此刻真的在这个计划价格上的产品」(保险库 written.planId、没暂停接管;一个产品几个计划取最早结束的),
+  和 `state.cdState` 比,只写 / 删有变化的 → 产品字段 **`custom.cgp_price_cd`**(json `{e, s, l, st}`,`shop-io.js` setCountdowns / deleteCountdowns,每批 25 个)。
+  ⛔ 这是改价模块唯一写的产品字段,只动这一个 key;结束 / 暂停 / 提前结束 / 被人手动改价都会删掉。
+  主题 snippets/cgp-campaign-offer.liquid 读它:**改价倒计时 > Collection 置顶清单 > 活动**(活动徽章照常,倒计时 / 样式 / 文字换成改价的);「最后几天才显示」在浏览器按 s 判断。
   `plan.tagsAdd` / `tagsRemove`:生效期间加减产品标签(驱动按标签自动归类的合集),结束还原;只动计划里填的标签,产品本来就有的不碰(`price-core.planTags` + `state.tagState` 记账)。
   页面 `public/price.js`(点开「改价」才加载),样式在 style.css 末尾、**全部限定在 `#section-price` 里**,和排期页同名的样式加了 `pr-` 前缀 —— 别去掉,否则两边互相干扰。
   飞书私信:`src/lark-bot.js`(同一个飞书应用的机器人,需要 `im:message:send_as_bot`)。本地测:harness 的 `/__price`(改过价的变体)、`/__price/set`(模拟手动改价)、`/__dms`(发出的私信),产品数据 `node scripts/fetch-price-catalog.mjs`。
