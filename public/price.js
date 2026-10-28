@@ -547,12 +547,12 @@ function previewHtml(ro, gid) {
       })()}</td>
       <td class="num">${d == null ? '' : d > 0 ? `<span class="off">-${d}%</span>` : d < 0 ? `<span class="up">+${-d}%</span>` : '0%'}</td>
       <td>${gone ? '<span class="w w--warn">已移出</span>' : ''}${w.map((x) => `<span class="w w--${x.level}">${esc(x.text)}</span>`).join('')}</td>
-      <td>${gone || !rowAct ? '' : `<button class="linkbtn" data-a="${rowAct}" data-v="${it.variantId}" title="${actTip}">${actLabel}</button>`}</td>
+      <td class="num">${gone || !rowAct ? '' : `<button class="linkbtn" data-a="${rowAct}" data-v="${it.variantId}" title="${actTip}">${actLabel}</button>`}</td>
     </tr>`;
   }).join('');
   return `${ro ? '' : `<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,重新试算也会保留;点「用规则价」恢复)。
       ${setCompare ? '' : '划线价也能<b>单独例外</b>:灰字是按上面方式算出来的;填数字 = 这个变体用这个划线价,填 0 = 不显示,清空 = 回到上面的方式(标「例外」)。'}</p>`}
-    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${its.length > 10 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 10 个' : `展开这一组全部 ${its.length} 个变体`}</button>` : ''}`;
 }
 
