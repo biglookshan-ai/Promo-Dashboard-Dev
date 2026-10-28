@@ -2460,7 +2460,7 @@
   }
   // ================= 操作记录 =================
   // 2026-10-28 用户:每个同事用飞书登录,所有操作都记下来,所有人都能看全部。服务器统一记(src/audit.js),这里按人 / 模块 / 时间 / 文字筛
-  let auRows = null, auPeople = [], auMods = {}, auMore = false, auBusy = false, auErr = '';
+  let auRows = null, auPeople = [], auMods = {}, auAvatars = {}, auMore = false, auBusy = false, auErr = '';
   const auF = { who: '', mod: '', days: 7, q: '' };
   async function loadAudit(more) {
     if (MODE !== 'live') { auRows = []; return renderAudit(); }
@@ -2470,13 +2470,13 @@
       const before = more && auRows?.length ? auRows[auRows.length - 1].at : 0;
       const e = encodeURIComponent;
       const r = await api('GET', `/api/audit?who=${e(auF.who)}&mod=${e(auF.mod)}&since=${since}&before=${before}&q=${e(auF.q)}&limit=200`);
-      auRows = more ? [...(auRows || []), ...r.rows] : r.rows; auPeople = r.people || []; auMods = r.mods || {}; auMore = !!r.more; auErr = '';
+      auRows = more ? [...(auRows || []), ...r.rows] : r.rows; auPeople = r.people || []; auMods = r.mods || {}; auAvatars = r.avatars || {}; auMore = !!r.more; auErr = '';
     } catch (err) { auErr = err.message; }
     auBusy = false; renderAudit();
   }
   function renderAudit() {
     const root = $('#au-root'); if (!root) return;
-    const avatarOf = (id) => (S.staff || []).find((u) => u.id === id)?.avatar || '';
+    const avatarOf = (id) => auAvatars[id] || (S.staff || []).find((u) => u.id === id)?.avatar || '';
     const byDay = new Map();
     for (const r of auRows || []) { const d = fDate(r.at); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(r); }
     const time = (ms) => fmt(ms, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -2886,7 +2886,7 @@
     const me = window.CGP_ME || {};
     const roleName = (k) => (me.roles || []).find((r) => r.key === k)?.name || k;
     const mine = `<section class="panel"><div class="panel__h"><h3>我</h3><span class="tag tag--ok">飞书登录</span></div>
-      <div class="mrow">${me.member?.avatar ? `<img class="avatar-img" src="${esc(me.member.avatar)}" alt=""/>` : ''}<b>${esc(me.member?.name || '')}</b>
+      <div class="mrow">${me.member?.avatar ? `<img class="avatar-img" src="${esc(me.member.avatar)}" alt=""/>` : `<span class="avatar">${esc((me.member?.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(me.member?.name || '')}</b>
         <span class="muted">${(me.member?.roles || []).map(roleName).join('、') || '—'}</span>
         <button class="btn btn-sm btn-ghost" id="st-logout" type="button" style="margin-left:auto">退出登录</button></div>
       <p class="muted">名字和头像来自飞书。能看哪些页面由管理员分配的角色决定。</p>
@@ -2935,7 +2935,7 @@
       return names.length ? names.join('、') : '<span class="tag tag--warn">没勾页面:什么都看不到</span>';
     };
     el.innerHTML = `<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>角色</th><th>能看的页面</th><th>最近登录</th></tr></thead><tbody>
-      ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : ''}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}</td>
+      ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : `<span class="avatar">${esc((m.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}</td>
         <td><select class="sel sel--sm" data-mstatus>${Object.entries(ST_CN).map(([k, v]) => `<option value="${k}" ${m.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td>${MEM.roles.map((r) => `<label class="chk"><input type="checkbox" data-mrole="${esc(r.key)}" ${(m.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
         <td style="font-size:12.5px">${canSeeOf(m)}</td>
@@ -3067,7 +3067,7 @@
       <section class="panel conn" id="st-conn"><div class="panel__h"><h3>店铺连接(正式数据)</h3></div><p class="muted">检查中…</p></section>
       ${larkOn ? larkPanelsHtml() : ''}
       <div class="stgrid">
-        ${larkOn || (!live && !teamOn) ? '' : `<section class="panel">
+        ${larkOn || (live ? teamOn : !teamOn) ? '' : `<section class="panel">
           ${live ? `<div class="panel__h"><h3>我</h3>${teamOn ? `<span class="tag ${isApprover() ? 'tag--ok' : ''}">${isApprover() ? '审核人' : '编辑'}</span>` : ''}</div>
             <p class="muted">系统按登录 Shopify 后台的员工账号认人。${teamOn ? '第一个打开的人自动成为审核人。' : ''}起个名字,飞书通知和日志里会显示。</p>
             <div class="rowin"><input class="inp" id="st-myname" value="${esc(me().name)}" maxlength="30"/><button class="btn btn-sm" id="st-myname-save" type="button">保存</button></div>`
@@ -3075,7 +3075,7 @@
             <p class="muted">正式版会自动识别登录 Shopify 后台的员工。演示时切换身份,就能分别体验「编辑提交」和「审核人批准」两边。</p>
             <select class="sel" id="st-me">${S.staff.map((u) => `<option value="${u.id}" ${u.id === S.me ? 'selected' : ''}>${esc(u.name)} · ${u.role === 'approver' ? '审核人' : '编辑'}</option>`).join('')}</select>`}
         </section>`}
-        ${larkOn || !teamOn ? '' : `<section class="panel">
+        ${larkOn || live || !teamOn ? '' : `<section class="panel">
           <div class="panel__h"><h3>成员与角色</h3></div>
           <p class="muted"><b>审核人</b>:自己的改动直接生效,能批准 / 退回别人的。<b>编辑</b>:改动要提交审核才会上线。${live ? '同事第一次打开这个 app 后会出现在这里,默认是编辑。' : ''}</p>
           ${S.staff.map((u) => `<div class="mrow"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span><b>${esc(u.name)}${u.id === S.me ? ' <span class="muted">(我)</span>' : ''}</b>

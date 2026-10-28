@@ -2,7 +2,7 @@
 //   公开(不用登录):/auth/lark/start(直接开网页时跳飞书)、/auth/lark/callback(飞书跳回来)、/api/auth/config
 //   要登录:/api/auth/lark/start(后台里点登录 → 拿授权地址,弹窗打开)、/api/auth/lark/poll(轮询弹窗结果)、/api/me、/api/members、/api/roles
 import express from 'express';
-import { appendAudit } from './audit.js';
+import { appendAudit, noteOpen } from './audit.js';
 import { load, replace, appendLog } from './schedule-store.js';
 import { withLock } from './sync.js';
 import { knownShops } from './token-store.js';
@@ -109,6 +109,7 @@ export function apiAuthRouter() {
   r.get('/me', wrap(async (req) => {
     const s = load(req.ctx.shop);
     const m = req.ctx.member;
+    if (m && m.status === 'active' && !req.ctx.testMode) noteOpen(req.ctx.shop, m);
     return { larkEnabled: teamEnabled(), fromAdmin: !!req.ctx.fromAdmin, member: m ? { id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status } : null,
       admin: isAdmin(m), pages: pagesOf(s, m), adminPinned: !!process.env.LARK_ADMIN_IDS,
       testMode: testModeOn(s) ? { on: true, left: testModeLeft(s), byName: s.testMode.byName || '', iam: !!req.ctx.testMode } : { on: false },

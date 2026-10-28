@@ -17,12 +17,22 @@ const fieldsDl = (fields) => (fields && fields.length)
   ? `<dl class="fields">${fields.map((f) => `<div class="field"><dt>${esc(f.name)}</dt><dd>${nl2br(f.value)}</dd></div>`).join('')}</dl>`
   : '<p class="muted fields">（无内容）</p>';
 
+// 飞书登录开关(TEAM_MODE)在页面开着时被切换了 → 刷新一次,让登录门 / 设置页按新模式重来。
+// 不刷新的话后台自动刷新会拿到新模式的数据、界面却还是旧的(2026-10-28 踩过)。20 秒内只刷一次,防止来回刷
+function modeCheck(h) {
+  if (!h || window.CGP_TEAM === undefined || (h === 'on') === window.CGP_TEAM) return;
+  const last = Number(sessionStorage.getItem('cgp-mode-reload') || 0);
+  if (Date.now() - last < 20_000) return;
+  sessionStorage.setItem('cgp-mode-reload', String(Date.now()));
+  location.reload();
+}
 // 请求头由 auth.js 统一给:后台里有 Shopify session token,飞书登录后还有 app 会话
 async function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json', ...(await window.cgpHeaders()) };
   if (!headers.Authorization && !headers['X-App-Session']) throw new Error('请在 Shopify 后台里打开此 app,或先用飞书登录');
   const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const json = await res.json().catch(() => ({}));
+  modeCheck(res.headers.get('X-Team-Mode'));
   if (res.status === 401 && json.needLogin) { localStorage.removeItem('cgp-app-session'); location.reload(); }
   if (!res.ok) throw new Error(json.error || res.statusText);
   return json;

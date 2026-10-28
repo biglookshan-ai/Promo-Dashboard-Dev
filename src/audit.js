@@ -99,6 +99,20 @@ export function readAudit(shop, { who = '', mod = '', since = 0, before = 0, q =
   return { rows, people: [...people].map(([id, name]) => ({ id, name })), more };
 }
 
+// 登录一次能用 30 天,所以每人每天第一次打开也记一条(「登录」一类),看得出谁哪天用过。/api/me 调用
+const opened = new Map(); // 店|成员 → 伦敦日期
+const londonDay = (t) => new Date(t).toLocaleDateString('en-GB', { timeZone: 'Europe/London' });
+export function noteOpen(shop, m, now = Date.now()) {
+  const k = `${shop}|${m.id}`; const today = londonDay(now);
+  if (opened.get(k) === today) return false;
+  opened.set(k, today);
+  // 服务器刚重启时内存是空的:看一眼今天是不是已经记过(用飞书登录也算)
+  const last = readAudit(shop, { who: m.id, mod: 'login', limit: 1 }).rows[0];
+  if (last && londonDay(last.at) === today) return false;
+  appendAudit(shop, { at: now, who: { id: m.id, name: m.name }, mod: 'login', text: '打开网站更新中心(今天第一次)', ok: true, path: '/me' });
+  return true;
+}
+
 // express 中间件:放在认人(requireAccess)后面、所有接口前面。whoOf(req) 给出 { id, name }
 export function auditTrail(whoOf) {
   return (req, res, next) => {

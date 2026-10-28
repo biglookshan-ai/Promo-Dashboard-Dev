@@ -139,6 +139,7 @@
       if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return { offline: true }; // 本地演示预览
       cfg = await r.json();
     } catch { return { offline: true }; }
+    window.CGP_TEAM = !!cfg.larkEnabled; // 打开页面时的模式;服务器那边切换了,app.js 的 api() 会发现并刷新页面
     if (!cfg.larkEnabled) return { legacy: true };
     const r = await fetch('/api/me', { headers: await window.cgpHeaders() });
     const me = await r.json().catch(() => ({}));

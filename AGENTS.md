@@ -208,7 +208,9 @@
   · 页面权限 `members.js` 的 `PAGES` 和左边导航一一对应;老角色 `migrateRole` 迁移(商品模块 → 加 Collection 排序 / 促销链接 / 产品页推广,总览 → 加历史记录,迁移过标 v: 2 不再动)。
     ⛔ 服务器也拦:`schedule-api` 的 `needPage`(/act 按内容类型,其余接口按功能;设置类只给管理员),改价整个路由 needMember('price')。能看到就能改(用户选的)。
   · 操作记录 `src/audit.js`:server.js 里 `auditTrail` 中间件记每个 POST / PUT / DELETE(只读的 POST 在 SKIP 里),处理函数可放 `req.audit = { mod, text }` 写具体的人话;
-    登录在飞书回调里记;存 `DATA_DIR/audit/<店>.jsonl`(只追加);`GET /api/audit` 所有登录的人都能看(用户选的)。⛔ 中间件要在请求进来时就记下 req.path(结束时已被里面的路由改短)。
+    登录在飞书回调里记,另外每人每天第一次打开(`/api/me` → `noteOpen`)也记一条;存 `DATA_DIR/audit/<店>.jsonl`(只追加);`GET /api/audit` 所有登录的人都能看(用户选的),头像按成员表一起给。⛔ 中间件要在请求进来时就记下 req.path(结束时已被里面的路由改短)。
+  · ⛔ **开关切换时页面要刷新**:每个 `/api` 回应带 `X-Team-Mode: on|off`,`app.js` 的 `api()` 和页面打开时的模式(`window.CGP_TEAM`,auth.js 记的)对不上就刷新一次(20 秒内只刷一次)。
+    2026-10-28 踩过:开 TEAM_MODE 时页面没刷新,后台自动刷新拿到飞书模式的数据、设置页还是旧的「我 / 成员与角色」面板(没头像),改名字走旧的 `/schedule/staff` 报「找不到这个成员」。飞书模式下 `/schedule/staff` 现在直接提示刷新。
 - **加载速度**(2026-10-28 用户:系统慢、不会动态刷新):
   · 服务器开了 gzip(`compression`),带 `?v=提交号` 的页面脚本 / 样式缓存一年(`/lib/*` 互相 import,不带版本,照常 304);
   · 慢数据(店铺设置 / 店铺信息 / 正在用的主题 —— 首页模板好几 MB)用 `swr()`:有旧的先返回、过期后台更新,完全没有时主题最多等 2.5 秒;服务器启动 3 秒后 `warmCaches` 预热;

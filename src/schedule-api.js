@@ -302,6 +302,8 @@ export function scheduleRouter() {
     replace(req.ctx.shop, s); return view(req, s);
   })));
   r.post('/staff', wrap(async (req) => withLock(req.ctx.shop, async () => {
+    // 旧的「Shopify 员工」名单只在没开飞书登录时用;开了以后名字头像来自飞书,成员和角色在「设置 → 成员」里改
+    if (teamEnabled()) throw new ActionError('现在用飞书登录了:名字和头像来自飞书,成员和角色在「设置 → 成员」里改。请刷新页面');
     needPage(req, 'settings');
     const s = load(req.ctx.shop); const a = actorFor(s, req.ctx.user);
     const { id, name, role } = req.body || {};

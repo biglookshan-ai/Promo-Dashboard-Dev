@@ -18,6 +18,7 @@ import { priceRouter } from './price/api.js';
 import { startExecutor } from './price/executor.js';
 import { auditTrail, readAudit, MOD_CN } from './audit.js';
 import { load as loadScheduleState } from './schedule-store.js';
+import { teamEnabled } from './lark-login.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -79,6 +80,9 @@ app.get('/api/auth/config', authConfig);
 
 // 下面都要认人:Shopify session token(后台里打开)和 / 或 app 会话(飞书登录)。没配飞书时和以前一样只认 Shopify。
 const api = express.Router();
+// 每个回应都带上「现在开没开飞书登录」:页面是开关切换前打开的,对不上就自己刷新一次(2026-10-28 踩过:
+// 开 TEAM_MODE 时页面没刷新,后台自动刷新拿到飞书模式的数据,设置页却还是旧界面 —— 没头像、改名字报「找不到这个成员」)
+api.use((req, res, next) => { res.set('X-Team-Mode', teamEnabled() ? 'on' : 'off'); next(); });
 api.use(requireAccess());
 // 操作记录(2026-10-28):每个改东西的请求都记一条,谁做的 = 飞书登录的成员;没开飞书登录时按 Shopify 员工(成员表里的名字)
 api.use(auditTrail((req) => {
@@ -90,7 +94,9 @@ api.use(apiAuthRouter()); // /auth/lark/start、/auth/lark/poll、/me、/members
 // 操作记录:所有登录的人都能看全部(用户 2026-10-28 选的)
 api.get('/audit', needMember(), (req, res) => {
   const n = (k) => Number(req.query[k]) || 0;
-  res.json({ ...readAudit(req.ctx.shop, { who: String(req.query.who || ''), mod: String(req.query.mod || ''), since: n('since'), before: n('before'), q: String(req.query.q || ''), limit: Math.min(500, n('limit') || 200) }), mods: MOD_CN });
+  // 头像按成员表给(包括待分配 / 停用的人),记录里只存 id 和名字
+  const avatars = Object.fromEntries((loadScheduleState(req.ctx.shop).members || []).filter((m) => m.avatar).map((m) => [m.id, m.avatar]));
+  res.json({ ...readAudit(req.ctx.shop, { who: String(req.query.who || ''), mod: String(req.query.mod || ''), since: n('since'), before: n('before'), q: String(req.query.q || ''), limit: Math.min(500, n('limit') || 200) }), mods: MOD_CN, avatars });
 });
 // 工具(元数据总账 / 促销盘点)只给能看「工具」的人(管理员)
 api.use(['/inventory', '/registry', '/drill', '/annotations'], needMember('tools'));
