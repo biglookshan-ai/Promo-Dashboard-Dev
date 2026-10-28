@@ -16,7 +16,9 @@ export const prioOf = (plan) => {
   return n >= 1 && n <= PRIO_MAX ? n : ({ flash: 10, brand: 9, sitewide: 8 }[plan?.layer] ?? PRIO_MAX);
 };
 export const KIND_CN = { window: '限时(到期恢复)', permanent: '永久' };
-export const COMPARE_CN = { original: '划线价显示原价', keep: '划线价不动', clear: '清空划线价', set: '指定划线价' };
+// 划线价(2026-10-28 用户定的四种,默认「显示原来的划线价」):keep 原来的划线价(没有就不显示)/ price 原来的现价 / clear 不显示 / set 逐个指定。
+// original = 老计划的「原来的划线价,没有就用原来的现价」,新计划不再提供,老计划照旧执行
+export const COMPARE_CN = { keep: '显示原来的划线价', price: '显示原来的现价', clear: '不显示划线价', set: '逐个指定划线价', original: '原来的划线价,没有就用原来的现价(旧设置)' };
 
 export const toCents = (v) => {
   if (v == null || v === '') return null;
@@ -73,6 +75,7 @@ export function targetFor(base, plan, item) {
   switch (plan.compare || (plan.kind === 'permanent' ? 'keep' : 'original')) {
     case 'original': { const o = Math.max(toCents(base.price), cmpCents(base.compareAt) || 0); compareAt = o > pc ? fromCents(o) : null; break; }
     case 'keep': compareAt = cmpCents(base.compareAt) ? base.compareAt : null; break;
+    case 'price': { const o = toCents(base.price); compareAt = o > pc ? fromCents(o) : null; break; } // 原来的现价(比新价高才显示)
     case 'clear': compareAt = null; break;
     case 'set': compareAt = cmpCents(item.compareAt) ? item.compareAt : null; break;
     default: throw new Error('未知的划线价方式');

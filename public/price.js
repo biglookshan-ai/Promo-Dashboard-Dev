@@ -235,15 +235,18 @@ const RULE_MODES = {
   fixed: { label: '统一改成一个价', unit: '£', say: (v) => `所有产品都改成 £${v}` },
   percent_up: { label: '按百分比涨价', unit: '%', say: (v) => `每个产品的现价上涨 ${v}%` },
   keep: { label: '售价不变(只改划线价)', unit: '', say: () => '售价不动,只调整划线价' },
-  manual: { label: '逐个填价', unit: '', say: () => '每个产品的新价在下面「试算预览」的表格里一个个填' },
+  manual: { label: '逐个填价', unit: '', say: () => '逐个填新价' },
 };
-// 划线价四种方式(2026-10-26 用户:说清楚各自什么时候用;「显示原价」= 原来有划线价就用它,没有才用改价前的售价)
+// 划线价四种方式(2026-10-28 用户定,默认「显示原来的划线价」);original 是老计划的设置,只有老计划打开时才列出来
 const CMP_OPTS = [
-  ['original', '显示改价前的价格(was / now)', '划线价 = 改价前的价格:产品原来就有划线价(比如建议零售价 £100、现在卖 £80)就继续用 £100;原来没有划线价,就用改价前的售价。<b>限时促销选这个</b> —— 「只显示打折」、促销链接、折扣角标都靠划线价判断'],
-  ['keep', '划线价不动', '保留产品原来的划线价,原来没有就不显示。只改售价、不想让产品看起来在打折时用(永久调价默认)'],
-  ['clear', '不显示划线价', '改价期间去掉划线价,只显示新价;这些产品不算打折,不会出现在促销链接、「只显示打折」里'],
-  ['set', '逐个指定划线价', '在下面「试算预览」的表格里给每个变体填划线价'],
+  ['keep', '显示原来的划线价', '产品原来有划线价(比如建议零售价 £100)就继续显示它;<b>原来没有划线价的就不显示</b> —— 这些产品前台看不出在打折,也不会出现在促销链接、「只显示打折」里'],
+  ['price', '显示原来的现价', '划线价 = 改价前的售价:原来卖 £80、改成 £70 → 显示 <s>£80</s> £70。原来就有划线价的产品,也换成原来的现价'],
+  ['clear', '不显示划线价', '改价期间去掉划线价,只显示新价;这些产品不算打折'],
+  ['set', '逐个指定划线价', '在每一组的「试算预览」表格里给每个变体填划线价'],
 ];
+const CMP_LEGACY = ['original', '原来的划线价,没有就用原来的现价(旧设置)', '这个计划用的是以前的设置,照旧执行;没开始前可以换成上面任何一种'];
+const cmpOf = (p) => p.compare || (p.kind === 'window' ? 'original' : 'keep'); // 没存的老计划按以前的默认
+const cmpOpts = (p) => (cmpOf(p) === 'original' ? [...CMP_OPTS, CMP_LEGACY] : CMP_OPTS);
 // 改价倒计时(2026-10-27 用户):倒数到这个计划恢复原价;写在产品字段 custom.cgp_price_cd,主题里比活动的倒计时优先
 const CD_STY = { classic: ['经典红框', '#ffefef', '#d10000', 'Deals Expires in :'], pill: ['胶囊', '#fdecec', '#c8102e', 'Deal ends in'],
   dark: ['黑金', '#111111', '#f5c518', 'Deal ends in'], minimal: ['只有文字', 'transparent', '#d10000', 'Ends in'] };
@@ -275,7 +278,7 @@ function newGroup(kind, rule) {
 function newPlan(kind) {
   return {
     id: uid('p_'), name: '', color: COLORS[0], kind, layer: null, priority: core.PRIO_MAX,
-    compare: kind === 'window' ? 'original' : 'keep', campaign: null, note: '',
+    compare: 'keep', campaign: null, note: '',
     rule: { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' },
     scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
     tagsAdd: [], tagsRemove: [],
@@ -339,13 +342,13 @@ function summaryHtml() {
       ${gs.map((g, i) => line(`${gs.length > 1 ? `<b>第 ${i + 1} 组</b>:` : ''}${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>`)).join('')}
       ${gs.length > 1 ? line('<span class="muted">同一个产品在几组里时,以排在下面的那组为准</span>') : ''}
       ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束并<b>自动恢复原价</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
-      ${line(CMP_OPTS.find((o) => o[0] === (p.compare || (p.kind === 'window' ? 'original' : 'keep')))?.[1] || '划线价不动')}
+      ${line(cmpOpts(p).find((o) => o[0] === cmpOf(p))?.[1] || '显示原来的划线价')}
       ${p.kind === 'window' && core.prioOf(p) !== core.PRIO_MAX ? line(`优先级 ${core.prioOf(p)}(和别的限时计划改到同一个产品时,数字大的说了算)`) : ''}
       ${p.kind === 'window' && p.countdown?.on ? line(`产品上显示倒计时「${esc(cdLabel(p))}」${Number(p.countdown.days) ? `,最后 ${Number(p.countdown.days)} 天才显示` : ',一直显示'}`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
       ${p.tagsRemove.length ? line(`生效期间去掉标签 <b>${p.tagsRemove.map(esc).join('、')}</b>,结束自动加回`) : ''}
       ${S.team ? line(`审批人:<b>${p.approver ? esc(nameOf(p.approver)) : '管理员'}</b>${p.owner ? ` · 负责人 ${esc(nameOf(p.owner))}` : ''}`) : ''}
-      ${its.length ? line(`影响 <b>${nProd}</b> 个产品 / <b>${live.length}</b> 个变体${maxOff > 0 ? `,最多降 <b>${maxOff}%</b>` : ''} · 预计 ${mins} 分钟内改完`) : line('<span class="tx-warn">还没算产品,点下面的「试算预览」</span>')}
+      ${its.length ? line(`影响 <b>${nProd}</b> 个产品 / <b>${live.length}</b> 个变体${maxOff > 0 ? `,最多降 <b>${maxOff}%</b>` : ''} · 预计 ${mins} 分钟内改完`) : line('<span class="tx-warn">还没算产品,点分组里的「试算预览」</span>')}
     </ul>
   </div>${its.length && !stale() ? checkHtml() : ''}`;
 }
@@ -371,8 +374,8 @@ function editorHtml() {
 
       ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
 
-      ${sec('划线价', `<div class="cmpopts">${CMP_OPTS.map(([k, t, d]) => { const on = (p.compare || (p.kind === 'window' ? 'original' : 'keep')) === k;
-          return `<label class="cmpopt ${on ? 'is-on' : ''}"><input type="radio" name="cmp" data-f="compare" value="${k}" ${on ? 'checked' : ''} ${ro || started() ? 'disabled' : ''}/><span><b>${t}${k === (p.kind === 'window' ? 'original' : 'keep') ? ' <span class="muted">(默认)</span>' : ''}</b><em>${d}</em></span></label>`; }).join('')}</div>
+      ${sec('划线价', `<div class="cmpopts">${cmpOpts(p).map(([k, t, d]) => { const on = cmpOf(p) === k;
+          return `<label class="cmpopt ${on ? 'is-on' : ''}"><input type="radio" name="cmp" data-f="compare" value="${k}" ${on ? 'checked' : ''} ${ro || started() ? 'disabled' : ''}/><span><b>${t}${k === 'keep' ? ' <span class="muted">(默认)</span>' : ''}</b><em>${d}</em></span></label>`; }).join('')}</div>
         ${started() ? '<p class="muted">计划已经开始,划线价方式不能再改。</p>' : ''}`, '改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样')}
 
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
@@ -406,10 +409,6 @@ function editorHtml() {
       <label class="pr-fld" style="margin-top:10px">备注 <em>${S.team ? '给审批人看的说明' : '给同事看的说明'}</em><textarea class="inp" rows="2" data-f="note" ${ro ? 'disabled' : ''} placeholder="比如:配合首页 Banner,Flash 每天 0 点换">${esc(p.note || '')}</textarea></label>`)}
 
 
-      ${sec('试算预览', `<p class="muted">按上面的设置算出每个产品的新价,确认没问题再提交。${stale() && items().length ? '<b class="tx-warn">设置改过了,结果可能不是最新的,请重新试算。</b>' : ''}</p>
-        <div class="row"><button class="btn ${items().length && !stale() ? '' : 'btn-primary'}" data-a="resolve" ${ro ? 'disabled' : ''}>${items().length ? '重新试算' : '试算预览'}</button>
-          ${items().length ? `<span class="muted">${new Set(items().map((i) => i.productId)).size} 个产品 / ${items().length} 个变体</span>` : ''}</div>
-        ${items().length ? previewHtml(ro) : ''}`)}
     </div>
     <aside class="pr-side">${summaryHtml()}</aside>
   </div>
@@ -425,30 +424,41 @@ function ruleHtml(ro) {
       ${r.mode === 'fixed' ? '' : `<span class="muted">尾数</span><select class="sel" data-f="rrounding" ${ro ? 'disabled' : ''}><option value="" ${!r.rounding ? 'selected' : ''}>不取整</option><option value="99" ${r.rounding === '99' ? 'selected' : ''}>.99</option><option value="00" ${r.rounding === '00' ? 'selected' : ''}>整数</option></select>`}
       ${['percent_off', 'amount_off'].includes(r.mode) ? `<span class="muted">按</span><select class="sel" data-f="rfrom" ${ro ? 'disabled' : ''}><option value="price" ${r.from !== 'compare' ? 'selected' : ''}>现售价</option><option value="compare" ${r.from === 'compare' ? 'selected' : ''}>划线价(RRP)</option></select><span class="muted">算</span>` : ''}
     </div>`}
-    <p class="pr-say">${rm.say(r.value)}。</p>`;
+    <p class="pr-say">${rm.say(r.value)}${r.mode === 'manual' ? ':在这一组下面「试算预览」的表格里一个个填' : ''}。</p>`;
 }
 function groupsHtml(ro) {
   const gs = groupsOf(P()); const gi = Math.min(E.gi || 0, gs.length - 1);
+  const its = items(); const ex = new Set(P().excluded || []);
+  const multi = gs.length > 1;
   return `<div class="pr-groups">${gs.map((g, i) => {
     const open = i === gi;
-    const n = items().filter((it) => it.group === g.id).length;
+    const mine = its.filter((it) => it.group === g.id);
+    const todo = P().kind === 'window' ? mine.filter((it) => it.price == null && !ex.has(it.variantId)).length : 0;
+    const hit = E.groupHits?.[g.id]; const over = hit != null ? hit - mine.length : 0; // 选中但被下面的组覆盖的
     return `<div class="pr-group ${open ? 'is-open' : ''}">
       <div class="pr-group__h" data-a="gopen" data-i="${i}">
-        <span class="pr-group__n">${gs.length > 1 ? `第 ${i + 1} 组` : '改价规则'}</span>
-        <span class="pr-group__s">${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${n ? ` <span class="muted">· ${n} 个变体</span>` : ''}</span>
-        ${ro || gs.length < 2 ? '' : `<span class="pr-group__acts">
+        <span class="pr-group__no">${i + 1}</span>
+        <span class="pr-group__n">${multi ? `第 ${i + 1} 组` : '改价规则'}</span>
+        <span class="pr-group__s">${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个变体</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
+        ${open ? '' : '<span class="pr-group__go">点开修改</span>'}
+        ${ro || !multi ? '' : `<span class="pr-group__acts">
           <button type="button" class="btn btn-ghost btn-xs" data-a="gup" data-i="${i}" ${i ? '' : 'disabled'} title="上移">↑</button>
           <button type="button" class="btn btn-ghost btn-xs" data-a="gdown" data-i="${i}" ${i < gs.length - 1 ? '' : 'disabled'} title="下移">↓</button>
           <button type="button" class="btn btn-ghost btn-xs" data-a="gdel" data-i="${i}" title="删掉这一组">删除</button></span>`}
       </div>
       ${open ? `<div class="pr-group__b">
         <div class="pr-group__lab">改哪些产品</div>${scopeHtml(ro)}
-        <div class="pr-group__lab" style="margin-top:14px">改什么价</div>${ruleHtml(ro)}
+        <div class="pr-group__lab">改什么价</div>${ruleHtml(ro)}
+        <div class="pr-group__lab">试算预览 <span class="muted">${multi ? '这一组的产品和新价(所有分组一起算)' : '每个产品的新价'}</span></div>
+        <div class="row"><button class="btn btn-sm ${its.length && !stale() ? '' : 'btn-primary'}" data-a="resolve" ${ro ? 'disabled' : ''}>${its.length ? '重新试算' : '试算预览'}</button>
+          ${stale() && its.length ? '<span class="tx-warn">设置改过了,请重新试算</span>' : ''}
+          ${over > 0 ? `<span class="muted">这一组选中 ${hit} 个变体,其中 <b>${over}</b> 个也在下面的组里,按下面那组的价</span>` : ''}</div>
+        ${mine.length ? previewHtml(ro, g.id) : its.length ? '<p class="muted" style="margin-top:8px">这一组没有产品(没选,或者全被下面的组覆盖了)。</p>' : ''}
       </div>` : ''}
     </div>`;
   }).join('')}</div>
-  ${ro ? '' : '<button class="btn btn-sm" type="button" data-a="gadd" style="margin-top:10px">+ 再加一组</button>'}
-  ${gs.length > 1 ? '<p class="muted" style="margin-top:6px">同一个产品出现在好几组时,以<b>排在下面的那组</b>为准 —— 比如第 1 组全场 9 折,第 2 组某个品牌 8 折,这个品牌就是 8 折。</p>' : ''}`;
+  ${ro ? '' : `<button class="pr-gadd" type="button" data-a="gadd">＋ 再加一组<span>另一批产品用另一个改价规则,比如 A 牌子 85 折、B 牌子逐个填价</span></button>`}
+  ${multi ? '<p class="muted" style="margin-top:8px">同一个产品出现在好几组时,以<b>排在下面的那组</b>为准 —— 比如第 1 组全场 9 折,第 2 组某个品牌 8 折,这个品牌就是 8 折。</p>' : ''}`;
 }
 
 function tagChips(key, ro) {
@@ -482,11 +492,11 @@ function scopeHtml(ro) {
 }
 
 // 试算结果:默认只看前 10 个(和原来那个 app 一样),可以展开全部
-function previewHtml(ro) {
-  const p = P(); const its = items(); const ex = new Set(p.excluded || []);
-  const gs = groupsOf(p); const gno = new Map(gs.map((g, i) => [g.id, i + 1]));
+function previewHtml(ro, gid) {
+  const p = P(); const its = items().filter((i) => i.group === gid); const ex = new Set(p.excluded || []);
   const needFill = its.some((i) => i.price == null && !ex.has(i.variantId)) && p.kind === 'window';
-  const show = E.showAll || needFill ? its : its.slice(0, 10);
+  const all = (E.showAllG || {})[gid];
+  const show = all || needFill ? its : its.slice(0, 10);
   const setCompare = (p.compare || '') === 'set';
   let lastPid = null;
   const rows = show.map((it) => {
@@ -499,7 +509,6 @@ function previewHtml(ro) {
       <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div></div></div>` : ''}</td>
       <td>${esc(it.variant || '')}<div class="pcell__s">${esc(it.sku || '')}</div></td>
       <td class="num">${money(it.refPrice)}${it.refCompareAt && Number(it.refCompareAt) > Number(it.refPrice) ? `<div><s>${money(it.refCompareAt)}</s></div>` : ''}${it.cost != null ? `<div class="pcell__s">成本 ${money(it.cost)}</div>` : ''}</td>
-      ${gs.length > 1 ? `<td><span class="pr-gtag">${gno.get(it.group) ? `第 ${gno.get(it.group)} 组` : ''}</span></td>` : ''}
       <td class="num">${ro || gone ? `<b>${it.price != null ? money(it.price) : '不变'}</b>` : `<input class="inp ${it.price == null && p.kind === 'window' ? 'is-todo' : ''}" data-f="iprice" data-v="${it.variantId}" value="${it.price ?? ''}" placeholder="${p.kind === 'window' ? '填新价' : '不变'}"/>`}
         ${it.manual && !ro && !gone ? `<div><span class="pr-mtag">手改</span><button class="linkbtn" data-a="unmanual" data-v="${it.variantId}" title="回到这一组规则算出来的价">用规则价</button></div>` : ''}</td>
       <td class="num">${setCompare && !ro && !gone ? `<input class="inp" data-f="icompare" data-v="${it.variantId}" value="${it.compareAt ?? ''}" placeholder="无"/>` : t?.compareAt ? `<s>${money(t.compareAt)}</s>` : '<span class="muted">无</span>'}</td>
@@ -509,8 +518,8 @@ function previewHtml(ro) {
     </tr>`;
   }).join('');
   return `${ro ? '' : '<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,重新试算也会保留;点「用规则价」恢复)。</p>'}
-    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th>${gs.length > 1 ? '<th>分组</th>' : ''}<th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${its.length > 10 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" style="margin-top:8px">${E.showAll ? '只看前 10 个' : `展开全部 ${its.length} 个变体`}</button>` : ''}`;
+    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${its.length > 10 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 10 个' : `展开这一组全部 ${its.length} 个变体`}</button>` : ''}`;
 }
 
 function bannersHtml() {
@@ -585,7 +594,7 @@ function checkHtml() {
       <div class="${errs ? 'is-bad' : ''}"><b>${errs}</b>个有错误(不能提交)</div>
       <div class="${warns ? 'is-warn' : ''}"><b>${warns}</b>个要留意</div>
     </div>
-    ${todo && p.kind === 'window' ? `<div class="banner banner--warn" style="margin-bottom:6px">还有 <b>${todo}</b> 个变体没填新价(在「试算预览」表格里填)。</div>` : ''}
+    ${todo && p.kind === 'window' ? `<div class="banner banner--warn" style="margin-bottom:6px">还有 <b>${todo}</b> 个变体没填新价(在对应那一组的「试算预览」表格里填)。</div>` : ''}
     ${roundWarn}
     ${[...byOther.values()].map((o) => `<div class="banner banner--warn" style="margin-bottom:6px">⚠️ <b>${o.n.size} 个变体</b>也在「${esc(o.name)}」(优先级 ${o.priority})里,时间有重叠:重叠期间用<b>「${o.wins ? esc(p.name || '这个计划') : esc(o.name)}」</b>的价格${o.wins ? `,这个计划结束后回到「${esc(o.name)}」的价` : ',这个计划在重叠的这段时间里对这些变体不起作用'}。不对就改上面的「优先级」(数字大的说了算,一样大时开始晚的说了算)。</div>`).join('')}
     ${err && !readonly() ? `<div class="banner banner--warn" style="margin:0">还不能提交:${esc(err)}</div>` : ''}
@@ -667,10 +676,12 @@ async function resolveScope() {
   const p = E.plan;
   const old = new Map(items().map((i) => [i.variantId, i]));
   const byVariant = new Map();
+  E.groupHits = {};
   for (const [gi, g] of p.groups.entries()) {
     let products;
     try { products = await productsOf(g.scope); }
     catch (e) { throw new Error(p.groups.length > 1 ? `第 ${gi + 1} 组:${e.message}` : e.message); }
+    E.groupHits[g.id] = products.reduce((n, pr) => n + pr.variants.length, 0);
     for (const pr of products) for (const v of pr.variants) {
       const it = toItem(pr, v, g.rule); it.group = g.id;
       const o = old.get(v.id);
@@ -694,7 +705,7 @@ function values() {
   return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer || null : null,
     priority: p.kind === 'window' ? core.prioOf(p) : null,
     countdown: p.kind === 'window' ? { on: !!p.countdown?.on, label: String(p.countdown?.label || '').trim(), days: Number(p.countdown?.days) || 0, style: p.countdown?.style || 'classic' } : null,
-    compare: p.compare || (p.kind === 'window' ? 'original' : 'keep'), campaign: p.campaign, note: p.note, slots: p.slots,
+    compare: cmpOf(p), campaign: p.campaign, note: p.note, slots: p.slots,
     groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
     owner: p.owner || null, approver: p.approver || null, cc: p.cc || [] };
 }
@@ -793,7 +804,7 @@ document.addEventListener('click', async (ev) => {
       case 'kind': {
         if (el.disabled) return;
         const k = el.dataset.v; E.plan.kind = k;
-        E.plan.compare = k === 'window' ? 'original' : 'keep';
+        if (E.plan.compare === 'original') E.plan.compare = 'keep';
         for (const g of E.plan.groups) if (!['manual', 'keep', 'fixed', 'amount_off'].includes(g.rule.mode)) g.rule.mode = k === 'window' ? 'percent_off' : 'percent_up';
         const s = E.plan.slots[0];
         if (k === 'permanent') { s.end = null; s.collection = null; } else if (!s.end) s.end = s.start + 7 * DAY;
@@ -849,7 +860,7 @@ document.addEventListener('click', async (ev) => {
         touch(); render(); break;
       }
       case 'resolve': await withBusy(el, async () => { const n = await resolveScope(); toast(`算好了:${n} 个变体`); render(); }); break;
-      case 'showall': E.showAll = !E.showAll; render(); break;
+      case 'showall': E.showAllG ||= {}; E.showAllG[el.dataset.g] = !E.showAllG[el.dataset.g]; render(); break;
       case 'rm': { const s = curSlot(); s.items = s.items.filter((i) => i.variantId !== el.dataset.v); touch(); render(); break; }
       case 'startnow': curSlot().start = now() + 60_000; touch(); render(); break;
       case 'togglepending': E.showPending = !E.showPending; render(); break;

@@ -1219,15 +1219,25 @@ body.is-pgdrag, body.is-pgdrag * { cursor: grabbing !important; user-select: non
 .ihdiff tr.is-diff td:nth-child(2) { font-weight: 500; }
 
 /* 改价分组 */
-#section-price .pr-groups { display: flex; flex-direction: column; gap: 8px; }
-#section-price .pr-group { border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+/* 改价分组(2026-10-28 用户:分组要更分明):每组一张卡片 —— 编号 + 灰色标题栏;正在改的那组蓝框 + 浅蓝标题栏;小标题前一道竖线 */
+#section-price .pr-groups { display: flex; flex-direction: column; gap: 12px; }
+#section-price .pr-group { border: 1px solid var(--border); border-radius: 10px; background: #fff; overflow: hidden; }
 #section-price .pr-group.is-open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-#section-price .pr-group__h { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; flex-wrap: wrap; }
-#section-price .pr-group__n { font-weight: 600; font-size: 13px; white-space: nowrap; }
+#section-price .pr-group__h { display: flex; align-items: center; gap: 10px; padding: 11px 14px; cursor: pointer; flex-wrap: wrap; background: var(--surface-2); }
+#section-price .pr-group.is-open .pr-group__h { background: var(--accent-soft); }
+#section-price .pr-group__no { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #8b8f99; color: #fff; font-size: 12px; font-weight: 700; }
+#section-price .pr-group.is-open .pr-group__no { background: var(--accent); }
+#section-price .pr-group__n { font-weight: 600; font-size: 14px; white-space: nowrap; }
 #section-price .pr-group__s { flex: 1; min-width: 0; font-size: 13px; color: var(--text-2); }
+#section-price .pr-group__go { font-size: 12px; color: var(--accent); white-space: nowrap; }
 #section-price .pr-group__acts { display: flex; gap: 2px; }
-#section-price .pr-group__b { padding: 4px 12px 14px; border-top: 1px solid #f0f0f2; }
-#section-price .pr-group__lab { font-size: 12px; font-weight: 600; color: var(--text-3); margin: 10px 0 6px; }
+#section-price .pr-group__b { padding: 4px 16px 16px; border-top: 1px solid var(--border); }
+#section-price .pr-group__lab { display: flex; align-items: center; gap: 8px; margin: 16px 0 8px; font-size: 13px; font-weight: 600; color: var(--text); }
+#section-price .pr-group__lab::before { content: ""; flex: none; width: 3px; height: 13px; border-radius: 2px; background: var(--accent); }
+#section-price .pr-group__lab .muted { font-weight: 400; font-size: 12px; }
+#section-price .pr-gadd { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; width: 100%; margin-top: 12px; padding: 12px; border: 1.5px dashed #c3c7d1; border-radius: 10px; background: #fff; color: var(--accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+#section-price .pr-gadd:hover { border-color: var(--accent); background: var(--accent-soft); }
+#section-price .pr-gadd span { font-size: 12px; font-weight: 400; color: var(--text-3); }
 #section-price .pr-gtag { font-size: 12px; background: var(--surface-2); border-radius: 4px; padding: 1px 6px; white-space: nowrap; color: var(--text-2); }
 #section-price .pr-mtag { font-size: 12px; background: #fff3d6; color: #8a5a00; border-radius: 4px; padding: 0 5px; margin-right: 4px; }
 #section-price .inp.is-todo { border-color: #e8a400; background: #fffaf0; }
@@ -1927,3 +1937,7 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 #section-price .cdpv--pill, #section-price .cdpv--dark { border-radius: 999px; padding: 4px 12px; }
 #section-price .cdpv--minimal { padding: 0; }
 #section-price .cdpv b { font-variant-numeric: tabular-nums; }
+/* 表格放进分组后:主栏不能被表格撑宽(表格自己左右滑) */
+#section-price .pr-main, #section-price .pr-side { min-width: 0; }
+#section-price .pr-group__b .tblwrap { max-width: 100%; }
+#section-price .pr-group__b .pr-tbl td:nth-child(2) { min-width: 110px; }
