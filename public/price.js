@@ -517,6 +517,12 @@ function previewHtml(ro, gid) {
   const show = all || needFill ? its : its.slice(0, 10);
   const setCompare = gCmp(p, groupsOf(p).find((g) => g.id === gid)) === 'set';
   let lastPid = null;
+  // 2026-10-28 用户:进行中的计划看不到移出 —— 表格只读时按钮被一起藏了。移出是安全方向(下一分钟恢复原价),开始后照样能用
+  const canExclude = started() && !E.showPending && !E.orig?.stopped && !['ended', 'done'].includes(statusOf(E.orig));
+  const rowAct = canExclude ? 'exclude' : ro ? '' : 'rm';
+  const actLabel = rowAct === 'exclude' ? '移出' : '去掉';
+  const actTip = rowAct === 'exclude' ? '移出后下一分钟恢复原价' : '把这个变体从这个计划里去掉,它的价格不会被改(重新试算会再算进来)';
+  const live = its.filter((x) => !ex.has(x.variantId));
   const rows = show.map((it) => {
     const first = it.productId !== lastPid; lastPid = it.productId;
     const w = core.itemWarnings(p, it, opts());
@@ -524,7 +530,8 @@ function previewHtml(ro, gid) {
     const d = it.price != null ? core.discountPct(it.refPrice, it.price) : null;
     const gone = ex.has(it.variantId);
     return `<tr class="${first ? 'is-first' : ''}" style="${gone ? 'opacity:.45' : ''}">
-      <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div></div></div>` : ''}</td>
+      <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div>
+        ${(() => { const sib = live.filter((x) => x.productId === it.productId); return rowAct && sib.length > 1 ? `<button class="linkbtn pcell__all" data-a="${rowAct}" data-vs="${sib.map((x) => x.variantId).join(',')}" title="${rowAct === 'exclude' ? `这个产品的 ${sib.length} 个变体一起移出,下一分钟恢复原价` : `这个产品的 ${sib.length} 个变体一起从计划里去掉`}">整个产品${actLabel}(${sib.length} 个变体)</button>` : ''; })()}</div></div>` : ''}</td>
       <td>${esc(it.variant || '')}<div class="pcell__s">${esc(it.sku || '')}</div></td>
       <td class="num">${money(it.refPrice)}${it.refCompareAt && Number(it.refCompareAt) > Number(it.refPrice) ? `<div><s>${money(it.refCompareAt)}</s></div>` : ''}${Number(it.cost) > 0 ? `<div class="pcell__s">成本 ${money(it.cost)}</div>` : ''}</td>
       <td class="num">${ro || gone ? `<b>${it.price != null ? money(it.price) : '不变'}</b>` : `<input class="inp ${it.price == null && p.kind === 'window' ? 'is-todo' : ''}" data-f="iprice" data-v="${it.variantId}" value="${it.price ?? ''}" placeholder="${p.kind === 'window' ? '填新价' : '不变'}"/>`}
@@ -540,7 +547,7 @@ function previewHtml(ro, gid) {
       })()}</td>
       <td class="num">${d == null ? '' : d > 0 ? `<span class="off">-${d}%</span>` : d < 0 ? `<span class="up">+${-d}%</span>` : '0%'}</td>
       <td>${gone ? '<span class="w w--warn">已移出</span>' : ''}${w.map((x) => `<span class="w w--${x.level}">${esc(x.text)}</span>`).join('')}</td>
-      <td>${gone || ro ? '' : started() ? `<button class="linkbtn" data-a="exclude" data-v="${it.variantId}" title="移出后下一分钟恢复原价">移出</button>` : `<button class="linkbtn" data-a="rm" data-v="${it.variantId}" title="把这个变体从这个计划里去掉,它的价格不会被改(重新试算会再算进来)">去掉</button>`}</td>
+      <td>${gone || !rowAct ? '' : `<button class="linkbtn" data-a="${rowAct}" data-v="${it.variantId}" title="${actTip}">${actLabel}</button>`}</td>
     </tr>`;
   }).join('');
   return `${ro ? '' : `<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,重新试算也会保留;点「用规则价」恢复)。
@@ -891,7 +898,7 @@ document.addEventListener('click', async (ev) => {
       case 'resolve': await withBusy(el, async () => { const n = await resolveScope(); toast(`算好了:${n} 个变体`); render(); }); break;
       case 'uncmp': { const it = curSlot().items.find((i) => i.variantId === el.dataset.v); if (it) { it.cmpManual = false; delete it.compareAt; } touch(); render(); break; }
       case 'showall': E.showAllG ||= {}; E.showAllG[el.dataset.g] = !E.showAllG[el.dataset.g]; render(); break;
-      case 'rm': { const s = curSlot(); s.items = s.items.filter((i) => i.variantId !== el.dataset.v); touch(); render(); break; }
+      case 'rm': { const ids = (el.dataset.vs || el.dataset.v).split(','); const s = curSlot(); s.items = s.items.filter((i) => !ids.includes(i.variantId)); touch(); render(); break; }
       case 'startnow': curSlot().start = now() + 60_000; touch(); render(); break;
       case 'togglepending': E.showPending = !E.showPending; render(); break;
       case 'save': {
@@ -909,7 +916,7 @@ document.addEventListener('click', async (ev) => {
       case 'pause': case 'resume': await withBusy(el, async () => { await act({ type: a, id: E.orig.id }); await reopen(E.orig.id); }); break;
       case 'stop': if (!armed(el, '再点一次:提前结束并恢复原价')) return; await withBusy(el, async () => { await act({ type: 'stop', id: E.orig.id }); await reopen(E.orig.id); }); break;
       case 'delete': if (!armed(el)) return; await withBusy(el, async () => { await act({ type: 'delete', id: E.orig.id }); E = null; renderChrome(); render(); }); break;
-      case 'exclude': if (!armed(el, '再点一次:移出并恢复原价')) return; await withBusy(el, async () => { await act({ type: 'exclude', id: E.orig.id, variantIds: [el.dataset.v] }); await reopen(E.orig.id); }); break;
+      case 'exclude': if (!armed(el, '再点一次:移出并恢复原价')) return; await withBusy(el, async () => { await act({ type: 'exclude', id: E.orig.id, variantIds: (el.dataset.vs || el.dataset.v).split(',') }); await reopen(E.orig.id); }); break;
       case 'history': if (window.cgpPlanHistory) window.cgpPlanHistory(E.orig.id); break;
       case 'dup': case 'dupnext': {
         const src = clone(P());

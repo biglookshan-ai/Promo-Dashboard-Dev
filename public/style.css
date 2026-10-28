@@ -1948,3 +1948,4 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 #section-price .cdpvs__k { font-size: 12px; color: var(--text-3); }
 #section-price .cdpv svg { flex: none; }
 #section-price .cdpv--classic b, #section-price .cdpv b { font-weight: 600; }
+#section-price .pcell__all { display: block; margin-top: 2px; font-size: 12px; }
