@@ -1,10 +1,11 @@
 import express from 'express';
+import compression from 'compression';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { requireAccess, needMember } from './auth-embedded.js';
 import { publicAuthRouter, apiAuthRouter, authConfig } from './auth-routes.js';
-import { clearToken } from './token-store.js';
+import { clearToken, getToken, knownShops } from './token-store.js';
 import { runInventory } from './inventory.js';
 import { getCached, setCached } from './inventory-cache.js';
 import { buildRegistry } from './registry.js';
@@ -12,7 +13,7 @@ import { scanTheme } from './theme-scan.js';
 import { getAll as getAnnotations, setOne as setAnnotation } from './annotations.js';
 import { resourcesWithMetafield, metaobjectEntriesWithRefs } from './drilldown.js';
 import { startScheduler } from './scheduler.js';
-import { scheduleRouter } from './schedule-api.js';
+import { scheduleRouter, warmCaches } from './schedule-api.js';
 import { priceRouter } from './price/api.js';
 import { startExecutor } from './price/executor.js';
 
@@ -29,7 +30,14 @@ if (fs.existsSync(envPath)) {
 
 const API_KEY = process.env.SHOPIFY_API_KEY || '';
 const app = express();
+// 2026-10-28 用户:整个系统加载慢 —— 返回的数据和页面脚本都压缩传输(schedule.js 46 万字节 → 14 万;改价 / 排期的数据也小很多)
+app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: '2mb' }));
+// 带版本号(?v=提交号)的页面脚本 / 样式:同一个版本内容不会变,让浏览器缓存一年,只有部署新版本才重新下载
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.query.v && /\.(js|css)$/.test(req.path) && !req.path.startsWith('/lib/')) res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  next();
+});
 
 // Allow the app to be framed by Shopify admin (required for embedded apps).
 app.use((req, res, next) => {
@@ -155,3 +163,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`promo-manager (embedded) on :${PORT}`));
 startScheduler();
 startExecutor(); // 改价执行器:每分钟把店里价格对齐到「此刻应有的价」
+// 启动几秒后先把店铺设置 / 主题读进缓存(读主题要好几秒),第一个打开 app 的人不用等
+if (process.env.SCHEDULER_DISABLED !== '1') setTimeout(() => warmCaches(knownShops(), getToken).catch((e) => console.warn('[cache] 预热失败', e.message)), 3000);

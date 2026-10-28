@@ -203,6 +203,12 @@
 - 本地看演示界面:`node scripts/demo-preview.mjs`(端口 4790)。
 - **界面文字里「合集」一律写成 `Collection`**(2026-10-26 用户要求;中英文之间留空格,如「这个 Collection 的排序」「Collection 排序」)。提示、报错、日志、飞书通知都算;代码注释不管。
   例外:`src/metaobjects.js` 里内容类型的名称 / 说明还是中文 —— 那是写进 Shopify 的定义,改了会让设置页把它们标成「要更新」,别顺手改。
+- **加载速度**(2026-10-28 用户:系统慢、不会动态刷新):
+  · 服务器开了 gzip(`compression`),带 `?v=提交号` 的页面脚本 / 样式缓存一年(`/lib/*` 互相 import,不带版本,照常 304);
+  · 慢数据(店铺设置 / 店铺信息 / 正在用的主题 —— 首页模板好几 MB)用 `swr()`:有旧的先返回、过期后台更新,完全没有时主题最多等 2.5 秒;服务器启动 3 秒后 `warmCaches` 预热;
+  · 改价数据前端共用 `window.cgpPriceState(maxAge)`(同时只读一次);进入「改价」先用手上的数据画,再后台刷新;
+  · 排期数据页面开着时每分钟后台读一次(`bgRefresh`),有变化才重画;开着编辑窗 / 弹出框 / 正在输入 / 页面在后台时不读。
+  · ⛔ 本地测试环境的入口要改写首页 HTML,转发时去掉 `accept-encoding`(不然拿到 gzip 改坏了)。
 - 后台跑在 Shopify 后台的 iframe 里:**别用 `prompt()` / `confirm()` / `alert()`**(跨域 iframe 可能被浏览器拦截),用页面内输入框和「再点一次确认」。
 - **计数不用扫全站**:`metafieldsCount` / `metaobjectsCount` 由 API 直接给,总账秒出。只有促销盘点那套才需要扫 3938 个产品(所以它改成切到标签页才懒加载)。
 - **Metafield 查不到「哪个 app 创建」** —— Shopify 没这个字段。归属只能靠三条线索:命名空间推断 + 主题扫描(`read_themes`,最硬证据)+ 人工标注(`src/annotations.js`,存 DATA_DIR)。

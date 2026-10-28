@@ -71,8 +71,17 @@ const layerCls = (p) => (p.kind === 'permanent' ? 'L-perm' : 'L-window');
 const kindLabel = (p) => (p.kind === 'permanent' ? '永久调价' : `限时${core.prioOf(p) !== core.PRIO_MAX ? ` · 优先级 ${core.prioOf(p)}` : ''}`);
 const holdsOf = (planId) => S.vault.filter((v) => v.hold && (!planId || v.hold.planId === planId));
 
+// 改价数据(2026-10-28 用户:系统慢)—— 同一时间只读一次,「我的工作」/ 活动页 / Collection 排序里要用也共用这一份
+let psInflight = null, psLast = null; // psLast = { at, value }
+function priceState(maxAge = 0) {
+  if (psLast && Date.now() - psLast.at <= maxAge) return Promise.resolve(psLast.value);
+  return (psInflight ||= api('GET', '/api/price/state')
+    .then((v) => { psLast = { at: Date.now(), value: v }; return v; })
+    .finally(() => { psInflight = null; }));
+}
+window.cgpPriceState = priceState;
 async function load() {
-  S = await api('GET', '/api/price/state');
+  S = await priceState();
   renderChrome();
 }
 
@@ -1022,8 +1031,10 @@ setInterval(async () => { if (!S || E || document.hidden || !visible()) return; 
 // 点开「改价」时才加载(registry.js 的 showSection 是全局函数,包一层)
 let booted = false;
 async function start() {
-  if (booted) { try { await load(); if (!E) render(); } catch { /* 忽略 */ } return; }
+  // 再次进入:先用手上的数据马上画出来,再在后台读最新的(以前要等读完才换,看起来像卡住)
+  if (booted) { if (!E && S) render(); try { await load(); if (!E) render(); } catch { /* 忽略 */ } return; }
   booted = true;
+  if (S) render(); else $('#pr-root').innerHTML = '<div class="pr-empty">加载中…</div>'; // 第一次:打开 app 时多半已经读好了
   try { await load(); render(); }
   catch (e) { booted = false; $('#pr-root').innerHTML = `<div class="banner banner--danger">${esc(e.message)}</div>`; }
 }

@@ -26,15 +26,52 @@ import { titleOf, allOf } from './schedule-actions.js';
 // 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
 const APP_VERSION = { commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local', startedAt: Date.now() };
 const cache = new Map(); // `${shop}:${name}` → { at, value }
+const inflight = new Map(); // 同一样东西正在读 → 大家等同一次,不重复打 Shopify
+function refresh(shop, name, fn) {
+  const k = `${shop}:${name}`;
+  if (!inflight.has(k)) {
+    inflight.set(k, Promise.resolve().then(fn)
+      .then((value) => { cache.set(k, { at: Date.now(), value }); return value; })
+      .finally(() => inflight.delete(k)));
+  }
+  return inflight.get(k);
+}
 async function cached(shop, name, ms, fn) {
-  const k = `${shop}:${name}`; const c = cache.get(k);
+  const c = cache.get(`${shop}:${name}`);
   if (c && Date.now() - c.at < ms) return c.value;
-  const value = await fn(); cache.set(k, { at: Date.now(), value }); return value;
+  return refresh(shop, name, fn);
+}
+// 2026-10-28 用户:系统加载慢 —— 慢的东西(店铺设置、正在用的主题:首页模板好几 MB)先用旧的马上返回,过期了在后台更新;
+// 一份都没有时才等(waitMs > 0 时最多等这么久,等不到先给 fallback,后台接着读完放进缓存)
+async function swr(shop, name, ms, fn, { waitMs = 0, fallback = null } = {}) {
+  const c = cache.get(`${shop}:${name}`);
+  if (c) {
+    if (Date.now() - c.at >= ms) refresh(shop, name, fn).catch((e) => console.warn(`[cache] ${name} 后台更新失败:`, e.message));
+    return c.value;
+  }
+  const p = refresh(shop, name, fn);
+  if (!waitMs) return p;
+  return Promise.race([p, new Promise((r) => setTimeout(() => r(fallback), waitMs))]);
 }
 const bust = (shop, name) => cache.delete(`${shop}:${name}`);
+const SLOW = {
+  setup: [300_000, (ctx) => setupStatus(ctx)],
+  shop: [3600_000, (ctx) => shopInfo(ctx)],
+  theme: [1800_000, (ctx) => readMainTheme(ctx).catch(() => null), { waitMs: 2500 }],
+};
+// 服务器刚启动(每次部署):先把这几样读好,第一个打开 app 的人不用等
+export async function warmCaches(shops, tokenOf) {
+  for (const shop of shops) {
+    const token = tokenOf(shop); if (!token) continue;
+    const ctx = { shop, token };
+    await Promise.all(Object.entries(SLOW).map(([name, [, fn]]) => refresh(shop, name, () => fn(ctx)).catch((e) => console.warn(`[cache] 预热 ${shop} ${name} 失败:`, e.message))));
+    console.log(`[cache] ${shop} 预热完成`);
+  }
+}
 
 async function setupStatus(ctx) {
-  const missing = missingScopes(await grantedScopes(ctx));
+  const scopes = await grantedScopes(ctx); // 只查一次
+  const missing = missingScopes(scopes);
   const definitions = missing.includes('write_metaobject_definitions') && missing.includes('write_metaobjects')
     ? await definitionStatus(ctx).catch(() => []) : await definitionStatus(ctx);
   // ready = 第一期的 4 个都建好了(app 就能用正式数据);后加的类型缺了只提示「补建」,不影响已有功能
@@ -50,7 +87,7 @@ async function setupStatus(ctx) {
     // 已建好的类型后来加了字段:也算要补建(同一个按钮)
     fieldsMissing: definitions.flatMap((d) => (d.exists ? [...(d.missingFields || []), ...(d.staleFields || [])].map((k) => `${d.type}.${k}`) : [])),
     // 「真的改店里的合集」要这个权限;没有也不影响别的功能,只是那种清单退回前台排序
-    canWriteProducts: (await grantedScopes(ctx)).includes('write_products') };
+    canWriteProducts: scopes.includes('write_products') };
 }
 
 async function shopInfo(ctx) {
@@ -112,9 +149,7 @@ export function scheduleRouter() {
   async function view(req, state) {
     const shop = req.ctx.shop;
     const [setup, info, theme] = await Promise.all([
-      cached(shop, 'setup', 60_000, () => setupStatus(req.ctx)),
-      cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx)),
-      cached(shop, 'theme', 600_000, () => readMainTheme(req.ctx).catch(() => null)),
+      ...['setup', 'shop', 'theme'].map((n) => swr(shop, n, SLOW[n][0], () => SLOW[n][1](req.ctx), SLOW[n][2])),
     ]);
     return clientView(state, { me: actorFor(state, req.ctx.user).id, setup, store: { handle: info.handle, domain: info.domain, name: info.name }, site: theme?.style || null, themePin: theme ? !!theme.pinReady : null });
   }

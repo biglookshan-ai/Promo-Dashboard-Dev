@@ -91,18 +91,41 @@
     });
     return { ...v, site: v.site || seed.site, tagCounts, collections: v.collections || [], products: v.products || [], pins: v.pins || [], salelinks: v.salelinks || [], callouts: v.callouts || [], colState: v.colState || {}, sortFlags: v.sortFlags || {} };
   }
+  let lastLoad = 0, lastSig = '', lastDraw = 0; // 后台自动刷新用:上次读的时间、数据的样子、上次重画的时间
   async function load(force) {
-    if (MODE === 'live') { S = await normalizeLive(await api('GET', '/api/schedule/state')); return; }
+    if (MODE === 'live') { const v = await api('GET', '/api/schedule/state'); lastLoad = Date.now(); lastSig = sigOf(v); S = await normalizeLive(v); return; }
     const raw = !force && localStorage.getItem(DEMO_KEY);
     if (raw) { S = JSON.parse(raw); S.pins ||= []; S.salelinks ||= []; S.callouts ||= []; return; }
     S = materialize(await getSeed());
     save();
   }
+  // 数据的样子(去掉每次都会变的 me / scheduler),一样就不用重画
+  const sigOf = (v) => { try { const { scheduler, me, ...rest } = v; return JSON.stringify(rest); } catch { return String(Math.random()); } };
+  // 2026-10-28 用户:系统不会动态刷新 —— 页面开着时每分钟在后台读一次最新数据,有变化才重画;
+  // 正在输入、开着编辑窗或弹出框、页面在后台时都不打扰。时间相关的状态(快到期、上线中)每 5 分钟顺便重画一次
+  async function bgRefresh() {
+    if (MODE !== 'live' || document.hidden || Date.now() - lastLoad < 50_000) return;
+    if (!$('#drawer').hidden || (popEl && !popEl.hidden)) return;
+    const ae = document.activeElement;
+    if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+    try {
+      const v = await api('GET', '/api/schedule/state');
+      lastLoad = Date.now();
+      if (!$('#drawer').hidden) return; // 读的时候有人打开了编辑窗
+      const sig = sigOf(v);
+      if (sig === lastSig && Date.now() - lastDraw < 300_000) return;
+      lastSig = sig; S = await normalizeLive(v); renderAll(); lastDraw = Date.now();
+    } catch { /* 下一分钟再试 */ }
+  }
+  setInterval(bgRefresh, 60_000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) bgRefresh(); });
+
   // 在后台里打开 → 问服务器;建好内容类型了就用正式数据
   async function detectMode() {
     if (!(window.shopify && window.shopify.idToken) && !window.CGP_ME) return 'demo'; // 飞书登录后直接开网页也算正式数据
     try {
       const v = await api('GET', '/api/schedule/state');
+      lastLoad = Date.now(); lastSig = sigOf(v); lastDraw = Date.now();
       liveSetup = v.setup;
       if (v.setup?.ready && localStorage.getItem(FORCE_DEMO) !== '1') { S = await normalizeLive(v); return 'live'; }
     } catch (e) { console.warn('[schedule] 连不上正式数据,用演示模式', e); }
@@ -120,7 +143,7 @@
         return r;
       }
       const v = await api('POST', '/api/schedule/act', { action });
-      S = await normalizeLive(v); renderAll();
+      S = await normalizeLive(v); renderAll(); lastLoad = lastDraw = Date.now(); lastSig = sigOf(v);
       if (v.syncErrors?.length) toast('已保存,但写进店铺时出错:' + v.syncErrors[0], false);
       else if (v.larkErrors?.length) toast('已保存,但飞书通知没发出去:' + v.larkErrors[0], false);
       return v;
@@ -891,7 +914,7 @@
   let hubPrice = { plans: null, err: '', at: 0 };
   async function loadHubPrice() {
     if (MODE !== 'live' || !(window.cgpCanSee && window.cgpCanSee('price'))) { hubPrice = { plans: null, err: '', at: now() }; return; }
-    try { hubPrice = { plans: (await api('GET', '/api/price/state')).plans, err: '', at: now() }; }
+    try { hubPrice = { plans: (await (window.cgpPriceState ? window.cgpPriceState(15000) : api('GET', '/api/price/state'))).plans, err: '', at: now() }; }
     catch (e) { hubPrice = { plans: null, err: e.message, at: now() }; }
     if (cpHub) renderCampaigns();
   }
@@ -2656,7 +2679,7 @@
   async function loadMwPrice(force) {
     if (MODE !== 'live' || !window.cgpCanSee?.('price')) return;
     if (!force && mwPrice && now() - mwPrice.at < 60000) return;
-    try { const r = await api('GET', '/api/price/state'); mwPrice = { at: now(), plans: r.plans || [], me: r.me || {} }; }
+    try { const r = await (window.cgpPriceState ? window.cgpPriceState(15000) : api('GET', '/api/price/state')); mwPrice = { at: now(), plans: r.plans || [], me: r.me || {} }; }
     catch { mwPrice = { at: now(), plans: [], me: {} }; }
     renderMyWork();
   }
@@ -4447,7 +4470,7 @@
       }
       if (a === 'loadplans') {
         try {
-          const d = await api('GET', '/api/price/state');
+          const d = await (window.cgpPriceState ? window.cgpPriceState(15000) : api('GET', '/api/price/state'));
           wxPlans = d.plans.filter((p) => p.slots?.some((x) => x.items?.length)).map((p) => {
             const its = p.slots.flatMap((x) => x.items);
             const prods = [...new Map(its.map((i) => [i.productId, i])).values()];

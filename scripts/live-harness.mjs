@@ -384,7 +384,9 @@ const fakeBridge = (user) => `<script>
 </script>`;
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
-  const opts = { hostname: 'localhost', port: P.app, path: req.url, method: req.method, headers: { ...req.headers, host: `localhost:${P.app}` } };
+  // 不要压缩:入口要改写首页 HTML(换掉 App Bridge),压缩过的内容改了就坏(app 2026-10-28 起开了 gzip)
+  const { 'accept-encoding': _ae, ...fwd } = req.headers;
+  const opts = { hostname: 'localhost', port: P.app, path: req.url, method: req.method, headers: { ...fwd, host: `localhost:${P.app}` } };
   const up = http.request(opts, (r) => {
     if ((u.pathname === '/' || u.pathname === '/index.html') && req.method === 'GET') {
       let html = ''; r.on('data', (c) => { html += c; }); r.on('end', () => {
