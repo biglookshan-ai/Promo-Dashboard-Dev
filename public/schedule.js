@@ -1970,6 +1970,7 @@
       <div class="drawer__b drawer__b--cs"><div>
         ${edSec(1, '怎么排', '顾客没选别的 Sort by 时,Collection 页默认的顺序', `<div id="cs-panel"></div>
           <div class="cs-links">${MODE === 'live' && c.handle ? linkPair('collections', c) : ''}<span class="muted">Shopify 后台的排序方式:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}</span></div>`)}
+        ${edSec(2, '照另一个 Collection 的顺序排', '一次性把这个 Collection 的产品顺序排成和另一个一样(平时怎么排也照它)', '<div id="cs-copy"></div>')}
       </div></div>
       <div class="drawer__f"><span class="muted">保存后马上生效,前台 Collection 页刷新就能看到</span>
         <div class="drawer__acts"><button class="btn" data-act="close" type="button">取消</button><button class="btn btn-primary" id="cs-save" type="button">保存</button></div></div>`;
@@ -1979,6 +1980,64 @@
       closeDrawer();
       if (MODE === 'live') { await load(); renderAll(); } else renderPins();
     } });
+    csCopy($('#cs-copy'), c, { onDone: async () => { closeDrawer(); await load(); renderAll(); } });
+  }
+  // 照另一个 Collection 的顺序排(2026-10-28 用户:Black Friday 的产品顺序完全照 Autumn Sale)。
+  // 选来源 → 看看会怎么排(不写店里)→ 再点一次确认才真的排;一次性的,排之前 / 之后各存一版,可以在「历史」回滚。服务器:src/col-copy.js
+  function csCopy(root, c, { onDone }) {
+    if (!root) return;
+    if (MODE !== 'live') { root.innerHTML = '<div class="note note--sm">演示模式里不能用:要在 Shopify 后台打开 app,才能读写 Collection 的顺序。</div>'; return; }
+    const canEdit = isApprover() && canWrite();
+    const others = (csRows || []).filter((x) => x.id !== c.id).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+    const man = others.filter((x) => x.sortOrder === 'MANUAL'), auto = others.filter((x) => x.sortOrder !== 'MANUAL');
+    const opts = (list) => list.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}${x.count != null ? `(${x.count})` : ''}</option>`).join('');
+    let from = '', pv = null, armed = false, busy = false;
+    root.innerHTML = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select class="inp" data-cc="from" style="flex:1 1 260px;min-width:0"><option value="">选一个来源 Collection…</option>
+          ${man.length ? `<optgroup label="手动排序的">${opts(man)}</optgroup>` : ''}${auto.length ? `<optgroup label="自动排序的(不用复制顺序)">${opts(auto)}</optgroup>` : ''}</select>
+        <button type="button" class="btn" data-cc="pv" disabled>看看会怎么排</button></div>
+      <div data-cc="out" style="margin-top:10px"></div>`;
+    const Q = (k) => root.querySelector(`[data-cc="${k}"]`);
+    const draw = () => {
+      Q('pv').disabled = !from || busy;
+      const out = Q('out');
+      if (!pv) { out.innerHTML = ''; return; }
+      const st = pv.source.title;
+      if (pv.sourceAuto) { out.innerHTML = `<div class="note note--sm">「${esc(st)}」是按「${esc(pv.sourceAuto)}」自动排的,不用复制顺序 —— 在上面选「完全按 Shopify 的自动排序 · ${esc(pv.sourceAuto)}」保存就一样了。</div>`; return; }
+      const li = [
+        `两边都有的 <b>${pv.both}</b> 个照「${esc(st)}」的顺序排${pv.extra ? `;只在这里有的 <b>${pv.extra}</b> 个排在最后` : ''}${pv.notInTarget ? `;「${esc(st)}」里另外 ${pv.notInTarget} 个不会加进来` : ''}`,
+        pv.moved ? `要挪 <b>${pv.moved}</b> 个产品的位置` : '顺序已经一样,不用挪',
+        `平时怎么排:设成和「${esc(st)}」一样的「${esc(pv.source.rule)}」(现在是「${esc(pv.target.rule)}」)`,
+      ];
+      if (pv.willSetManual) li.push(`Shopify 后台的排序方式会从「${esc(CS.sortCn(pv.target.sortOrder))}」改成「手动」`);
+      li.push(`只排这一次:以后「${esc(st)}」再调顺序,这里不会跟着变;排之前会存一版,排错了可以在「历史」里回滚`);
+      out.innerHTML = `<div class="note note--warn note--sm"><ul style="margin:0;padding-left:18px">${li.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+        <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn ${armed ? 'btn-danger' : 'btn-primary'}" data-cc="go" ${!canEdit || busy ? 'disabled' : ''}>${busy ? '排序中…' : armed ? '再点一次确认' : `照「${esc(st)}」排一遍`}</button>
+          ${!canEdit ? `<span class="muted">${!isApprover() ? '只有管理员能改 Collection 的顺序' : 'app 还没有「改产品 / Collection」的权限,改不了'}</span>` : armed ? '<span class="muted">会马上改店里的顺序</span>' : ''}</div>`;
+    };
+    root.addEventListener('change', (e) => {
+      if (e.target.dataset?.cc !== 'from') return;
+      e.stopPropagation(); from = e.target.value; pv = null; armed = false; draw();
+    });
+    root.addEventListener('click', async (e) => {
+      const k = e.target.closest('[data-cc]')?.dataset.cc;
+      if (k === 'pv' && from && !busy) {
+        busy = true; armed = false; Q('pv').textContent = '读取中…'; draw();
+        try { pv = (await api('POST', '/api/schedule/col-copy-order', { id: c.id, from, preview: true })).preview; } catch (err) { toast(err.message, false); pv = null; }
+        busy = false; Q('pv').textContent = '看看会怎么排'; draw();
+      }
+      if (k === 'go' && pv && !busy) {
+        if (!armed) { armed = true; draw(); return; }
+        busy = true; draw();
+        try {
+          const r = await api('POST', '/api/schedule/col-copy-order', { id: c.id, from });
+          toast(`「${r.title}」已照「${r.from}」排好:${r.moved} 个换位置${r.extra ? `,${r.extra} 个排在最后` : ''}(Shopify 在后台挪,前台刷新就能看到)`);
+          await onDone?.(r);
+        } catch (err) { toast(err.message, false); busy = false; armed = false; draw(); }
+      }
+    });
+    draw();
   }
   // 置顶清单编辑器:合集下面一行「合集页平时怎么排 · 改」,点开就地改(和清单分开保存,马上生效)
   function wxCsRule() { // 编辑器读到的这个合集平时的规则,变成和列表一样的一行

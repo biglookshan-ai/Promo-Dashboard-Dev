@@ -15,6 +15,7 @@ import { actorOf, pagesOf, isAdmin } from './members.js';
 import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
 import { listColSorts, readColSort, applyColSort } from './col-sort-shop.js';
+import { previewCopy, copyOrder } from './col-copy.js';
 import { syncJoint, isJoint, syncNotes } from './joint-sync.js';
 import { createJointCollection, jointDealStatus } from './joint-coll.js';
 import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase } from './col-history.js';
@@ -446,6 +447,25 @@ export function scheduleRouter() {
       bust(req.ctx.shop, 'colsorts');
     }
     return r2;
+  })));
+
+  // ---- 照另一个 Collection 的顺序排(2026-10-28 用户:Black Friday 的顺序完全照 Autumn Sale)----
+  // 一次性:目标店里的手动顺序排成和来源一样,「平时怎么排」也照来源设;排之前 / 之后各记一版历史,可以回滚。preview = 只看会怎么排
+  r.post('/col-copy-order', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const a = actorFor(s, req.ctx.user);
+    if (a.role !== 'approver') throw new ActionError('只有管理员能改 Collection 的顺序');
+    const { id, from, preview } = req.body || {};
+    try {
+      if (preview) return { preview: await previewCopy(req.ctx, { target: id, from }, { gql: graphql }) };
+      const record = (cid, ids, meta) => recordVersion(req.ctx.shop, cid, ids, meta);
+      const r2 = await copyOrder(req.ctx, { target: id, from }, { gql: graphql, state: s, record, by: a.name });
+      appendLog(s, { action: 'edit', kind: 'pin', title: r2.title, by: a.name,
+        note: `照「${r2.from}」的顺序排:${r2.moved} 个换位置(两边都有的 ${r2.both} 个照「${r2.from}」排${r2.extra ? `,只在这里有的 ${r2.extra} 个排在最后` : ''})${r2.ruleChanged ? `;平时的排序改成「${r2.rule}」` : ''}${r2.sortChanged ? `(Shopify 后台的排序方式「${r2.sortChanged.from}」→「${r2.sortChanged.to}」)` : ''}` });
+      replace(req.ctx.shop, s);
+      bust(req.ctx.shop, 'colsorts');
+      return r2;
+    } catch (e) { if (e instanceof ActionError) throw e; throw new ActionError(e.message); }
   })));
 
   // ---- 合集排序:立即跑一次(不用等定时器那一分钟),顺便把结果说清楚 ----
