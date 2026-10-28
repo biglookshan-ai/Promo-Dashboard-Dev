@@ -296,7 +296,7 @@ test('优先级(2026-10-26):数字大的说了算,一样大开始晚的说了算
   assert.equal(overlapIndex([bf, mk('later', 10, 200, 300)], 10).size, 0); // 时间不重叠不算
 });
 
-test('划线价四种(2026-10-28):原来的划线价(没有就不显示)/ 原来的现价 / 不显示 / 逐个指定', async () => {
+test('划线价五种(2026-10-28):原来的划线价没有就用现价(默认)/ 只用原来的划线价 / 只用原来的现价 / 不显示 / 逐个指定', async () => {
   const { targetFor } = await import('../src/price/price-core.js');
   const withRrp = { price: '80.00', compareAt: '100.00' }, noRrp = { price: '80.00', compareAt: null };
   const t = (base, compare, extra = {}) => targetFor(base, { kind: 'window', compare }, { price: '70.00', ...extra });
@@ -307,5 +307,6 @@ test('划线价四种(2026-10-28):原来的划线价(没有就不显示)/ 原来
   assert.deepEqual(targetFor(noRrp, { kind: 'window', compare: 'price' }, { price: '90.00' }), { price: '90.00', compareAt: null }); // 涨价时不显示
   assert.deepEqual(t(withRrp, 'clear'), { price: '70.00', compareAt: null });
   assert.deepEqual(t(withRrp, 'set', { compareAt: '95.00' }), { price: '70.00', compareAt: '95.00' });
-  assert.deepEqual(t(noRrp, 'original'), { price: '70.00', compareAt: '80.00' });  // 老设置照旧
+  assert.deepEqual(t(withRrp, 'original'), { price: '70.00', compareAt: '100.00' }); // 默认:有划线价用划线价
+  assert.deepEqual(t(noRrp, 'original'), { price: '70.00', compareAt: '80.00' });    // 没有就用原来的现价
 });

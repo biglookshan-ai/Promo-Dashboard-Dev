@@ -16,9 +16,9 @@ export const prioOf = (plan) => {
   return n >= 1 && n <= PRIO_MAX ? n : ({ flash: 10, brand: 9, sitewide: 8 }[plan?.layer] ?? PRIO_MAX);
 };
 export const KIND_CN = { window: '限时(到期恢复)', permanent: '永久' };
-// 划线价(2026-10-28 用户定的四种,默认「显示原来的划线价」):keep 原来的划线价(没有就不显示)/ price 原来的现价 / clear 不显示 / set 逐个指定。
-// original = 老计划的「原来的划线价,没有就用原来的现价」,新计划不再提供,老计划照旧执行
-export const COMPARE_CN = { keep: '显示原来的划线价', price: '显示原来的现价', clear: '不显示划线价', set: '逐个指定划线价', original: '原来的划线价,没有就用原来的现价(旧设置)' };
+// 划线价(2026-10-28 用户定的五种):original 原来的划线价,没有就用原来的现价(限时默认)/ keep 只用原来的划线价(没有就不显示,永久默认)
+//   / price 只用原来的现价 / clear 不显示 / set 逐个指定
+export const COMPARE_CN = { original: '显示原来的划线价,没有就显示原来的现价', keep: '只显示原来的划线价', price: '只显示原来的现价', clear: '不显示划线价', set: '逐个指定划线价' };
 
 export const toCents = (v) => {
   if (v == null || v === '') return null;

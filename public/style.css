@@ -1941,3 +1941,5 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 #section-price .pr-main, #section-price .pr-side { min-width: 0; }
 #section-price .pr-group__b .tblwrap { max-width: 100%; }
 #section-price .pr-group__b .pr-tbl td:nth-child(2) { min-width: 110px; }
+/* 划线价:默认那个占一整行,其余两两一行 */
+#section-price .cmpopts .cmpopt:first-child { grid-column: 1 / -1; }

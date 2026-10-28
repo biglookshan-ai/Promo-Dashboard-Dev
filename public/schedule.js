@@ -2513,7 +2513,7 @@
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '<span class="muted">(空)</span>';
     if (k === 'kind') return v === 'permanent' ? '永久调价' : '限时(到期恢复原价)';
     if (k === 'layer') return esc({ flash: '限时抢购', brand: '品牌 / Collection', sitewide: '全场' }[v] || v);
-    if (k === 'compare') return esc({ original: '原来的划线价,没有就用原来的现价(旧设置)', keep: '显示原来的划线价', price: '显示原来的现价', clear: '不显示划线价', set: '逐个指定划线价', none: '不显示划线价' }[v] || v);
+    if (k === 'compare') return esc({ original: '显示原来的划线价,没有就显示原来的现价', keep: '只显示原来的划线价', price: '只显示原来的现价', clear: '不显示划线价', set: '逐个指定划线价', none: '不显示划线价' }[v] || v);
     if (k === 'countdown') return v.on ? esc(`显示「${v.label || '默认文字'}」,${Number(v.days) ? `最后 ${v.days} 天` : '一直显示'},样式 ${({ classic: '经典红框', pill: '胶囊', dark: '黑金', minimal: '只有文字' })[v.style] || v.style || '经典红框'}`) : '不显示';
     if (k === 'rule') return `${esc((RULE_CN[v.mode] || ((x) => `${v.mode} ${x}`))(v.value))}${v.rounding ? `,尾数 ${esc(v.rounding)}` : ''}`;
     if (k === 'scope') {

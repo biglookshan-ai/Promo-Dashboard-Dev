@@ -229,24 +229,27 @@ function ganttHtml() {
 // 和原来那个改价 app 一样:从上往下填 —— 名称 → 改什么价 → 改哪些产品 → 什么时候 → 标签 → 谁负责 → 高级;
 // 右边一直显示一段大白话摘要。具体到每个变体的价格收在「试算预览」里,点开才看。
 const COLORS = ['#6b8e23', '#2f5cff', '#c0342b', '#9a6300', '#067a57', '#7b3fa0', '#444'];
+// 顺序(2026-10-28 用户):百分比降价 → 减固定金额 → 逐个填价 → 售价不变 → 统一改成一个价;涨价只有永久调价有,跟在百分比降价后面
 const RULE_MODES = {
   percent_off: { label: '按百分比降价', unit: '%', say: (v) => `每个产品的现价下降 ${v}%` },
-  amount_off: { label: '减固定金额', unit: '£', say: (v) => `每个产品的现价减 £${v}` },
-  fixed: { label: '统一改成一个价', unit: '£', say: (v) => `所有产品都改成 £${v}` },
   percent_up: { label: '按百分比涨价', unit: '%', say: (v) => `每个产品的现价上涨 ${v}%` },
-  keep: { label: '售价不变(只改划线价)', unit: '', say: () => '售价不动,只调整划线价' },
+  amount_off: { label: '减固定金额', unit: '£', say: (v) => `每个产品的现价减 £${v}` },
   manual: { label: '逐个填价', unit: '', say: () => '逐个填新价' },
+  keep: { label: '售价不变(只改划线价)', unit: '', say: () => '售价不动,只调整划线价' },
+  fixed: { label: '统一改成一个价', unit: '£', say: (v) => `所有产品都改成 £${v}` },
 };
-// 划线价四种方式(2026-10-28 用户定,默认「显示原来的划线价」);original 是老计划的设置,只有老计划打开时才列出来
+// 划线价五种(2026-10-28 用户定):限时改价默认「显示原来的划线价,没有就显示原来的现价」(不然原来没打折的产品改了价也看不出在打折);
+// 永久调价默认「只显示原来的划线价」
 const CMP_OPTS = [
-  ['keep', '显示原来的划线价', '产品原来有划线价(比如建议零售价 £100)就继续显示它;<b>原来没有划线价的就不显示</b> —— 这些产品前台看不出在打折,也不会出现在促销链接、「只显示打折」里'],
-  ['price', '显示原来的现价', '划线价 = 改价前的售价:原来卖 £80、改成 £70 → 显示 <s>£80</s> £70。原来就有划线价的产品,也换成原来的现价'],
+  ['original', '显示原来的划线价,没有就显示原来的现价', '原来有划线价(比如建议零售价 £100、现在卖 £80)→ 显示 <s>£100</s>;原来没有划线价 → 显示改价前的售价(原来卖 £80、改成 £70 → <s>£80</s> £70)。<b>限时促销选这个</b>,前台的「只显示打折」、促销链接、折扣角标都靠划线价判断'],
+  ['keep', '只显示原来的划线价', '只用产品原来的划线价;<b>原来没有划线价的就不显示</b> —— 这些产品前台看不出在打折,也不会出现在促销链接、「只显示打折」里'],
+  ['price', '只显示原来的现价', '划线价 = 改价前的售价,不管原来有没有划线价:原来卖 £80、改成 £70 → <s>£80</s> £70'],
   ['clear', '不显示划线价', '改价期间去掉划线价,只显示新价;这些产品不算打折'],
   ['set', '逐个指定划线价', '在每一组的「试算预览」表格里给每个变体填划线价'],
 ];
-const CMP_LEGACY = ['original', '原来的划线价,没有就用原来的现价(旧设置)', '这个计划用的是以前的设置,照旧执行;没开始前可以换成上面任何一种'];
-const cmpOf = (p) => p.compare || (p.kind === 'window' ? 'original' : 'keep'); // 没存的老计划按以前的默认
-const cmpOpts = (p) => (cmpOf(p) === 'original' ? [...CMP_OPTS, CMP_LEGACY] : CMP_OPTS);
+const cmpDefault = (p) => (p.kind === 'window' ? 'original' : 'keep');
+const cmpOf = (p) => p.compare || cmpDefault(p);
+const cmpOpts = () => CMP_OPTS;
 // 改价倒计时(2026-10-27 用户):倒数到这个计划恢复原价;写在产品字段 custom.cgp_price_cd,主题里比活动的倒计时优先
 const CD_STY = { classic: ['经典红框', '#ffefef', '#d10000', 'Deals Expires in :'], pill: ['胶囊', '#fdecec', '#c8102e', 'Deal ends in'],
   dark: ['黑金', '#111111', '#f5c518', 'Deal ends in'], minimal: ['只有文字', 'transparent', '#d10000', 'Ends in'] };
@@ -278,7 +281,7 @@ function newGroup(kind, rule) {
 function newPlan(kind) {
   return {
     id: uid('p_'), name: '', color: COLORS[0], kind, layer: null, priority: core.PRIO_MAX,
-    compare: 'keep', campaign: null, note: '',
+    compare: kind === 'window' ? 'original' : 'keep', campaign: null, note: '',
     rule: { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' },
     scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
     tagsAdd: [], tagsRemove: [],
@@ -375,7 +378,7 @@ function editorHtml() {
       ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
 
       ${sec('划线价', `<div class="cmpopts">${cmpOpts(p).map(([k, t, d]) => { const on = cmpOf(p) === k;
-          return `<label class="cmpopt ${on ? 'is-on' : ''}"><input type="radio" name="cmp" data-f="compare" value="${k}" ${on ? 'checked' : ''} ${ro || started() ? 'disabled' : ''}/><span><b>${t}${k === 'keep' ? ' <span class="muted">(默认)</span>' : ''}</b><em>${d}</em></span></label>`; }).join('')}</div>
+          return `<label class="cmpopt ${on ? 'is-on' : ''}"><input type="radio" name="cmp" data-f="compare" value="${k}" ${on ? 'checked' : ''} ${ro || started() ? 'disabled' : ''}/><span><b>${t}${k === cmpDefault(p) ? ' <span class="muted">(默认)</span>' : ''}</b><em>${d}</em></span></label>`; }).join('')}</div>
         ${started() ? '<p class="muted">计划已经开始,划线价方式不能再改。</p>' : ''}`, '改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样')}
 
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
@@ -804,7 +807,7 @@ document.addEventListener('click', async (ev) => {
       case 'kind': {
         if (el.disabled) return;
         const k = el.dataset.v; E.plan.kind = k;
-        if (E.plan.compare === 'original') E.plan.compare = 'keep';
+        E.plan.compare = k === 'window' ? 'original' : 'keep';
         for (const g of E.plan.groups) if (!['manual', 'keep', 'fixed', 'amount_off'].includes(g.rule.mode)) g.rule.mode = k === 'window' ? 'percent_off' : 'percent_up';
         const s = E.plan.slots[0];
         if (k === 'permanent') { s.end = null; s.collection = null; } else if (!s.end) s.end = s.start + 7 * DAY;
