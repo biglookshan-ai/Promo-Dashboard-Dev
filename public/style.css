@@ -909,7 +909,7 @@ body.is-gated .content > *:not(.apphead) { display: none !important; }
 #section-price .rulebar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #f3f5ff; border: 1px solid #dfe5ff; border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; font-size: 13px; }
 #section-price .rulebar .inp, #section-price .rulebar .sel { width: auto; padding: 6px 9px; }
 #section-price .pr-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-#section-price .pr-tbl th { text-align: left; font-weight: 500; color: var(--text-3); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+#section-price .pr-tbl th { white-space: nowrap; text-align: left; font-weight: 500; color: var(--text-3); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
 #section-price .pr-tbl td { padding: 6px 8px; border-bottom: 1px solid #f0f0f2; vertical-align: middle; }
 #section-price .pr-tbl tr.is-first td { border-top: 1px solid var(--border); }
 #section-price .pr-tbl .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
