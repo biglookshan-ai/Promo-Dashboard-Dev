@@ -72,10 +72,22 @@ export async function searchProducts(ctx, by) {
   return { products: out, dropped, truncated: !!after };
 }
 
+// 搜 Collection。用 2026-07 接口:旧接口搜不到用了新功能(条件 + 单独加入 + 排除)的 Collection;smart = 带条件(改价往里加产品 = 加进它的「单独加入」名单)
 export async function findCollections(ctx, text) {
-  const d = await graphql(ctx, `query($q: String) { collections(first: 30, query: $q, sortKey: TITLE) { nodes {
-    id title handle productsCount { count } ruleSet { appliedDisjunctively } } } }`, { q: text ? `title:*${esc(text)}*` : null });
-  return d.collections.nodes.map((c) => ({ id: c.id, title: c.title, handle: c.handle, count: c.productsCount?.count ?? null, smart: !!c.ruleSet }));
+  const q = text ? `title:*${esc(text)}*` : null;
+  try {
+    const d = await graphql(ctx, `query($q: String) { collections(first: 30, query: $q, sortKey: TITLE) { nodes {
+      id title handle productsCount { count } ruleSet { appliedDisjunctively } sources { __typename ... on CollectionConditionsSource { shareable inclusion { conditions { __typename } } } } } } }`, { q }, { version: '2026-07' });
+    return d.collections.nodes.map((c) => {
+      const srcs = c.sources || [];
+      const smart = !!c.ruleSet || srcs.some((x) => x.__typename === 'CollectionSubCollectionsSource' || (x.inclusion?.conditions || []).length > 0);
+      return { id: c.id, title: c.title, handle: c.handle, count: c.productsCount?.count ?? null, smart, shared: smart && !srcs.some((x) => x.__typename === 'CollectionConditionsSource' && !x.shareable) };
+    });
+  } catch {
+    const d = await graphql(ctx, `query($q: String) { collections(first: 30, query: $q, sortKey: TITLE) { nodes {
+      id title handle productsCount { count } ruleSet { appliedDisjunctively } } } }`, { q });
+    return d.collections.nodes.map((c) => ({ id: c.id, title: c.title, handle: c.handle, count: c.productsCount?.count ?? null, smart: !!c.ruleSet }));
+  }
 }
 
 export async function vendors(ctx) {

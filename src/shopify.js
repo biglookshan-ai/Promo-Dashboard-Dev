@@ -14,8 +14,9 @@ const headers = (token) => ({
   Accept: 'application/json',
 });
 
-export async function graphql(ctx, query, variables = {}) {
-  const res = await fetch(`${ORIGIN || `https://${ctx.shop}`}/admin/api/${VERSION}/graphql.json`, {
+// version:个别查询要用新版接口时传(比如查新版合集在不在 —— 2026-07 之前的接口看不到用了新功能的合集,会以为被删了)
+export async function graphql(ctx, query, variables = {}, { version = VERSION } = {}) {
+  const res = await fetch(`${ORIGIN || `https://${ctx.shop}`}/admin/api/${version}/graphql.json`, {
     method: 'POST',
     headers: headers(ctx.token),
     body: JSON.stringify({ query, variables }),

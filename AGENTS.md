@@ -140,12 +140,14 @@
   主题 snippets/cgp-campaign-offer.liquid 读它:**改价倒计时 > 活动**(活动徽章照常,倒计时 / 样式 / 文字换成改价的);「最后几天才显示」在浏览器按 s 判断。
   ⛔ **置顶排序不再管促销标签**(2026-10-29 用户:整个去掉):编辑器里没有倒计时 / 徽章了,写店铺一律写空(`show_countdown` false、`badge_text` 空);
   以前设过的由定时器 `dropPinPromo` 清掉一次(店里条目重写、每份记操作日志)。主题里读置顶排序徽章的那段代码还在,但字段全是空的 = 不起作用;字段定义也留着(改定义会让设置页标「要更新」)。
-  ⛔ **Collection 后来加了条件(按条件自动归类)也会回「Collection does not exist」**(2026-10-30 踩过,删了旧计划也一直报 —— app 记着「加进去的产品结束要移出」,不跟计划一起删):
-  加入 / 移出报错时 `collectionInfo` 看「还在不在 / 是不是 ruleSet」:被删 = deleted、按条件归类 = smart、还在但 Shopify 回 does not exist = refused,三种都不再管(记进 goneCollections,带 reason 和还留在里面的产品 left)、只通知一次;
-  「改价 → 受管产品」里 app 管着的 Collection 有「不再管这个 Collection」按钮(`POST /api/price/coll-release`,管理员),下面「不再管的 Collection」列出原因和留在里面的产品;计划里重新选了这个 Collection 就重新管。
-  ⛔ **计划设的 Collection 在后台被删了**(2026-10-29 踩过:每分钟「移出 Collection 失败:Collection does not exist」、每小时发一次「改价失败」):
-  加入 / 移出报错时执行器先用 `collectionExists` 问一下,真的没了 → 记进 `state.goneCollections`、删掉 `collState`(产品随 Collection 一起没了,不用还原)、日志一笔、通知一次「🗂 Collection 已被删除」,
-  之后 `planCollections` 跳过它(价格照常改);问不到 / 还在 = 照旧当失败重试。编辑器里那个 Collection 标红提示。
+  ⛔ **时段的「加进 Collection」按 2026 新版 Collection 做**(用户 2026-10-30 提醒:带条件的也能有「单独加入的产品」和「排除」,条件能叠几组;别再当成「自动 Collection 不能加」):
+  `shop-io.collectionModel`(**2026-07 接口**,旧接口看不到新版合集会以为被删了 —— 10/29 误判过)看它是 纯手动(`via: manual`,collectionAdd/RemoveProducts)/
+  带条件(`via: sources`,改它自己的「单独加入的产品」名单 `includeProducts` / `unincludeProducts` → collectionUpdate sourcesToUpdate,**不动条件**)/ 条件和别的 Collection 共用(`via: shared`,不碰,只记一笔)。
+  不管产品本来在不在(比如已经因为打折被条件收进去),都加进「单独加入」一次确保在里面(用户要的);事先就在名单里的记 `preexisting`,结束不拿掉,只拿掉 app 加的 `managed`。
+  10/30 之前的老记录:带条件的 Collection 加不进去,app 却把「按条件收进去的」当成自己加的,到点「移出」→ Shopify 回「Collection does not exist」→ 每分钟失败、每小时通知(删了计划也停不了)。
+  第一次碰到时 `managed` 只留真的在名单里的;`goneCollections` 里误判的(没核对过、不是手动停的)用新版接口核对一次,还在就恢复。**只有新版接口确认 Collection 真的不在了才停手、通知一次**;
+  新版接口出错时退回老接口只信「查到了」,查不到当「不确定」下一分钟再查(别判成删除)。「受管产品」里能手动「不再管这个 Collection」(`POST /api/price/coll-release`)。
+  选时段 Collection 的搜索也用 2026-07(`catalog.findCollections`),带条件的能选、条件共用的不能选。
   `plan.tagsAdd` / `tagsRemove`:生效期间加减产品标签(驱动按标签自动归类的合集),结束还原;只动计划里填的标签,产品本来就有的不碰(`price-core.planTags` + `state.tagState` 记账)。
   页面 `public/price.js`(点开「改价」才加载),样式在 style.css 末尾、**全部限定在 `#section-price` 里**,和排期页同名的样式加了 `pr-` 前缀 —— 别去掉,否则两边互相干扰。
   飞书私信:`src/lark-bot.js`(同一个飞书应用的机器人,需要 `im:message:send_as_bot`)。本地测:harness 的 `/__price`(改过价的变体)、`/__price/set`(模拟手动改价)、`/__dms`(发出的私信),产品数据 `node scripts/fetch-price-catalog.mjs`。

@@ -44,13 +44,16 @@ function fakeIO(variants, collections = {}) {
     async removeTags(ctx, pid, t) { io.tags[pid] = (io.tags[pid] || []).filter((x) => !t.includes(x)); },
     deleted: new Set(), // 在店里被删掉的合集
     calls: 0,
-    smart: new Set(),   // 后来加了条件(按条件自动归类)的合集:Shopify 加 / 移产品也回「does not exist」
-    gone(cid) { io.calls++; if (io.deleted.has(cid) || io.smart.has(cid)) throw new Error('移出 Collection 失败:Collection does not exist'); },
-    async productsInCollection(ctx, cid, pids) { io.gone(cid); const s = coll.get(cid) || new Set(); return new Set(pids.filter((p) => s.has(p))); },
-    async addToCollection(ctx, cid, pids) { io.gone(cid); if (!coll.has(cid)) coll.set(cid, new Set()); pids.forEach((p) => coll.get(cid).add(p)); },
-    async removeFromCollection(ctx, cid, pids) { io.gone(cid); pids.forEach((p) => coll.get(cid)?.delete(p)); },
+    // 带条件的合集(2026 新版):{ shared, selected: 「单独加入」名单, matches: 按条件收进去的 }。collectionAddProducts 对它回「does not exist」
+    kinds: new Map(),
+    gone(cid) { io.calls++; if (io.deleted.has(cid)) throw new Error('移出 Collection 失败:Collection does not exist'); },
+    async productsInCollection(ctx, cid, pids) { io.gone(cid); const k = io.kinds.get(cid); const s = k ? new Set([...k.selected, ...k.matches]) : coll.get(cid) || new Set(); return new Set(pids.filter((p) => s.has(p))); },
+    async addToCollection(ctx, cid, pids) { io.gone(cid); if (io.kinds.has(cid)) throw new Error('加入 Collection 失败:Collection does not exist'); if (!coll.has(cid)) coll.set(cid, new Set()); pids.forEach((p) => coll.get(cid).add(p)); },
+    async removeFromCollection(ctx, cid, pids) { io.gone(cid); if (io.kinds.has(cid)) throw new Error('移出 Collection 失败:Collection does not exist'); pids.forEach((p) => coll.get(cid)?.delete(p)); },
+    async collectionModel(ctx, cid) { if (io.deleted.has(cid)) return { exists: false }; const k = io.kinds.get(cid); return k ? { exists: true, automated: true, srcId: k.shared ? null : `src-${cid}`, selected: new Set(k.selected) } : { exists: true, automated: false, srcId: null, selected: null }; },
+    async includeProducts(ctx, cid, src, pids) { io.calls++; assert.equal(src, `src-${cid}`); pids.forEach((p) => io.kinds.get(cid).selected.add(p)); },
+    async unincludeProducts(ctx, cid, src, pids) { io.calls++; pids.forEach((p) => io.kinds.get(cid).selected.delete(p)); },
     async collectionExists(ctx, cid) { return !io.deleted.has(cid); },
-    async collectionInfo(ctx, cid) { return { exists: !io.deleted.has(cid), smart: io.smart.has(cid) }; },
   };
   return io;
 }
@@ -214,22 +217,41 @@ test('Collection 在计划进行中被删了:不再往里加,价格照常;只是
   assert.equal(load(shop2).goneCollections?.flash, undefined);
 });
 
-test('Collection 还在但改成了按条件归类(2026-10-30):不再管、只通知一次,记下 app 加进去还留在里面的产品;删掉计划也不会一直报', async () => {
-  const io = fakeIO({ a: '100.00', b: '100.00' }, { bf: [] });
-  const shop = setup([plan('bf', 'flash', [{ id: 'd1', start: 0, end: 10 * H, collection: { id: 'bf', title: 'Black Friday' }, items: [item('a', '70.00'), item('b', '70.00')] }])]);
-  await run(shop, io, 1 * H);
-  assert.deepEqual(load(shop).collState.bf.managed.sort(), ['P-a', 'P-b']);
-  // 用户删掉了计划,又给 Collection 加了条件
-  const st = load(shop); st.plans = []; save(shop, st); io.smart.add('bf');
-  const r = await run(shop, io, 2 * H);
+test('带条件的 Collection(2026 新版,用户 2026-10-30 提醒):加进它的「单独加入」名单,不管本来在不在;结束只拿掉 app 加的,你们手动加的不动', async () => {
+  const io = fakeIO({ a: '100.00', b: '100.00', x: '100.00' });
+  // P-a 已经因为打折被条件收进去了;P-x 是你们事先手动单独加的
+  io.kinds.set('bf', { shared: false, selected: new Set(['P-x']), matches: new Set(['P-a']) });
+  const shop = setup([plan('bf', 'flash', [{ id: 'd1', start: 0, end: 10 * H, collection: { id: 'bf', title: 'Black Friday' }, items: [item('a', '70.00'), item('b', '70.00'), item('x', '70.00')] }])]);
+  const r1 = await run(shop, io, 1 * H);
+  assert.equal(r1.failures.length, 0);
+  assert.deepEqual([...io.kinds.get('bf').selected].sort(), ['P-a', 'P-b', 'P-x']); // P-a 本来就在(按条件),也加进「单独加入」一次,确保在
+  const cs = load(shop).collState.bf;
+  assert.equal(cs.via, 'sources'); assert.deepEqual(cs.managed.sort(), ['P-a', 'P-b']); assert.deepEqual(cs.preexisting, ['P-x']);
+  await run(shop, io, 10 * H); // 结束
+  assert.deepEqual([...io.kinds.get('bf').selected], ['P-x']); // 只拿掉 app 加的
+  assert.equal(load(shop).collState.bf, undefined);
+});
+
+test('带条件 Collection 的老记录 / 误判(2026-10-30):旧版把「因为打折被条件收进去」的当成自己加的 → 只留真的在名单里的;误标成被删除 / 不能管的恢复;条件共用的不碰', async () => {
+  // ① 老记录:managed 里 P-a 其实是按条件进去的(app 当时加不进去),P-c 真的在「单独加入」名单里
+  const io = fakeIO({ a: '100.00' });
+  io.kinds.set('bf', { shared: false, selected: new Set(['P-c']), matches: new Set(['P-a']) });
+  const shop = setup([]);
+  const st = load(shop); st.collState = { bf: { title: 'Black Friday', managed: ['P-a', 'P-c'], preexisting: [] } };
+  st.goneCollections = { bf2: { title: 'Black Friday', at: 1, plans: [], reason: 'refused', left: [] }, gone9: { title: 'Old', at: 1, plans: [] } }; save(shop, st);
+  io.kinds.set('bf2', { shared: false, selected: new Set(), matches: new Set() }); io.deleted.add('gone9');
+  const r = await run(shop, io, 1 * H); // 计划都删了:只拿掉真的是 app 加的 P-c,不再去「移出」P-a(以前每分钟失败的原因)
   assert.equal(r.failures.length, 0);
-  assert.deepEqual(r.goneCollections.map((c) => [c.reason, c.left]), [['smart', 2]]);
+  assert.deepEqual([...io.kinds.get('bf').selected], []);
   const st2 = load(shop);
   assert.equal(st2.collState.bf, undefined);
-  assert.deepEqual(st2.goneCollections.bf.left.sort(), ['P-a', 'P-b']);
-  assert.ok(reportMessages(st2, r, { members: [{ id: 'ou_admin', status: 'active', roles: ['admin'] }] }).some((m) => m.card.title === '🗂 Collection 不能再加 / 移产品')); // 计划删了,价格也照常恢复(另一条通知)
-  const calls = io.calls; const r2 = await run(shop, io, 2 * H + 60_000);
-  assert.equal(r2.failures.length + r2.goneCollections.length, 0); assert.equal(io.calls, calls);
+  assert.equal(st2.goneCollections.bf2, undefined); // 误判的恢复了
+  assert.equal(st2.goneCollections.gone9.v, 2);    // 真的被删了:核对过,不再查
+  // ② 条件和别的 Collection 共用:不碰,也不报错
+  const io3 = fakeIO({ a: '100.00' }); io3.kinds.set('sh', { shared: true, selected: new Set(), matches: new Set() });
+  const shop3 = setup([plan('p3', 'flash', [{ id: 'd1', start: 0, end: 10 * H, collection: { id: 'sh', title: 'Shared' }, items: [item('a', '70.00')] }])]);
+  const r3 = await run(shop3, io3, 1 * H);
+  assert.equal(r3.failures.length, 0); assert.equal(load(shop3).collState.sh.via, 'shared'); assert.equal(io3.v.get('a').price, '70.00');
 });
 
 test('变体被删了:移出计划,不会每分钟报', async () => {

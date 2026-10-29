@@ -445,8 +445,9 @@ function editorHtml() {
           <label class="pr-fld">开始<input class="inp" type="datetime-local" data-f="start" value="${toInput(sl.start)}" ${ro || started() || p.followCampaign ? 'disabled' : ''}/>${!ro && !started() && !p.followCampaign ? `<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">设成现在(${S.approvals ? '批准' : '保存'}后一分钟内执行)</button>` : ''}</label>
           ${p.kind === 'window' ? `<label class="pr-fld">结束(售价和划线价都回到改价前)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
         </div>
-        ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>只能选手动 Collection;结束自动移出(原来就在的不动)。Flash 当天那一组常用</em>
+        ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>带条件的也行(加进它的「单独加入的产品」,不动条件);结束拿掉 app 加的,本来就在 / 你们手动加的不动。Flash 当天那一组常用</em>
           ${sl.collection ? `<div class="row"><span class="tag ${S.goneCollections?.[sl.collection.id] ? 'tag--danger' : 'tag--accent'}">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>
+            ${S.collState?.[sl.collection.id]?.via === 'shared' ? '<div class="note note--sm">这个 Collection 的条件和别的 Collection 共用:单独加产品会连带改到别的 Collection,所以 app 不加,产品照它的条件进出。</div>' : ''}
             ${S.goneCollections?.[sl.collection.id] ? `<div class="note note--warn">这个 Collection ${GONE_WHY[S.goneCollections[sl.collection.id].reason] || GONE_WHY.deleted}(${fmtT(S.goneCollections[sl.collection.id].at)}):价格照常改,只是不再往里加产品。${ro ? '' : '要加进别的 Collection 就点「不加了」再重新选。'}</div>` : ''}`
             : ro ? '<span class="muted">不加</span>' : '<button class="btn btn-sm" data-a="panel" data-p="slotcoll" style="width:fit-content">选 Collection…</button>'}
           ${E.panel === 'slotcoll' ? collPanel('slotcoll') : ''}</div>` : ''}
@@ -694,8 +695,8 @@ function diffLines(a, b) {
 function collPanel(which) {
   const list = cache.collSearch || [];
   return `<div class="pr-panel"><div class="row"><input class="inp" id="coll-q" placeholder="搜 Collection 名称" style="flex:1" value="${esc(cache.collQ || '')}"/><button class="btn btn-sm" data-a="collsearch" data-w="${which}">搜索</button><button class="btn btn-ghost btn-sm" data-a="panel" data-p="">取消</button></div>
-    <div class="results">${list.map((c) => `<div class="result"><b style="flex:1">${esc(c.title)}</b><span class="muted">${c.count ?? '?'} 个产品 · ${c.smart ? '智能 Collection' : '手动 Collection'}</span>
-      ${which === 'slotcoll' ? (c.smart ? '<span class="muted">按条件自动,不能加</span>' : `<button class="btn btn-sm" data-a="setcoll" data-id="${c.id}" data-t="${esc(c.title)}">选这个</button>`)
+    <div class="results">${list.map((c) => `<div class="result"><b style="flex:1">${esc(c.title)}</b><span class="muted">${c.count ?? '?'} 个产品 · ${c.smart ? '带条件' : '手动'}</span>
+      ${which === 'slotcoll' ? (c.shared ? '<span class="muted" title="条件和别的 Collection 共用,单独加产品会连带改到别的 Collection">条件是共用的,不能单独加</span>' : `<button class="btn btn-sm" data-a="setcoll" data-id="${c.id}" data-t="${esc(c.title)}">选这个</button>`)
         : `<button class="btn btn-sm" data-a="addcoll" data-id="${c.id}" data-t="${esc(c.title)}">选这个</button>`}</div>`).join('') || '<span class="muted">输入名称搜索</span>'}</div></div>`;
 }
 
@@ -990,7 +991,7 @@ function vaultHtml() {
     ${live.map((v) => `<tr><td>${esc(v.title)}</td><td>${esc(v.sku || '')}</td><td class="num">${money(v.base?.price)}${v.base?.compareAt ? `<div><s>${money(v.base.compareAt)}</s></div>` : ''}</td>
       <td class="num"><b>${money(v.written.price)}</b>${v.written.compareAt ? `<div><s>${money(v.written.compareAt)}</s></div>` : ''}</td><td>${esc(plan(v.written.planId))}</td><td>${fmtT(v.since)}</td></tr>`).join('')}
   </tbody></table></div>` : '<div class="pr-empty">现在没有产品在活动价上</div>'}
-  ${colls.length ? `<h3>app 管着的 Collection 成员</h3>${colls.map(([id, c]) => `<div class="pr-kv"><span>${esc(c.title || id)}</span>app 加进去 ${c.managed.length} 个产品(时段结束自动移出)${c.preexisting.length ? `;${c.preexisting.length} 个本来就在,不动` : ''}
+  ${colls.length ? `<h3>app 管着的 Collection 成员</h3>${colls.map(([id, c]) => `<div class="pr-kv"><span>${esc(c.title || id)}</span>${c.via === 'shared' ? '条件和别的 Collection 共用:app 不碰,产品照它的条件进出' : `${c.via === 'sources' ? '带条件的 Collection · ' : ''}app ${c.via === 'sources' ? '加进「单独加入的产品」' : '加进去'} ${c.managed.length} 个产品(时段结束拿掉)${c.preexisting.length ? `;${c.preexisting.length} 个本来就在,不动` : ''}`}
     ${isAdmin() ? `<button class="linkbtn" data-a="collrelease" data-id="${esc(id)}" title="一直报错(比如 Collection 改成了按条件归类)时用:app 不再往里加 / 移产品,已经加进去的留在里面">不再管这个 Collection</button>` : ''}</div>`).join('')}` : ''}
   ${goneHtml()}`;
 }

@@ -127,49 +127,85 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
         }
       }
 
-      // 4. 合集
+      // 4. 合集:生效期间把计划里的产品加进时段设的 Collection,结束拿掉 app 加的(本来就在的不动)
+      // ⛔ 2026 新版 Collection(用户 2026-10-30 提醒):带条件的也能有「单独加入的产品」和「排除」,条件可以叠几组。
+      //   纯手动的 → collectionAdd/RemoveProducts;带条件的 → 改它自己的「单独加入的产品」名单(collectionUpdate → sourcesToUpdate,不动条件,用 2026-07 接口)
+      //   —— 不管产品本来在不在(比如已经因为打折被条件收进去了),都加进「单独加入」一次,确保在里面;你们事先手动单独加的记成「本来就在」,结束不拿掉。
+      //   条件来源和别的 Collection 共用的(shareable)不碰,只记一笔。只有 Collection 真的被删了才停手、通知一次。
+      const markDeleted = (cid, cs) => {
+        const plans = state.plans.filter((p) => (p.slots || []).some((s) => s.collection?.id === cid)).map((p) => ({ id: p.id, name: p.name }));
+        (state.goneCollections ||= {})[cid] = { title: cs.title || '', at: now, plans, reason: 'deleted', left: [], v: 2 };
+        delete state.collState[cid];
+        rep.goneCollections.push({ collectionId: cid, title: cs.title || '', plans, reason: 'deleted', left: 0 });
+      };
+      // 4.0 之前标成「不再管」的(10/29、10/30 误判过:新版合集在旧接口里查不到、带条件的被当成不能管),用新版接口核对一次:还在的恢复正常管理
+      if (io.collectionModel) {
+        for (const [cid, g] of Object.entries(state.goneCollections || {})) {
+          if (g.v === 2 || g.reason === 'manual') continue; // 核对过 / 用户自己停的,不动
+          const m = await io.collectionModel(ctx, cid).catch(() => null);
+          if (!m) continue; // 查不到就下一轮再说
+          if (m.exists) { delete state.goneCollections[cid]; rep.restoredCollections = [...(rep.restoredCollections || []), g.title || cid]; }
+          else g.v = 2; // 真的被删了
+        }
+      }
       for (const c of planCollections(state, now)) {
-        const cs = state.collState[c.collectionId] ||= { title: c.title, managed: [], preexisting: [] };
+        const cid = c.collectionId;
+        const cs = state.collState[cid] ||= { title: c.title, managed: [], preexisting: [] };
         cs.title = c.title || cs.title;
         try {
-          // 上一轮加入合集没确认完(中断或报错):以店里实际为准 —— 当时确认过不在合集里,现在在的就是 app 加的
+          // 第一次碰这个 Collection(或老记录):用新版接口看它是纯手动、带条件,还是条件跟别的 Collection 共用
+          if (!cs.via && io.collectionModel) {
+            const m = await io.collectionModel(ctx, cid);
+            if (!m.exists) { markDeleted(cid, cs); continue; }
+            cs.via = !m.automated ? 'manual' : m.srcId ? 'sources' : 'shared';
+            if (m.srcId) cs.srcId = m.srcId;
+            // 老记录:以前带条件的 Collection 加不进去,app 却把「因为打折被条件收进去」的产品当成自己加的 → 只留真的在「单独加入」名单里的
+            if (cs.via === 'sources') { cs.managed = cs.managed.filter((p) => m.selected?.has(p)); cs.preexisting = cs.preexisting.filter((p) => m.selected?.has(p)); }
+            if (cs.via === 'shared') { cs.managed = []; cs.preexisting = []; rep.sharedCollections = [...(rep.sharedCollections || []), cs.title || cid]; }
+          }
+          if (cs.via === 'shared') { delete cs.pendingAdd; if (!c.need.length) delete state.collState[cid]; continue; }
+          const viaSrc = cs.via === 'sources';
+          // 「现在在不在」:手动 Collection 看成员;带条件的看它的「单独加入」名单
+          const present = async (ids) => {
+            if (!viaSrc) return io.productsInCollection(ctx, cid, ids);
+            const m = await io.collectionModel(ctx, cid);
+            if (!m.exists) throw Object.assign(new Error('Collection 被删了'), { deleted: true });
+            return new Set(ids.filter((p) => m.selected?.has(p)));
+          };
+          const add = (ids) => (viaSrc ? io.includeProducts(ctx, cid, cs.srcId, ids) : io.addToCollection(ctx, cid, ids));
+          const rm = (ids) => (viaSrc ? io.unincludeProducts(ctx, cid, cs.srcId, ids) : io.removeFromCollection(ctx, cid, ids));
+          // 上一轮加入没确认完(中断或报错):以店里实际为准 —— 当时确认过不在,现在在的就是 app 加的
           if (cs.pendingAdd) {
-            const inside = await io.productsInCollection(ctx, c.collectionId, cs.pendingAdd);
+            const inside = await present(cs.pendingAdd);
             cs.managed = [...new Set([...cs.managed, ...cs.pendingAdd.filter((p) => inside.has(p))])];
             delete cs.pendingAdd;
           }
           const remove = cs.managed.filter((p) => !c.need.includes(p));
-          if (remove.length) { await io.removeFromCollection(ctx, c.collectionId, remove); cs.managed = cs.managed.filter((p) => !remove.includes(p)); }
+          if (remove.length) { await rm(remove); cs.managed = cs.managed.filter((p) => !remove.includes(p)); }
           cs.preexisting = cs.preexisting.filter((p) => c.need.includes(p));
           const check = c.need.filter((p) => !cs.managed.includes(p) && !cs.preexisting.includes(p));
           let added = 0;
           if (check.length) {
-            const inside = await io.productsInCollection(ctx, c.collectionId, check);
+            const inside = await present(check);
             cs.preexisting.push(...check.filter((p) => inside.has(p)));
             const toAdd = check.filter((p) => !inside.has(p));
             if (toAdd.length) {
               cs.pendingAdd = toAdd; save(shop, state);
-              await io.addToCollection(ctx, c.collectionId, toAdd);
+              await add(toAdd);
               cs.managed.push(...toAdd); delete cs.pendingAdd; added = toAdd.length;
             }
           }
-          if (added || remove.length) rep.collections.push({ collectionId: c.collectionId, title: cs.title, added, removed: remove.length });
-          if (!c.need.length && !cs.managed.length) delete state.collState[c.collectionId];
+          if (added || remove.length) rep.collections.push({ collectionId: cid, title: cs.title, added, removed: remove.length });
+          if (!c.need.length && !cs.managed.length) delete state.collState[cid];
         } catch (e) {
-          // 2026-10-29 踩过:计划设的 Collection 在后台被删了 → 每分钟移出失败、每小时发一次「改价失败」。
-          // 先问一下 Collection 还在不在:不在了就不再管它(产品随 Collection 一起没了,不用还原),记一笔、通知一次;问不到照旧当失败重试
-          // 2026-10-30 又踩:Collection 还在,但后来加了条件(按条件自动归类)—— Shopify 只让手动 Collection 加 / 移产品,对它也回「Collection does not exist」,我们一直重试
-          const msg = String(e.message || e);
-          const info = io.collectionInfo ? await io.collectionInfo(ctx, c.collectionId).catch(() => null)
-            : io.collectionExists ? await io.collectionExists(ctx, c.collectionId).then((x) => ({ exists: x, smart: false }), () => null) : null;
-          const reason = !info ? null : !info.exists ? 'deleted' : info.smart ? 'smart' : /does not exist/i.test(msg) ? 'refused' : null;
-          if (reason) {
-            const plans = state.plans.filter((p) => (p.slots || []).some((s) => s.collection?.id === c.collectionId)).map((p) => ({ id: p.id, name: p.name }));
-            const left = reason === 'deleted' ? [] : [...cs.managed]; // 还在的 Collection:app 之前加进去的产品留在里面了
-            (state.goneCollections ||= {})[c.collectionId] = { title: cs.title || '', at: now, plans, reason, left };
-            delete state.collState[c.collectionId];
-            rep.goneCollections.push({ collectionId: c.collectionId, title: cs.title || '', plans, reason, left: left.length });
-          } else rep.failures.push({ collection: cs.title || c.collectionId, message: msg });
+          // 报错时用新版接口看一眼:真的被删了才停手、通知一次(2026-10-29 踩过:每分钟失败、每小时发「改价失败」);别的照旧当失败、下一分钟重试
+          const m = e.deleted ? { exists: false } : io.collectionModel ? await io.collectionModel(ctx, cid).catch(() => null)
+            : io.collectionExists ? await io.collectionExists(ctx, cid).then((x) => ({ exists: x }), () => null) : null;
+          if (m && !m.exists) markDeleted(cid, cs);
+          else {
+            if (m?.exists && cs.via === 'manual' && m.automated) delete cs.via; // 后来加了条件:下一轮按带条件的方式重来
+            rep.failures.push({ collection: cs.title || cid, message: String(e.message || e) });
+          }
         }
       }
 
@@ -239,9 +275,9 @@ function writeLogs(state, rep, now) {
   if (rep.recovered.length) appendLog(state, { at: now, action: 'recover', plan: '', note: `上轮中断后核对:${rep.recovered.length} 个变体已生效,已补记`, by: '执行器' });
   for (const h of rep.holds) appendLog(state, { at: now, action: 'hold', planId: h.planId, plan: h.plan, note: `${h.title || h.variantId}:${HOLD_CN[h.reason] || h.reason}${h.seen ? `(店里现价 £${h.seen.price})` : ''}`, by: '执行器' });
   for (const c of rep.collections) appendLog(state, { at: now, action: 'collection', plan: '', note: `Collection「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`, by: '执行器' });
-  const WHY = { deleted: '在店里已经被删除', smart: '现在是按条件自动归类的(Shopify 只让手动 Collection 加 / 移产品)', refused: 'Shopify 不让往里加 / 移产品(可能改成了按条件归类)' };
-  for (const c of rep.goneCollections) appendLog(state, { at: now, action: 'collection', plan: c.plans.map((p) => p.name).join('、'),
-    note: `Collection「${c.title}」${WHY[c.reason] || WHY.deleted}:不再往里加 / 移出产品(价格照常)${c.left ? `;app 之前加进去的 ${c.left} 个产品还留在里面,不需要就到 Shopify 后台移除` : ''}`, by: '执行器' });
+  for (const c of rep.goneCollections) appendLog(state, { at: now, action: 'collection', plan: c.plans.map((p) => p.name).join('、'), note: `Collection「${c.title}」在店里已经被删除:不再往里加 / 移出产品(价格照常);要的话在计划里重新选一个 Collection`, by: '执行器' });
+  for (const t of rep.sharedCollections || []) appendLog(state, { at: now, action: 'collection', plan: '', note: `Collection「${t}」的条件和别的 Collection 共用:单独加产品会连带改到别的 Collection,app 不碰(产品照它的条件进出)`, by: '执行器' });
+  for (const t of rep.restoredCollections || []) appendLog(state, { at: now, action: 'collection', plan: '', note: `Collection「${t}」其实还在(之前误判成被删除 / 不能管),已恢复正常管理`, by: '执行器' });
   if (rep.tags.length) {
     const a = rep.tags.reduce((n, t) => n + t.added.length, 0), d = rep.tags.reduce((n, t) => n + t.removed.length, 0);
     appendLog(state, { at: now, action: 'tag', plan: '', note: `产品标签:${rep.tags.length} 个产品${a ? `,加了 ${a} 个标签` : ''}${d ? `,去掉 ${d} 个标签` : ''}`, by: '执行器' });

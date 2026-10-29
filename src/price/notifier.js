@@ -78,12 +78,10 @@ export function reportMessages(state, rep, { appUrl, now = Date.now(), members =
   }
   // Collection 在店里被删了:只通知这一次(执行器之后不再管它,不会再报失败)
   for (const c of rep.goneCollections || []) if (n.failure) {
-    const why = { smart: '现在是**按条件自动归类**的 —— Shopify 只让手动 Collection 加 / 移产品', refused: 'Shopify 不让往里加 / 移产品(可能后来改成了按条件归类)' }[c.reason];
-    out.push({ to: [...new Set([...c.plans.flatMap((p) => toPlan(p.id)), ...admins(members)])], card: { title: why ? '🗂 Collection 不能再加 / 移产品' : '🗂 Collection 已被删除', color: 'orange', button: btn,
-      lines: [why ? `Collection「${c.title || '—'}」${why}。` : `Collection「${c.title || '—'}」在店里已经不存在了(被删除了)。`,
+    out.push({ to: [...new Set([...c.plans.flatMap((p) => toPlan(p.id)), ...admins(members)])], card: { title: '🗂 Collection 已被删除', color: 'orange', button: btn,
+      lines: [`Collection「${c.title || '—'}」在店里已经不存在了(被删除了)。`,
         c.plans.length ? `改价计划 ${c.plans.map((p) => `「${p.name}」`).join('')} 设了生效期间把产品加进它。` : '',
         '**价格照常改**,只是不再往这个 Collection 里加 / 移出产品,也不会再报错。',
-        c.left ? `app 之前加进去的 **${c.left} 个产品还留在里面**,不需要的话请到 Shopify 后台从这个 Collection 移除(「改价 → 受管产品」里有清单)。` : '',
         '要把产品加进别的 Collection,请在「改价」里打开计划处理。'].filter(Boolean) } });
   }
   if (rep.recovered.length && n.failure) out.push({ to: admins(members), card: { title: 'ℹ️ 上次改价中途中断,已核对补记', color: 'blue', button: btn, lines: [`${rep.recovered.length} 个变体确认已生效,原价记录无误`] } });
