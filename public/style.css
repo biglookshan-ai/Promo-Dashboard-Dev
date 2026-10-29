@@ -2036,3 +2036,17 @@ body.is-booting #modnav, body.is-booting #me-chip { visibility: hidden; }
 #section-price .pr-removed__b { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 #section-price .pr-tbl tr.is-fresh td { animation: prfresh 2.4s ease; }
 @keyframes prfresh { 0%, 40% { background: #fff7d6; } 100% { background: transparent; } }
+/* 改什么价:一排按钮(2026-10-29 用户:原来一行一个太占地方) */
+#section-price .pr-radios { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+#section-price .pr-radio { position: relative; padding: 6px 14px; border-radius: 999px; font-size: var(--fs-sm); background: var(--surface); }
+#section-price .pr-radio input { position: absolute; opacity: 0; pointer-events: none; }
+#section-price .pr-radio.is-on { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* 划线价:默认收起,只显示现在选的 */
+#section-price .pr-cmpsum { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font-size: var(--fs-sm); margin-bottom: 6px; }
+#section-price .pr-cmpsum.is-custom { border-color: var(--accent); background: var(--accent-soft); }
+#section-price .pr-cmpsum > span { flex: 1; }
+/* 逐个指定划线价:一键填 */
+#section-price .pr-fill { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft); font-size: var(--fs-sm); }
+/* 表格里的款式图 */
+#section-price .vcell { display: flex; align-items: center; gap: 8px; }
+#section-price .vimg { width: 32px; height: 32px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; background: #fff; flex: none; }

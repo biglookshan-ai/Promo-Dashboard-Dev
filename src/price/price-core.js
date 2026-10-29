@@ -26,6 +26,7 @@ export const cmpModeOf = (plan, item) => {
   return g?.compare || plan.compare || cmpDefaultOf(plan);
 };
 // 每组实际用的划线价方式(给「开始后不能改」比较用)
+export const ruleModeOf = (plan, item) => { const g = item?.group != null ? (plan.groups || []).find((x) => x.id === item.group) : null; return (g?.rule || plan.rule || {}).mode; };
 export const groupCmpModes = (plan) => (plan.groups?.length ? plan.groups : [{}]).map((g) => g.compare || plan.compare || cmpDefaultOf(plan));
 
 export const toCents = (v) => {
@@ -217,8 +218,8 @@ export function decide(state, ops, current) {
       if (o.op === 'restore') want = base;
       else {
         want = targetFor(base, o.asg.plan, o.asg.item);
-        // 原价后来降到活动价以下:不能打着促销的名义涨价
-        if (o.asg.item.price != null && toCents(want.price) >= toCents(base.price)) {
+        // 原价后来降到活动价以下:不能打着促销的名义涨价(2026-10-29:一样高可以 —— 售价不变、只改划线价的虚拟折扣)
+        if (o.asg.item.price != null && toCents(want.price) > toCents(base.price)) {
           holds.push({ ...o, reason: 'not-lower', seen: curPair, expected: want, base });
           continue;
         }
@@ -276,15 +277,25 @@ export function finishPlans(state, now) {
 
 // ---------- 预览检查(编辑器 / 审核用)----------
 // 每个条目给出 { level: 'error' | 'warn', code, text }。error 不能提交,warn 要审核人看过。
+// 售价不变:新价没填(「售价不变」那一组)或填的就是现价
+export const keepsPrice = (item) => item.price == null || toCents(item.price) === toCents(item.refPrice);
+// 这一条会不会改动划线价(和改价前比)
+export const changesCompare = (plan, item) => {
+  try { const t = targetFor(pair(item.refPrice, item.refCompareAt), plan, item); return (cmpCents(t.compareAt) || 0) !== (cmpCents(item.refCompareAt) || 0); } catch { return false; }
+};
 export function itemWarnings(plan, item, { maxDiscountPct = 60 } = {}) {
   const out = [];
   const ref = { price: item.refPrice, compareAt: item.refCompareAt };
+  // 限时计划:售价不变、只改划线价(虚拟折扣)可以;但售价和划线价都没变就没意义
+  if (plan.kind === 'window' && keepsPrice(item) && toCents(ref.price) > 0 && (item.price != null || ruleModeOf(plan, item) === 'keep') && !changesCompare(plan, item)) {
+    out.push({ level: 'error', code: 'no-change', text: '售价和划线价都没变' });
+  }
   if (item.price != null) {
     const p = toCents(item.price);
     if (p == null || p <= 0) out.push({ level: 'error', code: 'zero', text: '价格必须大于 0' });
     else {
       const d = discountPct(ref.price, item.price);
-      if (plan.kind === 'window' && p >= toCents(ref.price)) out.push({ level: 'error', code: 'not-lower', text: '限时活动价不比现价低' });
+      if (plan.kind === 'window' && p > toCents(ref.price)) out.push({ level: 'error', code: 'not-lower', text: '限时活动价比现价高' });
       if (plan.kind === 'permanent' && p > toCents(ref.price)) out.push({ level: 'warn', code: 'up', text: `涨价 ${Math.abs(d)}%` });
       if (d > maxDiscountPct) out.push({ level: 'warn', code: 'deep', text: `降幅 ${d}%,超过上限 ${maxDiscountPct}%` });
       if (item.cost != null && p < toCents(item.cost)) out.push({ level: 'warn', code: 'below-cost', text: `低于成本价 £${item.cost}` });

@@ -243,7 +243,8 @@ test('变体被删了:列为缺失,不报错', () => {
 
 test('预览检查:涨价、降幅过大、低于成本、没有划线价', () => {
   const win = { kind: 'window', compare: 'original' };
-  assert.equal(itemWarnings(win, item('v', '100.00'))[0].code, 'not-lower');
+  assert.equal(itemWarnings(win, item('v', '110.00'))[0].code, 'not-lower');
+  assert.equal(itemWarnings(win, item('v', '100.00'))[0].code, 'no-change'); // 和现价一样、划线价也没变
   assert.equal(itemWarnings(win, item('v', '0'))[0].code, 'zero');
   assert.ok(itemWarnings(win, item('v', '30.00')).some((w) => w.code === 'deep'));
   assert.ok(itemWarnings(win, item('v', '30.00'), { maxDiscountPct: 80 }).every((w) => w.code !== 'deep'));
@@ -334,4 +335,33 @@ test('划线价按分组设(2026-10-28):条目用自己那一组的方式;没设
   assert.equal(cmpModeOf({ kind: 'permanent' }, {}), 'keep');
   // 组里的例外照样优先
   assert.deepEqual(targetFor(base, plan, { price: '70.00', group: 'b', cmpManual: true, compareAt: '90.00' }), { price: '70.00', compareAt: '90.00' });
+});
+
+
+test('虚拟折扣(2026-10-29):限时计划售价不变、只把划线价改高 —— 校验放行,执行器照写,结束一起恢复', () => {
+  // ① 「售价不变」那一组 + 逐个指定划线价
+  const g = { id: 'g1', rule: { mode: 'keep' }, compare: 'set' };
+  const keepIt = item('v1', null, { group: 'g1', compareAt: '150.00' });
+  const win = plan('vd', 'sitewide', [slot('s', 0, 10 * H, [keepIt])], { groups: [g] });
+  assert.deepEqual(itemWarnings(win, keepIt).filter((w) => w.level === 'error'), []);
+  // 划线价也没改 → 拦住
+  assert.equal(itemWarnings(win, { ...keepIt, compareAt: null })[0].code, 'no-change');
+  // ② 逐个填价:新价填成现价 + 单独把划线价改高(例外)
+  const manualIt = item('v2', '100.00', { group: 'g2', cmpManual: true, compareAt: '130.00' });
+  const win2 = plan('vd2', 'sitewide', [slot('s', 0, 10 * H, [manualIt])], { groups: [{ id: 'g2', rule: { mode: 'manual' }, compare: 'original' }] });
+  assert.deepEqual(itemWarnings(win2, manualIt).filter((w) => w.level === 'error'), []);
+  // ③ 执行器:开始时只写划线价,售价不变;结束恢复原样
+  const shop = makeShop({ v1: '100.00' });
+  const state = { plans: [win], vault: {} };
+  const r1 = tick(state, shop, 1 * H);
+  assert.equal(r1.holds.length, 0);
+  assert.deepEqual(priceOf(shop, 'v1'), { price: '100.00', compareAt: '150.00' });
+  tick(state, shop, 10 * H);
+  assert.deepEqual(priceOf(shop, 'v1'), { price: '100.00', compareAt: null });
+  // ④ 逐个填价填成现价的那种,执行器也照写(以前会当成「原价已经不比活动价高」暂停)
+  const shop2 = makeShop({ v2: '100.00' });
+  const st2 = { plans: [win2], vault: {} };
+  const r2 = tick(st2, shop2, 1 * H);
+  assert.equal(r2.holds.length, 0);
+  assert.deepEqual(priceOf(shop2, 'v2'), { price: '100.00', compareAt: '130.00' });
 });

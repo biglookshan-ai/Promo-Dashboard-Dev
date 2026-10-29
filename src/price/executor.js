@@ -220,7 +220,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
   });
 }
 
-const OP_CN = { start: '开始活动价', switch: '换到另一个时段的价', restore: '恢复原价', permanent: '永久调价' };
+const OP_CN = { start: '开始活动价', switch: '换到另一个时段的价', restore: '回到改价前', permanent: '永久调价' };
 
 // 把这一轮的结果按计划汇总进操作日志(不逐个变体刷屏,明细在价格账本里)
 function writeLogs(state, rep, now) {

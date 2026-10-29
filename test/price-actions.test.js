@@ -34,7 +34,8 @@ test('审核人自己提交 = 直接批准;退回带原因', () => {
 test('校验:名称、时间、活动价不比原价低、重复变体、同计划时段重叠又有同一产品', () => {
   assert.match(validate(values({ name: ' ' })), /名称/);
   assert.match(validate(values({ slots: [{ id: 'a', start: 10, end: 5, items: [item('v1', '85')] }] })), /结束时间/);
-  assert.match(validate(values({ slots: [{ id: 'a', start: 1, end: 5, items: [item('v1', '100.00')] }] })), /不比现价低/);
+  assert.match(validate(values({ slots: [{ id: 'a', start: 1, end: 5, items: [item('v1', '110.00')] }] })), /比现价高/);
+  assert.match(validate(values({ slots: [{ id: 'a', start: 1, end: 5, items: [item('v1', '100.00')] }] })), /售价和划线价都没变/); // 和现价一样、划线价也没变 = 没意义
   assert.match(validate(values({ slots: [{ id: 'a', start: 1, end: 5, items: [item('v1', '85'), item('v1', '80')] }] })), /重复/);
   assert.match(validate(values({ slots: [
     { id: 'a', start: 1, end: 10, items: [item('v1', '85')] },

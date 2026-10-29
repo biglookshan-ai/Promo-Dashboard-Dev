@@ -40,13 +40,13 @@ export function eventMessages(state, effect, { appUrl, members = [] } = {}) {
   }
   if (['pause', 'resume', 'stop'].includes(effect.event) && n.decision) {
     const t = { pause: '⏸ 改价计划已暂停', resume: '▶️ 改价计划已继续', stop: '⏹ 改价计划已提前结束' }[effect.event];
-    const d = { pause: '一分钟内恢复原价', resume: '一分钟内重新套用活动价', stop: p.kind === 'window' ? '一分钟内全部恢复原价' : '还没执行的不再执行' }[effect.event];
+    const d = { pause: '一分钟内回到改价前的价格', resume: '一分钟内重新套用活动价', stop: p.kind === 'window' ? '一分钟内全部回到改价前的价格' : '还没执行的不再执行' }[effect.event];
     return [{ to: peopleOf(p, members), card: { title: t, color: effect.event === 'resume' ? 'blue' : 'grey', button: btn, lines: [planLine(p), d] } }];
   }
   return [];
 }
 
-const OP_CN = { start: '开始活动价', switch: '换时段价', restore: '恢复原价', permanent: '永久调价' };
+const OP_CN = { start: '开始活动价', switch: '换时段价', restore: '回到改价前', permanent: '永久调价' };
 const HOLD_CN = { manual: '有人手动改过价', 'not-lower': '原价已不比活动价高' };
 
 // 执行器一轮之后

@@ -113,3 +113,12 @@ export async function shopInfo(ctx) {
   return { name: d.shop.name, handle, domain: d.shop.primaryDomain.url.replace(/\/$/, ''), currency: d.shop.currencyCode,
     appUrl: `https://admin.shopify.com/store/${handle}/apps/${d.currentAppInstallation.app.handle}` };
 }
+
+// 款式图(2026-10-29 用户:有选项图就显示):单独小批量读,只读表格里正在显示的几个产品 —— 别加进上面的大查询(每页 50 个产品 × 100 个款式,再加图怕超出单次查询上限)
+// 用 media(款式的 image 字段 2026-04 起已弃用)。返回 { 款式 id: 图 }
+export async function variantImages(ctx, productIds) {
+  const out = {};
+  const d = await graphql(ctx, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { variants(first: 50) { nodes { id media(first: 1) { nodes { preview { image { url(transform: { maxWidth: 120, maxHeight: 120 }) } } } } } } } } }`, { ids: productIds.slice(0, 5) });
+  for (const n of d.nodes || []) for (const v of n?.variants?.nodes || []) { const u = v.media?.nodes?.[0]?.preview?.image?.url; if (u) out[v.id] = u; }
+  return out;
+}

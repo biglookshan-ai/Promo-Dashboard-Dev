@@ -2,7 +2,7 @@
 // 纯函数,服务器和浏览器共用(浏览器通过 /lib/price-actions.js 加载);权限只在这里检查。
 // doc:{ plans, vault, staff, log, settings }   actor:{ id, name, role: 'approver' | 'editor' }
 // 返回 { doc, effects, message };effects 交给服务器(发飞书、立刻跑一轮引擎)。
-import { planStatus, itemWarnings, toCents, isLive, cmpModeOf, groupCmpModes } from './price-core.js';
+import { planStatus, itemWarnings, toCents, isLive, cmpModeOf, groupCmpModes, ruleModeOf } from './price-core.js';
 
 export class ActionError extends Error {}
 const fail = (msg) => { throw new ActionError(msg); };
@@ -43,7 +43,7 @@ export function validate(p, settings = {}) {
     for (const it of s.items) {
       if (seen.has(it.variantId)) return `${name}里有重复的变体:${it.title || it.variantId}`;
       seen.add(it.variantId);
-      if (it.price == null && p.kind === 'window') return `${name}「${it.title || it.variantId}」还没设活动价`;
+      if (it.price == null && p.kind === 'window' && ruleModeOf(p, it) !== 'keep') return `${name}「${it.title || it.variantId}」还没设活动价`;
       if (it.price == null && !['set', 'clear'].includes(cmpModeOf(p, it)) && !it.cmpManual) return `${name}「${it.title || it.variantId}」没有任何改动(售价和划线价都没变)`;
       const err = itemWarnings(p, it, settings).find((w) => w.level === 'error');
       if (err) return `${name}「${it.title || it.variantId}」:${err.text}`;
