@@ -2133,7 +2133,7 @@
     const card = (p) => {
       const prods = (p.products || []).filter(Boolean);
       return itemRow(p, { badge: badgeAt(p, T), thumb: '', cls: 'irow--pin',
-        tags: `${p.fullOrder ? '<span class="tag tag--accent">完全按本次排序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示前几个</span>' : ''}${p.countdown ? '<span class="tag">倒计时</span>' : ''}`,
+        tags: `${p.fullOrder ? '<span class="tag tag--accent">完全按本次排序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示前几个</span>' : ''}`,
         sub: `${prods.length} 个产品排在前面${(p.hidden || []).length ? ` · ${(p.hidden || []).length} 个不显示` : ''}`,
         act: `${['draft', 'rejected', 'ended', 'paused'].includes(status(p)) ? `<button class="btn btn-sm btn-ghost btn-danger-t" type="button" data-pindel="${p.id}" title="删除这份置顶排序(不影响别的置顶排序和 Collection 本身)">删除</button>` : ''}<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
         extra: prods.length ? `<span class="pnrow__ps">${prods.slice(0, 14).map((x) => `<span class="pnrow__p" title="${esc(x.title)}">${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 14 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}</span>` : '' });
@@ -2907,7 +2907,8 @@
     if (!me.admin) return `<div class="stgrid">${mine}</div>`;
     return `<div class="stgrid">${mine}
       <section class="panel"><div class="panel__h"><h3>怎么加同事</h3></div>
-        <p class="muted">让同事在 Shopify 后台打开这个 app(或直接打开 app 网址)用飞书登录一次,他就会出现在下面「待分配」里;给他勾上角色就能用了。
+        <p class="muted">两种方式:① <b>先预设</b> —— 在下面「预先添加同事」里填他的名字、勾好角色,他第一次用飞书登录时名字对上就<b>自动开通</b>;
+        ② <b>先登录</b> —— 让他在 Shopify 后台打开这个 app(或直接打开 app 网址)用飞书登录一次,他会出现在成员表的「待分配」里,给他勾上角色就能用了。
         飞书应用的「可用范围」里也要有他,否则飞书不让他授权。</p></section></div>
       <section class="panel"><div class="panel__h"><h3>成员</h3><span class="muted">管理员能看全部页面、管成员;其他角色只看勾选的页面</span></div><div id="st-members"><p class="muted">加载中…</p></div></section>
       <section class="panel"><div class="panel__h"><h3>角色能看的页面</h3><span class="muted">设置、工具只有管理员能看</span></div><div id="st-roles"><p class="muted">加载中…</p></div></section>`;
@@ -2940,13 +2941,47 @@
       const names = Object.entries(MEM.pages).filter(([k]) => set.has(k) && !['settings', 'tools'].includes(k)).map(([, v]) => v);
       return names.length ? names.join('、') : '<span class="tag tag--warn">没勾页面:什么都看不到</span>';
     };
-    el.innerHTML = `<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>角色</th><th>能看的页面</th><th>最近登录</th></tr></thead><tbody>
-      ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : `<span class="avatar">${esc((m.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}</td>
+    // 预先添加(2026-10-29 用户:只有名字、没有飞书 id —— 先按名字设好角色,登录时名字对上自动开通;管理员不能预设)
+    const invRoles = MEM.roles.filter((r) => r.key !== 'admin');
+    const invs = MEM.invites || [];
+    const recent = list.filter((m) => m.fromInvite && Date.now() - m.fromInvite.at < 7 * DAY);
+    const invHtml = `<div class="invbox">
+        <div class="invbox__h"><b>预先添加同事</b><span class="muted">还没登录过的同事:填他<b>飞书里显示的名字</b>(中文名或英文名都行,不分大小写、空格),勾好角色。他第一次用飞书登录时名字对上就自动开通。管理员不能预设,要等他登录后在下面成员表里给。</span></div>
+        <div class="invbox__f"><input class="inp" id="inv-name" placeholder="名字,如:张三 / Tom Lee" maxlength="30"/>
+          <span class="invbox__roles">${invRoles.map((r) => `<label class="chk"><input type="checkbox" data-invnew="${esc(r.key)}"/>${esc(r.name)}</label>`).join('')}</span>
+          <button class="btn btn-sm btn-primary" id="inv-add" type="button">添加</button></div>
+        ${invs.length ? `<table class="mtable mtable--inv"><thead><tr><th>等登录的同事</th><th>预设的角色</th><th>添加</th><th></th></tr></thead><tbody>
+          ${invs.map((v) => `<tr data-inv="${esc(v.id)}"><td><span class="avatar avatar--ghost">${esc((v.name || '?').slice(0, 1).toUpperCase())}</span><b>${esc(v.name)}</b> <span class="tag">等他登录</span></td>
+            <td>${invRoles.map((r) => `<label class="chk"><input type="checkbox" data-invrole="${esc(r.key)}" ${(v.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
+            <td class="muted">${fAgo(v.at)}${v.by ? ` · ${esc(v.by)}` : ''}</td>
+            <td><button class="linkbtn" type="button" data-invdel="${esc(v.id)}">删除</button></td></tr>`).join('')}</tbody></table>` : ''}
+      </div>
+      ${recent.length ? `<div class="note note--sm">最近按预设名字自动开通:${recent.map((m) => `<b>${esc(m.name)}</b>(${fAgo(m.fromInvite.at)})`).join('、')}。名字不是唯一身份,核对一下是不是本人;不对就把他停用。</div>` : ''}`;
+    el.innerHTML = `${invHtml}<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>角色</th><th>能看的页面</th><th>最近登录</th></tr></thead><tbody>
+      ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : `<span class="avatar">${esc((m.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}${m.fromInvite ? ` <span class="tag tag--accent" title="${esc(m.fromInvite.by || '管理员')}预设了「${esc(m.fromInvite.name)}」,他第一次登录时名字对上自动开通">按预设自动开通</span>` : ''}</td>
         <td><select class="sel sel--sm" data-mstatus>${Object.entries(ST_CN).map(([k, v]) => `<option value="${k}" ${m.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td>${MEM.roles.map((r) => `<label class="chk"><input type="checkbox" data-mrole="${esc(r.key)}" ${(m.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
         <td style="font-size:12.5px">${canSeeOf(m)}</td>
         <td class="muted">${m.lastSeen ? fAgo(m.lastSeen) : '—'}</td></tr>`).join('')}</tbody></table>
       ${list.some((m) => m.status === 'pending') ? '<p class="muted">「待分配」的人勾上角色后会自动启用。</p>' : ''}`;
+    const reload = async (msg) => { if (msg) toast(msg); MEM = await api('GET', '/api/members'); drawMembers(); };
+    $('#inv-add')?.addEventListener('click', async (e) => {
+      const name = $('#inv-name').value.trim(); const roles = $$('#st-members [data-invnew]:checked').map((x) => x.dataset.invnew);
+      e.target.disabled = true;
+      try { const r = await api('POST', '/api/invites', { name, roles }); await reload(r.message); }
+      catch (err) { toast(err.message, false); e.target.disabled = false; }
+    });
+    $('#inv-name')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#inv-add').click(); } });
+    $$('#st-members tr[data-inv]').forEach((tr) => {
+      tr.querySelectorAll('[data-invrole]').forEach((c) => c.addEventListener('change', async () => {
+        try { await api('PUT', `/api/invites/${encodeURIComponent(tr.dataset.inv)}`, { roles: [...tr.querySelectorAll('[data-invrole]:checked')].map((x) => x.dataset.invrole) }); await reload('预设的角色已更新'); }
+        catch (err) { toast(err.message, false); drawMembers(); }
+      }));
+      tr.querySelector('[data-invdel]')?.addEventListener('click', async (e) => {
+        const b = e.target; if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次删除'; return; }
+        try { await api('DELETE', `/api/invites/${encodeURIComponent(tr.dataset.inv)}`); await reload('已删掉这条预设'); } catch (err) { toast(err.message, false); }
+      });
+    });
     $$('#st-members tr[data-mid]').forEach((tr) => {
       const id = tr.dataset.mid;
       const save = async (patch) => {
@@ -3750,21 +3785,14 @@
   function wxFormHtml(it) {
     if (it.kind === 'pin') {
       // 2026-10-21 用户:合集的默认设置和合集放在一起;清单自己的设置只有三项(产品排序 / 产品卡 / 显示时间);最下面只放全部产品的顺序。
-      // 2026-10-29 用户:Collection 和名称理一理、历史版本单独放(窗口顶上)、显示时间放前面、排序设置放最后;倒计时 / 徽章收起来(当初给没建活动的 Flash 用)
-      const promo = !!(it.countdown || it.badge);
+      // 2026-10-29 用户:Collection 和名称理一理、历史版本单独放(窗口顶上)、显示时间放前面、排序设置放最后;
+      // 倒计时 / 徽章(当初给没建活动的 Flash 用)整个去掉了 —— 产品卡上的促销标签只从活动和改价来
       return `${edSec(1, 'Collection 与名称', '', `<div id="wx-coll">${pinBoxHtml('coll')}</div>
           <div class="pname">${fld('排序名称', inp('name', it.name, wx.collection ? `留空就叫「${wx.collection.title}」` : '如:Flash Sale 第 1 天'), '只是给自己看的,列表和记录里显示')}</div>
           <div class="pdef"><span class="pdef__k">Collection 默认设置<em>Collection 自己的,没有置顶排序生效时这样排;改了马上生效</em></span><div id="wx-cs"><span class="muted">先选 Collection</span></div></div>
           <div class="pdef pdef--sl"><span class="pdef__k">这个 Collection 的促销链接<em>只放打折产品的另一页(?onsale),和这份置顶排序谁优先</em></span><div id="wx-sl">${wxSlHtml()}</div></div>`)}
         ${edSec(2, '显示时间', '', timeBlock(it, 'pin'))}
-        ${edSec(3, '排序设置', '这份置顶排序生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>
-          <details class="pextra" ${promo ? 'open' : ''}><summary>产品卡上的促销标签 <em>可选,一般不用 —— 有活动就用活动的</em></summary>
-            <p class="muted pextra__why">当初是给 <b>Flash Sale 每天一组</b>准备的:没建活动、只排了当天这批产品时,也能在它们的产品卡和产品页上显示「Flash Deal · 今日限时」和倒数到这份置顶排序结束。
-              现在一般用不到:<b>有活动</b>就用活动的徽章和倒计时(这里留空);<b>改价计划</b>开了倒计时的,倒计时以改价的为准。注意:这里写了徽章,会盖过这些产品上活动的徽章。</p>
-            <div class="pset__tgls">
-              <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到这份置顶排序结束(要设了结束时间);到期自动消失</span></span></label>
-              <label class="pset__inp"><span>徽章文字</span>${inp('badge', it.badge, '可留空,如:Flash Deal · 今日限时')}</label></div>
-          </details>`)}
+        ${edSec(3, '排序设置', '这份置顶排序生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
         ${edSec(4, '顺序', '拖动卡片排序,点序号输入第几位;点卡片可以多选,一起移动', `<div id="wx-box">${pinBoxHtml()}</div>`)}`;
     }
     return '';
@@ -3885,7 +3913,7 @@
           <div class="rowin">${blSelect(it.badgeLink, 'name="badgeLinkMode" id="ed-blmode"')}
           <input class="inp mono" name="badgeLinkUrl" id="ed-blurl" value="${esc(blMode(it.badgeLink) === 'url' ? it.badgeLink : '')}" placeholder="/collections/dzofilm?view=bfcm-dzo" ${blMode(it.badgeLink) === 'url' ? '' : 'hidden'}/></div></div>
         <label class="tgl"><input type="checkbox" name="countdown" ${it.countdown ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>显示倒计时</b><span class="muted">倒数到活动结束,到期自动消失</span></span></label>
-        <div class="fld"><span>样式 <em>徽章和倒计时一起用;挂在这个活动下的 Collection 置顶排序(Flash)也一样</em></span>
+        <div class="fld"><span>样式 <em>徽章和倒计时一起用</em></span>
           <div class="cdsty" id="ed-cdsty">${Object.entries(CD_STY).map(([k, x]) => `<button type="button" data-cdsty="${k}" class="cdsty__i ${(it.countdownStyle || 'classic') === k ? 'is-active' : ''}">
             <span class="cdsty__demo" style="background:${x.bg};color:${x.fg};${k === 'minimal' ? '' : 'padding:4px 9px;'}border-radius:${k === 'classic' ? '6px' : '999px'}">${k === 'classic' || k === 'minimal' ? '' : CLOCK}${esc(x.lbl)} 2 days</span>
             <b>${x.name}</b><em>${x.hint}</em></button>`).join('')}</div></div>
@@ -4098,7 +4126,7 @@
       const byId = new Map(wx.order.map((p) => [pidOf(p), p]));
       v.collection = wx.collection; v.products = keepIds.map((id) => slim(byId.get(id)));
       v.hidden = wx.hidden.map(slim);
-      v.onlyListed = wx.onlyN != null; v.fullOrder = !!wx.fullOrder; v.countdown = !!g('countdown')?.checked;
+      v.onlyListed = wx.onlyN != null; v.fullOrder = !!wx.fullOrder; v.countdown = false; v.badge = ''; // 促销标签已去掉(2026-10-29)
       if (!v.name && wx.collection) v.name = wx.collection.title; // 名称留空就叫 Collection 的名字(别再出现「未命名」)
     }
     // 分工(没有 name 属性,不走上面的通用读取)。空的抄送 / 截止不写成 [] / null,免得没改也算「改了」
@@ -4957,7 +4985,7 @@
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
     if (!approvalsOn()) { // 没开审批:不显示「我的工作」;「审核」只在还有遗留的待审核时显示
       const navOf = (k) => document.querySelector(`#modnav [data-section="${k}"]`);
-      navOf('mywork').hidden = true; navOf('reviews').hidden = !n;
+      navOf('mywork').hidden = true; navOf('reviews').hidden = !n || !(window.CGP_ME?.admin || window.cgpCanSee?.('reviews') !== false); // 遗留的待审核只给管理员处理(别盖掉页面权限)
       if (['mywork', 'reviews'].some((k) => navOf(k).hidden && isActive(k))) showSection('overview');
     }
     const L = window.CGP_ME; // 飞书登录了就显示登录的人和他的角色

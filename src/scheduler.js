@@ -8,7 +8,7 @@ import { desiredPublishStatus, campaignIndex } from './schedule-core.js';
 import { titleOf } from './schedule-actions.js';
 import { setPublishStatus as realSetStatus } from './metaobjects.js';
 import { getToken } from './token-store.js';
-import { withLock } from './sync.js';
+import { withLock, syncItem } from './sync.js';
 import { schedulerMessages, digestMessages, deliver, schedulerDMs, deliverDMs } from './notifier.js';
 import { alignCollections } from './collection-order.js';
 import { syncAllJoint, syncNotes } from './joint-sync.js';
@@ -59,6 +59,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     for (const c of changes) appendLog(state, { at: now, action: c.to === 'ACTIVE' ? 'up' : 'down', kind: c.kind, title: c.title, note: '定时器自动' + (c.to === 'ACTIVE' ? '上线' : '下线'), by: '定时器' });
     for (const f of failures) appendLog(state, { at: now, action: 'failure', kind: f.kind || 'system', title: f.title || '定时器', note: f.message, by: '定时器' });
     state.scheduler = { lastRun: now, lastError: failures[0]?.message || null, lastChanges: changes.length };
+    if (token) await dropPinPromo({ shop, token }, state, { now, gql });
 
     // 合集排序:把手动合集真的对齐到「这一刻该有的顺序」(自动归类的合集跳过,由主题前台排)
     let col = { applied: [], restored: [], holds: [], failures: [], skipped: [] };
@@ -86,6 +87,25 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     replace(shop, state);
     return { changes, failures, collections: col };
   });
+}
+
+// 2026-10-29 用户:置顶排序的「产品卡上的促销标签」(倒计时 / 徽章)整个去掉。以前设过的:清掉、店里的条目重写一次(写的是空),
+// 每份记一笔操作日志(写清原来是什么,要的话去活动里设)。写失败就把值放回去,下一分钟再试
+export async function dropPinPromo(ctx, state, { now = Date.now(), gql = graphql } = {}) {
+  const out = [];
+  for (const it of state.pins || []) {
+    if (!it.badge && !it.countdown) continue;
+    const old = { badge: it.badge || '', countdown: !!it.countdown };
+    it.badge = ''; it.countdown = false;
+    if (it.state === 'approved' && it.shopifyId) {
+      try { await syncItem(ctx, state, it, { gql, now }); }
+      catch (e) { Object.assign(it, old); appendLog(state, { at: now, action: 'failure', kind: 'pin', title: titleOf(it), note: `去掉产品卡上的促销标签时写店铺失败:${String(e.message || e)},下一分钟再试`, by: '系统' }); continue; }
+    }
+    const what = [old.badge && `徽章「${old.badge}」`, old.countdown && '倒计时'].filter(Boolean).join('和');
+    appendLog(state, { at: now, action: 'edit', kind: 'pin', title: titleOf(it), note: `去掉了产品卡上的${what}(置顶排序不再管促销标签;要的话在活动里设)`, by: '系统' });
+    out.push({ id: it.id, ...old });
+  }
+  return out;
 }
 
 let timer = null;

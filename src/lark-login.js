@@ -40,7 +40,7 @@ export async function loginWithCode(code, redirectUri) {
   const info = await call('/open-apis/authen/v1/user_info', { headers: { Authorization: `Bearer ${tok.access_token}` } });
   const d = info.data || {};
   if (!d.open_id) throw new Error('飞书没有返回用户信息');
-  return { openId: d.open_id, unionId: d.union_id || '', name: d.name || d.en_name || '', avatar: d.avatar_url || d.avatar_thumb || '', tenantKey: d.tenant_key || '' };
+  return { openId: d.open_id, unionId: d.union_id || '', name: d.name || d.en_name || '', enName: d.en_name || '', avatar: d.avatar_url || d.avatar_thumb || '', tenantKey: d.tenant_key || '' };
 }
 
 // ---------- app 会话 ----------

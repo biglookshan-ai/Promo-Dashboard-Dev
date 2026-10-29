@@ -7,7 +7,7 @@ import { load, replace, appendLog } from './schedule-store.js';
 import { withLock } from './sync.js';
 import { knownShops } from './token-store.js';
 import { teamEnabled, authorizeUrl, loginWithCode, issueSession, newLoginState, takeLoginState, finishLoginState, loginStatus, redeemLoginState } from './lark-login.js';
-import { PAGES, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, setTestMode, testModeOn, testModeLeft, canStartTestMode, TEST_MODE_MAX_HOURS, MemberError } from './members.js';
+import { PAGES, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, addInvite, updateInvite, removeInvite, setTestMode, testModeOn, testModeLeft, canStartTestMode, TEST_MODE_MAX_HOURS, MemberError } from './members.js';
 
 const SESSION_KEY = 'cgp-app-session'; // 和 public/auth.js 一致
 const COOKIE = 'cgp_lark_login';
@@ -61,7 +61,10 @@ export function publicAuthRouter() {
         return { ...m };
       });
       const session = issueSession({ uid: member.id, shop: st.shop });
-      appendAudit(st.shop, { who: { id: member.id, name: member.name }, mod: 'login', text: `用飞书登录${member.status === 'active' ? '' : '(新成员,等分配角色)'}`, ok: true, path: '/auth/lark/callback' });
+      const viaInvite = member.fromInvite && Date.now() - member.fromInvite.at < 60_000; // 这次登录刚按预设名字开通
+      appendAudit(st.shop, { who: { id: member.id, name: member.name }, mod: 'login', ok: true, path: '/auth/lark/callback',
+        text: viaInvite ? `用飞书登录,名字对上预设「${member.fromInvite.name}」,自动开通${member.status === 'active' ? '' : '(预设的角色已被删掉,等分配)'}`
+          : `用飞书登录${member.status === 'active' ? '' : '(新成员,等分配角色)'}` });
       const hello = member.status === 'active' ? '' : '<p>你是第一次登录,管理员给你分配角色后就能用了。</p>';
       if (st.mode === 'popup') {
         const code = finishLoginState(id, { session });
@@ -128,8 +131,8 @@ export function apiAuthRouter() {
   const needRealLogin = (req) => { const m = needLogin(req); if (m.testMode) throw new MemberError('测试模式下不能改成员和角色,请先用飞书登录'); return m; };
   r.get('/members', wrap(async (req) => {
     const me = needLogin(req); const s = load(req.ctx.shop);
-    const list = (s.members || []).map((m) => ({ id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status, lastSeen: m.lastSeen, joinedAt: m.joinedAt }));
-    return isAdmin(me) ? { members: list, roles: rolesOf(s), pages: PAGES } : { members: list.filter((m) => m.status === 'active').map(({ id, name, avatar }) => ({ id, name, avatar })) };
+    const list = (s.members || []).map((m) => ({ id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status, lastSeen: m.lastSeen, joinedAt: m.joinedAt, fromInvite: m.fromInvite || null }));
+    return isAdmin(me) ? { members: list, roles: rolesOf(s), pages: PAGES, invites: s.invites || [] } : { members: list.filter((m) => m.status === 'active').map(({ id, name, avatar }) => ({ id, name, avatar })) };
   }));
   r.put('/members/:id', wrap((req) => withLock(req.ctx.shop, async () => {
     const s = load(req.ctx.shop);
@@ -161,6 +164,32 @@ export function apiAuthRouter() {
     return { ok: true, testMode: testModeOn(s) ? { on: true, left: testModeLeft(s), byName: s.testMode.byName } : { on: false } };
   })));
 
+  // ---- 预先按名字设好角色(同事还没登录过)----
+  const roleText = (s, roles) => { const rn = Object.fromEntries(rolesOf(s).map((r) => [r.key, r.name])); return roles.map((k) => rn[k] || k).join('、'); };
+  r.post('/invites', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const me = (s.members || []).find((x) => x.id === needRealLogin(req).id);
+    const r2 = addInvite(s, me, req.body || {});
+    replace(req.ctx.shop, s);
+    req.audit = { mod: 'members', text: r2.member ? `「${r2.member.name}」已经登录过(待分配),直接开通:${roleText(s, r2.member.roles)}` : `预先添加同事「${r2.invite.name}」:${roleText(s, r2.invite.roles)}(他用飞书登录时名字对上就自动开通)` };
+    return { ok: true, ...r2, message: r2.member ? `「${r2.member.name}」已经登录过了,直接给他开通了` : `已预设「${r2.invite.name}」,他第一次用飞书登录时自动开通` };
+  })));
+  r.put('/invites/:id', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const me = (s.members || []).find((x) => x.id === needRealLogin(req).id);
+    const inv = updateInvite(s, me, req.params.id, req.body || {});
+    replace(req.ctx.shop, s);
+    req.audit = { mod: 'members', text: `改预设「${inv.name}」的角色 → ${roleText(s, inv.roles)}` };
+    return { ok: true, invite: inv };
+  })));
+  r.delete('/invites/:id', wrap((req) => withLock(req.ctx.shop, async () => {
+    const s = load(req.ctx.shop);
+    const me = (s.members || []).find((x) => x.id === needRealLogin(req).id);
+    const inv = removeInvite(s, me, req.params.id);
+    replace(req.ctx.shop, s);
+    req.audit = { mod: 'members', text: `删掉预设「${inv.name}」` };
+    return { ok: true };
+  })));
   r.put('/roles', wrap((req) => withLock(req.ctx.shop, async () => {
     const s = load(req.ctx.shop);
     const me = (s.members || []).find((x) => x.id === needRealLogin(req).id);

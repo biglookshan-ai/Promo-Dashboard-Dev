@@ -369,7 +369,8 @@ export function fieldsFor(it, { win = { start: it.start, end: it.end }, campaign
       // 真的改店里合集时 app 用的是自己存的完整清单,不受这个限制
       products: list((it.products || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)),
       hidden_products: list((it.hidden || []).slice(0, 50).map((p) => toGid('Product', p.id)).filter(Boolean)), only_listed: it.onlyListed ? 'true' : 'false',
-      show_countdown: it.countdown ? 'true' : 'false', badge_text: str(it.badge),
+      // 2026-10-29 用户:置顶排序的「产品卡上的促销标签」(倒计时 / 徽章)整个去掉 —— 一律写空;字段定义留着(改定义会让设置页标「要更新」)
+      show_countdown: 'false', badge_text: '',
     });
   } else if (it.kind === 'salelink') {
     Object.assign(f, {

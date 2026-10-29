@@ -48,6 +48,7 @@ const PRICE_CN = { approve: '批准', reject: '退回', pause: '暂停', resume:
 // 没有 req.audit 时,按接口 + 请求内容猜一句话
 export function describe(p, body = {}) {
   if (p === '/schedule/col-hold') return ['pins', body.release ? '保留后台排序(不再按置顶排序来排)' : '按本次排序重新排'];
+  if (p.startsWith('/invites')) return ['members', '预先添加 / 修改同事'];
   if (p.startsWith('/members/')) return ['members', `改成员${body.status ? `(状态 → ${body.status})` : ''}${body.roles ? '(角色)' : ''}${body.name ? `(名字 → ${body.name})` : ''}`];
   if (p === '/schedule/act') {
     const a = body.action || {}; const kind = a.kind;

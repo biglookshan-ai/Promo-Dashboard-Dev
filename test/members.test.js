@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { upsertOnLogin, updateMember, saveRoles, pagesOf, isAdmin, canSee, actorOf } from '../src/members.js';
+import { upsertOnLogin, updateMember, saveRoles, pagesOf, isAdmin, canSee, actorOf, addInvite, updateInvite, removeInvite, matchInvite } from '../src/members.js';
 import { issueSession, verifySession, newLoginState, finishLoginState, redeemLoginState, loginStatus } from '../src/lark-login.js';
 
 const u = (openId, name) => ({ openId, name, avatar: '', tenantKey: 't1' });
@@ -153,4 +153,61 @@ test('测试模式:临时身份想延长时的提示要说清原因', async () =
   const { setTestMode, TEST_MEMBER } = await import('../src/members.js');
   const s = { members: [] };
   assert.throws(() => setTestMode(s, TEST_MEMBER, { on: true, adminIds: [] }), /测试模式下不能再打开或延长/);
+});
+
+
+test('预先按名字设好角色(2026-10-29):同事第一次登录名字对上就自动开通;中文名 / 英文名、大小写空格都认', () => {
+  const s = { members: [] };
+  const boss = upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: true });
+  const r = addInvite(s, boss, { name: 'Tom  Lee', roles: ['design'] }, 100);
+  assert.equal(s.invites.length, 1); assert.equal(r.invite.by, '老板');
+  addInvite(s, boss, { name: '张三', roles: ['ops', 'pricing'] }, 101);
+  // 英文名对上(大小写、空格不一样也算)
+  const tom = upsertOnLogin(s, { ...u('ou_tom', '李汤姆'), enName: 'tom lee' }, { fromAdmin: false, now: 200 });
+  assert.equal(tom.status, 'active'); assert.deepEqual(tom.roles, ['design']);
+  assert.deepEqual(tom.fromInvite, { name: 'Tom  Lee', by: '老板', at: 200 });
+  assert.deepEqual(s.invites.map((x) => x.name), ['张三']); // 用掉的预设删掉
+  // 名字对不上:照旧待分配
+  const other = upsertOnLogin(s, u('ou_x', '王五'), { fromAdmin: false });
+  assert.equal(other.status, 'pending'); assert.equal(other.fromInvite, undefined);
+  // 已有成员再登录不会再套预设
+  addInvite(s, boss, { name: '赵六', roles: ['design'] });
+  const again = upsertOnLogin(s, u('ou_x', '赵六'), { fromAdmin: false });
+  assert.equal(again.status, 'pending');
+});
+
+test('预设的限制:不能给管理员、不能重复、已登录过的待分配直接开通、已启用的去成员表改;删掉角色从预设里去掉', () => {
+  const s = { members: [] };
+  const boss = upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: true });
+  const staff = upsertOnLogin(s, u('ou_s', '员工'), { fromAdmin: false });
+  assert.throws(() => addInvite(s, staff, { name: 'A', roles: ['design'] }), /只有管理员/);
+  assert.throws(() => addInvite(s, boss, { name: 'A', roles: ['admin'] }), /至少勾一个角色/); // 管理员不能预设
+  assert.throws(() => addInvite(s, boss, { name: '  ', roles: ['design'] }), /名字/);
+  addInvite(s, boss, { name: 'A', roles: ['design', 'admin'] });
+  assert.deepEqual(s.invites[0].roles, ['design']);
+  assert.throws(() => addInvite(s, boss, { name: ' a ', roles: ['ops'] }), /已经预设过/);
+  // 已经登录过、还在待分配:直接开通
+  const r = addInvite(s, boss, { name: '员工', roles: ['ops'] });
+  assert.equal(r.member.id, 'ou_s'); assert.equal(staff.status, 'active'); assert.deepEqual(staff.roles, ['ops']);
+  assert.throws(() => addInvite(s, boss, { name: '老板', roles: ['ops'] }), /已经登录过了/);
+  // 改 / 删
+  const id = s.invites[0].id;
+  updateInvite(s, boss, id, { roles: ['pricing'] }); assert.deepEqual(s.invites[0].roles, ['pricing']);
+  assert.throws(() => updateInvite(s, boss, id, { roles: [] }), /至少勾一个角色/);
+  saveRoles(s, boss, [{ key: 'admin' }, { key: 'design', name: '设计', pages: ['overview'] }]); // 删掉了 pricing
+  assert.deepEqual(s.invites[0].roles, []);
+  // 预设的角色全被删掉了:对上名字也只是待分配
+  const a = upsertOnLogin(s, u('ou_a', 'A'), { fromAdmin: false });
+  assert.equal(a.status, 'pending');
+  assert.equal(a.fromInvite.name, 'A');
+  // 删除预设
+  const b = addInvite(s, boss, { name: 'B', roles: ['design'] }).invite;
+  removeInvite(s, boss, b.id); assert.ok(!s.invites.some((x) => x.id === b.id));
+  assert.throws(() => removeInvite(s, boss, b.id), /找不到/);
+});
+
+test('两条预设都对上(不该发生)就不猜', () => {
+  const s = { invites: [{ id: '1', name: 'Tom', roles: ['design'] }, { id: '2', name: '汤姆', roles: ['ops'] }] };
+  assert.equal(matchInvite(s, { name: '汤姆', enName: 'Tom' }), null);
+  assert.equal(matchInvite(s, { name: '汤姆', enName: '' }).id, '2');
 });

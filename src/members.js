@@ -59,6 +59,15 @@ export function upsertOnLogin(state, user, { fromAdmin, adminIds = [], now = Dat
   const bootstrap = !pinned && fromAdmin && !state.bootstrapDone;
   if (!m) {
     m = { id: user.openId, name: user.name || '新成员', avatar: user.avatar || '', roles: [], status: 'pending', joinedAt: now };
+    // 管理员预先按名字设好了角色(2026-10-29 用户:只有名字、没有飞书 id)→ 第一次登录名字对上就直接开通
+    const inv = matchInvite(state, user);
+    if (inv) {
+      const keys = new Set(rolesOf(state).map((r) => r.key));
+      m.roles = inv.roles.filter((k) => keys.has(k) && k !== 'admin');
+      if (m.roles.length) m.status = 'active';
+      m.fromInvite = { name: inv.name, by: inv.by || '', at: now };
+      state.invites = state.invites.filter((x) => x.id !== inv.id);
+    }
     state.members.push(m);
   }
   if (forceAdmin || (bootstrap && m.status !== 'disabled')) {
@@ -71,6 +80,48 @@ export function upsertOnLogin(state, user, { fromAdmin, adminIds = [], now = Dat
 
 export class MemberError extends Error {}
 const fail = (msg) => { throw new MemberError(msg); };
+
+// ---------- 预先按名字设好角色(还没登录过的同事)----------
+// 管理员只有同事的名字、没有飞书 id:先存一条「预设」,他第一次用飞书登录时名字(中文名或英文名,不分大小写、空格)对上就套用。
+// ⛔ 名字不是唯一身份:预设不能给「管理员」;自动开通的成员标 fromInvite,成员表和操作记录里都看得到,管理员可以核对。
+export const normName = (s) => String(s || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+export function matchInvite(state, user) {
+  const names = [user.name, user.enName].map(normName).filter(Boolean);
+  const hits = (state.invites || []).filter((x) => names.includes(normName(x.name)));
+  return hits.length === 1 ? hits[0] : null; // 对上两条以上(不该发生,添加时就拦了)就不猜,等管理员分配
+}
+export function addInvite(state, actor, { name, roles } = {}, now = Date.now()) {
+  if (!isAdmin(actor)) fail('只有管理员能预先添加同事');
+  const n = String(name || '').trim().slice(0, 30); if (!n) fail('先填同事的名字(和他飞书里显示的一样)');
+  const keys = new Set(rolesOf(state).map((r) => r.key).filter((k) => k !== 'admin'));
+  const rs = [...new Set(roles || [])].filter((k) => keys.has(k));
+  if (!rs.length) fail('至少勾一个角色(管理员不能预设,要等他登录后在成员表里给)');
+  // 已经登录过的:待分配的直接开通,别的提示去成员表改
+  const m = (state.members || []).find((x) => normName(x.name) === normName(n));
+  if (m) {
+    if (m.status !== 'pending') fail(`「${m.name}」已经登录过了,直接在下面的成员表里改他的角色`);
+    m.roles = rs; m.status = 'active';
+    return { member: m };
+  }
+  state.invites ||= [];
+  if (state.invites.some((x) => normName(x.name) === normName(n))) fail(`已经预设过「${n}」了,要改角色就在预设里改`);
+  const inv = { id: `inv_${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: n, roles: rs, at: now, by: actor.name || '' };
+  state.invites.push(inv);
+  return { invite: inv };
+}
+export function updateInvite(state, actor, id, { roles } = {}) {
+  if (!isAdmin(actor)) fail('只有管理员能改');
+  const inv = (state.invites || []).find((x) => x.id === id) || fail('找不到这条预设');
+  const keys = new Set(rolesOf(state).map((r) => r.key).filter((k) => k !== 'admin'));
+  const rs = [...new Set(roles || [])].filter((k) => keys.has(k));
+  if (!rs.length) fail('至少勾一个角色;不要了就删掉这条预设');
+  inv.roles = rs; return inv;
+}
+export function removeInvite(state, actor, id) {
+  if (!isAdmin(actor)) fail('只有管理员能删');
+  const inv = (state.invites || []).find((x) => x.id === id) || fail('找不到这条预设');
+  state.invites = state.invites.filter((x) => x.id !== id); return inv;
+}
 
 // 管理员改成员:角色 / 状态 / 名字
 export function updateMember(state, actor, id, patch) {
@@ -112,6 +163,7 @@ export function saveRoles(state, actor, roles) {
   // 被删掉的角色从成员身上去掉
   const keys = new Set(out.map((r) => r.key));
   for (const m of state.members || []) m.roles = (m.roles || []).filter((k) => keys.has(k));
+  for (const inv of state.invites || []) inv.roles = (inv.roles || []).filter((k) => keys.has(k) && k !== 'admin');
   state.roles = out;
   return out;
 }

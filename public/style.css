@@ -1989,13 +1989,6 @@ body.is-booting #modnav, body.is-booting #me-chip { visibility: hidden; }
 .pcol .pgcol { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pcol > em { display: block; margin-top: 8px; font-size: var(--fs-xs); font-style: normal; color: var(--text-3); }
 .pname { margin: 14px 0 4px; max-width: 520px; }
-.pextra { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
-.pextra > summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); list-style: none; display: flex; align-items: baseline; gap: 8px; }
-.pextra > summary::-webkit-details-marker { display: none; }
-.pextra > summary::before { content: '›'; display: inline-block; width: 10px; transition: transform .15s; color: var(--text-3); }
-.pextra[open] > summary::before { transform: rotate(90deg); }
-.pextra > summary em { font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--text-3); }
-.pextra__why { margin: 8px 0 10px !important; line-height: 1.6; }
 /* 产品图:白底产品图放在白底框里(以前灰框 + 白图,两边露出灰条,像排版错了) */
 .pg__img { background: #fff; border: 1px solid #f0f0f2; }
 .pg__card.is-cut .pg__img { background: #fff; }
@@ -2018,3 +2011,13 @@ body.is-booting #modnav, body.is-booting #me-chip { visibility: hidden; }
 .pgsel .btn:not(.btn-primary):hover { background: rgba(255,255,255,.22); }
 .pgsel__tip { color: rgba(255,255,255,.6); font-size: var(--fs-xs); flex: 1; min-width: 120px; }
 .pg__ghostn { position: absolute; top: -8px; right: -8px; padding: 2px 8px; border-radius: 10px; background: var(--accent); color: #fff; font-size: var(--fs-xs); font-weight: 600; }
+
+/* ---------- 设置 → 成员:预先添加同事(2026-10-29)---------- */
+.invbox { border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 12px 14px; margin-bottom: 14px; background: var(--surface-2); }
+.invbox__h { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.invbox__h .muted { margin: 0; }
+.invbox__f { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.invbox__f .inp { width: 220px; }
+.invbox__roles { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
+.mtable--inv { margin-top: 12px; background: var(--surface); }
+.avatar--ghost { background: var(--surface-3); color: var(--text-3); }

@@ -90,6 +90,9 @@
   后台 iframe 里登录用弹窗(弹窗被拦就给「新窗口打开」链接);直接开网页用整页跳转。
   **防冒充(别去掉)**:弹窗模式的会话只能用飞书回调页显示的 6 位验证码换(弹窗自动传回,传不回就手输;错 5 次作废、只能用一次)——
   否则有人把自己发起的登录链接发给管理员点,就能拿到管理员身份。网页模式靠 `/auth/lark/start` 种的 cookie 核对是同一个浏览器。
+  **预先添加同事**(2026-10-29 用户:只有名字、没有飞书 id):设置 → 成员里填名字 + 勾角色,存 `state.invites`;同事**第一次**用飞书登录时
+  中文名或英文名(`lark-login` 多读了 `en_name`)和预设对上(`normName`:不分大小写、空格)就套用角色并启用,成员标 `fromInvite`,预设删掉,操作记录写清楚。
+  ⛔ 名字不是唯一身份:预设**不能给管理员**;对上两条以上不猜;成员表标「按预设自动开通」,7 天内的在成员面板顶上提醒管理员核对。已登录过、还在待分配的,预设时直接开通。接口 `POST/PUT/DELETE /api/invites`(管理员)。
   **谁能成为管理员**:设了 `LARK_ADMIN_IDS`(飞书 open_id,逗号分隔)→ 只有名单里的人,且每次登录都保证是启用的管理员;
   没设 → 只有「第一个从 Shopify 后台里登录的人」一次,之后 `bootstrapDone` 永久关门。停用成员立即生效(每个请求都查成员状态)。
   **测试模式**(`state.testMode`,`src/members.js` 的 `setTestMode` / `testModeOn`):临时免登录,方便自己试。四道闸别去掉 ——
@@ -117,7 +120,9 @@
   执行器每轮 `planCountdowns` 算「此刻真的在这个计划价格上的产品」(保险库 written.planId、没暂停接管;一个产品几个计划取最早结束的),
   和 `state.cdState` 比,只写 / 删有变化的 → 产品字段 **`custom.cgp_price_cd`**(json `{e, s, l, st}`,`shop-io.js` setCountdowns / deleteCountdowns,每批 25 个)。
   ⛔ 这是改价模块唯一写的产品字段,只动这一个 key;结束 / 暂停 / 提前结束 / 被人手动改价都会删掉。
-  主题 snippets/cgp-campaign-offer.liquid 读它:**改价倒计时 > Collection 置顶清单 > 活动**(活动徽章照常,倒计时 / 样式 / 文字换成改价的);「最后几天才显示」在浏览器按 s 判断。
+  主题 snippets/cgp-campaign-offer.liquid 读它:**改价倒计时 > 活动**(活动徽章照常,倒计时 / 样式 / 文字换成改价的);「最后几天才显示」在浏览器按 s 判断。
+  ⛔ **置顶排序不再管促销标签**(2026-10-29 用户:整个去掉):编辑器里没有倒计时 / 徽章了,写店铺一律写空(`show_countdown` false、`badge_text` 空);
+  以前设过的由定时器 `dropPinPromo` 清掉一次(店里条目重写、每份记操作日志)。主题里读置顶排序徽章的那段代码还在,但字段全是空的 = 不起作用;字段定义也留着(改定义会让设置页标「要更新」)。
   ⛔ **计划设的 Collection 在后台被删了**(2026-10-29 踩过:每分钟「移出 Collection 失败:Collection does not exist」、每小时发一次「改价失败」):
   加入 / 移出报错时执行器先用 `collectionExists` 问一下,真的没了 → 记进 `state.goneCollections`、删掉 `collState`(产品随 Collection 一起没了,不用还原)、日志一笔、通知一次「🗂 Collection 已被删除」,
   之后 `planCollections` 跳过它(价格照常改);问不到 / 还在 = 照旧当失败重试。编辑器里那个 Collection 标红提示。

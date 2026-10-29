@@ -8,7 +8,7 @@ import path from 'node:path';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-sched-'));
 process.env.SCHEDULER_DISABLED = '1';
 const store = await import('../src/schedule-store.js');
-const { runOnce } = await import('../src/scheduler.js');
+const { runOnce, dropPinPromo } = await import('../src/scheduler.js');
 
 const SHOP = 'test-shop.myshopify.com';
 const H = 3600_000, T = Date.UTC(2026, 9, 1, 12);
@@ -129,4 +129,29 @@ test('飞书:没开审批时,跟随的活动还是草稿 → 提醒说「活动�
   const c = cards.find((x) => /活动还是草稿/.test(x.title));
   assert.ok(c, '有「活动还是草稿」的提醒');
   assert.ok(!JSON.stringify(cards).includes('审核'));
+});
+
+
+test('置顶排序的促销标签整个去掉(2026-10-29):设过的清掉、店里重写一次(写空)、每份记一笔;写失败就放回去下次再试', async () => {
+  const pin = (o) => ({ kind: 'pin', state: 'approved', name: 'Flash', collection: { id: '1', title: 'C' }, products: [], hidden: [], start: null, end: null, ...o });
+  const state = { campaigns: [], log: [], pins: [
+    pin({ id: 'p1', shopifyId: 'gid://shopify/Metaobject/9', badge: 'Flash Deal', countdown: true }),
+    pin({ id: 'p2', shopifyId: 'gid://shopify/Metaobject/10' }),
+    pin({ id: 'p3', state: 'draft', badge: '草稿里的' }),
+  ] };
+  const sent = [];
+  const gql = async (ctx, q, v) => { sent.push(v); return { metaobjectUpsert: { metaobject: { id: 'gid://shopify/Metaobject/9', capabilities: { publishable: { status: 'ACTIVE' } } }, userErrors: [] } }; };
+  const out = await dropPinPromo({ shop: 'x', token: 't' }, state, { now: T, gql });
+  assert.deepEqual(out.map((x) => x.id), ['p1', 'p3']);
+  assert.equal(sent.length, 1); // 只有上线过的那份要重写店里
+  const f = Object.fromEntries(sent[0].metaobject.fields.map((x) => [x.key, x.value]));
+  assert.equal(f.badge_text, ''); assert.equal(f.show_countdown, 'false');
+  assert.ok(state.pins.every((p) => !p.badge && !p.countdown));
+  assert.ok(state.log.some((l) => /徽章「Flash Deal」和倒计时/.test(l.note)));
+  assert.equal((await dropPinPromo({ shop: 'x', token: 't' }, state, { now: T, gql })).length, 0); // 第二次什么都不做
+  // 写失败:值放回去,下一分钟再试
+  const st2 = { campaigns: [], log: [], pins: [pin({ id: 'p9', shopifyId: 'gid://shopify/Metaobject/11', badge: 'B' })] };
+  await dropPinPromo({ shop: 'x', token: 't' }, st2, { now: T, gql: async () => { throw new Error('网络断了'); } });
+  assert.equal(st2.pins[0].badge, 'B');
+  assert.ok(st2.log.some((l) => l.action === 'failure'));
 });
