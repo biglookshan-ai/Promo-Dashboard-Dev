@@ -191,7 +191,7 @@ export function scheduleRouter() {
       const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', delete: '删除', purge: '批量清理' };
       const it = findItem(out.state, action.id || out.id);
       const name = action.type === 'save' ? ACT[action.mode] : action.type === 'pause' ? (it?.paused ? '暂停' : '恢复显示') : ACT[action.type] || action.type;
-      const KCN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶清单', salelink: '促销链接', callout: '产品页推广' };
+      const KCN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶排序', salelink: '促销链接', callout: '产品页推广' };
       const k = it?.kind || action.kind;
       req.audit = action.type === 'purge' ? { mod: 'settings', text: `批量删除 ${(out.ids || []).length} 条内容` }
         : { mod: KIND_MOD[k] || 'other', text: `${action.type === 'save' && action.isNew ? '新建' : name === '直接保存' ? '保存' : name}${KCN[k] || '内容'}${it ? `「${titleOf(it)}」` : ''}` };
@@ -478,8 +478,8 @@ export function scheduleRouter() {
     const st = (s.colState || {})[key];
     if (!st) throw new ActionError('这个 Collection 现在没有被接管');
     // 保留后台的改动:不删状态(删了下一分钟会重新接管),标成 released —— 这份清单生效期间不再排,结束只复原临时加 / 移出的产品
-    if (req.body?.release) { delete st.hold; st.released = Date.now(); appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: `保留后台改过的顺序:「${st.pinName || '置顶清单'}」剩下的时间不再排这个 Collection,结束时也不还原顺序`, by: a.name }); }
-    else { delete st.hold; delete st.signature; delete st.released; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个 Collection 的顺序(下一轮按清单重排)', by: a.name }); }
+    if (req.body?.release) { delete st.hold; st.released = Date.now(); appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: `保留后台改过的顺序:「${st.pinName || '置顶排序'}」剩下的时间不再排这个 Collection,结束时也不还原顺序`, by: a.name }); }
+    else { delete st.hold; delete st.signature; delete st.released; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个 Collection 的顺序(下一轮按置顶排序重排)', by: a.name }); }
     replace(req.ctx.shop, s);
     return { ok: true };
   })));
@@ -487,7 +487,7 @@ export function scheduleRouter() {
   // ---- 合集页「平时」的默认排序(规则 src/col-sort.js):全部合集的设置 + 改一个 ----
   // 清单「生效期间完全按我排的顺序」正开着的合集,店里的 cgp_sort_off 是清单临时设的 → 列表里换回平时的值(flag.prev),并标出被哪份清单临时改着
   const withFlags = (rows, s) => rows.map((c) => { const fl = (s.sortFlags || {})[c.id];
-    return fl ? { ...c, off: fl.prev?.value === 'true', offSet: !!fl.prev, held: fl.pinName || '置顶清单' } : c; });
+    return fl ? { ...c, off: fl.prev?.value === 'true', offSet: !!fl.prev, held: fl.pinName || '置顶排序' } : c; });
   r.get('/col-sorts', wrap(async (req) => {
     if (req.query.fresh) bust(req.ctx.shop, 'colsorts');
     const rows = await cached(req.ctx.shop, 'colsorts', 60_000, () => listColSorts(req.ctx, graphql));
@@ -509,7 +509,7 @@ export function scheduleRouter() {
     try { r2 = await applyColSort(req.ctx, id, want, { gql: graphql, state: s }); } catch (e) { throw new ActionError(e.message); }
     if (r2.changed) {
       appendLog(s, { action: 'edit', kind: 'pin', title: r2.title, by: a.name,
-        note: `Collection 页平时的排序:${r2.before} → ${r2.after}${r2.sortChanged ? `(Shopify 后台的排序方式「${r2.sortChanged.from}」→「${r2.sortChanged.to}」)` : ''}${r2.held ? `;「${r2.row.held}」生效期间仍临时完全按清单顺序,结束后用新的` : ''}` });
+        note: `Collection 页平时的排序:${r2.before} → ${r2.after}${r2.sortChanged ? `(Shopify 后台的排序方式「${r2.sortChanged.from}」→「${r2.sortChanged.to}」)` : ''}${r2.held ? `;「${r2.row.held}」生效期间仍临时完全按本次排序,结束后用新的` : ''}` });
       replace(req.ctx.shop, s);
       bust(req.ctx.shop, 'colsorts');
     }
@@ -684,7 +684,7 @@ export function scheduleRouter() {
     const extra = now2.filter((id) => !v.ids.includes(id)).length;
     const movedN = diffOrder(now2, target).moved.size;
     appendLog(s, { action: 'edit', kind: 'pin', title: col.title, by: a.name,
-      note: `回滚到 ${when} 那一版:${movedN} 个换位置${missing.length ? `、${missing.length} 个加回 Collection` : ''}${extra ? `;${extra} 个后来才加进 Collection 的排到最后(没删)` : ''}${st ? ';这个 Collection 的清单接管已暂停' : ''}` });
+      note: `回滚到 ${when} 那一版:${movedN} 个换位置${missing.length ? `、${missing.length} 个加回 Collection` : ''}${extra ? `;${extra} 个后来才加进 Collection 的排到最后(没删)` : ''}${st ? ';这个 Collection 的置顶排序接管已暂停' : ''}` });
     replace(req.ctx.shop, s);
     return { ok: true, moved: movedN, added: missing.length, extra, paused: !!st };
   })));

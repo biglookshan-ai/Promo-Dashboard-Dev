@@ -15,7 +15,7 @@ export const MOD_CN = {
   login: '登录', tools: '工具', reviews: '审核', other: '其他',
 };
 export const KIND_MOD = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pins', salelink: 'salelinks', callout: 'callouts', campaign: 'campaigns' };
-const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶清单', salelink: '促销链接', callout: '产品页推广' };
+const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶排序', salelink: '促销链接', callout: '产品页推广' };
 
 // 只读的 POST(带 body 查东西)不算操作
 const SKIP = new Set(['/schedule/tab-products', '/schedule/counts', '/schedule/callout-scope', '/schedule/products-stock', '/auth/lark/start', '/auth/lark/redeem']);
@@ -47,7 +47,7 @@ const PRICE_CN = { approve: '批准', reject: '退回', pause: '暂停', resume:
 
 // 没有 req.audit 时,按接口 + 请求内容猜一句话
 export function describe(p, body = {}) {
-  if (p === '/schedule/col-hold') return ['pins', body.release ? '保留后台排序(不再按清单排)' : '按本次清单重新排'];
+  if (p === '/schedule/col-hold') return ['pins', body.release ? '保留后台排序(不再按置顶排序来排)' : '按本次排序重新排'];
   if (p.startsWith('/members/')) return ['members', `改成员${body.status ? `(状态 → ${body.status})` : ''}${body.roles ? '(角色)' : ''}${body.name ? `(名字 → ${body.name})` : ''}`];
   if (p === '/schedule/act') {
     const a = body.action || {}; const kind = a.kind;

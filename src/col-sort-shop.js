@@ -57,7 +57,7 @@ export async function applyColSort(ctx, id, want, { gql, state }) {
   const cur = fl ? { ...live, off: fl.prev?.value === 'true', offSet: !!fl.prev } : live;
   const { ops, after, changed } = planSort(cur, want);
   const st = state.colState?.[cid];
-  if (st && ops.sortOrder && ops.sortOrder !== 'MANUAL') throw new Error(`这个 Collection 的顺序现在由「${st.pinName || '置顶清单'}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了、结束也还原不了 —— 等这份清单结束后再改`);
+  if (st && ops.sortOrder && ops.sortOrder !== 'MANUAL') throw new Error(`这个 Collection 的顺序现在由「${st.pinName || '置顶排序'}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了、结束也还原不了 —— 等这份置顶排序结束后再改`);
   if (!changed) return { title: live.title, before: describe(cur), after: describe(after), changed: false, row: { ...cur, held: fl?.pinName || null } };
   // 先改排序方式(失败就什么都没动),再改字段
   if (ops.sortOrder) check(await gql(ctx, SORT_UPDATE, { c: { id: gid(cid), sortOrder: ops.sortOrder } }), 'collectionUpdate');

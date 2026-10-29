@@ -1975,3 +1975,46 @@ body.is-booting .content > *:not(.bootload) { display: none !important; }
 body.is-booting #modnav, body.is-booting #me-chip { visibility: hidden; }
 .bootload__spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--text-2); animation: bootspin .8s linear infinite; }
 @keyframes bootspin { to { transform: rotate(360deg); } }
+
+/* ---------- Collection 置顶排序编辑器(2026-10-29 用户:名称和 Collection 理一理、产品图不要白图配灰底、能多选一起移)---------- */
+.pcol { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; background: var(--surface-2); }
+.pcol--empty { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface); border-style: dashed; }
+.pcol--empty .muted { margin: 0; }
+.pcol__main { display: flex; align-items: center; gap: 12px; }
+.pcol__ico { flex: 0 0 36px; width: 36px; height: 36px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); display: grid; place-items: center; color: var(--text-2); }
+.pcol__ico svg { width: 18px; height: 18px; }
+.pcol__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pcol__t { font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pcol__links { font-size: var(--fs-xs); display: flex; gap: 10px; }
+.pcol .pgcol { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pcol > em { display: block; margin-top: 8px; font-size: var(--fs-xs); font-style: normal; color: var(--text-3); }
+.pname { margin: 14px 0 4px; max-width: 520px; }
+.pextra { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.pextra > summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); list-style: none; display: flex; align-items: baseline; gap: 8px; }
+.pextra > summary::-webkit-details-marker { display: none; }
+.pextra > summary::before { content: '›'; display: inline-block; width: 10px; transition: transform .15s; color: var(--text-3); }
+.pextra[open] > summary::before { transform: rotate(90deg); }
+.pextra > summary em { font-style: normal; font-weight: 400; font-size: var(--fs-xs); color: var(--text-3); }
+.pextra__why { margin: 8px 0 10px !important; line-height: 1.6; }
+/* 产品图:白底产品图放在白底框里(以前灰框 + 白图,两边露出灰条,像排版错了) */
+.pg__img { background: #fff; border: 1px solid #f0f0f2; }
+.pg__card.is-cut .pg__img { background: #fff; }
+.pg--list .pg__img { background: #fff; }
+/* 多选:点卡片选中,右上角打勾;选中条贴在顶上 */
+.pg__chk { position: absolute; top: 8px; right: 8px; z-index: 3; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border-strong); background: rgba(255,255,255,.95); opacity: 0; transition: opacity .12s; pointer-events: none; }
+.pg__card:hover .pg__chk, .pg__card.is-sel .pg__chk, .pg.has-sel .pg__chk { opacity: 1; }
+.pg__card.is-sel .pg__chk { background: var(--accent); border-color: var(--accent); }
+.pg__card.is-sel .pg__chk::after { content: ''; position: absolute; left: 6px; top: 2.5px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.pg__card.is-sel { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent-soft); background: #fbfcff; }
+.pg__acts { right: 34px; }
+.pg--list .pg__chk { top: 50%; right: 10px; transform: translateY(-50%); }
+.pg--list .pg__card { padding-right: 40px; } /* 右边留给勾选圈 */
+.pgsel { position: sticky; top: 0; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 10px; padding: 8px 12px; border-radius: var(--radius); background: var(--text); color: #fff; font-size: var(--fs-sm); box-shadow: var(--shadow-md); }
+.pgsel[hidden] { display: none; }
+.pgsel__n b { font-size: var(--fs-md); }
+.pgsel__mv { display: inline-flex; align-items: center; gap: 6px; }
+.pgsel .inp--xs { width: 64px; color: var(--text); }
+.pgsel .btn:not(.btn-primary) { background: rgba(255,255,255,.12); color: #fff; border-color: rgba(255,255,255,.2); }
+.pgsel .btn:not(.btn-primary):hover { background: rgba(255,255,255,.22); }
+.pgsel__tip { color: rgba(255,255,255,.6); font-size: var(--fs-xs); flex: 1; min-width: 120px; }
+.pg__ghostn { position: absolute; top: -8px; right: -8px; padding: 2px 8px; border-radius: 10px; background: var(--accent); color: #fff; font-size: var(--fs-xs); font-weight: 600; }

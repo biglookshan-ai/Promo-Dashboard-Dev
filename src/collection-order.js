@@ -16,7 +16,7 @@ import { diffOrder } from './order-diff.js';
 import { NEW_COLLECTIONS } from './shopify.js';
 
 export const nid = (x) => String(x ?? '').split('/').pop();
-const pnm = (pin) => pin.name || '未命名清单'; // 清单可以不起名字:提示和记录里别出现「」
+const pnm = (pin) => pin.name || '未命名'; // 清单可以不起名字:提示和记录里别出现「」
 const gid = (id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/Collection/${id}`);
 const pgid = (id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/Product/${id}`);
 
@@ -295,7 +295,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
       const msg = String(e.message || e);
       if (/access denied|not approved|permission/i.test(msg)) { // 没权限:记一下,今天别再试了
         state.colNoScope = now;
-        rep.failures.push({ collection: cid, message: `${msg}(app 还没有「改产品 / Collection」的权限,这类清单暂时只能用前台排序)` });
+        rep.failures.push({ collection: cid, message: `${msg}(app 还没有「改产品 / Collection」的权限,这类置顶排序暂时只能用前台排序)` });
         return rep;
       }
       rep.failures.push({ collection: cid, message: msg });

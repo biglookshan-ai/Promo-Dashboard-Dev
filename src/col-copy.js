@@ -48,7 +48,7 @@ export async function previewCopy(ctx, { target, from }, { gql }) {
 export async function copyOrder(ctx, { target, from }, { gql, state, record = () => {}, by = '' }) {
   const tid = nid(target);
   const st = state.colState?.[tid];
-  if (st && !st.released) throw new Error(`这个 Collection 的顺序现在由「${st.pinName || '置顶清单'}」接管着(app 在按清单改店里的顺序)—— 先暂停或结束这份清单再排`);
+  if (st && !st.released) throw new Error(`这个 Collection 的顺序现在由「${st.pinName || '置顶排序'}」接管着(app 在按置顶排序改店里的顺序)—— 先暂停或结束这份置顶排序再排`);
   const pv = await previewCopy(ctx, { target, from }, { gql });
   const sRow = await readColSort(ctx, from, gql);
   const sortWant = sortWantFrom(sRow);

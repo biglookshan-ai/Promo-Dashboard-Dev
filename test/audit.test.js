@@ -47,7 +47,7 @@ test('按人 / 模块 / 时间 / 文字筛选,新的在前,翻页', () => {
 });
 
 test('接口翻成人话', () => {
-  assert.deepEqual(describe('/schedule/act', { action: { type: 'save', isNew: true, kind: 'pin', values: { name: '黑五' } } }), ['pins', '新建Collection 置顶清单「黑五」']);
-  assert.equal(tidy('新建Collection 置顶清单'), '新建 Collection 置顶清单');
-  assert.deepEqual(describe('/schedule/col-hold', { release: true }), ['pins', '保留后台排序(不再按清单排)']);
+  assert.deepEqual(describe('/schedule/act', { action: { type: 'save', isNew: true, kind: 'pin', values: { name: '黑五' } } }), ['pins', '新建Collection 置顶排序「黑五」']);
+  assert.equal(tidy('新建Collection 置顶排序'), '新建 Collection 置顶排序');
+  assert.deepEqual(describe('/schedule/col-hold', { release: true }), ['pins', '保留后台排序(不再按置顶排序来排)']);
 });
