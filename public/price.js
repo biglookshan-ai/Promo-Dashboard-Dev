@@ -325,11 +325,11 @@ function cdHtml(p, ro) {
     <p class="muted">显示在产品页、搜索页和 Collection 页的产品卡上。同一个产品也在活动里时,<b>活动的徽章照常显示,倒计时换成这个</b>;没改价的产品还是显示活动的倒计时。
       只给真的在这个价格上的产品(有人在后台手动改过价的不显示),计划结束、暂停、提前结束时自动去掉。</p>` : ''}`;
 }
-const SCOPE_MODES = { collections: '指定 Collection', products: '指定产品', search: '按品牌 / 标签 / 类型', all: '全店所有产品' };
+const SCOPE_MODES = { products: '指定产品', collections: '指定 Collection', search: '按品牌 / 标签 / 类型', all: '全店所有产品' }; // 2026-10-29 用户:选产品优先(默认、排第一)
 
 // 改价分组:一个计划里可以分几组,每组自己选产品、自己定规则(比如合集 A 打 85 折、品牌 B 打 7 折、几个产品逐个填价)
 function newGroup(kind, rule, compare) {
-  return { id: uid('g_'), scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
+  return { id: uid('g_'), scope: { mode: 'products', collections: [], products: [], vendor: '', tag: '', type: '' },
     rule: rule ? { ...rule } : { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' },
     compare: compare || (kind === 'permanent' ? 'keep' : 'original') }; // 划线价按分组设(2026-10-28)
 }
@@ -338,7 +338,7 @@ function newPlan(kind) {
     id: uid('p_'), name: '', color: COLORS[0], kind, layer: null, priority: core.PRIO_MAX,
     compare: kind === 'window' ? 'original' : 'keep', campaign: null, note: '',
     rule: { mode: kind === 'permanent' ? 'percent_up' : 'percent_off', value: kind === 'permanent' ? 5 : 15, rounding: '', from: 'price' },
-    scope: { mode: 'collections', collections: [], products: [], vendor: '', tag: '', type: '' },
+    scope: { mode: 'products', collections: [], products: [], vendor: '', tag: '', type: '' },
     tagsAdd: [], tagsRemove: [],
     groups: [newGroup(kind)],
     slots: [{ id: uid('s_'), start: dayAt(1), end: kind === 'permanent' ? null : dayAt(8), items: [], collection: null }],
