@@ -7,7 +7,7 @@ import { load, replace, appendLog } from './schedule-store.js';
 import { withLock } from './sync.js';
 import { knownShops } from './token-store.js';
 import { teamEnabled, authorizeUrl, loginWithCode, issueSession, newLoginState, takeLoginState, finishLoginState, loginStatus, redeemLoginState } from './lark-login.js';
-import { PAGES, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, addInvite, updateInvite, removeInvite, setTestMode, testModeOn, testModeLeft, canStartTestMode, TEST_MODE_MAX_HOURS, MemberError } from './members.js';
+import { PAGES, pageNames, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, addInvite, updateInvite, removeInvite, setTestMode, testModeOn, testModeLeft, canStartTestMode, TEST_MODE_MAX_HOURS, MemberError } from './members.js';
 
 const SESSION_KEY = 'cgp-app-session'; // 和 public/auth.js 一致
 const COOKIE = 'cgp_lark_login';
@@ -114,7 +114,7 @@ export function apiAuthRouter() {
     const m = req.ctx.member;
     if (m && m.status === 'active' && !req.ctx.testMode) noteOpen(req.ctx.shop, m);
     return { larkEnabled: teamEnabled(), fromAdmin: !!req.ctx.fromAdmin, member: m ? { id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status } : null,
-      admin: isAdmin(m), pages: pagesOf(s, m), adminPinned: !!process.env.LARK_ADMIN_IDS,
+      admin: isAdmin(m), pages: pagesOf(s, m), pageNames: pageNames(), adminPinned: !!process.env.LARK_ADMIN_IDS,
       testMode: testModeOn(s) ? { on: true, left: testModeLeft(s), byName: s.testMode.byName || '', iam: !!req.ctx.testMode } : { on: false },
       canStartTestMode: canStartTestMode(m, adminIds()), testModeMaxHours: TEST_MODE_MAX_HOURS, roles: rolesOf(s).map((x) => ({ key: x.key, name: x.name })),
       // 管理员才看:有几个新登录的人等着分配角色

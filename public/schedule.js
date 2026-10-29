@@ -3098,6 +3098,13 @@
     const N = S.settings.notify; if (N.due === undefined) N.due = true;
     const live = MODE === 'live';
     const larkOn = !!window.CGP_ME?.larkEnabled; // 开了飞书登录:成员管理和数据模式无关,一直显示
+    // 不是管理员(2026-10-29 用户问同事会不会看到设置):设置只给管理员 —— 同事点左下角自己的名字也只看到「我的账号」(名字、角色、能看哪些页面、退出登录)
+    if (larkOn && !window.CGP_ME.admin) {
+      const me0 = window.CGP_ME; const pn = me0.pageNames || {};
+      $('#st-root').innerHTML = `${pageHead('我的账号', '设置、成员和工具只有管理员能看;要开别的页面找管理员')}${larkPanelsHtml()}
+        <section class="panel"><div class="panel__h"><h3>我能看的页面</h3></div><p class="muted">${(me0.pages || []).filter((p) => !['settings', 'tools'].includes(p)).map((p) => esc(pn[p] || p)).join('、') || '—'},以及「操作记录」</p></section>`;
+      bindLarkPanels(); return;
+    }
     const teamOn = team(); // 多人协作关着:不显示成员与角色
     const apprOn = approvalsOn(); // 没开审批:不显示默认审批人、只跟审批 / 分工有关的通知
     const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''} ${live && !isApprover() ? 'disabled' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
