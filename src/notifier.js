@@ -6,6 +6,7 @@ import { sendLark } from './lark.js';
 import { itemStatus, effectiveWindow, campaignIndex, ENDING_SOON_MS } from './schedule-core.js';
 import { titleOf, KIND_CN, findItem, effApprover } from './schedule-actions.js';
 import { sendDMs } from './lark-bot.js';
+import { approvalsOn } from './members.js';
 
 const TZ = 'Europe/London';
 const DAY = 86400000;
@@ -18,7 +19,7 @@ const who = (state, id) => (state.members || []).find((u) => u.id === id)?.name 
 // 飞书模式:审核人 = 启用中的管理员;否则用旧的 Shopify 员工名单
 const approvers = (state) => ((state.members || []).some((m) => m.status === 'active')
   ? state.members.filter((m) => m.status === 'active' && (m.roles || []).includes('admin')).map((m) => m.name)
-  : state.staff.filter((u) => u.role === 'approver').map((u) => u.name)).join('、') || '审核人';
+  : state.staff.filter((u) => u.role === 'approver').map((u) => u.name)).join('、') || (approvalsOn() ? '审核人' : '管理员');
 const line = (it) => `**${KIND_CN[it.kind]}** · ${titleOf(it)}`;
 // 这条内容由谁审批(指定的 / 默认的;都没有就是管理员们)
 const apprName = (state, it) => { const a = effApprover(state, it); return a ? who(state, a) : approvers(state); };
@@ -63,6 +64,12 @@ export function schedulerMessages(state, { changes = [], failures = [] }, { appU
     for (const it of [...state.campaigns, ...state.banners, ...state.topbar, ...state.tbstyles]) {
       const s = itemStatus(it, camps, now); const w = effectiveWindow(it, camps);
       if (!['pending', 'waiting'].includes(s) || w.start == null || w.start > now) continue;
+      // 没开审批(2026-10-29 起):「等活动批准」其实是跟随的活动还是草稿 —— 别再叫人「审核」
+      if (s === 'waiting' && !approvalsOn()) {
+        out.push({ key: `unapproved:${it.id}:${w.start}`, card: { title: '⏰ 到点了,但跟随的活动还是草稿', color: 'red', button: btn,
+          lines: [line(it), `原定 ${fDT(w.start)} 上线,它跟随的活动还是草稿,所以前台没显示`, '打开那个活动,点「保存并排期」就会上线'] } });
+        continue;
+      }
       out.push({ key: `unapproved:${it.id}:${w.start}`, card: { title: '⏰ 到点了,但还没批准', color: 'red', button: btn,
         lines: [line(it), `原定 ${fDT(w.start)} 上线,${s === 'waiting' ? '它跟随的活动' : '它'}还没批准,所以前台没显示`, `请 ${apprName(state, s === 'waiting' ? state.campaigns.find((c) => c.id === it.campaign) || it : it)} 审核`] } });
     }
@@ -82,7 +89,7 @@ export function digestMessages(state, { appUrl, now = Date.now() } = {}) {
     const tomorrow = londonDate(now + DAY);
     const list = items.filter((x) => { const w = effectiveWindow(x, camps); return w.start != null && londonDate(w.start) === tomorrow && ['scheduled', 'pending', 'waiting'].includes(itemStatus(x, camps, now)); });
     if (list.length) out.push({ key: `dayBefore:${today}`, card: { title: `📅 明天要上线 ${list.length} 条`, color: 'blue', button: btn,
-      lines: list.map((x) => { const s = itemStatus(x, camps, now); return `${fmt(effectiveWindow(x, camps).start, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} · ${line(x)}${s !== 'scheduled' ? ' · ⚠️ **还没批准,到点不会上线**' : ''}`; }) } });
+      lines: list.map((x) => { const s = itemStatus(x, camps, now); return `${fmt(effectiveWindow(x, camps).start, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} · ${line(x)}${s !== 'scheduled' ? (s === 'waiting' && !approvalsOn() ? ' · ⚠️ **跟随的活动还是草稿,到点不会上线**' : ' · ⚠️ **还没批准,到点不会上线**') : ''}`; }) } });
   }
   if (n.endingSoon) {
     const list = items.filter((x) => { const w = effectiveWindow(x, camps); return itemStatus(x, camps, now) === 'live' && w.end != null && w.end - now <= ENDING_SOON_MS; });

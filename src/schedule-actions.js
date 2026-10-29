@@ -231,7 +231,9 @@ function run(input, action, actor, now) {
         if (other && other !== actor.id) effects.push({ type: 'notify', event: 'decision', id: it.id, approved: true, to: other, change: approved, edited: true });
         Object.assign(it, v, { state: 'approved', pendingChange: null, rejectNote: null, lastReject: null, approvedBy: actor.id, approvedAt: now });
         if (isNew) list.push(it);
-        addLog(doc, now, wasNew ? 'approve' : 'edit', it, wasNew ? '审批人自己排期(自动批准)' : '审批人直接修改', actor);
+        // 没开审批(actor.direct):就是「发布 / 修改」,别写成「批准」
+        if (actor.direct) addLog(doc, now, wasNew ? 'publish' : 'edit', it, '', actor);
+        else addLog(doc, now, wasNew ? 'approve' : 'edit', it, wasNew ? '审批人自己排期(自动批准)' : '审批人直接修改', actor);
         effects.push({ type: 'sync', id: it.id });
         if (kind === 'campaign') followersOf(doc, it.id).forEach((f) => effects.push({ type: 'sync', id: f.id }));
         message = '已保存';

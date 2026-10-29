@@ -163,7 +163,7 @@
   const team = () => !!S.lark;
   // 审批(审批人 / 分工 / 我的工作 / 审核页 / 审批私信):2026-10-28 起默认关,飞书登录开着也不审批,保存直接生效
   const approvalsOn = () => !!S.approvals;
-  const me = () => { const u = S.staff.find((x) => x.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' }; return approvalsOn() ? u : { ...u, role: 'approver' }; };
+  const me = () => { const u = S.staff.find((x) => x.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' }; return approvalsOn() ? u : { ...u, role: 'approver', direct: true }; };
   const isApprover = () => me().role === 'approver'; // 管理员
   const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
   // ---- v3 分工:每条内容的负责人 / 审批人 / 抄送 / 截止(规则在 /lib/schedule-actions.js)----
@@ -293,10 +293,14 @@
   // 状态页签:上线中放第一、默认选中;「全部」放最后
   const TABS = [['live', '上线中'], ['scheduled', '已排期'], ['pending', '待审核'], ['draft', '草稿'], ['paused', '已暂停'], ['ended', '已结束'], ['', '全部']];
   // 「待审核」也包括:等活动批准的、以及已上线但有修改在等审核的(线上照常显示)
-  const inTab = (x, st) => !st || status(x) === st || (st === 'pending' && (status(x) === 'waiting' || !!x.pendingChange)) || (st === 'draft' && status(x) === 'rejected');
+  // 没开审批(2026-10-29 用户:暂时全部去掉审核):「等活动批准」其实就是活动还是草稿 → 归「草稿」;「待审核」页签只在真有遗留时显示
+  const inTab = (x, st) => !st || status(x) === st
+    || (st === 'pending' && ((approvalsOn() && status(x) === 'waiting') || !!x.pendingChange))
+    || (st === 'draft' && (status(x) === 'rejected' || (!approvalsOn() && status(x) === 'waiting')));
   const tabsHtml = (list, cur) => TABS.map(([k, l]) => {
     const n = list.filter((x) => inTab(x, k)).length;
     if (k === 'paused' && !n) return '';
+    if (k === 'pending' && !n && !approvalsOn()) return '';
     return `<button class="ftab ${cur === k ? 'is-active' : ''}" data-st="${k}" type="button">${l}<span>${n}</span></button>`;
   }).join('');
 
@@ -429,7 +433,7 @@
     return `<section class="alert">
       <div class="alert__h">⚠️ 需要留意</div>
       ${ending.map((x) => row(x, `<b>${relDay(win(x).end)}</b>自动下架 · ${fDT(win(x).end)} <span class="muted">要延长就改结束时间,要替换就提前做好新的</span>`)).join('')}
-      ${unapproved.map((x) => row(x, `<b>${relDay(win(x).start)}</b>该上线,但${status(x) === 'waiting' ? '所属活动' : ''}还没批准`)).join('')}
+      ${unapproved.map((x) => row(x, `<b>${relDay(win(x).start)}</b>该上线,但${status(x) === 'waiting' ? (approvalsOn() ? '所属活动还没批准' : '所属活动还是草稿') : '还没批准'}`)).join('')}
     </section>`;
   }
 
@@ -638,7 +642,7 @@
           <span class="evrow__time">${fmt(e.at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>
           <span class="evrow__act evrow__act--${e.type}">${e.type === 'up' ? I.up + '上线' : I.down + '下线'}</span>
           ${miniThumb(e.x)}<span class="evrow__t">${esc(titleOf(e.x))}</span>
-          ${e.s === 'pending' || e.s === 'waiting' ? `<span class="tag tag--warn">${e.s === 'pending' ? '还没批准' : '活动未批准'}</span>` : ''}
+          ${e.s === 'pending' || e.s === 'waiting' ? `<span class="tag tag--warn">${e.s === 'pending' ? '还没批准' : approvalsOn() ? '活动未批准' : '活动是草稿'}</span>` : ''}
         </button>`).join('')}
       </div>`).join('') : empty('接下来 14 天没有上线 / 下线变化');
 
@@ -683,7 +687,7 @@
         </div>
         <div class="gt__legend">
           <span><i class="lg lg--live"></i>上线中</span><span><i class="lg lg--scheduled"></i>已排期</span>
-          <span><i class="lg lg--pending"></i>待审核 / 未批准</span><span><i class="lg lg--paused"></i>已暂停</span><span><i class="lg lg--ended"></i>已结束</span>
+          <span><i class="lg lg--pending"></i>${approvalsOn() ? '待审核 / 未批准' : '活动是草稿(到点不会上线)'}</span><span><i class="lg lg--paused"></i>已暂停</span><span><i class="lg lg--ended"></i>已结束</span>
           <span><i class="lg lg--ending"></i>${ENDING_DAYS} 天内下架</span>
           <span class="muted">鼠标移到一行上看大图和详情 · 条的端点淡出 = 超出这段时间或没有结束时间</span>
         </div>
@@ -1017,7 +1021,7 @@
       <div class="hubset__g">
         ${item('时间', `<b>${w.start != null ? fDT(w.start) : '立即'} → ${w.end != null ? fDT(w.end) : '不结束'}</b>`, `${span}${left ? ' · ' + left : ''}`)}
         ${item('参加的产品', `<b>${noScope ? (campLinks(c).length ? '促销链接里的产品' : '没选产品') : `${st.total}${st.unknown ? '+' : ''} 个产品`}</b>`, `${noScope ? (campLinks(c).length ? '没另外选 Collection / 标签 / 产品' : '参加的产品 = 显示活动徽章和倒计时的产品') : campScope(c, false, '<br>')}${slCoverHtml(c)}`)}
-        ${item('产品上显示', shows, '', `${quick}<span class="qset__hint">改了马上保存${c.state === 'approved' ? ',网站马上生效' : '(活动还是草稿,批准后才上网站)'};颜色、倒计时文案在「修改活动设置」里</span>`)}
+        ${item('产品上显示', shows, '', `${quick}<span class="qset__hint">改了马上保存${c.state === 'approved' ? ',网站马上生效' : approvalsOn() ? '(活动还是草稿,批准后才上网站)' : '(活动还是草稿,「保存并排期」后才上网站)'};颜色、倒计时文案在「修改活动设置」里</span>`)}
       </div>
     </section>`;
   }
@@ -1129,7 +1133,7 @@
       const waiting = content.filter((x) => x.state === 'pending' || x.pendingChange).length + plans.filter((p) => p.state === 'pending' || p.pendingChange).length;
       const pct = total ? Math.round((done / total) * 100) : 0;
       prog = total ? `<div class="hubprog"><div class="hubprog__bar"><span style="width:${pct}%"></span></div>
-        <div class="hubprog__n"><b>${done}</b> / ${total} 项已批准(${pct}%)${waiting ? ` · <span class="tx-warn">${waiting} 项等审批</span>` : ''}</div></div>` : '';
+        <div class="hubprog__n"><b>${done}</b> / ${total} 项${approvalsOn() ? '已批准' : '已发布'}(${pct}%)${waiting ? ` · <span class="tx-warn">${waiting} 项等审批</span>` : ''}</div></div>` : '';
     }
     const checks = consistencyChecks(c, canPrice ? (hubPrice.plans || undefined) : null);
     const links = c.larkLinks || [];
@@ -2300,7 +2304,7 @@
           <div class="lk__b"><b>${esc(p.title)}</b> ${linkPair('products', p)}
             <div class="muted">在 ${p.collections.length} 个 Collection 里 · ${p.tags.length} 个标签</div>
             ${r.campaigns.length ? r.campaigns.map((c) => { const x = byId(c.id); return `<div class="lk__c">${x ? badge(x) : ''}<button class="linkbtn" data-open="${c.id}" type="button">${esc(c.name)}</button><span class="muted">${esc(c.why.join(' · '))}</span></div>`; }).join('')
-              : '<p class="muted">不在任何已批准的活动里。</p>'}
+              : `<p class="muted">不在任何${approvalsOn() ? '已批准' : '已发布'}的活动里。</p>`}
           </div></div>`;
       } catch (e) { out.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
     };
@@ -2442,6 +2446,7 @@
   // 每次保存、提交、批准、退回、暂停、删除、回滚都记一版(服务器 src/item-history.js)。这里能回看、对比、复制、回滚。
   let hsRows = null; let hsPeople = []; let hsBusy = false; const hsF = { kind: '', q: '', by: '' };
   const STATE_CN = { draft: '草稿', pending: '待审核', approved: '已批准', rejected: '已退回', new: '新建' };
+  const stateCn = (s) => (s === 'approved' && !approvalsOn() ? '已发布' : STATE_CN[s] || s || '');
   const changedText = (keys) => (keys == null ? '第一版' : keys.length ? `改了:${keys.slice(0, 5).map((k) => FIELD[k] || k).join('、')}${keys.length > 5 ? ` 等 ${keys.length} 项` : ''}` : '');
   async function loadHistoryPage() {
     if (MODE !== 'live') { hsRows = []; return renderHistory(); }
@@ -2516,7 +2521,7 @@
       ...(window.cgpCanSee && window.cgpCanSee('price') ? [['price', '改价']] : [])];
     const byDay = new Map();
     for (const r of hsRows || []) { const d = fDate(r.at); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(r); }
-    root.innerHTML = `${pageHead('历史记录', '每一次保存、提交、批准、退回、暂停、删除、回滚都记一版 —— 点开能看那一版的完整内容、和现在对比、复制成新的、回滚回去(回滚也走审批)。')}
+    root.innerHTML = `${pageHead('历史记录', approvalsOn() ? '每一次保存、提交、批准、退回、暂停、删除、回滚都记一版 —— 点开能看那一版的完整内容、和现在对比、复制成新的、回滚回去(回滚也走审批)。' : '每一次保存、暂停、删除、回滚都记一版 —— 点开能看那一版的完整内容、和现在对比、复制成新的、回滚回去。')}
       <section class="panel">
         <div class="hs-f">
           <select class="sel" id="hs-kind">${kinds.map(([k, l]) => `<option value="${k}" ${hsF.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -2588,7 +2593,7 @@
     $('#ih-list').innerHTML = r.versions.map((v, i) => `<button type="button" class="hist__i" data-i="${i}">
         <span class="hist__t"><b>${esc(fDT(v.at))}</b>${i === 0 ? '<span class="tag tag--ok">最新</span>' : ''}</span>
         <span class="hist__w">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}</span>
-        <span class="hist__c">${esc(STATE_CN[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.deleted ? ' · 已删除' : ''}${v.changed?.length ? ` · ${esc(changedText(v.changed))}` : ''}</span></button>`).join('');
+        <span class="hist__c">${esc(stateCn(v.state))}${v.paused ? ' · 暂停中' : ''}${v.deleted ? ' · 已删除' : ''}${v.changed?.length ? ` · ${esc(changedText(v.changed))}` : ''}</span></button>`).join('');
     const curVals = cur ? (() => { const o = {}; for (const k of Object.keys(FIELD)) if (k in cur) o[k] = cur[k]; return o; })() : null;
     const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) || ((a == null || a === '') && (b == null || b === ''));
     const show = (i) => {
@@ -2604,7 +2609,7 @@
       // 合集置顶清单 / 促销链接:产品按顺序画成卡片(和编辑器一样能切网格 / 列表),标出和现在的不同
       const cards = ['pin', 'salelink'].includes(kind) ? histCardsHtml(v.values, curVals, kind) : '';
       $('#ih-pv').innerHTML = `<div class="hist__h"><b>${esc(fDT(v.at))} 那一版</b> <span class="muted">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}${v.note ? ` · ${esc(v.note)}` : ''}</span></div>
-        <p class="muted">那时的状态:${esc(STATE_CN[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.deleted ? ' · 这一版之后被删除了' : ''}${curVals ? ` · <b>${diffKeys.length ? `和现在有 ${diffKeys.length} 处不一样(标黄的行)` : '和现在一模一样'}</b>` : ''}</p>
+        <p class="muted">那时的状态:${esc(stateCn(v.state))}${v.paused ? ' · 暂停中' : ''}${v.deleted ? ' · 这一版之后被删除了' : ''}${curVals ? ` · <b>${diffKeys.length ? `和现在有 ${diffKeys.length} 处不一样(标黄的行)` : '和现在一模一样'}</b>` : ''}</p>
         ${cards}
         <table class="rvdiff ihdiff"><thead><tr><th>字段</th><th>这一版</th>${curVals ? '<th>现在</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
         ${v.pending ? `<p class="muted" style="margin-top:12px">这一版还有一个<b>等审批的修改</b>(那时线上还是上面的内容):</p>
@@ -2613,7 +2618,7 @@
       const canRollback = cur && diffKeys.length;
       const mode = !cur ? null : cur.state === 'approved' ? (canAppr(cur) ? 'publish' : 'submit') : cur.state === 'pending' ? 'submit' : 'draft';
       $('#ih-tip').textContent = !cur ? '这条内容已经删掉了,可以复制成一条新的(恢复)' : canRollback
-        ? (mode === 'publish' ? '你是审批人:回滚马上生效' : mode === 'submit' ? '回滚会提交给审批人,批准前线上保持现在的内容' : '回滚后存为草稿') : '';
+        ? (mode === 'publish' ? (approvalsOn() ? '你是审批人:回滚马上生效' : '回滚马上生效') : mode === 'submit' ? '回滚会提交给审批人,批准前线上保持现在的内容' : '回滚后存为草稿') : '';
       $('#ih-acts').innerHTML = `<button class="btn" type="button" id="ih-copy">${cur ? '复制成新的' : '复制成新的(恢复)'}</button>
         ${canRollback ? `<button class="btn btn-primary" type="button" id="ih-rb">${mode === 'publish' ? '回滚到这一版' : mode === 'submit' ? '回滚到这一版(提交审核)' : '回滚到这一版(存草稿)'}</button>` : ''}`;
       $('#ih-copy').onclick = () => {
@@ -2672,6 +2677,7 @@
     return esc(typeof v === 'object' ? JSON.stringify(v) : v);
   }
   const PSTATE = { draft: '草稿', pending: '待审核', approved: '已批准', rejected: '已退回', new: '新建' };
+  const pstateCn = (s) => (s === 'approved' && !approvalsOn() ? '已发布' : PSTATE[s] || s || '');
   async function openPlanHistory(id) {
     hidePop();
     $('#drawer').innerHTML = `<div class="drawer__h"><div><b>改价计划 · 历史版本</b> <span class="muted" id="ih-title"></span></div>
@@ -2689,7 +2695,7 @@
     $('#ih-list').innerHTML = r.versions.map((v, i) => `<button type="button" class="hist__i" data-i="${i}">
         <span class="hist__t"><b>${esc(fDT(v.at))}</b>${i === 0 ? '<span class="tag tag--ok">最新</span>' : ''}</span>
         <span class="hist__w">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}</span>
-        <span class="hist__c">${esc(PSTATE[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.stopped ? ' · 已提前结束' : ''}${v.deleted ? ' · 已删除' : ''}${v.changed?.length ? ` · ${esc(planChangedText(v.changed))}` : ''}</span></button>`).join('');
+        <span class="hist__c">${esc(pstateCn(v.state))}${v.paused ? ' · 暂停中' : ''}${v.stopped ? ' · 已提前结束' : ''}${v.deleted ? ' · 已删除' : ''}${v.changed?.length ? ` · ${esc(planChangedText(v.changed))}` : ''}</span></button>`).join('');
     const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
     const show = (i) => {
       const v = r.versions[i];
@@ -2697,13 +2703,13 @@
       const keys = Object.keys(PFIELD).filter((k) => k in v.values || (cur && k in cur));
       const diffKeys = cur ? keys.filter((k) => !same(v.values[k], cur[k])) : [];
       $('#ih-pv').innerHTML = `<div class="hist__h"><b>${esc(fDT(v.at))} 那一版</b> <span class="muted">${esc(v.action || '')}${v.by ? ` · ${esc(v.by)}` : ''}${v.note ? ` · ${esc(v.note)}` : ''}</span></div>
-        <p class="muted">那时的状态:${esc(PSTATE[v.state] || v.state || '')}${v.paused ? ' · 暂停中' : ''}${v.stopped ? ' · 已提前结束' : ''}${v.deleted ? ' · 这一版之后被删除了' : ''}${cur ? ` · <b>${diffKeys.length ? `和现在有 ${diffKeys.length} 处不一样(标黄的行)` : '和现在一模一样'}</b>` : ''}</p>
+        <p class="muted">那时的状态:${esc(pstateCn(v.state))}${v.paused ? ' · 暂停中' : ''}${v.stopped ? ' · 已提前结束' : ''}${v.deleted ? ' · 这一版之后被删除了' : ''}${cur ? ` · <b>${diffKeys.length ? `和现在有 ${diffKeys.length} 处不一样(标黄的行)` : '和现在一模一样'}</b>` : ''}</p>
         <table class="rvdiff ihdiff"><thead><tr><th>字段</th><th>这一版</th>${cur ? '<th>现在</th>' : ''}</tr></thead><tbody>
           ${keys.map((k) => `<tr class="${diffKeys.includes(k) ? 'is-diff' : ''}"><td>${PFIELD[k]}</td><td>${pShowVal(k, v.values[k])}</td>${cur ? `<td>${pShowVal(k, cur[k])}</td>` : ''}</tr>`).join('')}</tbody></table>`;
       const canRollback = cur && diffKeys.length && !['ended', 'done'].includes(cur.state);
       const mode = !cur ? null : ['approved', 'pending'].includes(cur.state) ? 'submit' : 'draft';
       $('#ih-tip').textContent = !cur ? '这个计划已经删掉了,可以复制成一个新计划(恢复)'
-        : canRollback ? (mode === 'submit' ? '回滚后:你是这个计划的审批人就马上生效,不是就提交给审批人;已经开始的时段按改价规则锁定,改不了' : '回滚后存为草稿') : '';
+        : canRollback ? (mode === 'submit' ? (approvalsOn() ? '回滚后:你是这个计划的审批人就马上生效,不是就提交给审批人;已经开始的时段按改价规则锁定,改不了' : '回滚后马上生效;已经开始的时段按改价规则锁定,改不了') : '回滚后存为草稿') : '';
       $('#ih-acts').innerHTML = `<button class="btn" type="button" id="ih-copy">${cur ? '复制成新计划' : '复制成新计划(恢复)'}</button>
         ${canRollback ? `<button class="btn btn-primary" type="button" id="ih-rb">回滚到这一版</button>` : ''}`;
       $('#ih-copy').onclick = async () => {
@@ -2878,7 +2884,7 @@
   }
 
   // ================= 设置 =================
-  const ACT = { up: '上线', down: '下线', approve: '批准', reject: '退回', submit: '提交审核', draft: '存草稿', reorder: '调整顺序', pause: '暂停', resume: '恢复', delete: '删除', edit: '修改' };
+  const ACT = { up: '上线', down: '下线', publish: '发布', import: '导入', approve: '批准', reject: '退回', submit: '提交审核', draft: '存草稿', reorder: '调整顺序', pause: '暂停', resume: '恢复', delete: '删除', edit: '修改' };
   const logRow = (l) => `<div class="logrow"><span class="logrow__t">${fDT(l.at)}</span><span class="lact lact--${l.action}">${ACT[l.action] || l.action}</span>${kindChip(l.kind)}<span class="logrow__x">${esc(l.title)}</span><span class="muted">${esc(l.note || '')}${l.by ? ' · ' + esc(l.by) : ''}</span></div>`;
   // ---- v3 飞书登录:我 / 成员与角色(管理员)/ 角色能看的页面 ----
   let MEM = null; // { members, roles, pages }(管理员才有)
@@ -3261,7 +3267,7 @@
         ${st.ready ? `<div><div class="conn__k">4. 导入现有内容</div>
           ${S.imported && MODE === 'live' ? `<div class="conn__r"><span class="ok">✓</span><span>${fDT(S.imported.at)} 从「${esc(S.imported.theme)}」导入了 ${S.imported.banners} 张 Banner、${S.imported.topbar} 条顶栏${S.imported.pmodules ? `、${S.imported.pmodules} 个商品模块平时版本` : ''}</span></div>
             ${S.imported.skipped?.length ? `<div class="note note--warn">跳过 ${S.imported.skipped.length} 个:${S.imported.skipped.map((x) => `${esc(x.title || '')}(${esc(x.reason)})`).join('、')}</div>` : ''}` : ''}
-          <p class="muted">把线上主题首页<b>正在显示的 Banner</b>、顶栏公告和顶栏配色,以及首页两个商品模块现在的标题和页签(当「平时版本」)导进来,变成「已批准 · 长期显示」,和现在网站上一样。只读主题、不改主题;可以重复点,导过的会跳过。</p>
+          <p class="muted">把线上主题首页<b>正在显示的 Banner</b>、顶栏公告和顶栏配色,以及首页两个商品模块现在的标题和页签(当「平时版本」)导进来,变成${approvalsOn() ? '「已批准 · 长期显示」' : '「长期显示」'},和现在网站上一样。只读主题、不改主题;可以重复点,导过的会跳过。</p>
           <button class="btn btn-sm ${S.imported && MODE === 'live' ? '' : 'btn-primary'}" data-conn="import" type="button">从主题导入</button><span class="muted" id="imp-prev"></span></div>` : ''}
         ${st.ready && MODE === 'live' ? `<div><div class="conn__k">5. 上线前对照正式主题</div>
           <p class="muted">主题改造上线后,首页的 Banner、顶栏、两个商品模块显示的是 <b>app 里的内容</b>。导入之后编辑器里又换过的(加了新 Banner、删了旧的、改了文案、换了页签),app 里还是旧的。
@@ -3458,7 +3464,7 @@
       ${kind !== 'campaign' ? `<div class="tm tm--campaign" ${mode === 'campaign' ? '' : 'hidden'}>
         <select class="sel" name="campaign"><option value="">选择活动…</option>${S.campaigns.map((c) => `<option value="${c.id}" ${it.campaign === c.id ? 'selected' : ''}>${esc(c.name)} · ${esc(winText(c))}</option>`).join('')}</select>
         <em>和活动同时上线、同时结束</em></div>
-        <div class="tm tm--long" ${mode === 'long' ? '' : 'hidden'}><em>不设时间,批准后一直显示,直到手动暂停</em></div>` : ''}
+        <div class="tm tm--long" ${mode === 'long' ? '' : 'hidden'}><em>不设时间,${approvalsOn() ? '批准' : '保存'}后一直显示,直到手动暂停</em></div>` : ''}
       <em class="tz">时间按英国时间 · 上线中的内容在下架前 ${ENDING_DAYS} 天会提醒</em>
     </div>`;
   }
@@ -4876,6 +4882,7 @@
 
   // ================= 全局 =================
   function renderAll() {
+    ST.waiting = approvalsOn() ? '等活动批准' : '活动是草稿'; // 没开审批:「等活动批准」其实就是活动还是草稿
     applySiteStyle(); hidePop();
     renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderSaleLinks(); renderCallouts(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
     if (isActive('history')) renderHistory();

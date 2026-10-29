@@ -20,7 +20,7 @@ const numId = (gid) => String(gid || '').split('/').pop();
 const toGid = (type, id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/${type}/${id}`);
 
 // 谁在操作:飞书成员(管理员 = 'approver');没开飞书的旧模式下按单个管理员处理
-const actorOfReq = (req) => (req.ctx.member ? actorOf(req.ctx.member) : { id: req.ctx.user || 'admin-token', name: '管理员', role: 'approver' });
+const actorOfReq = (req) => (req.ctx.member ? actorOf(req.ctx.member) : { id: req.ctx.user || 'admin-token', name: '管理员', role: 'approver', ...(approvalsOn() ? {} : { direct: true }) });
 // 能被选成审批人 / 负责人 / 抄送的人:启用中、能看改价页面的成员
 function pricePeople(shop) {
   if (!teamEnabled()) return []; // 「多人协作」关着:不分工

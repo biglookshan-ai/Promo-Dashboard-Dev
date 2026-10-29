@@ -549,7 +549,7 @@ body.no-scroll { overflow: hidden; }
 .logrow__t { color: var(--text-3); width: 128px; flex: none; font-variant-numeric: tabular-nums; }
 .logrow__x { font-weight: 500; }
 .lact { font-size: 12px; font-weight: 600; border-radius: 4px; padding: 0 6px; background: #f0f0f3; color: var(--text-2); flex: none; }
-.lact--up, .lact--approve { background: var(--ok-soft); color: var(--ok); }
+.lact--up, .lact--approve, .lact--publish { background: var(--ok-soft); color: var(--ok); }
 .lact--reject, .lact--delete { background: var(--danger-soft); color: var(--danger); }
 .lact--submit { background: var(--warn-soft); color: var(--warn); }
 

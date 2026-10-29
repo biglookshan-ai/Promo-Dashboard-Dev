@@ -181,3 +181,12 @@ test('划线价按分组:开始后改某一组的方式不行;老计划打开后
   assert.doesNotThrow(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: withGroups('original') }, ed, now)); // 补上的一样
   assert.throws(() => applyAction(doc, { type: 'save', mode: 'submit', id: 'p1', values: withGroups('clear') }, ed, now), /划线价方式不能再改/);
 });
+
+test('没开审批(actor.direct):保存 = 发布,提示和日志都不说「批准」', () => {
+  const direct = { id: '3', name: '同事', role: 'approver', direct: true };
+  const r = applyAction(empty(), { type: 'save', mode: 'publish', isNew: true, values: values() }, direct, 0);
+  assert.equal(r.doc.plans[0].state, 'approved');
+  assert.equal(r.doc.log[0].action, 'publish');
+  assert.equal(r.message, '已保存,到时间自动执行');
+  assert.ok(!JSON.stringify(r.doc.log).includes('批准'));
+});

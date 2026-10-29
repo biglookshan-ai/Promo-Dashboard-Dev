@@ -127,9 +127,10 @@ export function applyAction(input, action, actor, now = Date.now()) {
         if (!canApprove(actor, merged)) fail('只有这个计划的审批人(或管理员)可以直接批准');
         Object.assign(plan, v, { state: 'approved', approvedBy: actor.id, approvedAt: now, pendingChange: null, rejectNote: null, updatedAt: now });
         if (isNew) { plan.submittedBy = actor.id; doc.plans.push(plan); }
-        addLog(doc, now, 'approve', plan, approved ? '审核人修改并直接生效' : '审核人发布', actor);
+        if (actor.direct) addLog(doc, now, approved ? 'edit' : 'publish', plan, approved ? '修改直接生效' : '', actor); // 没开审批:不写「批准」
+        else addLog(doc, now, 'approve', plan, approved ? '审核人修改并直接生效' : '审核人发布', actor);
         effects.push({ type: 'run' });
-        message = '已批准,到时间自动执行';
+        message = actor.direct ? '已保存,到时间自动执行' : '已批准,到时间自动执行';
       } else fail('未知的保存方式');
       return { doc, effects, message, id: plan.id };
     }

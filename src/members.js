@@ -118,7 +118,7 @@ export function saveRoles(state, actor, roles) {
 
 // 给审核流用的身份。2026-10-28 起默认不审批:每个人都按「审核人」算(保存直接生效);
 // 能不能动某一类内容改由页面权限管(schedule-api 的 needPage)。开了审批(APPROVALS=on)才回到 管理员 = 审核人、其他 = 编辑
-export const actorOf = (m) => ({ id: m.id, name: m.name, role: !approvalsOn() || isAdmin(m) ? 'approver' : 'editor' });
+export const actorOf = (m) => ({ id: m.id, name: m.name, role: !approvalsOn() || isAdmin(m) ? 'approver' : 'editor', ...(approvalsOn() ? {} : { direct: true }) });
 
 // ---------- 测试模式(临时关掉飞书登录)----------
 // 打开后:**从 Shopify 后台里**打开 app 的人不用登录飞书,直接是管理员。

@@ -203,3 +203,16 @@ test('暂停了的内容也能删(2026-10-21 用户要求);正在上线的不能
   assert.ok(r.effects.some((e) => e.type === 'remove' && e.shopifyId === 'gid://9'));
   assert.throws(() => applyAction(doc({ banners: [banner()] }), { type: 'delete', id: 'b1' }, approver, T), /正在上线的先暂停/);
 });
+
+test('没开审批(actor.direct):保存直接发布,日志写「发布」不写「批准」(2026-10-29 用户:暂时全部去掉审核)', () => {
+  const direct = { id: 'u3', name: '同事', role: 'approver', direct: true };
+  const r = applyAction(doc(), { type: 'save', mode: 'publish', kind: 'banner', isNew: true, values: { id: 'b-new', image: 'a.jpg', title: 'New' } }, direct, T);
+  assert.equal(r.doc.banners[0].state, 'approved');
+  assert.deepEqual([r.doc.log[0].action, r.doc.log[0].note || ''], ['publish', '']);
+  const r2 = applyAction(r.doc, { type: 'save', mode: 'publish', kind: 'banner', id: 'b-new', values: { title: 'New 2', image: 'a.jpg' } }, direct, T + 1);
+  assert.deepEqual([r2.doc.log[0].action, r2.doc.log[0].note || ''], ['edit', '']);
+  assert.ok(!JSON.stringify(r2.doc.log).includes('批准'));
+  // 开着审批的审核人照旧
+  const r3 = applyAction(doc(), { type: 'save', mode: 'publish', kind: 'banner', isNew: true, values: { id: 'b2', image: 'a.jpg' } }, approver, T);
+  assert.equal(r3.doc.log[0].action, 'approve');
+});

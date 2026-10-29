@@ -111,7 +111,7 @@ function actorFor(state, userId) {
   }
   u.lastSeen = Date.now();
   // 「多人协作」关着:从 Shopify 后台打开的人都是管理员(改动直接生效,不走审核)
-  return teamEnabled() ? u : { ...u, role: 'approver' };
+  return teamEnabled() ? u : { ...u, role: 'approver', ...(approvalsOn() ? {} : { direct: true }) };
 }
 
 // 给页面用的形状(不回传 webhook 原文和签名密钥)

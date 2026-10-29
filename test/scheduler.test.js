@@ -119,3 +119,14 @@ test('飞书:到点还没批准的提醒只发一次', async () => {
   await runOnce(SHOP, { now: T + 60_000, token: 'x', setStatus: async () => {}, send });
   assert.equal(cards.filter((c) => /还没批准/.test(c.title)).length, 1);
 });
+
+test('飞书:没开审批时,跟随的活动还是草稿 → 提醒说「活动还是草稿」,不叫人审核', async () => {
+  seed({ campaigns: [{ id: 'c1', kind: 'campaign', state: 'draft', name: 'BF', start: T - H, end: null }],
+    banners: [{ id: 'b8', kind: 'banner', state: 'approved', title: 'BF Banner', campaign: 'c1', start: null, end: null }] });
+  store.update(SHOP, (s) => { s.settings.larkWebhook = 'https://open.larksuite.com/open-apis/bot/v2/hook/abc'; });
+  const cards = [];
+  await runOnce(SHOP, { now: T, token: 'x', setStatus: async () => {}, send: async (c, card) => cards.push(card) });
+  const c = cards.find((x) => /活动还是草稿/.test(x.title));
+  assert.ok(c, '有「活动还是草稿」的提醒');
+  assert.ok(!JSON.stringify(cards).includes('审核'));
+});

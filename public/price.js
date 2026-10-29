@@ -61,7 +61,7 @@ let E = null;          // 正在编辑的计划
 let ledgerQ = { q: '', plan: '', offset: 0 };
 const cache = {};
 const isAdmin = () => !!S?.me?.admin;
-const meActor = () => ({ id: S.me.id, name: S.me.name, role: S.me.admin ? 'approver' : 'editor' });
+const meActor = () => ({ id: S.me.id, name: S.me.name, role: S.me.admin ? 'approver' : 'editor', ...(S.approvals ? {} : { direct: true }) });
 const canApprove = (plan) => A.canApprove(meActor(), plan);
 const nameOf = (id) => S.people.find((u) => u.id === id)?.name || '同事';
 const planById = (id) => S.plans.find((p) => p.id === id);
@@ -668,7 +668,7 @@ function footHtml() {
       if (E.dirty) b.push('<button class="btn btn-primary" data-a="save" data-m="publish">保存修改并批准</button>');
     } else if (['new', 'draft', 'rejected', 'pending'].includes(st)) {
       b.push(`<button class="btn" data-a="save" data-m="draft">${st === 'pending' ? '撤回成草稿' : '存草稿'}</button>`);
-      b.push(ap ? '<button class="btn btn-primary" data-a="save" data-m="publish">批准并排期</button>' : `<button class="btn btn-primary" data-a="save" data-m="submit">${st === 'pending' ? '重新提交' : '提交审核'}</button>`);
+      b.push(ap ? `<button class="btn btn-primary" data-a="save" data-m="publish">${S.approvals ? '批准并排期' : '保存并排期'}</button>` : `<button class="btn btn-primary" data-a="save" data-m="submit">${st === 'pending' ? '重新提交' : '提交审核'}</button>`);
     } else if (o?.state === 'approved' && !o.stopped) {
       b.push(ap ? `<button class="btn btn-primary" data-a="save" data-m="publish" ${E.dirty ? '' : 'disabled'}>保存修改(直接生效)</button>` : `<button class="btn btn-primary" data-a="save" data-m="submit" ${E.dirty ? '' : 'disabled'}>提交修改审核</button>`);
     }
@@ -831,9 +831,9 @@ const NOTIFY_CN = { submit: '有人提交审核(私信审批人)', decision: '�
 function settingsHtml() {
   const s = S.settings; const ap = isAdmin();
   return `
-  <div class="pr-card"><div class="pr-card__t">通知 <span class="muted">改价通知只用飞书私信发给相关的人(负责人 / 审批人 / 提交人 / 抄送),不发群</span></div>
-    ${S.approvals ? '' : '<p class="muted">现在没开审批 / 分工(2026-10-28 起每个人保存直接生效),所以这些私信<b>不会发</b>;谁在什么时候改了什么,看左边「操作记录」。</p>'}
-    ${Object.entries(NOTIFY_CN).map(([k, l]) => `<label class="row" style="font-size:13px;margin:4px 0"><input type="checkbox" data-a="notify" data-k="${k}" ${s.notify[k] ? 'checked' : ''} ${ap ? '' : 'disabled'}/> ${l}</label>`).join('')}</div>
+  <div class="pr-card"><div class="pr-card__t">通知 <span class="muted">${S.approvals ? '改价通知只用飞书私信发给相关的人(负责人 / 审批人 / 提交人 / 抄送),不发群' : '改价通知只用飞书私信发,不发群'}</span></div>
+    ${S.approvals ? '' : `<p class="muted">现在没开审批(每个人保存直接生效),所以没有提交 / 批准的通知。${S.team ? '下面这些私信发给管理员(计划没指定负责人时)。' : '飞书登录没开,私信不会发。'}谁在什么时候改了什么,看左边「操作记录」。</p>`}
+    ${Object.entries(NOTIFY_CN).filter(([k]) => S.approvals || !['submit', 'unapproved'].includes(k)).map(([k, l]) => [k, !S.approvals && k === 'decision' ? '暂停 / 提前结束(私信相关的人)' : l]).map(([k, l]) => `<label class="row" style="font-size:13px;margin:4px 0"><input type="checkbox" data-a="notify" data-k="${k}" ${s.notify[k] ? 'checked' : ''} ${ap ? '' : 'disabled'}/> ${l}</label>`).join('')}</div>
   <div class="pr-card"><div class="pr-card__t">安全</div>
     <div class="grid2"><label class="pr-fld">降幅上限 % <em>超过的在预览里标黄提醒</em><input class="inp" type="number" id="maxoff" value="${s.maxDiscountPct}" ${ap ? '' : 'disabled'}/></label>
       <label class="pr-fld">巡检间隔(分钟)<em>多久核对一次「正在活动价上的产品有没有被人手动改过」</em><input class="inp" type="number" id="sweep" value="${s.sweepMinutes}" ${ap ? '' : 'disabled'}/></label></div>

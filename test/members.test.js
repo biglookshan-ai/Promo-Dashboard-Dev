@@ -37,8 +37,9 @@ test('管理员分配角色 → 自动启用,按角色看页面;设置 / 工具�
   // 2026-10-28 起默认不审批:每个人都按审核人算(保存直接生效),开了 APPROVALS=on 才分编辑 / 审核人
   assert.equal(actorOf(boss).role, 'approver');
   assert.equal(actorOf(m).role, 'approver');
+  assert.equal(actorOf(m).direct, true); // 没开审批:保存 = 直接发布(日志 / 提示不说「批准」)
   process.env.APPROVALS = 'on';
-  try { assert.equal(actorOf(m).role, 'editor'); assert.ok(canSee(s, m, 'reviews')); } finally { delete process.env.APPROVALS; }
+  try { assert.equal(actorOf(m).role, 'editor'); assert.equal(actorOf(m).direct, undefined); assert.ok(canSee(s, m, 'reviews')); } finally { delete process.env.APPROVALS; }
   assert.ok(!canSee(s, m, 'reviews'));
 });
 
