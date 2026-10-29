@@ -67,6 +67,13 @@ export async function collectionExists(ctx, collectionId) {
   const d = await graphql(ctx, 'query($id: ID!) { collection(id: $id) { id } }', { id: collectionId });
   return !!d.collection;
 }
+// 加入 / 移出报错时看一眼:{ exists, smart } —— smart = 现在是按条件自动归类的(Shopify 只让手动 Collection 加 / 移产品)
+export async function collectionInfo(ctx, collectionId) {
+  try {
+    const d = await graphql(ctx, 'query($id: ID!) { collection(id: $id) { id ruleSet { appliedDisjunctively } } }', { id: collectionId });
+    return { exists: !!d.collection, smart: !!d.collection?.ruleSet };
+  } catch { return { exists: await collectionExists(ctx, collectionId), smart: false }; } // 这个接口版本没有 ruleSet
+}
 
 export async function removeFromCollection(ctx, collectionId, productIds) {
   for (const part of chunk(productIds, 250)) {
@@ -123,4 +130,4 @@ export async function deleteCountdowns(ctx, productIds) {
   return ok;
 }
 
-export const realIO = { readVariants, writeProductVariants, productsInCollection, addToCollection, removeFromCollection, collectionExists, readProductTags, addTags, removeTags, setCountdowns, deleteCountdowns };
+export const realIO = { readVariants, writeProductVariants, productsInCollection, addToCollection, removeFromCollection, collectionExists, collectionInfo, readProductTags, addTags, removeTags, setCountdowns, deleteCountdowns };

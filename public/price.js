@@ -447,7 +447,7 @@ function editorHtml() {
         </div>
         ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>只能选手动 Collection;结束自动移出(原来就在的不动)。Flash 当天那一组常用</em>
           ${sl.collection ? `<div class="row"><span class="tag ${S.goneCollections?.[sl.collection.id] ? 'tag--danger' : 'tag--accent'}">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>
-            ${S.goneCollections?.[sl.collection.id] ? `<div class="note note--warn">这个 Collection 在店里已经被删除了(${fmtT(S.goneCollections[sl.collection.id].at)} 发现):价格照常改,只是不再往里加产品。${ro ? '' : '要加进别的 Collection 就点「不加了」再重新选。'}</div>` : ''}`
+            ${S.goneCollections?.[sl.collection.id] ? `<div class="note note--warn">这个 Collection ${GONE_WHY[S.goneCollections[sl.collection.id].reason] || GONE_WHY.deleted}(${fmtT(S.goneCollections[sl.collection.id].at)}):价格照常改,只是不再往里加产品。${ro ? '' : '要加进别的 Collection 就点「不加了」再重新选。'}</div>` : ''}`
             : ro ? '<span class="muted">不加</span>' : '<button class="btn btn-sm" data-a="panel" data-p="slotcoll" style="width:fit-content">选 Collection…</button>'}
           ${E.panel === 'slotcoll' ? collPanel('slotcoll') : ''}</div>` : ''}
         ${p.kind === 'window' ? `<label class="pr-fld" style="margin-top:12px">优先级 <em>1–10,默认 10(最高)。只有两个限时计划改到同一个产品、时间又重叠时才用得到:<b>数字大的说了算,一样大时开始晚的说了算</b>(比如黑五期间加一天 Flash,那天自动用 Flash 的价,过了回到黑五的价)。想让这个计划让位就调低</em>
@@ -990,7 +990,20 @@ function vaultHtml() {
     ${live.map((v) => `<tr><td>${esc(v.title)}</td><td>${esc(v.sku || '')}</td><td class="num">${money(v.base?.price)}${v.base?.compareAt ? `<div><s>${money(v.base.compareAt)}</s></div>` : ''}</td>
       <td class="num"><b>${money(v.written.price)}</b>${v.written.compareAt ? `<div><s>${money(v.written.compareAt)}</s></div>` : ''}</td><td>${esc(plan(v.written.planId))}</td><td>${fmtT(v.since)}</td></tr>`).join('')}
   </tbody></table></div>` : '<div class="pr-empty">现在没有产品在活动价上</div>'}
-  ${colls.length ? `<h3>app 管着的 Collection 成员</h3>${colls.map(([id, c]) => `<div class="pr-kv"><span>${esc(c.title || id)}</span>app 加进去 ${c.managed.length} 个产品(时段结束自动移出)${c.preexisting.length ? `;${c.preexisting.length} 个本来就在,不动` : ''}</div>`).join('')}` : ''}`;
+  ${colls.length ? `<h3>app 管着的 Collection 成员</h3>${colls.map(([id, c]) => `<div class="pr-kv"><span>${esc(c.title || id)}</span>app 加进去 ${c.managed.length} 个产品(时段结束自动移出)${c.preexisting.length ? `;${c.preexisting.length} 个本来就在,不动` : ''}
+    ${isAdmin() ? `<button class="linkbtn" data-a="collrelease" data-id="${esc(id)}" title="一直报错(比如 Collection 改成了按条件归类)时用:app 不再往里加 / 移产品,已经加进去的留在里面">不再管这个 Collection</button>` : ''}</div>`).join('')}` : ''}
+  ${goneHtml()}`;
+}
+// 不再管的 Collection(被删了 / 改成按条件归类 / Shopify 不让加移 / 手动停的):说清原因,app 之前加进去、还留在里面的产品能看清单
+const GONE_WHY = { deleted: '在店里被删除了', smart: '改成了按条件自动归类(Shopify 只让手动 Collection 加 / 移产品)', refused: 'Shopify 不让往里加 / 移产品(可能改成了按条件归类)', manual: '手动停止管理' };
+function goneHtml() {
+  const gone = Object.entries(S.goneCollections || {}); if (!gone.length) return '';
+  return `<h3>不再管的 Collection</h3>${gone.map(([id, g]) => {
+    const names = cache.goneNames?.[id];
+    return `<div class="pr-kv"><span>${esc(g.title || id)}</span>${GONE_WHY[g.reason] || GONE_WHY.deleted} · ${fmtT(g.at)}${g.plans?.length ? ` · 计划 ${g.plans.map((p) => `「${esc(p.name)}」`).join('')}` : ''}
+      ${g.left?.length ? `<br><b>app 之前加进去的 ${g.left.length} 个产品还留在里面</b>,不需要的话到 Shopify 后台从这个 Collection 移除。
+        ${names ? `<div class="pr-gonelist">${names.map((n) => `<span class="tag">${esc(n)}</span>`).join('')}</div>` : `<button class="linkbtn" data-a="goneprods" data-id="${esc(id)}">看是哪些产品</button>`}` : ''}</div>`;
+  }).join('')}`;
 }
 
 // ================= 价格账本 =================
@@ -1180,6 +1193,13 @@ document.addEventListener('click', async (ev) => {
       case 'qdup': case 'qdupnext': { const p = planById(el.dataset.id); openEditor(p, false); loadCampaigns();
         document.querySelector(`#section-price [data-a="${a === 'qdupnext' ? 'dupnext' : 'dup'}"]`)?.click(); break; }
       case 'fixhold': await withBusy(el, async () => { await act({ type: 'resolve', variantId: el.dataset.v, choice: el.dataset.c }); render(); }); break;
+      case 'collrelease': if (!armed(el, '再点一次:不再管(已经加进去的产品留在里面)')) return;
+        await withBusy(el, async () => { await api('POST', '/api/price/coll-release', { id: el.dataset.id }); toast('好,app 不再管这个 Collection 了'); await load(); render(); }); break;
+      case 'goneprods': await withBusy(el, async () => {
+        const g = S.goneCollections?.[el.dataset.id]; if (!g?.left?.length) return;
+        const ps = (await api('GET', `/api/price/catalog/products?ids=${g.left.slice(0, 80).join(',')}`)).products;
+        (cache.goneNames ||= {})[el.dataset.id] = [...ps.map((x) => x.title), ...(g.left.length > 80 ? [`…共 ${g.left.length} 个`] : [])]; render();
+      }); break;
       case 'runnow': await withBusy(el, async () => { const r = await api('POST', '/api/price/run-now'); toast(`对齐完成:改价 ${r.written} 个,暂停接管 ${r.holds} 个,失败 ${r.failures} 个`); await load(); render(); }); break;
       case 'dlvault': await withBusy(el, () => download('/api/price/export/vault.csv', `还原表格-${toInput(now()).slice(0, 10)}.csv`)); break;
       case 'dlledger': await withBusy(el, () => download(`/api/price/export/ledger.csv?plan=${encodeURIComponent(ledgerQ.plan)}`, `价格账本-${toInput(now()).slice(0, 10)}.csv`)); break;

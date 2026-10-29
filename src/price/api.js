@@ -1,6 +1,6 @@
 // 改价模块的接口(挂在 /api/price 下;server.js 里已经限定:只有能看「改价」页面的人 —— 定价角色和管理员)。
 import express from 'express';
-import { load, save, withLock } from './store.js';
+import { load, save, withLock, appendLog } from './store.js';
 import { planStatus } from './price-core.js';
 import { applyAction, ActionError } from './price-actions.js';
 import { runOnce } from './executor.js';
@@ -174,6 +174,20 @@ export function priceRouter() {
   }));
 
   // ---- 改价的设置(管理员):降幅上限、巡检间隔、通知开关 ----
+  // 「受管产品」里手动点「不再管这个 Collection」:app 不再往里加 / 移产品(已经加进去的留在里面),执行器也不会再为它报错
+  r.post('/coll-release', wrap((req) => withLock(req.ctx.shop, async () => {
+    needAdmin(req);
+    const state = load(req.ctx.shop); const id = String(req.body?.id || '');
+    const cs = state.collState?.[id]; if (!cs) throw new ActionError('app 现在没在管这个 Collection');
+    const plans = state.plans.filter((p) => (p.slots || []).some((s) => s.collection?.id === id)).map((p) => ({ id: p.id, name: p.name }));
+    (state.goneCollections ||= {})[id] = { title: cs.title || '', at: Date.now(), plans, reason: 'manual', left: [...(cs.managed || [])] };
+    delete state.collState[id];
+    const a = actorOfReq(req);
+    appendLog(state, { at: Date.now(), action: 'collection', plan: '', note: `手动停止管理 Collection「${cs.title || id}」:不再往里加 / 移产品${cs.managed?.length ? `;app 之前加进去的 ${cs.managed.length} 个产品留在里面` : ''}`, by: a.name });
+    save(req.ctx.shop, state);
+    req.audit = { mod: 'price', text: `停止管理 Collection「${cs.title || id}」(改价不再往里加 / 移产品)` };
+    return { ok: true };
+  })));
   r.put('/settings', wrap((req) => withLock(req.ctx.shop, async () => {
     needAdmin(req);
     const state = load(req.ctx.shop); const b = req.body || {}; const s = state.settings;

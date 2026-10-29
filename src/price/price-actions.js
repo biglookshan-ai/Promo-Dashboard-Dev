@@ -94,6 +94,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
       let plan = action.id ? doc.plans.find((p) => p.id === action.id) : null;
       if (action.id && !plan && !action.isNew) fail('这个计划已经不存在(可能被别人删了),请刷新');
       const isNew = !plan;
+      const beforeColls = new Set((plan?.slots || []).map((s) => s.collection?.id).filter(Boolean)); // 保存前计划里已经选着的 Collection
       if (isNew) {
         const id = values.id || action.id;
         if (!id || doc.plans.some((p) => p.id === id)) fail('新计划的编号无效');
@@ -132,6 +133,7 @@ export function applyAction(input, action, actor, now = Date.now()) {
         effects.push({ type: 'run' });
         message = actor.direct ? '已保存,到时间自动执行' : '已批准,到时间自动执行';
       } else fail('未知的保存方式');
+      if (doc.goneCollections) for (const s of plan.slots || []) if (s.collection?.id && !beforeColls.has(s.collection.id)) delete doc.goneCollections[s.collection.id];
       return { doc, effects, message, id: plan.id };
     }
 

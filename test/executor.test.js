@@ -44,11 +44,13 @@ function fakeIO(variants, collections = {}) {
     async removeTags(ctx, pid, t) { io.tags[pid] = (io.tags[pid] || []).filter((x) => !t.includes(x)); },
     deleted: new Set(), // 在店里被删掉的合集
     calls: 0,
-    gone(cid) { io.calls++; if (io.deleted.has(cid)) throw new Error('Collection does not exist'); },
+    smart: new Set(),   // 后来加了条件(按条件自动归类)的合集:Shopify 加 / 移产品也回「does not exist」
+    gone(cid) { io.calls++; if (io.deleted.has(cid) || io.smart.has(cid)) throw new Error('移出 Collection 失败:Collection does not exist'); },
     async productsInCollection(ctx, cid, pids) { io.gone(cid); const s = coll.get(cid) || new Set(); return new Set(pids.filter((p) => s.has(p))); },
     async addToCollection(ctx, cid, pids) { io.gone(cid); if (!coll.has(cid)) coll.set(cid, new Set()); pids.forEach((p) => coll.get(cid).add(p)); },
     async removeFromCollection(ctx, cid, pids) { io.gone(cid); pids.forEach((p) => coll.get(cid)?.delete(p)); },
     async collectionExists(ctx, cid) { return !io.deleted.has(cid); },
+    async collectionInfo(ctx, cid) { return { exists: !io.deleted.has(cid), smart: io.smart.has(cid) }; },
   };
   return io;
 }
@@ -210,6 +212,24 @@ test('Collection 在计划进行中被删了:不再往里加,价格照常;只是
   const r3 = await run(shop2, io2, 1 * H);
   assert.ok(r3.failures.some((f) => /网络超时/.test(f.message)));
   assert.equal(load(shop2).goneCollections?.flash, undefined);
+});
+
+test('Collection 还在但改成了按条件归类(2026-10-30):不再管、只通知一次,记下 app 加进去还留在里面的产品;删掉计划也不会一直报', async () => {
+  const io = fakeIO({ a: '100.00', b: '100.00' }, { bf: [] });
+  const shop = setup([plan('bf', 'flash', [{ id: 'd1', start: 0, end: 10 * H, collection: { id: 'bf', title: 'Black Friday' }, items: [item('a', '70.00'), item('b', '70.00')] }])]);
+  await run(shop, io, 1 * H);
+  assert.deepEqual(load(shop).collState.bf.managed.sort(), ['P-a', 'P-b']);
+  // 用户删掉了计划,又给 Collection 加了条件
+  const st = load(shop); st.plans = []; save(shop, st); io.smart.add('bf');
+  const r = await run(shop, io, 2 * H);
+  assert.equal(r.failures.length, 0);
+  assert.deepEqual(r.goneCollections.map((c) => [c.reason, c.left]), [['smart', 2]]);
+  const st2 = load(shop);
+  assert.equal(st2.collState.bf, undefined);
+  assert.deepEqual(st2.goneCollections.bf.left.sort(), ['P-a', 'P-b']);
+  assert.ok(reportMessages(st2, r, { members: [{ id: 'ou_admin', status: 'active', roles: ['admin'] }] }).some((m) => m.card.title === '🗂 Collection 不能再加 / 移产品')); // 计划删了,价格也照常恢复(另一条通知)
+  const calls = io.calls; const r2 = await run(shop, io, 2 * H + 60_000);
+  assert.equal(r2.failures.length + r2.goneCollections.length, 0); assert.equal(io.calls, calls);
 });
 
 test('变体被删了:移出计划,不会每分钟报', async () => {
