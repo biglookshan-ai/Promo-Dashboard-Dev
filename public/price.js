@@ -118,7 +118,15 @@ function headHtml() {
 
 function render() {
   const root = $('#pr-root');
-  if (E) { root.innerHTML = editorHtml(); return; }
+  if (E) {
+    // 重画会换掉整个编辑器:记下正在输入的框,画完放回去(改折扣、搜产品时边打字边刷新)
+    const a = document.activeElement; const inside = a && root.contains(a);
+    const key = inside ? (a.dataset?.f ? `[data-f="${a.dataset.f}"]` : a.id ? `#${a.id}` : a.dataset?.tq ? `[data-tq="${a.dataset.tq}"]` : null) : null;
+    let pos = null; try { pos = inside ? a.selectionStart : null; } catch { /* 数字框没有光标位置 */ }
+    root.innerHTML = editorHtml();
+    if (key) { const b = root.querySelector(key); if (b) { b.focus(); try { if (pos != null) b.setSelectionRange(pos, pos); } catch { /* 同上 */ } } }
+    return;
+  }
   root.innerHTML = headHtml() + { plans: plansHtml, vault: vaultHtml, ledger: () => '<div id="ledger-root"><p class="muted">加载中…</p></div>', settings: settingsHtml }[tab]();
   if (tab === 'ledger') loadLedger();
 }
@@ -266,7 +274,7 @@ const CMP_OPTS = [
   ['keep', '只显示原来的划线价', '只用产品原来的划线价;<b>原来没有划线价的就不显示</b> —— 这些产品前台看不出在打折,也不会出现在促销链接、「只显示打折」里'],
   ['price', '只显示原来的现价', '划线价 = 改价前的售价,不管原来有没有划线价:原来卖 £80、改成 £70 → <s>£80</s> £70'],
   ['clear', '不显示划线价', '改价期间去掉划线价,只显示新价;这些产品不算打折'],
-  ['set', '逐个指定划线价', '在每一组的「试算预览」表格里给每个变体填划线价(选别的方式时,个别变体也能在表格里单独改,算例外)'],
+  ['set', '逐个指定划线价', '在每一组的「产品和新价」表格里给每个变体填划线价(选别的方式时,个别变体也能在表格里单独改,算例外)'],
 ];
 const cmpDefault = (p) => (p.kind === 'window' ? 'original' : 'keep');
 const cmpOf = (p) => p.compare || cmpDefault(p);
@@ -337,8 +345,12 @@ function openEditor(plan, isNew) {
   p.countdown = { on: false, label: '', days: 0, style: 'classic', ...(p.countdown || {}) };
   if (!p.groups?.length) p.groups = [{ id: uid('g_'), scope: p.scope, rule: p.rule }]; // 老计划只有一组
   for (const g of p.groups) g.compare ||= p.compare || cmpDefault(p); // 老计划:各组用计划的划线价方式
-  E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0, resolvedKey: isNew ? '' : scopeKey(p) };
+  for (const it of p.slots[0].items || []) it.group ??= p.groups[0].id; // 老计划的变体没记分组 = 第 1 组
+  E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0,
+    calcKey: scopeKey(p), lists: {}, fresh: new Set(), tf: {} };
   renderChrome(); render(); window.scrollTo(0, 0);
+  // 2026-10-29 用户:选了就要看到产品 —— 打开时先在后台把每组的产品读出来(之后改规则就能马上算);这一步不改计划内容
+  if (!readonly()) for (const g of p.groups) if (g.scope.mode !== 'all') loadGroup(g, { initial: (p.slots[0].items || []).length > 0 }); // 已有 / 复制来的计划:先不重算
 }
 const P = () => (E.showPending && E.orig?.pendingChange ? { ...E.orig, ...E.orig.pendingChange } : E.plan);
 const curSlot = () => P().slots[0];
@@ -354,7 +366,7 @@ function scopeSayOf(sc) {
       : sc.mode === 'products' ? `手选的 ${sc.products.length} 个产品`
         : [sc.vendor && `品牌 ${sc.vendor}`, sc.tag && `标签 ${sc.tag}`, sc.type && `类型 ${sc.type}`].filter(Boolean).join(' + ') || '(还没选条件)';
 }
-const stale = () => scopeKey(P()) !== E.resolvedKey;
+const stale = () => Object.values(E.lists || {}).some((L) => L.status === 'loading') || scopeKey(P()) !== E.calcKey; // 产品还在读 / 还没按最新设置算
 function readonly() {
   if (E.showPending) return true;
   if (E.isNew) return false;
@@ -389,7 +401,7 @@ function summaryHtml() {
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
       ${p.tagsRemove.length ? line(`生效期间去掉标签 <b>${p.tagsRemove.map(esc).join('、')}</b>,结束自动加回`) : ''}
       ${S.approvals ? line(`审批人:<b>${p.approver ? esc(nameOf(p.approver)) : '管理员'}</b>${p.owner ? ` · 负责人 ${esc(nameOf(p.owner))}` : ''}`) : ''}
-      ${its.length ? line(`影响 <b>${nProd}</b> 个产品 / <b>${live.length}</b> 个变体${maxOff > 0 ? `,最多降 <b>${maxOff}%</b>` : ''} · 预计 ${mins} 分钟内改完`) : line('<span class="tx-warn">还没算产品,点分组里的「试算预览」</span>')}
+      ${its.length ? line(`影响 <b>${nProd}</b> 个产品 / <b>${live.length}</b> 个变体${maxOff > 0 ? `,最多降 <b>${maxOff}%</b>` : ''} · 预计 ${mins} 分钟内改完`) : line(`<span class="tx-warn">${stale() ? '正在读产品…' : '还没选产品'}</span>`)}
     </ul>
   </div>${its.length && !stale() ? checkHtml() : ''}`;
 }
@@ -420,7 +432,7 @@ function editorHtml() {
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期自动恢复原价)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
         ${p.campaign ? `<label class="row" style="margin-bottom:10px;font-size:13px"><input type="checkbox" data-f="followcamp" ${p.followCampaign ? 'checked' : ''} ${ro ? 'disabled' : ''}/> 跟随活动「${esc(p.campaign.name)}」的时间 <span class="muted">活动改时间,这个计划跟着一起改</span></label>` : ''}
         <div class="grid2">
-          <label class="pr-fld">开始<input class="inp" type="datetime-local" data-f="start" value="${toInput(sl.start)}" ${ro || started() || p.followCampaign ? 'disabled' : ''}/>${!ro && !started() && !p.followCampaign ? '<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">设成现在(批准后一分钟内执行)</button>' : ''}</label>
+          <label class="pr-fld">开始<input class="inp" type="datetime-local" data-f="start" value="${toInput(sl.start)}" ${ro || started() || p.followCampaign ? 'disabled' : ''}/>${!ro && !started() && !p.followCampaign ? `<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">设成现在(${S.approvals ? '批准' : '保存'}后一分钟内执行)</button>` : ''}</label>
           ${p.kind === 'window' ? `<label class="pr-fld">结束(恢复原价)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
         </div>
         ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>只能选手动 Collection;结束自动移出(原来就在的不动)。Flash 当天那一组常用</em>
@@ -463,7 +475,7 @@ function ruleHtml(ro) {
       ${r.mode === 'fixed' ? '' : `<span class="muted">尾数</span><select class="sel" data-f="rrounding" ${ro ? 'disabled' : ''}><option value="" ${!r.rounding ? 'selected' : ''}>不取整</option><option value="99" ${r.rounding === '99' ? 'selected' : ''}>.99</option><option value="00" ${r.rounding === '00' ? 'selected' : ''}>整数</option></select>`}
       ${['percent_off', 'amount_off'].includes(r.mode) ? `<span class="muted">按</span><select class="sel" data-f="rfrom" ${ro ? 'disabled' : ''}><option value="price" ${r.from !== 'compare' ? 'selected' : ''}>现售价</option><option value="compare" ${r.from === 'compare' ? 'selected' : ''}>划线价(RRP)</option></select><span class="muted">算</span>` : ''}
     </div>`}
-    <p class="pr-say">${rm.say(r.value)}${r.mode === 'manual' ? ':在这一组下面「试算预览」的表格里一个个填' : ''}。</p>`;
+    <p class="pr-say">${rm.say(r.value)}${r.mode === 'manual' ? ':在这一组下面「产品和新价」的表格里一个个填' : ''}。</p>`;
 }
 function groupsHtml(ro) {
   const gs = groupsOf(P()); const gi = Math.min(E.gi || 0, gs.length - 1);
@@ -489,11 +501,8 @@ function groupsHtml(ro) {
         <div class="pr-group__lab">改哪些产品</div>${scopeHtml(ro)}
         <div class="pr-group__lab">改什么价</div>${ruleHtml(ro)}
         <div class="pr-group__lab">划线价 <span class="muted">这一组改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样</span></div>${cmpHtml(ro, g)}
-        <div class="pr-group__lab">试算预览 <span class="muted">${multi ? '这一组的产品和新价(所有分组一起算)' : '每个产品的新价'}</span></div>
-        <div class="row"><button class="btn btn-sm ${its.length && !stale() ? '' : 'btn-primary'}" data-a="resolve" ${ro ? 'disabled' : ''}>${its.length ? '重新试算' : '试算预览'}</button>
-          ${stale() && its.length ? '<span class="tx-warn">设置改过了,请重新试算</span>' : ''}
-          ${over > 0 ? `<span class="muted">这一组选中 ${hit} 个变体,其中 <b>${over}</b> 个也在下面的组里,按下面那组的价</span>` : ''}</div>
-        ${mine.length ? previewHtml(ro, g.id) : its.length ? '<p class="muted" style="margin-top:8px">这一组没有产品(没选,或者全被下面的组覆盖了)。</p>' : ''}
+        <div class="pr-group__lab">产品和新价 <span class="muted">${ro ? '这一组的产品和新价' : '选了产品马上列出来,改规则自动刷新;手改的价格、去掉的产品都会保留'}</span></div>
+        ${groupListHtml(ro, g, mine, over)}
       </div>` : ''}
     </div>`;
   }).join('')}</div>
@@ -525,25 +534,63 @@ function scopeHtml(ro) {
       <label class="pr-fld">产品类型<input class="inp" data-f="stype" value="${esc(sc.type || '')}" placeholder="如 Cine Lens" ${ro ? 'disabled' : ''}/></label></div>
       <p class="muted">填几项就要同时满足几项。</p>`;
   } else {
-    body = '<p class="muted">全店所有产品都会被改价。产品多的话执行会慢一些(摘要里有预计时间),建议先用「试算预览」看看。</p>';
+    body = '<p class="muted">全店所有产品都会被改价。产品多的话执行会慢一些(摘要里有预计时间);下面点「读出全店产品」先看看每个产品的新价。</p>';
   }
   return `<div class="pr-seg pr-seg--wrap" style="margin-bottom:10px">${Object.keys(SCOPE_MODES).map(tab).join('')}</div>${body}
     ${P().campaign && !ro ? `<button type="button" class="btn btn-sm" data-a="fromcamp" style="margin-top:8px">用活动「${esc(P().campaign.name)}」圈定的产品</button>` : ''}`;
 }
 
-// 试算结果:默认只看前 10 个(和原来那个 app 一样),可以展开全部
-function previewHtml(ro, gid) {
-  const p = P(); const its = items().filter((i) => i.group === gid); const ex = new Set(p.excluded || []);
+// 一组的产品区:读取状态 → £0 提醒 → 工具条(数量 / 筛选 / 搜索 / 重新读)→ 表格 → 已去掉的
+const itemBad = (p, i) => (p.kind === 'window' && i.price == null) || core.itemWarnings(p, i, opts()).length > 0;
+function groupListHtml(ro, g, mine, over) {
+  const p = P(); const L = E.lists?.[g.id]; const sc = g.scope;
+  if (!ro && sc.mode === 'all' && !C.all && L?.status !== 'loading') {
+    return `<div class="pr-load"><button class="btn btn-sm btn-primary" data-a="loadall">读出全店产品</button><span class="muted">全店几千个产品,要等半分钟左右</span></div>${mine.length ? previewHtml(ro, g.id) : ''}`;
+  }
+  const head = L?.status === 'loading' ? '<div class="pr-load"><span class="pr-spin"></span>正在从店里读这一组的产品…</div>'
+    : L?.status === 'err' ? `<div class="banner banner--danger" style="margin-top:6px">读不到产品:${esc(L.err)} <button class="btn btn-sm" data-a="reload" data-g="${g.id}">重试</button></div>` : '';
+  if (!mine.length) {
+    const why = L?.status === 'loading' ? '' : scopeEmpty(sc) ? '在上面选好产品,这里马上列出来。' : over > 0 ? '这一组的产品全被下面的组接手了(同一个产品以排在下面的组为准)。' : L?.status === 'ok' ? '这一组没有产品。' : '';
+    return head + (why ? `<p class="muted" style="margin-top:6px">${why}</p>` : '') + removedHtml(ro, g);
+  }
+  const tf = E.tf?.[g.id] || {}; const q = (tf.q || '').trim().toLowerCase();
+  const nBad = mine.filter((i) => itemBad(p, i)).length; const nMan = mine.filter((i) => i.manual || i.cmpManual).length;
+  const zero = mine.filter((i) => !(Number(i.refPrice) > 0)).length;
+  const keep = (i) => (!q || `${i.product} ${i.variant || ''} ${i.sku || ''}`.toLowerCase().includes(q))
+    && (tf.only === 'bad' ? itemBad(p, i) : tf.only === 'man' ? i.manual || i.cmpManual : true);
+  const chip = (v, label, n) => `<button type="button" class="pr-chipf ${(tf.only || '') === v ? 'is-on' : ''}" data-a="tfilter" data-g="${g.id}" data-v="${v}">${label}${n != null ? ` <b>${n}</b>` : ''}</button>`;
+  return `${head}
+    ${zero && !ro ? `<div class="banner banner--warn" style="margin-top:6px">有 <b>${zero}</b> 个变体现价是 £0(多半是询价 / 还没定价的产品),改不了价,不去掉就存不了。<button class="btn btn-sm" data-a="rmzero" data-g="${g.id}" style="margin-left:8px">把这 ${zero} 个去掉</button></div>` : ''}
+    <div class="pr-tbar">
+      <span class="pr-tbar__n">${new Set(mine.map((i) => i.productId)).size} 个产品 / ${mine.length} 个变体${over > 0 ? ` <span class="muted">· 另有 ${over} 个也在下面的组里,按下面那组的价</span>` : ''}</span>
+      <span class="pr-chipfs">${chip('', '全部')}${chip('bad', '有问题', nBad)}${chip('man', '手改过', nMan)}</span>
+      <input class="inp inp--sm" data-tq="${g.id}" placeholder="找产品 / SKU" value="${esc(tf.q || '')}" style="width:170px"/>
+      ${ro ? '' : `<button type="button" class="linkbtn" data-a="reload" data-g="${g.id}" title="店里刚改过产品或价格时用">从店里重新读</button>`}
+    </div>
+    ${previewHtml(ro, g.id, keep)}
+    ${removedHtml(ro, g)}`;
+}
+// 去掉的变体:折起来,能一个个 / 全部恢复
+function removedHtml(ro, g) {
+  const rm = g.removed || []; if (!rm.length) return '';
+  const names = new Map(); for (const pr of E.lists?.[g.id]?.products || []) for (const v of pr.variants) names.set(v.id, `${pr.title}${v.title && v.title !== 'Default Title' ? ' · ' + v.title : ''}`);
+  return `<details class="pr-removed"><summary>已去掉 ${rm.length} 个变体 <span class="muted">(这些不改价${ro ? '' : ';点开可以恢复'})</span></summary>
+    <div class="pr-removed__b">${rm.slice(0, 60).map((id) => `<span class="tag">${esc(names.get(id) || '(名字还没读到)')}${ro ? '' : `<button type="button" class="chip__x" data-a="unrm" data-g="${g.id}" data-v="${esc(id)}" title="恢复">↺</button>`}</span>`).join('')}
+      ${rm.length > 60 ? `<span class="muted">…共 ${rm.length} 个</span>` : ''}${ro ? '' : `<button type="button" class="linkbtn" data-a="unrm" data-g="${g.id}">全部恢复</button>`}</div></details>`;
+}
+// 表格:默认只看前 20 个,可以展开全部;keep = 筛选 / 搜索
+function previewHtml(ro, gid, keep = null) {
+  const p = P(); const all0 = items().filter((i) => i.group === gid); const its = keep ? all0.filter(keep) : all0; const ex = new Set(p.excluded || []);
   const needFill = its.some((i) => i.price == null && !ex.has(i.variantId)) && p.kind === 'window';
   const all = (E.showAllG || {})[gid];
-  const show = all || needFill ? its : its.slice(0, 10);
+  const show = all || needFill ? its : its.slice(0, 20);
   const setCompare = gCmp(p, groupsOf(p).find((g) => g.id === gid)) === 'set';
   let lastPid = null;
   // 2026-10-28 用户:进行中的计划看不到移出 —— 表格只读时按钮被一起藏了。移出是安全方向(下一分钟恢复原价),开始后照样能用
   const canExclude = started() && !E.showPending && !E.orig?.stopped && !['ended', 'done'].includes(statusOf(E.orig));
   const rowAct = canExclude ? 'exclude' : ro ? '' : 'rm';
   const actLabel = rowAct === 'exclude' ? '移出' : '去掉';
-  const actTip = rowAct === 'exclude' ? '移出后下一分钟恢复原价' : '把这个变体从这个计划里去掉,它的价格不会被改(重新试算会再算进来)';
+  const actTip = rowAct === 'exclude' ? '移出后下一分钟恢复原价' : '把这个变体从这个计划里去掉,它的价格不会被改(下面「已去掉」里能恢复)';
   const live = its.filter((x) => !ex.has(x.variantId));
   const rows = show.map((it) => {
     const first = it.productId !== lastPid; lastPid = it.productId;
@@ -551,7 +598,7 @@ function previewHtml(ro, gid) {
     const t = (() => { try { return core.targetFor({ price: it.refPrice, compareAt: it.refCompareAt }, p, it); } catch { return null; } })();
     const d = it.price != null ? core.discountPct(it.refPrice, it.price) : null;
     const gone = ex.has(it.variantId);
-    return `<tr class="${first ? 'is-first' : ''}" style="${gone ? 'opacity:.45' : ''}">
+    return `<tr class="${first ? 'is-first' : ''} ${E.fresh?.has(it.productId) ? 'is-fresh' : ''}" style="${gone ? 'opacity:.45' : ''}">
       <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div>
         ${(() => { const sib = live.filter((x) => x.productId === it.productId); return rowAct && sib.length > 1 ? `<button class="linkbtn pcell__all" data-a="${rowAct}" data-vs="${sib.map((x) => x.variantId).join(',')}" title="${rowAct === 'exclude' ? `这个产品的 ${sib.length} 个变体一起移出,下一分钟恢复原价` : `这个产品的 ${sib.length} 个变体一起从计划里去掉`}">整个产品${actLabel}(${sib.length} 个变体)</button>` : ''; })()}</div></div>` : ''}</td>
       <td>${esc(it.variant || '')}<div class="pcell__s">${esc(it.sku || '')}</div></td>
@@ -572,10 +619,11 @@ function previewHtml(ro, gid) {
       <td class="num">${gone || !rowAct ? '' : `<button class="linkbtn" data-a="${rowAct}" data-v="${it.variantId}" title="${actTip}">${actLabel}</button>`}</td>
     </tr>`;
   }).join('');
-  return `${ro ? '' : `<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,重新试算也会保留;点「用规则价」恢复)。
+  if (!its.length) return '<p class="muted" style="margin-top:8px">没有符合筛选的产品。</p>';
+  return `${ro ? '' : `<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,改规则、加产品都会保留;点「用规则价」恢复)。
       ${setCompare ? '' : '划线价也能<b>单独例外</b>:灰字是按上面方式算出来的;填数字 = 这个变体用这个划线价,填 0 = 不显示,清空 = 回到上面的方式(标「例外」)。'}</p>`}
     <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${its.length > 10 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 10 个' : `展开这一组全部 ${its.length} 个变体`}</button>` : ''}`;
+    ${its.length > 20 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 20 个' : `展开全部 ${its.length} 个变体`}</button>` : ''}`;
 }
 
 function bannersHtml() {
@@ -650,7 +698,7 @@ function checkHtml() {
       <div class="${errs ? 'is-bad' : ''}"><b>${errs}</b>个有错误(不能提交)</div>
       <div class="${warns ? 'is-warn' : ''}"><b>${warns}</b>个要留意</div>
     </div>
-    ${todo && p.kind === 'window' ? `<div class="banner banner--warn" style="margin-bottom:6px">还有 <b>${todo}</b> 个变体没填新价(在对应那一组的「试算预览」表格里填)。</div>` : ''}
+    ${todo && p.kind === 'window' ? `<div class="banner banner--warn" style="margin-bottom:6px">还有 <b>${todo}</b> 个变体没填新价(在对应那一组的「产品和新价」表格里填;表格上点「有问题」能只看这些)。</div>` : ''}
     ${roundWarn}
     ${[...byOther.values()].map((o) => `<div class="banner banner--warn" style="margin-bottom:6px">⚠️ <b>${o.n.size} 个变体</b>也在「${esc(o.name)}」(优先级 ${o.priority})里,时间有重叠:重叠期间用<b>「${o.wins ? esc(p.name || '这个计划') : esc(o.name)}」</b>的价格${o.wins ? `,这个计划结束后回到「${esc(o.name)}」的价` : ',这个计划在重叠的这段时间里对这些变体不起作用'}。不对就改上面的「优先级」(数字大的说了算,一样大时开始晚的说了算)。</div>`).join('')}
     ${err && !readonly() ? `<div class="banner banner--warn" style="margin:0">还不能提交:${esc(err)}</div>` : ''}
@@ -701,57 +749,129 @@ const toItem = (pr, v, rule) => {
   try { if (!['keep', 'manual'].includes(rule.mode)) it.price = core.priceByRule({ price: v.price, compareAt: v.compareAt }, rule); } catch { /* 规则没填好就先不设价 */ }
   return it;
 };
-// 按「改哪些产品」+「改什么价」算出每个变体的新价。手改过的价格尽量保留。
-async function productsOf(sc) {
-  let products = [];
+// ================= 产品清单和新价(2026-10-29 用户:选了就出现、改了规则自动刷新、手动调的不丢)=================
+// 「哪些产品」和「新价怎么算」分开:
+//   - 选 Collection / 品牌标签 / 单品 → 马上去店里读这一组的产品(E.lists[组],按来源缓存,加一个产品只读新加的那个)
+//   - 改折扣、改方式、改尾数 → 不用再读店里,在本地马上重算(recompute)
+//   - 手改的新价、单独改的划线价按变体记在条目上,「去掉」的记在组上(g.removed)—— 加产品、改规则、重新读都不会丢
+// 顺序:新加的在最上面(用户定的);一组只用一种来源,要混合就分组。
+const srcKey = (sc) => JSON.stringify(sc.mode === 'collections' ? ['c', sc.collections.map((c) => c.id)] : sc.mode === 'products' ? ['p', sc.products.map((x) => x.id)]
+  : sc.mode === 'search' ? ['s', sc.vendor || '', sc.tag || '', sc.type || ''] : ['all']);
+const scopeEmpty = (sc) => (sc.mode === 'collections' ? !sc.collections.length : sc.mode === 'products' ? !sc.products.length : sc.mode === 'search' ? !(sc.vendor || sc.tag || sc.type) : false);
+const C = (cache.cat ||= { coll: new Map(), prod: new Map(), search: new Map(), all: null });
+const keepProd = (ps) => { ps.forEach((x) => C.prod.set(x.id, x)); return ps; };
+// 店里读过的直接用;force = 从店里重新读
+async function productsOf(sc, force = false) {
   if (sc.mode === 'collections') {
-    if (!sc.collections.length) throw new Error('先选至少一个 Collection');
-    const seen = new Map();
+    const out = new Map();
     for (const c of sc.collections) {
-      const d = await api('GET', `/api/price/catalog/collection?id=${encodeURIComponent(c.id)}`);
-      if (d.truncated) toast(`Collection「${c.title}」太大,只取了前 5000 个产品`, false);
-      d.products.forEach((x) => seen.set(x.id, x));
+      let ps = !force && C.coll.get(c.id);
+      if (!ps) {
+        const d = await api('GET', `/api/price/catalog/collection?id=${encodeURIComponent(c.id)}`);
+        if (d.truncated) toast(`Collection「${c.title}」太大,只取了前 5000 个产品`, false);
+        ps = keepProd(d.products); C.coll.set(c.id, ps);
+      }
+      ps.forEach((x) => { if (!out.has(x.id)) out.set(x.id, x); });
     }
-    products = [...seen.values()];
-  } else if (sc.mode === 'products') {
-    if (!sc.products.length) throw new Error('先选至少一个产品');
-    products = (await api('GET', `/api/price/catalog/products?ids=${sc.products.map((x) => x.id).join(',')}`)).products;
-  } else if (sc.mode === 'search') {
+    return [...out.values()];
+  }
+  if (sc.mode === 'products') {
+    const miss = sc.products.map((x) => x.id).filter((id) => force || !C.prod.has(id));
+    for (let i = 0; i < miss.length; i += 80) keepProd((await api('GET', `/api/price/catalog/products?ids=${miss.slice(i, i + 80).join(',')}`)).products);
+    return sc.products.map((x) => C.prod.get(x.id)).filter(Boolean); // 照选的先后(新加的在最上面)
+  }
+  if (sc.mode === 'search') {
     const q = new URLSearchParams(Object.fromEntries(['vendor', 'tag', 'type'].filter((k) => sc[k]).map((k) => [k, sc[k]])));
-    if (![...q].length) throw new Error('先填品牌、标签或类型');
-    products = (await api('GET', `/api/price/catalog/search?${q}`)).products;
-  } else {
+    const key = String(q); let ps = !force && C.search.get(key);
+    if (!ps) { ps = keepProd((await api('GET', `/api/price/catalog/search?${q}`)).products); C.search.set(key, ps); }
+    return ps;
+  }
+  if (!C.all || force) {
     const d = await api('GET', '/api/price/catalog/search?all=1');
     if (d.truncated) toast('店里产品很多,只取了前 5000 个', false);
-    products = d.products;
+    C.all = keepProd(d.products);
   }
-  return products;
+  return C.all;
 }
-// 按分组算出每个变体的新价:一组一组算,同一个变体在好几组里时,下面的组覆盖上面的;手改过的价格保留
-async function resolveScope() {
-  const p = E.plan;
-  const old = new Map(items().map((i) => [i.variantId, i]));
-  const byVariant = new Map();
-  E.groupHits = {};
-  for (const [gi, g] of p.groups.entries()) {
-    let products;
-    try { products = await productsOf(g.scope); }
-    catch (e) { throw new Error(p.groups.length > 1 ? `第 ${gi + 1} 组:${e.message}` : e.message); }
-    E.groupHits[g.id] = products.reduce((n, pr) => n + pr.variants.length, 0);
-    for (const pr of products) for (const v of pr.variants) {
-      const it = toItem(pr, v, g.rule); it.group = g.id;
-      const o = old.get(v.id);
-      if (o && o.manual && o.price != null) { it.price = o.price; it.manual = true; } // 手改过的保留
-      if (o && o.compareAt != null) it.compareAt = o.compareAt;
-      if (o?.cmpManual) { it.cmpManual = true; it.compareAt = o.compareAt ?? null; } // 划线价单独例外也保留
-      byVariant.set(v.id, it);
+// 读一组的产品。读完:按最新设置重算、刷新页面;刚加进来的产品闪一下
+// initial = 打开已有计划时的后台读:不重算(不改保存的内容),只把「当时去掉了哪些」补记下来(老计划没记)
+function loadGroup(g, { force = false, initial = false } = {}) {
+  if (!E) return Promise.resolve();
+  const key = srcKey(g.scope); const prev = E.lists[g.id];
+  if (!force && prev && prev.key === key && prev.status !== 'err') return prev.promise || Promise.resolve();
+  if (scopeEmpty(g.scope)) { E.lists[g.id] = { key, status: 'ok', products: [] }; if (!initial) recompute(); return Promise.resolve(); }
+  const entry = { key, status: 'loading', products: prev?.products || [] };
+  const before = new Set((prev?.products || []).map((x) => x.id));
+  entry.promise = productsOf(g.scope, force).then((ps) => {
+    if (!E || E.lists[g.id] !== entry) return;
+    entry.status = 'ok'; entry.products = ps;
+    if (initial) seedRemoved(g, ps);
+    else {
+      if (prev) { const fresh = ps.filter((x) => !before.has(x.id)).map((x) => x.id); if (fresh.length < ps.length) { E.fresh = new Set(fresh); setTimeout(() => { if (E) E.fresh = new Set(); }, 2500); } }
+      recompute();
+    }
+    render();
+  }).catch((e) => { if (!E || E.lists[g.id] !== entry) return; entry.status = 'err'; entry.err = e.message; render(); });
+  E.lists[g.id] = entry;
+  return entry.promise;
+}
+// 老计划:当时「去掉」的变体没单独记 —— 这一组读出来有、保存的计划里没有(也不在别的组)的,就当是去掉的,免得一重算又加回来
+function seedRemoved(g, ps) {
+  if (g.removed) return;
+  const mine = new Set(items().map((i) => i.variantId));
+  g.removed = ps.flatMap((x) => x.variants.map((v) => v.id)).filter((id) => !mine.has(id));
+  E.calcKey = scopeKey(P());
+}
+// 按每组的产品清单 + 规则算出全部变体的新价(本地,马上)。同一个变体在几组里时,下面的组说了算
+function recompute() {
+  if (!E || readonly() || E.showPending) return;
+  const p = E.plan; const s = p.slots[0];
+  const old = new Map(s.items.map((i) => [i.variantId, i]));
+  const by = new Map(); E.groupHits = {};
+  for (const g of p.groups) {
+    const L = E.lists[g.id]; const rm = new Set(g.removed || []);
+    const put = (it) => { by.delete(it.variantId); by.set(it.variantId, it); }; // 先删再放:被下面的组接手时,顺序跟着下面的组
+    if (L && L.status === 'ok' && L.key === srcKey(g.scope)) {
+      let n = 0;
+      for (const pr of L.products) for (const v of pr.variants) {
+        if (rm.has(v.id)) continue; n++;
+        const it = toItem(pr, v, g.rule); it.group = g.id;
+        const o = old.get(v.id);
+        if (o?.manual && o.price != null) { it.price = o.price; it.manual = true; } // 手改过的保留
+        if (o && o.compareAt != null) it.compareAt = o.compareAt;
+        if (o?.cmpManual) { it.cmpManual = true; it.compareAt = o.compareAt ?? null; } // 划线价单独例外也保留
+        put(it);
+      }
+      E.groupHits[g.id] = n;
+    } else {
+      // 这一组的产品还没读到(或读不到):先用原来的条目,价格按现在的规则重算
+      for (const o of s.items) {
+        if (o.group !== g.id || rm.has(o.variantId)) continue;
+        const it = { ...o };
+        if (!it.manual) { it.price = null; try { if (!['keep', 'manual'].includes(g.rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, g.rule); } catch { /* 规则没填好 */ } }
+        put(it);
+      }
     }
   }
-  const its = [...byVariant.values()];
-  curSlot().items = its;
-  E.resolvedKey = scopeKey(p);
+  s.items = [...by.values()];
+  E.calcKey = scopeKey(p);
+}
+// 改了「改哪些产品」:读这一组(读过的马上出来);全店产品要点按钮才读(几千个,要等一会儿)
+function scopeChanged(g = EG()) {
   touch();
-  return its.length;
+  if (g.scope.mode === 'all' && !C.all) { delete E.lists[g.id]; recompute(); render(); return; }
+  loadGroup(g); render();
+}
+// 改了规则 / 分组顺序:本地马上重算
+function ruleChanged() { touch(); recompute(); render(); }
+// 保存前:每组的产品都读好、按最新设置算好
+async function ensureCalc() {
+  for (const g of E.plan.groups) {
+    if (g.scope.mode === 'all' && !C.all) await loadGroup(g, { force: true });
+    else await loadGroup(g);
+    const L = E.lists[g.id]; if (L?.status === 'err') throw new Error(`${E.plan.groups.length > 1 ? `第 ${E.plan.groups.indexOf(g) + 1} 组:` : ''}读不到产品:${L.err}`);
+  }
+  if (scopeKey(P()) !== E.calcKey) recompute();
 }
 async function withBusy(btn, fn) {
   const old = btn?.innerHTML; if (btn) { btn.disabled = true; btn.innerHTML = '处理中…'; }
@@ -870,49 +990,53 @@ document.addEventListener('click', async (ev) => {
         for (const g of E.plan.groups) if (!['manual', 'keep', 'fixed', 'amount_off'].includes(g.rule.mode)) g.rule.mode = k === 'window' ? 'percent_off' : 'percent_up';
         const s = E.plan.slots[0];
         if (k === 'permanent') { s.end = null; s.collection = null; } else if (!s.end) s.end = s.start + 7 * DAY;
-        E.resolvedKey = ''; touch(); render(); break;
+        ruleChanged(); break;
       }
       case 'layer': if (el.disabled) return; E.plan.layer = el.dataset.v; touch(); render(); break;
       case 'smode': if (el.disabled) return; EG().scope.mode = el.dataset.v; E.panel = null;
         if (el.dataset.v === 'search' && !cache.vendors) api('GET', '/api/price/catalog/vendors').then((d) => { cache.vendors = d.vendors; render(); }).catch(() => {});
-        touch(); render(); break;
+        scopeChanged(); break;
       case 'panel': E.panel = el.dataset.p || null; render(); break;
       case 'pick': {
         if (!window.shopify?.resourcePicker) { toast('选择器只能在 Shopify 后台里用', false); return; }
         const picked = await window.shopify.resourcePicker({ type: 'product', multiple: true, action: 'select',
           selectionIds: EG().scope.products.map((x) => ({ id: x.id })) });
         if (!picked) return;
-        EG().scope.products = picked.map((x) => ({ id: x.id, title: x.title, image: x.images?.[0]?.originalSrc || '' }));
-        touch(); render(); break;
+        // 叠加:新选的排最上面(用户定的倒序);在选择器里取消勾选的就拿掉
+        const sc = EG().scope; const had = new Set(sc.products.map((x) => x.id)); const now0 = new Set(picked.map((x) => x.id));
+        const added = picked.filter((x) => !had.has(x.id)).map((x) => ({ id: x.id, title: x.title, image: x.images?.[0]?.originalSrc || '' }));
+        sc.products = [...added, ...sc.products.filter((x) => now0.has(x.id))];
+        if (added.length) toast(`加了 ${added.length} 个产品,排在最上面`);
+        scopeChanged(); break;
       }
-      case 'clearprod': EG().scope.products = []; touch(); render(); break;
+      case 'clearprod': if (!armed(el, '再点一次清空')) return; EG().scope.products = []; scopeChanged(); break;
       case 'collsearch': cache.collQ = $('#coll-q').value.trim(); await withBusy(el, async () => { cache.collSearch = (await api('GET', `/api/price/catalog/collections?q=${encodeURIComponent(cache.collQ)}`)).collections; render(); }); break;
-      case 'addcoll': { const sc = EG().scope; if (!sc.collections.some((c) => c.id === el.dataset.id)) sc.collections.push({ id: el.dataset.id, title: el.dataset.t }); E.panel = null; touch(); render(); break; }
-      case 'rmcoll': EG().scope.collections.splice(+el.dataset.i, 1); touch(); render(); break;
+      case 'addcoll': { const sc = EG().scope; if (!sc.collections.some((c) => c.id === el.dataset.id)) sc.collections.unshift({ id: el.dataset.id, title: el.dataset.t }); E.panel = null; scopeChanged(); break; } // 新加的排最上面
+      case 'rmcoll': EG().scope.collections.splice(+el.dataset.i, 1); scopeChanged(); break;
       case 'setcoll': curSlot().collection = { id: el.dataset.id, title: el.dataset.t }; E.panel = null; touch(); render(); break;
       case 'unsetcoll': curSlot().collection = null; touch(); render(); break;
       case 'fromcamp': await withBusy(el, async () => {
         const d = await api('GET', `/api/price/catalog/campaign?id=${encodeURIComponent(E.plan.campaign.id)}`);
         EG().scope = { mode: 'products', collections: [], products: d.products.map((x) => ({ id: x.id, title: x.title, image: x.image })), vendor: '', tag: '', type: '' };
-        E.resolvedKey = ''; touch(); toast(`用了活动圈定的 ${d.products.length} 个产品`); render();
+        toast(`用了活动圈定的 ${d.products.length} 个产品`); scopeChanged();
       }); break;
       case 'rmtag': E.plan[el.dataset.k].splice(+el.dataset.i, 1); touch(); render(); break;
       // ---- 改价分组 ----
       case 'gopen': if (ev.target.closest('button')) return; E.gi = +el.dataset.i; E.panel = null; render(); break;
       case 'gadd': {
         const g = newGroup(E.plan.kind, EG().rule, EG().compare); g.scope.mode = 'products';
-        E.plan.groups.push(g); E.gi = E.plan.groups.length - 1; E.panel = null; E.resolvedKey = ''; touch(); render(); break;
+        E.plan.groups.push(g); E.gi = E.plan.groups.length - 1; E.panel = null; E.lists[g.id] = { key: srcKey(g.scope), status: 'ok', products: [] }; ruleChanged(); break;
       }
       case 'gdel': {
         if (E.plan.groups.length < 2 || !armed(el, '再点一次删掉这组')) return;
         const i = +el.dataset.i; const gid = E.plan.groups[i].id;
         E.plan.groups.splice(i, 1); E.gi = Math.max(0, Math.min(E.gi, E.plan.groups.length - 1));
-        curSlot().items = curSlot().items.filter((it) => it.group !== gid); E.resolvedKey = ''; touch(); render(); break;
+        curSlot().items = curSlot().items.filter((it) => it.group !== gid); delete E.lists[gid]; ruleChanged(); break;
       }
       case 'gup': case 'gdown': {
         const i = +el.dataset.i; const j = a === 'gup' ? i - 1 : i + 1; const gs = E.plan.groups;
         if (j < 0 || j >= gs.length) return;
-        [gs[i], gs[j]] = [gs[j], gs[i]]; E.gi = j; E.resolvedKey = ''; touch(); render(); break;
+        [gs[i], gs[j]] = [gs[j], gs[i]]; E.gi = j; ruleChanged(); break;
       }
       case 'unmanual': { // 手改过的变体:回到它那组规则算出来的价
         const it = curSlot().items.find((x) => x.variantId === el.dataset.v); if (!it) return;
@@ -921,17 +1045,34 @@ document.addEventListener('click', async (ev) => {
         try { if (!['keep', 'manual'].includes(g.rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, g.rule); } catch { /* 规则没填好 */ }
         touch(); render(); break;
       }
-      case 'resolve': await withBusy(el, async () => { const n = await resolveScope(); toast(`算好了:${n} 个变体`); render(); }); break;
+      case 'reload': { const g = E.plan.groups.find((x) => x.id === el.dataset.g) || EG(); await withBusy(el, () => loadGroup(g, { force: true })); toast('已从店里重新读'); break; } // 店里改了产品 / 价格时用
+      case 'tfilter': (E.tf[el.dataset.g] ||= {}).only = el.dataset.v || ''; render(); break;
       case 'uncmp': { const it = curSlot().items.find((i) => i.variantId === el.dataset.v); if (it) { it.cmpManual = false; delete it.compareAt; } touch(); render(); break; }
       case 'showall': E.showAllG ||= {}; E.showAllG[el.dataset.g] = !E.showAllG[el.dataset.g]; render(); break;
-      case 'rm': { const ids = (el.dataset.vs || el.dataset.v).split(','); const s = curSlot(); s.items = s.items.filter((i) => !ids.includes(i.variantId)); touch(); render(); break; }
+      case 'rm': case 'rmzero': { // 去掉:记在这一组上(加产品、改规则、重新读都不会再加回来),下面「已去掉」里能恢复
+        const s = curSlot(); const g = E.plan.groups.find((x) => x.id === el.dataset.g);
+        const ids = a === 'rmzero' ? s.items.filter((i) => i.group === g?.id && !(Number(i.refPrice) > 0)).map((i) => i.variantId) : (el.dataset.vs || el.dataset.v).split(',');
+        const byG = new Map(); for (const it of s.items) if (ids.includes(it.variantId)) byG.set(it.group, [...(byG.get(it.group) || []), it.variantId]);
+        for (const [gid, vs] of byG) { const gg = E.plan.groups.find((x) => x.id === gid); if (gg) gg.removed = [...new Set([...(gg.removed || []), ...vs])]; }
+        s.items = s.items.filter((i) => !ids.includes(i.variantId)); E.calcKey = scopeKey(P()); touch(); render();
+        if (a === 'rmzero') toast(`去掉了 ${ids.length} 个现价为 £0 的变体,下面「已去掉」里能恢复`);
+        break;
+      }
+      case 'unrm': { // 恢复去掉的(这一组的产品没读到就先读)
+        const g = E.plan.groups.find((x) => x.id === el.dataset.g); if (!g) return;
+        const back = el.dataset.v ? [el.dataset.v] : [...(g.removed || [])];
+        g.removed = (g.removed || []).filter((id) => !back.includes(id)); touch();
+        if (E.lists[g.id]?.status === 'ok') { recompute(); render(); } else { await loadGroup(g); recompute(); render(); }
+        break;
+      }
+      case 'loadall': await withBusy(el, () => loadGroup(EG(), { force: true })); break;
       case 'startnow': curSlot().start = now() + 60_000; touch(); render(); break;
       case 'togglepending': E.showPending = !E.showPending; render(); break;
       case 'save': {
         const mode = el.dataset.m;
         if (!E.plan.name.trim()) { toast('先填计划名称', false); $('[data-f=name]')?.focus(); return; }
         await withBusy(el, async () => {
-          if (!items().length || stale()) { await resolveScope(); render(); } // 范围 / 规则改过就先重算
+          await ensureCalc(); render(); // 每组的产品都读好、按最新设置算好再存
           const r = await act({ type: 'save', mode, id: E.plan.id, isNew: E.isNew, values: values() });
           if (mode === 'draft') { E.isNew = false; E.dirty = false; await reopen(r.id); } else { E = null; renderChrome(); render(); }
         });
@@ -975,7 +1116,7 @@ document.addEventListener('change', async (ev) => {
   if (el.dataset.a === 'notify') { try { await api('PUT', '/api/price/settings', { notify: { [el.dataset.k]: el.checked } }); await load(); } catch (e) { toast(e.message, false); } return; }
   if (el.id === 'lplan') { ledgerQ.plan = el.value; ledgerQ.offset = 0; loadLedger(); return; }
   if (!E) return;
-  if (el.name === 'rmode') { EG().rule.mode = el.value; E.resolvedKey = ''; touch(); render(); return; }
+  if (el.name === 'rmode') { EG().rule.mode = el.value; ruleChanged(); return; }
   const f = el.dataset.f;
   if (!f) return;
   const s = curSlot();
@@ -989,10 +1130,10 @@ document.addEventListener('change', async (ev) => {
     case 'cddays': E.plan.countdown.days = Number(el.value) || 0; touch(); render(); break;
     case 'cdstyle': E.plan.countdown.style = el.value; touch(); render(); break;
     case 'priority': { const n = Math.round(Number(el.value)); E.plan.priority = n >= 1 && n <= core.PRIO_MAX ? n : core.PRIO_MAX; touch(); render(); break; }
-    case 'rvalue': EG().rule.value = el.value; E.resolvedKey = ''; touch(); render(); break;
-    case 'rrounding': EG().rule.rounding = el.value; E.resolvedKey = ''; touch(); render(); break;
-    case 'rfrom': EG().rule.from = el.value; E.resolvedKey = ''; touch(); render(); break;
-    case 'svendor': case 'stag': case 'stype': EG().scope[{ svendor: 'vendor', stag: 'tag', stype: 'type' }[f]] = el.value.trim(); E.resolvedKey = ''; touch(); break;
+    case 'rvalue': clearTimeout(E.rvT); if (EG().rule.value !== el.value) { EG().rule.value = el.value; ruleChanged(); } break;
+    case 'rrounding': EG().rule.rounding = el.value; ruleChanged(); break;
+    case 'rfrom': EG().rule.from = el.value; ruleChanged(); break;
+    case 'svendor': case 'stag': case 'stype': { clearTimeout(E.svT); const k = { svendor: 'vendor', stag: 'tag', stype: 'type' }[f]; if (EG().scope[k] !== el.value.trim()) { EG().scope[k] = el.value.trim(); scopeChanged(); } break; }
     case 'campaign': {
       const c = (cache.campaigns || []).find((x) => x.id === el.value);
       E.plan.campaign = c ? { id: c.id, name: c.name } : null;
@@ -1022,6 +1163,12 @@ document.addEventListener('input', (ev) => {
   if (!E || !ev.target.closest('#section-price')) return;
   const f = ev.target.dataset.f;
   if (f === 'name') { E.plan.name = ev.target.value; E.dirty = true; const b = document.querySelector('#section-price .pr-sum__h b'); if (b) b.textContent = ev.target.value || '(还没起名字)'; }
+  if (f === 'rvalue') { const v = ev.target.value; clearTimeout(E.rvT); E.rvT = setTimeout(() => { if (E && EG().rule.value !== v) { EG().rule.value = v; ruleChanged(); } }, 350); }
+  if (['svendor', 'stag', 'stype'].includes(f)) {
+    const k = { svendor: 'vendor', stag: 'tag', stype: 'type' }[f]; const v = ev.target.value.trim(); clearTimeout(E.svT);
+    E.svT = setTimeout(() => { if (E && EG().scope[k] !== v) { EG().scope[k] = v; scopeChanged(); } }, 600);
+  }
+  if (ev.target.dataset.tq) { const gq = ev.target.dataset.tq; clearTimeout(E.tqT); const v = ev.target.value; E.tqT = setTimeout(() => { if (E) { (E.tf[gq] ||= {}).q = v; render(); } }, 250); }
 });
 // 标签输入框:回车添加
 document.addEventListener('keydown', (ev) => {

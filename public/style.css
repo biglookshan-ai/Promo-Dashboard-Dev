@@ -2021,3 +2021,18 @@ body.is-booting #modnav, body.is-booting #me-chip { visibility: hidden; }
 .invbox__roles { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
 .mtable--inv { margin-top: 12px; background: var(--surface); }
 .avatar--ghost { background: var(--surface-3); color: var(--text-3); }
+
+/* ---------- 改价:产品和新价(2026-10-29 用户:选了就出现、改了自动刷新)---------- */
+#section-price .pr-load { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; font-size: var(--fs-sm); color: var(--text-2); }
+#section-price .pr-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: bootspin .8s linear infinite; flex: none; }
+#section-price .pr-tbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+#section-price .pr-tbar__n { font-size: var(--fs-sm); color: var(--text-2); }
+#section-price .pr-chipfs { display: inline-flex; gap: 4px; background: var(--surface-3); border-radius: 8px; padding: 2px; }
+#section-price .pr-chipf { border: none; background: transparent; border-radius: 6px; padding: 3px 10px; font-size: var(--fs-xs); color: var(--text-2); cursor: pointer; }
+#section-price .pr-chipf b { font-weight: 600; }
+#section-price .pr-chipf.is-on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+#section-price .pr-removed { margin-top: 10px; font-size: var(--fs-sm); }
+#section-price .pr-removed > summary { cursor: pointer; color: var(--text-2); }
+#section-price .pr-removed__b { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+#section-price .pr-tbl tr.is-fresh td { animation: prfresh 2.4s ease; }
+@keyframes prfresh { 0%, 40% { background: #fff7d6; } 100% { background: transparent; } }
