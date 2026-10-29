@@ -7,6 +7,7 @@ import path from 'node:path';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'price-exec-'));
 const { runOnce } = await import('../src/price/executor.js');
+const { reportMessages } = await import('../src/price/notifier.js');
 const { load, save, emptyState } = await import('../src/price/store.js');
 
 const H = 3600_000;
@@ -41,9 +42,13 @@ function fakeIO(variants, collections = {}) {
     async readProductTags(ctx, pids) { const m = new Map(); pids.forEach((p) => m.set(p, [...(io.tags[p] || [])])); return m; },
     async addTags(ctx, pid, t) { io.tags[pid] = [...new Set([...(io.tags[pid] || []), ...t])]; },
     async removeTags(ctx, pid, t) { io.tags[pid] = (io.tags[pid] || []).filter((x) => !t.includes(x)); },
-    async productsInCollection(ctx, cid, pids) { const s = coll.get(cid) || new Set(); return new Set(pids.filter((p) => s.has(p))); },
-    async addToCollection(ctx, cid, pids) { if (!coll.has(cid)) coll.set(cid, new Set()); pids.forEach((p) => coll.get(cid).add(p)); },
-    async removeFromCollection(ctx, cid, pids) { pids.forEach((p) => coll.get(cid)?.delete(p)); },
+    deleted: new Set(), // 在店里被删掉的合集
+    calls: 0,
+    gone(cid) { io.calls++; if (io.deleted.has(cid)) throw new Error('Collection does not exist'); },
+    async productsInCollection(ctx, cid, pids) { io.gone(cid); const s = coll.get(cid) || new Set(); return new Set(pids.filter((p) => s.has(p))); },
+    async addToCollection(ctx, cid, pids) { io.gone(cid); if (!coll.has(cid)) coll.set(cid, new Set()); pids.forEach((p) => coll.get(cid).add(p)); },
+    async removeFromCollection(ctx, cid, pids) { io.gone(cid); pids.forEach((p) => coll.get(cid)?.delete(p)); },
+    async collectionExists(ctx, cid) { return !io.deleted.has(cid); },
   };
   return io;
 }
@@ -161,6 +166,50 @@ test('Collection 加入报错:下一轮按店里实际重新核对,不会误记�
   assert.deepEqual(load(shop).collState.flash.managed.sort(), ['P-a', 'P-b']);
   await run(shop, io, 10 * H);
   assert.deepEqual([...io.coll.get('flash')], []); // 两个都是 app 加的,结束全移出
+});
+
+test('Collection 在店里被删了:记一笔、通知一次,之后不再碰它,也不再报失败;价格照常', async () => {
+  const io = fakeIO({ a: '100.00', b: '100.00' }, { bf: [] });
+  const col = { id: 'bf', title: 'Black Friday' };
+  const shop = setup([plan('bf', 'flash', [{ id: 'd1', start: 0, end: 10 * H, collection: col, items: [item('a', '70.00'), item('b', '70.00')] }])]);
+  await run(shop, io, 1 * H);
+  assert.deepEqual(load(shop).collState.bf.managed.sort(), ['P-a', 'P-b']);
+  io.deleted.add('bf'); io.coll.delete('bf');
+  // 计划结束要移出 → Collection 没了:不算失败,改记「已删除」,价格照常恢复
+  const r = await run(shop, io, 10 * H);
+  assert.equal(r.failures.length, 0);
+  assert.deepEqual(r.goneCollections.map((c) => [c.title, c.plans.map((p) => p.name)]), [['Black Friday', ['bf']]]);
+  const st = load(shop);
+  assert.equal(st.collState.bf, undefined);
+  assert.equal(st.goneCollections.bf.title, 'Black Friday');
+  assert.equal(io.v.get('a').price, '100.00');
+  assert.ok(st.log.some((l) => /Black Friday」在店里已经被删除/.test(l.note)));
+  const msgs = reportMessages(st, r, { members: [{ id: 'ou_admin', status: 'active', roles: ['admin'] }] });
+  assert.deepEqual(msgs.map((m) => m.card.title), ['🔙 改价已恢复', '🗂 Collection 已被删除']);
+  // 之后再跑:不再碰这个 Collection
+  const calls = io.calls;
+  const r2 = await run(shop, io, 10 * H + 60_000);
+  assert.equal(r2.failures.length + r2.goneCollections.length, 0);
+  assert.equal(io.calls, calls);
+});
+
+test('Collection 在计划进行中被删了:不再往里加,价格照常;只是暂时出错(Collection 还在)照旧报失败重试', async () => {
+  const io = fakeIO({ a: '100.00' }, {});
+  io.deleted.add('old');
+  const shop = setup([plan('p', 'flash', [{ id: 'd1', start: 0, end: 10 * H, collection: { id: 'old', title: 'Old' }, items: [item('a', '70.00')] }])]);
+  const r = await run(shop, io, 1 * H);
+  assert.equal(r.failures.length, 0);
+  assert.equal(r.goneCollections.length, 1);
+  assert.equal(io.v.get('a').price, '70.00');
+  const r2 = await run(shop, io, 2 * H);
+  assert.equal(r2.failures.length + r2.goneCollections.length, 0);
+  // Collection 还在、只是这次请求出错 → 照旧当失败
+  const io2 = fakeIO({ a: '100.00' }, { flash: [] });
+  io2.addToCollection = async () => { throw new Error('模拟:网络超时'); };
+  const shop2 = setup([plan('p', 'flash', [{ id: 'd1', start: 0, end: 10 * H, collection: { id: 'flash', title: 'Flash' }, items: [item('a', '70.00')] }])]);
+  const r3 = await run(shop2, io2, 1 * H);
+  assert.ok(r3.failures.some((f) => /网络超时/.test(f.message)));
+  assert.equal(load(shop2).goneCollections?.flash, undefined);
 });
 
 test('变体被删了:移出计划,不会每分钟报', async () => {

@@ -62,6 +62,12 @@ export async function addToCollection(ctx, collectionId, productIds) {
   }
 }
 
+// Collection 还在不在(被删了 Shopify 返回 null)。加入 / 移出报错时用它判断是不是 Collection 被删了
+export async function collectionExists(ctx, collectionId) {
+  const d = await graphql(ctx, 'query($id: ID!) { collection(id: $id) { id } }', { id: collectionId });
+  return !!d.collection;
+}
+
 export async function removeFromCollection(ctx, collectionId, productIds) {
   for (const part of chunk(productIds, 250)) {
     const d = await graphql(ctx, `mutation($id: ID!, $p: [ID!]!) { collectionRemoveProducts(id: $id, productIds: $p) { userErrors { message } } }`, { id: collectionId, p: part });
@@ -117,4 +123,4 @@ export async function deleteCountdowns(ctx, productIds) {
   return ok;
 }
 
-export const realIO = { readVariants, writeProductVariants, productsInCollection, addToCollection, removeFromCollection, readProductTags, addTags, removeTags, setCountdowns, deleteCountdowns };
+export const realIO = { readVariants, writeProductVariants, productsInCollection, addToCollection, removeFromCollection, collectionExists, readProductTags, addTags, removeTags, setCountdowns, deleteCountdowns };

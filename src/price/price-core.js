@@ -425,11 +425,12 @@ export function recoverIntents(state, current, now) {
 // 返回每个合集这一轮要做的:remove(app 加的、现在不需要了)、check(需要但还不知道在不在合集里,执行器查完再决定加不加)
 export function planCollections(state, now) {
   const needed = new Map();
+  const gone = state.goneCollections || {}; // 店里已经删掉的合集:不再管(里面的产品随合集一起没了,也没什么可还原)
   for (const plan of state.plans) {
     if (plan.kind !== 'window' || !isLive(plan)) continue;
     const ex = new Set(plan.excluded || []);
     for (const slot of plan.slots || []) {
-      if (!slot.collection?.id || !slotActive(slot, now)) continue;
+      if (!slot.collection?.id || gone[slot.collection.id] || !slotActive(slot, now)) continue;
       const n = needed.get(slot.collection.id) || { title: slot.collection.title || '', products: new Set() };
       slot.items.filter((i) => !ex.has(i.variantId)).forEach((i) => n.products.add(i.productId));
       needed.set(slot.collection.id, n);
@@ -438,6 +439,7 @@ export function planCollections(state, now) {
   const out = [];
   const cs = state.collState || {};
   for (const cid of new Set([...needed.keys(), ...Object.keys(cs)])) {
+    if (gone[cid]) continue;
     const c = cs[cid] || { managed: [], preexisting: [] };
     const need = needed.get(cid)?.products || new Set();
     const remove = c.managed.filter((p) => !need.has(p));

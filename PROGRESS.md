@@ -28,6 +28,8 @@
 - 阶段 3:73 个产品的 `offer_*` 按日期并入活动、`promotion_tag` 并入活动、清理 `product_activity_event`(写产品数据,单独问用户)。
 
 ## 🏁 最近完成
+- **改价:计划设的 Collection 被删了不再一直报错**(2026-10-29,用户:飞书一直收到「改价失败 · Black Friday:移出 Collection 失败:Collection does not exist」):
+  执行器发现 Collection 在店里没了 → 不再管它(价格照常),日志记一笔、只通知一次「🗂 Collection 已被删除」;编辑器里标红提示。测试 244 条通过
 - **Collection 排序:照另一个 Collection 的顺序排**(2026-10-28,用户:Black Friday 这个 Collection 的产品顺序要完全照 Autumn Sale):
   - 🧭 「Collection 排序 → 默认设置」打开一个 Collection 的设置,第 2 段选来源 → 「看看会怎么排」(两边都有几个、只在这里有的几个排最后、要挪几个、平时排序会改成什么)→ 再点一次确认才真的排
   - 🔁 一次性复制:「平时怎么排」也照来源(比如「完全按手动顺序」),需要时把后台排序方式改成手动;来源是自动排序的不用复制;正被置顶清单接管的 Collection 不让排

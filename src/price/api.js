@@ -51,7 +51,7 @@ export function priceRouter() {
       me: { id: me.id, name: me.name, admin: me.role === 'approver' }, people: pricePeople(req.ctx.shop), team: teamEnabled(), approvals: approvalsOn(),
       plans: all ? state.plans : state.plans.filter((p) => !ended(p)), allPlans: all,
       endedCount: state.plans.filter(ended).length, planNames: state.plans.map((p) => ({ id: p.id, name: p.name })),
-      vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState,
+      vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState, goneCollections: state.goneCollections || {},
       log: state.log.slice(0, 300), engine: state.engine, ledgerCount: state.ledger.length,
       settings: { maxDiscountPct: state.settings.maxDiscountPct, sweepMinutes: state.settings.sweepMinutes, notify: state.settings.notify },
     };

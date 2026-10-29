@@ -424,7 +424,8 @@ function editorHtml() {
           ${p.kind === 'window' ? `<label class="pr-fld">结束(恢复原价)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
         </div>
         ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>只能选手动 Collection;结束自动移出(原来就在的不动)。Flash 当天那一组常用</em>
-          ${sl.collection ? `<div class="row"><span class="tag tag--accent">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>`
+          ${sl.collection ? `<div class="row"><span class="tag ${S.goneCollections?.[sl.collection.id] ? 'tag--danger' : 'tag--accent'}">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>
+            ${S.goneCollections?.[sl.collection.id] ? `<div class="note note--warn">这个 Collection 在店里已经被删除了(${fmtT(S.goneCollections[sl.collection.id].at)} 发现):价格照常改,只是不再往里加产品。${ro ? '' : '要加进别的 Collection 就点「不加了」再重新选。'}</div>` : ''}`
             : ro ? '<span class="muted">不加</span>' : '<button class="btn btn-sm" data-a="panel" data-p="slotcoll" style="width:fit-content">选 Collection…</button>'}
           ${E.panel === 'slotcoll' ? collPanel('slotcoll') : ''}</div>` : ''}
         ${p.kind === 'window' ? `<label class="pr-fld" style="margin-top:12px">优先级 <em>1–10,默认 10(最高)。只有两个限时计划改到同一个产品、时间又重叠时才用得到:<b>数字大的说了算,一样大时开始晚的说了算</b>(比如黑五期间加一天 Flash,那天自动用 Flash 的价,过了回到黑五的价)。想让这个计划让位就调低</em>

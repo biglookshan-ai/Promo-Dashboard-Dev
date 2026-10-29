@@ -15,6 +15,7 @@ export function emptyState() {
     plans: [],
     vault: {},        // 变体 → { productId, title, sku, base, written, intent, hold, since }
     collState: {},    // 合集 → { title, managed, preexisting }
+    goneCollections: {}, // 店里已经删掉的合集 → { title, at, plans }:不再往里加 / 移出(2026-10-29)
     tagState: {},     // 产品 → { added: [app 加的标签], removed: [app 去掉的标签] }
     ledger: [],       // 价格账本(最新在前)
     log: [],          // 操作日志

@@ -27,7 +27,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
   return withLock(shop, async () => {
     const state = load(shop);
     const ctx = { shop, token };
-    const rep = { at: now, written: [], failures: [], holds: [], recovered: [], collections: [], tags: [], moved: [], finished: [], countdowns: { set: 0, del: 0 } };
+    const rep = { at: now, written: [], failures: [], holds: [], recovered: [], collections: [], goneCollections: [], tags: [], moved: [], finished: [], countdowns: { set: 0, del: 0 } };
     const planOf = (rec) => rec.asg?.plan || rec.perm?.plan || null;
     const planName = (id) => state.plans.find((p) => p.id === id)?.name || '';
     const brief = (rec, extra = {}) => {
@@ -156,7 +156,15 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = r
           if (added || remove.length) rep.collections.push({ collectionId: c.collectionId, title: cs.title, added, removed: remove.length });
           if (!c.need.length && !cs.managed.length) delete state.collState[c.collectionId];
         } catch (e) {
-          rep.failures.push({ collection: cs.title || c.collectionId, message: String(e.message || e) });
+          // 2026-10-29 踩过:计划设的 Collection 在后台被删了 → 每分钟移出失败、每小时发一次「改价失败」。
+          // 先问一下 Collection 还在不在:不在了就不再管它(产品随 Collection 一起没了,不用还原),记一笔、通知一次;问不到照旧当失败重试
+          const gone = io.collectionExists ? await io.collectionExists(ctx, c.collectionId).then((x) => !x, () => false) : false;
+          if (gone) {
+            const plans = state.plans.filter((p) => (p.slots || []).some((s) => s.collection?.id === c.collectionId)).map((p) => ({ id: p.id, name: p.name }));
+            (state.goneCollections ||= {})[c.collectionId] = { title: cs.title || '', at: now, plans };
+            delete state.collState[c.collectionId];
+            rep.goneCollections.push({ collectionId: c.collectionId, title: cs.title || '', plans });
+          } else rep.failures.push({ collection: cs.title || c.collectionId, message: String(e.message || e) });
         }
       }
 
@@ -226,6 +234,7 @@ function writeLogs(state, rep, now) {
   if (rep.recovered.length) appendLog(state, { at: now, action: 'recover', plan: '', note: `上轮中断后核对:${rep.recovered.length} 个变体已生效,已补记`, by: '执行器' });
   for (const h of rep.holds) appendLog(state, { at: now, action: 'hold', planId: h.planId, plan: h.plan, note: `${h.title || h.variantId}:${HOLD_CN[h.reason] || h.reason}${h.seen ? `(店里现价 £${h.seen.price})` : ''}`, by: '执行器' });
   for (const c of rep.collections) appendLog(state, { at: now, action: 'collection', plan: '', note: `Collection「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`, by: '执行器' });
+  for (const c of rep.goneCollections) appendLog(state, { at: now, action: 'collection', plan: c.plans.map((p) => p.name).join('、'), note: `Collection「${c.title}」在店里已经被删除:不再往里加 / 移出产品(价格照常);要的话在计划里重新选一个 Collection`, by: '执行器' });
   if (rep.tags.length) {
     const a = rep.tags.reduce((n, t) => n + t.added.length, 0), d = rep.tags.reduce((n, t) => n + t.removed.length, 0);
     appendLog(state, { at: now, action: 'tag', plan: '', note: `产品标签:${rep.tags.length} 个产品${a ? `,加了 ${a} 个标签` : ''}${d ? `,去掉 ${d} 个标签` : ''}`, by: '执行器' });
