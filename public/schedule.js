@@ -121,10 +121,10 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) bgRefresh(); });
 
   // 在后台里打开 → 问服务器;建好内容类型了就用正式数据
-  async function detectMode() {
+  async function detectMode(pre) {
     if (!(window.shopify && window.shopify.idToken) && !window.CGP_ME) return 'demo'; // 飞书登录后直接开网页也算正式数据
     try {
-      const v = await api('GET', '/api/schedule/state');
+      const v = (await pre) || await api('GET', '/api/schedule/state');
       lastLoad = Date.now(); lastSig = sigOf(v); lastDraw = Date.now();
       liveSetup = v.setup;
       if (v.setup?.ready && localStorage.getItem(FORCE_DEMO) !== '1') { S = await normalizeLive(v); return 'live'; }
@@ -2731,7 +2731,7 @@
   // 等我审批 / 要我处理(被退回、快到截止)/ 我负责的 / 我提交的 / 抄送我的;改价计划也算(能看改价页的人)
   let mwPrice = null; // { at, plans, me }
   async function loadMwPrice(force) {
-    if (MODE !== 'live' || !window.cgpCanSee?.('price')) return;
+    if (MODE !== 'live' || !approvalsOn() || !window.cgpCanSee?.('price')) return; // 没开审批就没有「我的工作」,不用读
     if (!force && mwPrice && now() - mwPrice.at < 60000) return;
     try { const r = await (window.cgpPriceState ? window.cgpPriceState(15000) : api('GET', '/api/price/state')); mwPrice = { at: now(), plans: r.plans || [], me: r.me || {} }; }
     catch { mwPrice = { at: now(), plans: [], me: {} }; }
@@ -4974,15 +4974,21 @@
 
   // 启动:加载共用规则 → 判断模式 → 加载数据 → 画页面
   (async () => {
+    // 和登录检查同时去读排期数据(2026-10-29:省一来一回)。直接用 fetch、不走 api():没登录时 api() 会清登录并刷新页面。
+    // 读到了就用;没登录 / 没权限 / 演示预览读不到 = null,照原来的流程走
+    const pre = (async () => {
+      try { const h = await window.cgpHeaders(); if (!h.Authorization && !h['X-App-Session']) return null; const r = await fetch('/api/schedule/state', { headers: h }); return r.ok ? await r.json() : null; } catch { return null; }
+    })();
     try {
       [core, A, OD, SL, CS] = await Promise.all([import('./lib/schedule-core.js'), import('./lib/schedule-actions.js'), import('./lib/order-diff.js'), import('./lib/sale-link.js'), import('./lib/col-sort.js')]);
       await window.CGP_AUTH; // 飞书登录门(没开飞书 / 演示预览时直接放行)
-      MODE = await detectMode();
+      MODE = await detectMode(pre);
       if (MODE === 'demo') await load();
       renderModeBar(); renderAll();
       loadMwPrice(); // 「我的工作」的数字也算上等你批的改价计划
     } catch (e) {
       $('#ov-root').innerHTML = `<p class="muted">加载失败:${esc(e.message)}</p>`; console.error(e);
     }
+    window.cgpBooted?.();
   })();
 })();

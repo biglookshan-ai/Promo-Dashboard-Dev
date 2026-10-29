@@ -1966,3 +1966,12 @@ details.hint > div { margin-top: 6px; padding: 8px 10px; border-radius: var(--ra
 .au-mod { justify-self: start; }
 .au-x { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 @media (max-width: 760px) { .au-row { grid-template-columns: 46px minmax(0, 1fr); } .au-mod, .au-x { grid-column: 2; } }
+
+/* ---------- 启动中(2026-10-29):登录 / 数据读回来之前只显示「正在加载」,
+   不露出 index.html 里写死的演示横条和全部导航(用户看着像「先刷出旧版再变新的」)---------- */
+.bootload { display: none; }
+body.is-booting .bootload { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 60vh; color: var(--text-3); font-size: 14px; }
+body.is-booting .content > *:not(.bootload) { display: none !important; }
+body.is-booting #modnav, body.is-booting #me-chip { visibility: hidden; }
+.bootload__spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--text-2); animation: bootspin .8s linear infinite; }
+@keyframes bootspin { to { transform: rotate(360deg); } }

@@ -9,10 +9,10 @@
   <!-- Banner 预览用主题同款字体(Instrument Sans / Urbanist / Figtree) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@300&family=Instrument+Sans:wght@400;700&family=Urbanist:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@300&family=Instrument+Sans:wght@400;700&family=Urbanist:wght@400;500&display=swap" media="print" onload="this.media='all'" />
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
+<body class="is-booting">
   <ui-nav-menu>
     <a href="/" rel="home">网站更新中心</a>
   </ui-nav-menu>
@@ -87,6 +87,7 @@
       </div>
     </aside>
   <main class="content">
+    <div class="bootload" id="bootload"><span class="bootload__spin"></span>正在加载网站更新中心…</div>
     <div class="demobar" id="demobar">
       <span class="demobar__tag">演示模式</span>
       <span>用的是你们<b>真实的 Banner 和顶栏内容</b>加示例活动;所有操作只存在你的浏览器里,<b>不会写入店铺</b>。</span>

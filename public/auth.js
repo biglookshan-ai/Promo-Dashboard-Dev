@@ -19,7 +19,10 @@
   window.cgpLogout = function () { localStorage.removeItem(KEY); location.reload(); };
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  window.cgpBooted = () => document.body.classList.remove('is-booting'); // 页面画好了(schedule.js 调)或要显示登录门
+  setTimeout(window.cgpBooted, 20000); // 保险:万一哪里卡住,20 秒后也把页面露出来
   function gate(html) {
+    window.cgpBooted();
     document.body.classList.add('is-gated');
     let g = document.getElementById('auth-gate');
     if (!g) { g = document.createElement('div'); g.id = 'auth-gate'; g.className = 'authgate'; document.body.appendChild(g); }
@@ -133,6 +136,8 @@
 
   const never = new Promise(() => {});
   window.CGP_AUTH = (async () => {
+    // 「开没开飞书登录」和「我是谁」同时问(2026-10-29:之前一个接一个,打开要多等一来一回)
+    const meP = window.cgpHeaders().then((h) => (h.Authorization || h['X-App-Session'] ? fetch('/api/me', { headers: h }) : null)).catch(() => null);
     let cfg;
     try {
       const r = await fetch('/api/auth/config');
@@ -141,7 +146,7 @@
     } catch { return { offline: true }; }
     window.CGP_TEAM = !!cfg.larkEnabled; // 打开页面时的模式;服务器那边切换了,app.js 的 api() 会发现并刷新页面
     if (!cfg.larkEnabled) return { legacy: true };
-    const r = await fetch('/api/me', { headers: await window.cgpHeaders() });
+    const r = (await meP) || await fetch('/api/me', { headers: await window.cgpHeaders() });
     const me = await r.json().catch(() => ({}));
     if (r.status === 401 || !me.member) { if (r.status === 401 && me.needsAuth && !me.needLogin) showLogin(me.error); else showLogin(); return never; }
     if (me.member.status !== 'active') { showPending(me); return never; }

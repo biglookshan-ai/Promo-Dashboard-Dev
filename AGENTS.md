@@ -220,6 +220,9 @@
   · 改价数据前端共用 `window.cgpPriceState(maxAge)`(同时只读一次);进入「改价」先用手上的数据画,再后台刷新;
   · 排期数据页面开着时每分钟后台读一次(`bgRefresh`),有变化才重画;开着编辑窗 / 弹出框 / 正在输入 / 页面在后台时不读。
   · ⛔ 本地测试环境的入口要改写首页 HTML,转发时去掉 `accept-encoding`(不然拿到 gzip 改坏了)。
+  · **打开时**(2026-10-29 用户:每次先看到「旧版」再变新的 —— 其实是 index.html 写死的演示横条 + 全部导航在等数据):`<body class="is-booting">` 只显示「正在加载」,
+    schedule.js 画完 / auth.js 显示登录门时调 `window.cgpBooted()` 去掉(20 秒保险)。`/api/auth/config` 和 `/api/me` 同时发,`/api/schedule/state` 也和登录检查同时预读
+    (⛔ 预读用裸 fetch,别用 `api()`:没登录时 api() 会清登录并刷新,会无限刷新);Google 字体不挡首屏(media=print 再切 all)。没开审批就不读「我的工作」的改价数据。
 - 后台跑在 Shopify 后台的 iframe 里:**别用 `prompt()` / `confirm()` / `alert()`**(跨域 iframe 可能被浏览器拦截),用页面内输入框和「再点一次确认」。
 - **计数不用扫全站**:`metafieldsCount` / `metaobjectsCount` 由 API 直接给,总账秒出。只有促销盘点那套才需要扫 3938 个产品(所以它改成切到标签页才懒加载)。
 - **Metafield 查不到「哪个 app 创建」** —— Shopify 没这个字段。归属只能靠三条线索:命名空间推断 + 主题扫描(`read_themes`,最硬证据)+ 人工标注(`src/annotations.js`,存 DATA_DIR)。
