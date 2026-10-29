@@ -162,7 +162,7 @@ function plansHtml() {
     <button class="stat" data-a="filter" data-f="running"><div class="stat__n">${count(FILTERS[1][2])}</div><div class="stat__l">进行中的计划</div></button>
     <button class="stat" data-a="filter" data-f="scheduled"><div class="stat__n">${count(FILTERS[2][2])}</div><div class="stat__l">已排期</div></button>
     ${showPending ? `<button class="stat ${count(FILTERS[3][2]) ? 'stat--danger' : ''}" data-a="filter" data-f="pending"><div class="stat__n">${count(FILTERS[3][2])}</div><div class="stat__l">待审核</div></button>` : ''}
-    <button class="stat" data-a="tab" data-t="vault"><div class="stat__n">${live}</div><div class="stat__l">正在活动价上的变体</div></button>
+    <button class="stat" data-a="tab" data-t="vault"><div class="stat__n">${live}</div><div class="stat__l">正在活动价上的选项</div></button>
     <button class="stat ${holdsOf().length ? 'stat--danger' : ''}" data-a="tab" data-t="vault"><div class="stat__n">${holdsOf().length}</div><div class="stat__l">暂停接管(要处理)</div></button>
   </div>
   ${ganttHtml()}
@@ -217,7 +217,7 @@ function planRow(p, s, ovs = []) {
         <span class="tag ${p.kind === 'window' ? 'tag--' + layerCls(p) : ''}">${kindLabel(p)}</span>
         ${p.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${holds ? `<span class="tag tag--danger">${holds} 个暂停接管</span>` : ''}
-        ${ovs.length ? `<span class="tag tag--warn" title="${esc(ovs.map((o) => `「${o.name}」:${o.n} 个变体,重叠时用「${o.wins ? p.name : o.name}」的价`).join('\n'))}">⚠️ 和「${esc(ovs[0].name)}」${ovs.length > 1 ? `等 ${ovs.length} 个计划` : ''}改到同一批产品(${ovs.reduce((n, o) => n + o.n, 0)} 个变体)</span>` : ''}
+        ${ovs.length ? `<span class="tag tag--warn" title="${esc(ovs.map((o) => `「${o.name}」:${o.n} 个选项,重叠时用「${o.wins ? p.name : o.name}」的价`).join('\n'))}">⚠️ 和「${esc(ovs[0].name)}」${ovs.length > 1 ? `等 ${ovs.length} 个计划` : ''}改到同一批产品(${ovs.reduce((n, o) => n + o.n, 0)} 个选项)</span>` : ''}
         ${p.campaign ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : ''}
         ${S.approvals ? `<span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}` : ''}
       </div>
@@ -226,9 +226,9 @@ function planRow(p, s, ovs = []) {
       <div class="plan__meta">
         <span>${fmtT(sum.start)}${sum.end ? ' → ' + fmtT(sum.end) : ' 起生效'}</span>
         ${s === 'running' && sum.end ? `<span class="tx-ok">还剩 ${leftTxt(sum.end)}</span>` : s === 'scheduled' ? `<span>${leftTxt(sum.start)}后开始</span>` : ''}
-        <span>${sum.products} 个产品 / ${sum.variants} 个变体</span>
+        <span>${sum.products} 个产品 / ${sum.variants} 个选项</span>
         ${maxOff > 0 ? `<span>最大降幅 ${maxOff}%</span>` : ''}
-        ${live ? `<span>此刻 ${live} 个变体在活动价上</span>` : ''}
+        ${live ? `<span>此刻 ${live} 个选项在活动价上</span>` : ''}
         ${(p.tagsAdd || []).length ? `<span>加标签 ${p.tagsAdd.map(esc).join('、')}</span>` : ''}
         ${p.state === 'rejected' && p.rejectNote ? `<span style="color:var(--danger)">退回意见:${esc(p.rejectNote)}</span>` : ''}
       </div>
@@ -254,7 +254,7 @@ function ganttHtml() {
         const end = s.end ?? s.start + DAY / 3;
         if (end <= t0 || s.start >= t1) return '';
         return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''}" style="${p.color ? `background:${esc(p.color)};` : ''}left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
-          title="${esc(p.name)} · ${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个变体">${p.kind === 'permanent' ? '永久' : p.slots.length > 1 ? `第 ${i + 1} 段` : esc(p.name)}</div>`;
+          title="${esc(p.name)} · ${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个选项">${p.kind === 'permanent' ? '永久' : p.slots.length > 1 ? `第 ${i + 1} 段` : esc(p.name)}</div>`;
       }).join('')}<div class="gantt__now" style="left:${nowLeft}"></div></div>`).join('')}
   </div></div>`;
 }
@@ -279,7 +279,7 @@ const CMP_OPTS = [
   ['keep', '只显示原来的划线价', '只用产品原来的划线价;<b>原来没有划线价的就不显示</b> —— 这些产品前台看不出在打折,也不会出现在促销链接、「只显示打折」里'],
   ['price', '只显示原来的现价', '划线价 = 改价前的售价,不管原来有没有划线价:原来卖 £80、改成 £70 → <s>£80</s> £70'],
   ['clear', '不显示划线价', '改价期间去掉划线价,只显示新价;这些产品不算打折'],
-  ['set', '逐个指定划线价', '在每一组的「产品和新价」表格里给每个变体填划线价(选别的方式时,个别变体也能在表格里单独改,算例外)'],
+  ['set', '逐个指定划线价', '在每一组的「产品和新价」表格里给每个选项填划线价(选别的方式时,个别选项也能在表格里单独改,算例外)'],
 ];
 const cmpDefault = (p) => (p.kind === 'window' ? 'original' : 'keep');
 const cmpOf = (p) => p.compare || cmpDefault(p);
@@ -405,13 +405,13 @@ function summaryHtml() {
       ${gs.map((g, i) => line(`${gs.length > 1 ? `<b>第 ${i + 1} 组</b>:` : ''}${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${gs.length > 1 ? ` · ${CMP_SHORT[gCmp(p, g)]}` : ''}`)).join('')}
       ${gs.length > 1 ? line('<span class="muted">同一个产品在几组里时,以排在下面的那组为准</span>') : ''}
       ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束后<b>售价和划线价都回到改价前</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
-      ${line(`${gs.length > 1 ? '划线价按分组设' : cmpOpts(p).find((o) => o[0] === gCmp(p, gs[0]))?.[1] || '显示原来的划线价'}${(() => { const n = items().filter((i) => i.cmpManual).length; return n ? `,另有 <b>${n}</b> 个变体单独设了划线价` : ''; })()}`)}
+      ${line(`${gs.length > 1 ? '划线价按分组设' : cmpOpts(p).find((o) => o[0] === gCmp(p, gs[0]))?.[1] || '显示原来的划线价'}${(() => { const n = items().filter((i) => i.cmpManual).length; return n ? `,另有 <b>${n}</b> 个选项单独设了划线价` : ''; })()}`)}
       ${p.kind === 'window' && core.prioOf(p) !== core.PRIO_MAX ? line(`优先级 ${core.prioOf(p)}(和别的限时计划改到同一个产品时,数字大的说了算)`) : ''}
       ${p.kind === 'window' && p.countdown?.on ? line(`产品上显示倒计时「${esc(cdLabel(p))}」${Number(p.countdown.days) ? `,最后 ${Number(p.countdown.days)} 天才显示` : ',一直显示'}`) : ''}
       ${p.tagsAdd.length ? line(`生效期间加标签 <b>${p.tagsAdd.map(esc).join('、')}</b>,结束自动去掉`) : ''}
       ${p.tagsRemove.length ? line(`生效期间去掉标签 <b>${p.tagsRemove.map(esc).join('、')}</b>,结束自动加回`) : ''}
       ${S.approvals ? line(`审批人:<b>${p.approver ? esc(nameOf(p.approver)) : '管理员'}</b>${p.owner ? ` · 负责人 ${esc(nameOf(p.owner))}` : ''}`) : ''}
-      ${its.length ? line(`影响 <b>${nProd}</b> 个产品 / <b>${live.length}</b> 个变体${maxOff > 0 ? `,最多降 <b>${maxOff}%</b>` : ''} · 预计 ${mins} 分钟内改完`) : line(`<span class="tx-warn">${stale() ? '正在读产品…' : '还没选产品'}</span>`)}
+      ${its.length ? line(`影响 <b>${nProd}</b> 个产品 / <b>${live.length}</b> 个选项${maxOff > 0 ? `,最多降 <b>${maxOff}%</b>` : ''} · 预计 ${mins} 分钟内改完`) : line(`<span class="tx-warn">${stale() ? '正在读产品…' : '还没选产品'}</span>`)}
     </ul>
   </div>${its.length && !stale() ? checkHtml() : ''}`;
 }
@@ -500,7 +500,7 @@ function groupsHtml(ro) {
       <div class="pr-group__h" data-a="gopen" data-i="${i}">
         <span class="pr-group__no">${i + 1}</span>
         <span class="pr-group__n">${multi ? `第 ${i + 1} 组` : '改价规则'}</span>
-        <span class="pr-group__s">${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b> · ${CMP_SHORT[gCmp(P(), g)] || ''}${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个变体</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
+        <span class="pr-group__s">${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b> · ${CMP_SHORT[gCmp(P(), g)] || ''}${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个选项</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
         ${open ? '' : '<span class="pr-group__go">点开修改</span>'}
         ${ro || !multi ? '' : `<span class="pr-group__acts">
           <button type="button" class="btn btn-ghost btn-xs" data-a="gup" data-i="${i}" ${i ? '' : 'disabled'} title="上移">↑</button>
@@ -534,7 +534,7 @@ function scopeHtml(ro) {
     body = `<div class="row">${sc.collections.map((c, i) => `<span class="tag tag--accent">${esc(c.title)}${ro ? '' : `<button type="button" class="chip__x" data-a="rmcoll" data-i="${i}">✕</button>`}</span>`).join('') || '<span class="muted">还没选 Collection</span>'}
       ${ro ? '' : '<button class="btn btn-sm" data-a="panel" data-p="coll">选 Collection…</button>'}</div>${E.panel === 'coll' ? collPanel('coll') : ''}`;
   } else if (sc.mode === 'products') {
-    body = `<div class="row">${sc.products.length ? `<span class="tag tag--accent">已选 ${sc.products.length} 个产品</span>${ro ? '' : '<button class="linkbtn" data-a="clearprod">清空</button>'}` : '<span class="muted">还没选产品</span>'}
+    body = `<div class="row">${sc.products.length ? `<span class="tag tag--accent">已选 ${sc.products.length} 个产品${sc.products.some((x) => x.variants?.length) ? `(${sc.products.filter((x) => x.variants?.length).length} 个只选了部分选项)` : ''}</span>${ro ? '' : '<button class="linkbtn" data-a="clearprod">清空</button>'}` : '<span class="muted">还没选产品</span>'}
       ${ro ? '' : '<button class="btn btn-sm" data-a="pick">选产品</button>'}</div>
       ${sc.products.length ? `<div class="pr-picked">${sc.products.slice(0, 12).map((x) => `<span class="pr-picked__i" title="${esc(x.title)}">${x.image ? `<img src="${esc(x.image)}" alt="">` : ''}</span>`).join('')}${sc.products.length > 12 ? `<span class="muted">…共 ${sc.products.length} 个</span>` : ''}</div>` : ''}`;
   } else if (sc.mode === 'search') {
@@ -573,9 +573,9 @@ function groupListHtml(ro, g, mine, over) {
   const fill = !ro && gCmp(p, g) === 'set' ? `<div class="pr-fill">一键填划线价 = 现价的 <input class="inp inp--xs" id="fillpct-${g.id}" type="number" min="101" step="1" value="120" style="width:70px"/> %
       <button type="button" class="btn btn-sm" data-a="fillcmp" data-g="${g.id}">填上</button><span class="muted">${g.rule.mode === 'keep' ? '售价不变、划线价调高 = 虚拟折扣;' : ''}填完还能在表格里一个个改</span></div>` : '';
   return `${head}${fill}
-    ${zero && !ro ? `<div class="banner banner--warn" style="margin-top:6px">有 <b>${zero}</b> 个变体现价是 £0(多半是询价 / 还没定价的产品),改不了价,不去掉就存不了。<button class="btn btn-sm" data-a="rmzero" data-g="${g.id}" style="margin-left:8px">把这 ${zero} 个去掉</button></div>` : ''}
+    ${zero && !ro ? `<div class="banner banner--warn" style="margin-top:6px">有 <b>${zero}</b> 个选项现价是 £0(多半是询价 / 还没定价的产品),改不了价,不${isPick(g) ? '删除' : '排除'}就存不了。<button class="btn btn-sm" data-a="rmzero" data-g="${g.id}" style="margin-left:8px">${isPick(g) ? '删除' : '排除'}这 ${zero} 个</button></div>` : ''}
     <div class="pr-tbar">
-      <span class="pr-tbar__n">${new Set(mine.map((i) => i.productId)).size} 个产品 / ${mine.length} 个变体${over > 0 ? ` <span class="muted">· 另有 ${over} 个也在下面的组里,按下面那组的价</span>` : ''}</span>
+      <span class="pr-tbar__n">${new Set(mine.map((i) => i.productId)).size} 个产品 / ${mine.length} 个选项${over > 0 ? ` <span class="muted">· 另有 ${over} 个也在下面的组里,按下面那组的价</span>` : ''}</span>
       <span class="pr-chipfs">${chip('', '全部')}${chip('bad', '有问题', nBad)}${chip('man', '手改过', nMan)}</span>
       <input class="inp inp--sm" data-tq="${g.id}" placeholder="找产品 / SKU" value="${esc(tf.q || '')}" style="width:170px"/>
       ${ro ? '' : `<button type="button" class="linkbtn" data-a="reload" data-g="${g.id}" title="店里刚改过产品或价格时用">从店里重新读</button>`}
@@ -585,9 +585,10 @@ function groupListHtml(ro, g, mine, over) {
 }
 // 去掉的变体:折起来,能一个个 / 全部恢复
 function removedHtml(ro, g) {
+  if (isPick(g)) return ''; // 指定产品模式是直接删除,没有「已排除」
   const rm = g.removed || []; if (!rm.length) return '';
   const names = new Map(); for (const pr of E.lists?.[g.id]?.products || []) for (const v of pr.variants) names.set(v.id, `${pr.title}${v.title && v.title !== 'Default Title' ? ' · ' + v.title : ''}`);
-  return `<details class="pr-removed"><summary>已去掉 ${rm.length} 个变体 <span class="muted">(这些不改价${ro ? '' : ';点开可以恢复'})</span></summary>
+  return `<details class="pr-removed"><summary>已排除 ${rm.length} 个选项 <span class="muted">(这些不改价${ro ? '' : ';点开可以恢复'})</span></summary>
     <div class="pr-removed__b">${rm.slice(0, 60).map((id) => `<span class="tag">${esc(names.get(id) || '(名字还没读到)')}${ro ? '' : `<button type="button" class="chip__x" data-a="unrm" data-g="${g.id}" data-v="${esc(id)}" title="恢复">↺</button>`}</span>`).join('')}
       ${rm.length > 60 ? `<span class="muted">…共 ${rm.length} 个</span>` : ''}${ro ? '' : `<button type="button" class="linkbtn" data-a="unrm" data-g="${g.id}">全部恢复</button>`}</div></details>`;
 }
@@ -612,8 +613,12 @@ function previewHtml(ro, gid, keep = null) {
   // 2026-10-28 用户:进行中的计划看不到移出 —— 表格只读时按钮被一起藏了。移出是安全方向(下一分钟恢复原价),开始后照样能用
   const canExclude = started() && !E.showPending && !E.orig?.stopped && !['ended', 'done'].includes(statusOf(E.orig));
   const rowAct = canExclude ? 'exclude' : ro ? '' : 'rm';
-  const actLabel = rowAct === 'exclude' ? '移出' : '去掉';
-  const actTip = rowAct === 'exclude' ? '移出后下一分钟回到改价前的价格' : '把这个变体从这个计划里去掉,它的价格不会被改(下面「已去掉」里能恢复)';
+  // 2026-10-29 用户:指定产品模式叫「删除」(从选的清单里删掉);Collection / 品牌标签 / 全店叫「排除」(从这批产品里排除,能恢复)
+  const grp = groupsOf(p).find((g) => g.id === gid); const pick = isPick(grp);
+  const actLabel = rowAct === 'exclude' ? '移出' : pick ? '删除' : '排除';
+  const actTip = rowAct === 'exclude' ? '移出后下一分钟回到改价前的价格' : pick ? '从选的产品里删掉这个选项(和在选择器里取消勾选一样)' : '从这批产品里排除,它的价格不会被改(下面「已排除」里能恢复)';
+  const listOf = new Map((E.lists?.[gid]?.products || []).map((x) => [x.id, x])); const selOf = pick ? pickedVariants(grp) : null;
+  const notPicked = (pid) => { const pr = listOf.get(pid); const vs = selOf?.get(pid); return pr && vs ? pr.variants.length - vs.size : 0; }; // 这个产品有几个选项没选
   const live = its.filter((x) => !ex.has(x.variantId));
   const rows = show.map((it) => {
     const first = it.productId !== lastPid; lastPid = it.productId;
@@ -622,8 +627,8 @@ function previewHtml(ro, gid, keep = null) {
     const d = it.price != null ? core.discountPct(it.refPrice, it.price) : null;
     const gone = ex.has(it.variantId);
     return `<tr class="${first ? 'is-first' : ''} ${E.fresh?.has(it.productId) ? 'is-fresh' : ''}" style="${gone ? 'opacity:.45' : ''}">
-      <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div>
-        ${(() => { const sib = live.filter((x) => x.productId === it.productId); return rowAct && sib.length > 1 ? `<button class="linkbtn pcell__all" data-a="${rowAct}" data-vs="${sib.map((x) => x.variantId).join(',')}" title="${rowAct === 'exclude' ? `这个产品的 ${sib.length} 个变体一起移出,下一分钟回到改价前的价格` : `这个产品的 ${sib.length} 个变体一起从计划里去掉`}">整个产品${actLabel}(${sib.length} 个变体)</button>` : ''; })()}</div></div>` : ''}</td>
+      <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div>${pick && notPicked(it.productId) > 0 ? `<div class="pcell__s pcell__np">另有 ${notPicked(it.productId)} 个选项没选,不改价</div>` : ''}
+        ${(() => { const sib = live.filter((x) => x.productId === it.productId); return rowAct && sib.length > 1 ? `<button class="linkbtn pcell__all" data-a="${rowAct}" data-vs="${sib.map((x) => x.variantId).join(',')}" title="${rowAct === 'exclude' ? `这个产品的 ${sib.length} 个选项一起移出,下一分钟回到改价前的价格` : pick ? `这个产品整个从选的清单里删掉` : `这个产品的 ${sib.length} 个选项一起排除`}">整个产品${actLabel}(${sib.length} 个选项)</button>` : ''; })()}</div></div>` : ''}</td>
       <td><div class="vcell">${vimgOf(it) ? `<img class="vimg" src="${esc(vimgOf(it))}" loading="lazy" alt=""/>` : ''}<div>${esc(it.variant || '')}<div class="pcell__s">${esc(it.sku || '')}</div></div></div></td>
       <td class="num">${money(it.refPrice)}${it.refCompareAt && Number(it.refCompareAt) > Number(it.refPrice) ? `<div><s>${money(it.refCompareAt)}</s></div>` : ''}${Number(it.cost) > 0 ? `<div class="pcell__s">成本 ${money(it.cost)}</div>` : ''}</td>
       <td class="num">${ro || gone ? `<b>${it.price != null ? money(it.price) : '不变'}</b>` : `<input class="inp ${needsPrice(p, it) ? 'is-todo' : ''}" data-f="iprice" data-v="${it.variantId}" value="${it.price ?? ''}" placeholder="${needsPrice(p, it) ? '填新价' : '不变'}"/>`}
@@ -634,7 +639,7 @@ function previewHtml(ro, gid, keep = null) {
         if (ro || gone) return `${shown}${it.cmpManual ? '<div><span class="pr-mtag">例外</span></div>' : ''}`;
         // 按规则算出来的划线价(没单独改时显示成占位提示)
         const byRule = (() => { try { return core.targetFor({ price: it.refPrice, compareAt: it.refCompareAt }, p, { ...it, cmpManual: false }).compareAt; } catch { return null; } })();
-        return `<input class="inp ${it.cmpManual ? 'is-exc' : ''}" data-f="icompare" data-v="${it.variantId}" value="${it.cmpManual ? (it.compareAt ?? '0') : ''}" placeholder="${byRule ? money(byRule) : '无'}" title="填数字 = 这个变体单独用这个划线价;填 0 = 这个变体不显示划线价;清空 = 按上面选的方式"/>
+        return `<input class="inp ${it.cmpManual ? 'is-exc' : ''}" data-f="icompare" data-v="${it.variantId}" value="${it.cmpManual ? (it.compareAt ?? '0') : ''}" placeholder="${byRule ? money(byRule) : '无'}" title="填数字 = 这个选项单独用这个划线价;填 0 = 这个选项不显示划线价;清空 = 按上面选的方式"/>
           ${it.cmpManual ? `<div><span class="pr-mtag">例外</span><button class="linkbtn" data-a="uncmp" data-v="${it.variantId}" title="回到上面选的划线价方式">用规则</button></div>` : ''}`;
       })()}</td>
       <td class="num">${d == null ? '' : d > 0 ? `<span class="off">-${d}%</span>` : d < 0 ? `<span class="up">+${-d}%</span>` : '0%'}</td>
@@ -644,9 +649,9 @@ function previewHtml(ro, gid, keep = null) {
   }).join('');
   if (!its.length) return '<p class="muted" style="margin-top:8px">没有符合筛选的产品。</p>';
   return `${ro ? '' : `<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,改规则、加产品都会保留;点「用规则价」恢复)。
-      ${setCompare ? '' : '划线价也能<b>单独例外</b>:灰字是按上面方式算出来的;填数字 = 这个变体用这个划线价,填 0 = 不显示,清空 = 回到上面的方式(标「例外」)。'}</p>`}
-    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>变体 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${its.length > 20 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 20 个' : `展开全部 ${its.length} 个变体`}</button>` : ''}`;
+      ${setCompare ? '' : '划线价也能<b>单独例外</b>:灰字是按上面方式算出来的;填数字 = 这个选项用这个划线价,填 0 = 不显示,清空 = 回到上面的方式(标「例外」)。'}</p>`}
+    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>选项 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${its.length > 20 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 20 个' : `展开全部 ${its.length} 个选项`}</button>` : ''}`;
 }
 
 function bannersHtml() {
@@ -679,7 +684,7 @@ function diffLines(a, b) {
   const ma = new Map((sa.items || []).map((t) => [t.variantId, t])), mb = new Map((sb.items || []).map((t) => [t.variantId, t]));
   const add = [...mb.keys()].filter((k) => !ma.has(k)).length, del = [...ma.keys()].filter((k) => !mb.has(k)).length;
   const chg = [...mb.keys()].filter((k) => ma.has(k) && ma.get(k).price !== mb.get(k).price).length;
-  if (add || del || chg) out.push([add && `加 ${add} 个变体`, del && `删 ${del} 个`, chg && `改价 ${chg} 个`].filter(Boolean).join('、'));
+  if (add || del || chg) out.push([add && `加 ${add} 个选项`, del && `删 ${del} 个`, chg && `改价 ${chg} 个`].filter(Boolean).join('、'));
   { const ma = core.groupCmpModes(a), mb = core.groupCmpModes(b); if (JSON.stringify(ma) !== JSON.stringify(mb)) out.push(`划线价改成「${mb.map((m) => core.COMPARE_CN[m]).join(' / ')}」`); }
   if (JSON.stringify(a.tagsAdd || []) !== JSON.stringify(b.tagsAdd || []) || JSON.stringify(a.tagsRemove || []) !== JSON.stringify(b.tagsRemove || [])) out.push('改了产品标签');
   if ((a.approver || '') !== (b.approver || '')) out.push(`审批人改成 ${b.approver ? nameOf(b.approver) : '管理员'}`);
@@ -721,9 +726,9 @@ function checkHtml() {
       <div class="${errs ? 'is-bad' : ''}"><b>${errs}</b>个有错误(不能提交)</div>
       <div class="${warns ? 'is-warn' : ''}"><b>${warns}</b>个要留意</div>
     </div>
-    ${todo && p.kind === 'window' ? `<div class="banner banner--warn" style="margin-bottom:6px">还有 <b>${todo}</b> 个变体没填新价(在对应那一组的「产品和新价」表格里填;表格上点「有问题」能只看这些)。</div>` : ''}
+    ${todo && p.kind === 'window' ? `<div class="banner banner--warn" style="margin-bottom:6px">还有 <b>${todo}</b> 个选项没填新价(在对应那一组的「产品和新价」表格里填;表格上点「有问题」能只看这些)。</div>` : ''}
     ${roundWarn}
-    ${[...byOther.values()].map((o) => `<div class="banner banner--warn" style="margin-bottom:6px">⚠️ <b>${o.n.size} 个变体</b>也在「${esc(o.name)}」(优先级 ${o.priority})里,时间有重叠:重叠期间用<b>「${o.wins ? esc(p.name || '这个计划') : esc(o.name)}」</b>的价格${o.wins ? `,这个计划结束后回到「${esc(o.name)}」的价` : ',这个计划在重叠的这段时间里对这些变体不起作用'}。不对就改上面的「优先级」(数字大的说了算,一样大时开始晚的说了算)。</div>`).join('')}
+    ${[...byOther.values()].map((o) => `<div class="banner banner--warn" style="margin-bottom:6px">⚠️ <b>${o.n.size} 个选项</b>也在「${esc(o.name)}」(优先级 ${o.priority})里,时间有重叠:重叠期间用<b>「${o.wins ? esc(p.name || '这个计划') : esc(o.name)}」</b>的价格${o.wins ? `,这个计划结束后回到「${esc(o.name)}」的价` : ',这个计划在重叠的这段时间里对这些选项不起作用'}。不对就改上面的「优先级」(数字大的说了算,一样大时开始晚的说了算)。</div>`).join('')}
     ${err && !readonly() ? `<div class="banner banner--warn" style="margin:0">还不能提交:${esc(err)}</div>` : ''}
   </div>`;
 }
@@ -782,6 +787,39 @@ const srcKey = (sc) => JSON.stringify(sc.mode === 'collections' ? ['c', sc.colle
   : sc.mode === 'search' ? ['s', sc.vendor || '', sc.tag || '', sc.type || ''] : ['all']);
 const scopeEmpty = (sc) => (sc.mode === 'collections' ? !sc.collections.length : sc.mode === 'products' ? !sc.products.length : sc.mode === 'search' ? !(sc.vendor || sc.tag || sc.type) : false);
 const C = (cache.cat ||= { coll: new Map(), prod: new Map(), search: new Map(), all: null });
+// 指定产品(2026-10-29 用户):按选项选 —— 选择器里勾整个产品 = 全部选项,只勾几个选项 = 只改这几个(scope.products[].variants;没有 = 全部)
+const isPick = (g) => g?.scope?.mode === 'products';
+const pickedVariants = (g) => new Map((g.scope.products || []).map((x) => [x.id, x.variants?.length ? new Set(x.variants) : null]));
+// 读到产品后理一理选的选项:全选了就记成「整个产品」;上一版记在 removed 里的「去掉」、老计划里没有的选项 → 都算没选(指定产品模式不用「已排除」)
+function normalizePick(g, ps, initial) {
+  const byId = new Map(ps.map((x) => [x.id, x]));
+  const rmd = new Set(g.removed || []);
+  const inPlan = initial && g.removed === undefined ? new Set(items().map((i) => i.variantId)) : null; // 老计划:当时没算进来的 = 没选
+  g.scope.products = g.scope.products.flatMap((x) => {
+    const pr = byId.get(x.id); if (!pr) return [x]; // 读不到(店里删了?)先留着
+    const all = pr.variants.map((v) => v.id);
+    const sel = (x.variants?.length ? all.filter((id) => x.variants.includes(id)) : all).filter((id) => !rmd.has(id) && (!inPlan || inPlan.has(id)));
+    if (!sel.length) return []; // 一个选项都没选了 = 这个产品不在清单里
+    const { variants, ...rest } = x;
+    return [sel.length === all.length ? rest : { ...rest, variants: sel }];
+  });
+  g.removed = [];
+}
+// 指定产品模式的「删除」:从选的清单里删掉这些选项(和在选择器里取消勾选一样);一个都不剩就整个产品删掉
+function pickDelete(g, variantIds) {
+  const ids = new Set(variantIds); const L = E.lists[g.id];
+  g.scope.products = g.scope.products.flatMap((x) => {
+    const pr = L?.products?.find((y) => y.id === x.id);
+    const all = pr ? pr.variants.map((v) => v.id) : items().filter((i) => i.productId === x.id).map((i) => i.variantId);
+    const cur = x.variants?.length ? x.variants : all;
+    const left = cur.filter((id) => !ids.has(id));
+    if (left.length === cur.length) return [x];
+    if (!left.length) return [];
+    const { variants, ...rest } = x;
+    return [left.length === all.length ? rest : { ...rest, variants: left }];
+  });
+  if (L) L.key = srcKey(g.scope); // 清单还是那批产品(少了几个),不用重新读
+}
 const keepProd = (ps) => { ps.forEach((x) => C.prod.set(x.id, x)); return ps; };
 // 店里读过的直接用;force = 从店里重新读
 async function productsOf(sc, force = false) {
@@ -822,13 +860,15 @@ function loadGroup(g, { force = false, initial = false } = {}) {
   if (!E) return Promise.resolve();
   const key = srcKey(g.scope); const prev = E.lists[g.id];
   if (!force && prev && prev.key === key && prev.status !== 'err') return prev.promise || Promise.resolve();
-  if (scopeEmpty(g.scope)) { E.lists[g.id] = { key, status: 'ok', products: [] }; if (!initial) recompute(); return Promise.resolve(); }
+  if (scopeEmpty(g.scope)) { E.lists[g.id] = { key, status: 'ok', products: [] }; if (!initial) { g.removed = []; recompute(); } return Promise.resolve(); } // 什么都没选了:排除记录也清掉
   const entry = { key, status: 'loading', products: prev?.products || [] };
   const before = new Set((prev?.products || []).map((x) => x.id));
   entry.promise = productsOf(g.scope, force).then((ps) => {
     if (!E || E.lists[g.id] !== entry) return;
     entry.status = 'ok'; entry.products = ps;
-    if (initial) seedRemoved(g, ps);
+    if (isPick(g)) { normalizePick(g, ps, initial); entry.key = srcKey(g.scope); }
+    else if (!initial && g.removed?.length) { const have = new Set(ps.flatMap((x) => x.variants.map((v) => v.id))); g.removed = g.removed.filter((id) => have.has(id)); }
+    if (initial) { if (!isPick(g)) seedRemoved(g, ps); E.calcKey = scopeKey(P()); }
     else {
       if (prev) { const fresh = ps.filter((x) => !before.has(x.id)).map((x) => x.id); if (fresh.length < ps.length) { E.fresh = new Set(fresh); setTimeout(() => { if (E) E.fresh = new Set(); }, 2500); } }
       recompute();
@@ -852,11 +892,12 @@ function recompute() {
   const old = new Map(s.items.map((i) => [i.variantId, i]));
   const by = new Map(); E.groupHits = {};
   for (const g of p.groups) {
-    const L = E.lists[g.id]; const rm = new Set(g.removed || []);
+    const L = E.lists[g.id]; const rm = new Set(isPick(g) ? [] : g.removed || []); const sel = isPick(g) ? pickedVariants(g) : null;
     const put = (it) => { by.delete(it.variantId); by.set(it.variantId, it); }; // 先删再放:被下面的组接手时,顺序跟着下面的组
     if (L && L.status === 'ok' && L.key === srcKey(g.scope)) {
       let n = 0;
       for (const pr of L.products) for (const v of pr.variants) {
+        const vs = sel?.get(pr.id); if (sel && (!sel.has(pr.id) || (vs && !vs.has(v.id)))) continue; // 指定产品:没选的选项不算
         if (rm.has(v.id)) continue; n++;
         const it = toItem(pr, v, g.rule); it.group = g.id;
         const o = old.get(v.id);
@@ -870,6 +911,7 @@ function recompute() {
       // 这一组的产品还没读到(或读不到):先用原来的条目,价格按现在的规则重算
       for (const o of s.items) {
         if (o.group !== g.id || rm.has(o.variantId)) continue;
+        if (sel && (!sel.has(o.productId) || (sel.get(o.productId) && !sel.get(o.productId).has(o.variantId)))) continue;
         const it = { ...o };
         if (!it.manual) { it.price = null; try { if (!['keep', 'manual'].includes(g.rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, g.rule); } catch { /* 规则没填好 */ } }
         put(it);
@@ -883,6 +925,8 @@ function recompute() {
 function scopeChanged(g = EG()) {
   touch();
   if (g.scope.mode === 'all' && !C.all) { delete E.lists[g.id]; recompute(); render(); return; }
+  const L = E.lists[g.id];
+  if (L && L.status === 'ok' && L.key === srcKey(g.scope)) { if (isPick(g)) { normalizePick(g, L.products, false); L.key = srcKey(g.scope); } recompute(); render(); return; } // 产品没变(只改了选项)
   loadGroup(g); render();
 }
 // 改了规则 / 分组顺序:本地马上重算
@@ -930,7 +974,7 @@ function vaultHtml() {
   const colls = Object.entries(S.collState || {});
   return `
   <div class="toolbar"><button class="btn" data-a="dlvault">导出还原表格(CSV)</button>${isAdmin() ? '<button class="btn" data-a="runnow">立即对齐一次</button>' : ''}
-    <span class="muted">还原表格 = 每个受管变体的原价和原划线价;app 万一出问题,照着它在后台改回去即可。</span></div>
+    <span class="muted">还原表格 = 每个受管选项的原价和原划线价;app 万一出问题,照着它在后台改回去即可。</span></div>
   ${holds.length ? `<h3>⚠️ 暂停接管,等你处理(${holds.length})</h3>${holds.map((v) => `<div class="hold">
     <div class="hold__t">${esc(v.title || v.id)} <span class="muted">${esc(v.sku || '')}</span></div>
     <div class="muted" style="margin:2px 0">${REASON[v.hold.reason] || v.hold.reason} · 计划「${esc(plan(v.hold.planId))}」· ${fmtT(v.hold.at)}</div>
@@ -982,7 +1026,7 @@ function settingsHtml() {
       <label class="pr-fld">巡检间隔(分钟)<em>多久核对一次「正在活动价上的产品有没有被人手动改过」</em><input class="inp" type="number" id="sweep" value="${s.sweepMinutes}" ${ap ? '' : 'disabled'}/></label></div>
     ${ap ? '<div class="row" style="margin-top:10px"><button class="btn btn-sm btn-primary" data-a="savesafe">保存</button></div>' : ''}</div>
   <div class="pr-card"><div class="pr-card__t">执行器</div>
-    <div class="pr-kv"><span>状态</span>${S.engine.lastRun ? `上次对齐 ${ago(S.engine.lastRun)},改了 ${S.engine.lastWrites} 个变体` : '还没运行'}${S.engine.lastError ? ` · <span style="color:var(--danger)">${esc(S.engine.lastError)}</span>` : ''}</div>
+    <div class="pr-kv"><span>状态</span>${S.engine.lastRun ? `上次对齐 ${ago(S.engine.lastRun)},改了 ${S.engine.lastWrites} 个选项` : '还没运行'}${S.engine.lastError ? ` · <span style="color:var(--danger)">${esc(S.engine.lastError)}</span>` : ''}</div>
     <div class="pr-kv"><span>时区</span>英国时间(Europe/London,自动处理夏令时)</div>
     ${S.team ? '<div class="pr-kv"><span>成员 / 飞书</span>在网站更新中心的「设置」里管(谁能看改价页 = 角色勾了「改价」)</div>' : ''}
   </div>`;
@@ -1023,12 +1067,14 @@ document.addEventListener('click', async (ev) => {
       case 'pick': {
         if (!window.shopify?.resourcePicker) { toast('选择器只能在 Shopify 后台里用', false); return; }
         const picked = await window.shopify.resourcePicker({ type: 'product', multiple: true, action: 'select',
-          selectionIds: EG().scope.products.map((x) => ({ id: x.id })) });
+          selectionIds: EG().scope.products.map((x) => (x.variants?.length ? { id: x.id, variants: x.variants.map((id) => ({ id })) } : { id: x.id })) });
         if (!picked) return;
-        // 叠加:新选的排最上面(用户定的倒序);在选择器里取消勾选的就拿掉
+        // 叠加:新选的排最上面(用户定的倒序);在选择器里取消勾选的就拿掉。按选项记:只勾了几个选项就只改这几个(读到产品后,全勾了会记成整个产品)
         const sc = EG().scope; const had = new Set(sc.products.map((x) => x.id)); const now0 = new Set(picked.map((x) => x.id));
-        const added = picked.filter((x) => !had.has(x.id)).map((x) => ({ id: x.id, title: x.title, image: x.images?.[0]?.originalSrc || '' }));
-        sc.products = [...added, ...sc.products.filter((x) => now0.has(x.id))];
+        const conv = (x) => { const vs = (x.variants || []).map((v) => v.id).filter(Boolean); const whole = !vs.length || (x.totalVariants != null && vs.length >= x.totalVariants);
+          return { id: x.id, title: x.title, image: x.images?.[0]?.originalSrc || '', ...(whole ? {} : { variants: vs }) }; };
+        const added = picked.filter((x) => !had.has(x.id)).map(conv);
+        sc.products = [...added, ...sc.products.filter((x) => now0.has(x.id)).map((x) => conv(picked.find((y) => y.id === x.id)))];
         if (added.length) toast(`加了 ${added.length} 个产品,排在最上面`);
         scopeChanged(); break;
       }
@@ -1074,7 +1120,7 @@ document.addEventListener('click', async (ev) => {
       case 'fillcmp': { // 逐个指定划线价:一键填 = 现价 × X%(手动单独改过的不动)
         const pct = Number($(`#fillpct-${el.dataset.g}`)?.value); if (!(pct > 100)) { toast('填一个大于 100 的百分比,比如 120', false); return; }
         let n = 0; for (const it of curSlot().items) if (it.group === el.dataset.g && !it.cmpManual) { it.compareAt = (Math.round(Number(it.refPrice) * pct) / 100).toFixed(2); n++; }
-        toast(`填好了 ${n} 个变体的划线价(现价的 ${pct}%)`); touch(); render(); break;
+        toast(`填好了 ${n} 个选项的划线价(现价的 ${pct}%)`); touch(); render(); break;
       }
       case 'uncmp': { const it = curSlot().items.find((i) => i.variantId === el.dataset.v); if (it) { it.cmpManual = false; delete it.compareAt; } touch(); render(); break; }
       case 'showall': E.showAllG ||= {}; E.showAllG[el.dataset.g] = !E.showAllG[el.dataset.g]; render(); break;
@@ -1082,9 +1128,14 @@ document.addEventListener('click', async (ev) => {
         const s = curSlot(); const g = E.plan.groups.find((x) => x.id === el.dataset.g);
         const ids = a === 'rmzero' ? s.items.filter((i) => i.group === g?.id && !(Number(i.refPrice) > 0)).map((i) => i.variantId) : (el.dataset.vs || el.dataset.v).split(',');
         const byG = new Map(); for (const it of s.items) if (ids.includes(it.variantId)) byG.set(it.group, [...(byG.get(it.group) || []), it.variantId]);
-        for (const [gid, vs] of byG) { const gg = E.plan.groups.find((x) => x.id === gid); if (gg) gg.removed = [...new Set([...(gg.removed || []), ...vs])]; }
+        let picked = false;
+        for (const [gid, vs] of byG) {
+          const gg = E.plan.groups.find((x) => x.id === gid); if (!gg) continue;
+          if (isPick(gg)) { pickDelete(gg, vs); picked = true; } // 指定产品:直接从选的清单里删掉
+          else gg.removed = [...new Set([...(gg.removed || []), ...vs])]; // Collection / 品牌标签 / 全店:排除
+        }
         s.items = s.items.filter((i) => !ids.includes(i.variantId)); E.calcKey = scopeKey(P()); touch(); render();
-        if (a === 'rmzero') toast(`去掉了 ${ids.length} 个现价为 £0 的变体,下面「已去掉」里能恢复`);
+        if (a === 'rmzero') toast(picked ? `删除了 ${ids.length} 个现价为 £0 的选项` : `排除了 ${ids.length} 个现价为 £0 的选项,下面「已排除」里能恢复`);
         break;
       }
       case 'unrm': { // 恢复去掉的(这一组的产品没读到就先读)
