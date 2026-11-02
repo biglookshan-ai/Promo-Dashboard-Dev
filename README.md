@@ -12,7 +12,8 @@
 - **embedded: true**，Use legacy install flow: **false**（managed install）
 - **App URL**: `https://<railway-url>`（先部署再回填，别留 example.com）
 - **Scopes**: `read_products, read_metaobjects, read_metaobject_definitions, read_themes`
-  + 排期系统(阶段 1a 起):`write_metaobject_definitions, write_metaobjects, write_files`(不需要 write_products / write_themes)
+  + 排期系统(阶段 1a 起):`write_metaobject_definitions, write_metaobjects, write_files`
+  + 首页 Banner 备用 Slide 同步进主题编辑器(2026-11-02):`write_themes`(只改首页模板里 Banner 轮播那一个 section 的 slide)
 - **Distribution → Custom distribution** → cinegearpro 店铺 → install。
 
 ## 部署（Railway）

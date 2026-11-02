@@ -23,7 +23,7 @@ const fakeShopify = () => {
 test('到点上线:已批准且到开始时间的切成 ACTIVE,并记日志', async () => {
   seed({ banners: [{ id: 'b1', kind: 'banner', state: 'approved', title: 'New Lens', start: T, end: null, shopifyId: 'gid://shopify/Metaobject/1', syncedStatus: 'DRAFT' }] });
   const f = fakeShopify();
-  const r = await runOnce(SHOP, { now: T + 1, token: 'x', setStatus: f.setStatus });
+  const r = await runOnce(SHOP, { themeBanners: null, now: T + 1, token: 'x', setStatus: f.setStatus });
   assert.deepEqual(f.calls, [{ id: 'gid://shopify/Metaobject/1', status: 'ACTIVE' }]);
   assert.equal(r.changes.length, 1);
   const s = store.load(SHOP);
@@ -34,14 +34,14 @@ test('到点上线:已批准且到开始时间的切成 ACTIVE,并记日志', as
 
 test('状态已经对了就不重复调用 Shopify', async () => {
   const f = fakeShopify();
-  await runOnce(SHOP, { now: T + 2, token: 'x', setStatus: f.setStatus });
+  await runOnce(SHOP, { themeBanners: null, now: T + 2, token: 'x', setStatus: f.setStatus });
   assert.equal(f.calls.length, 0);
 });
 
 test('到期下线', async () => {
   seed({ topbar: [{ id: 't1', kind: 'topbar', state: 'approved', text: 'Sale', start: T - H, end: T, shopifyId: 'gid://shopify/Metaobject/2', syncedStatus: 'ACTIVE' }] });
   const f = fakeShopify();
-  await runOnce(SHOP, { now: T, token: 'x', setStatus: f.setStatus });
+  await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: f.setStatus });
   assert.deepEqual(f.calls, [{ id: 'gid://shopify/Metaobject/2', status: 'DRAFT' }]);
 });
 
@@ -51,7 +51,7 @@ test('没批准 / 还没写进 Shopify 的不碰', async () => {
     { id: 'b2', kind: 'banner', state: 'approved', start: null, end: null },
   ] });
   const f = fakeShopify();
-  await runOnce(SHOP, { now: T, token: 'x', setStatus: f.setStatus });
+  await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: f.setStatus });
   assert.equal(f.calls.length, 0);
 });
 
@@ -61,7 +61,7 @@ test('宕机后补跑:错过了上线和下线,恢复后一次对齐', async () 
     { id: 'b2', kind: 'banner', state: 'approved', start: T - 9 * H, end: T - 2 * H, shopifyId: 'gid://2', syncedStatus: 'ACTIVE' },
   ] });
   const f = fakeShopify();
-  await runOnce(SHOP, { now: T, token: 'x', setStatus: f.setStatus });
+  await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: f.setStatus });
   assert.deepEqual(f.calls.sort((a, b) => a.id.localeCompare(b.id)), [{ id: 'gid://1', status: 'ACTIVE' }, { id: 'gid://2', status: 'DRAFT' }]);
 });
 
@@ -71,28 +71,28 @@ test('跟随活动:活动到点,挂在下面的内容一起上线', async () => 
     banners: [{ id: 'b1', kind: 'banner', state: 'approved', campaign: 'c1', start: null, end: null, shopifyId: 'gid://b', syncedStatus: 'DRAFT' }],
   });
   const f = fakeShopify();
-  await runOnce(SHOP, { now: T, token: 'x', setStatus: f.setStatus });
+  await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: f.setStatus });
   assert.equal(f.calls.length, 2);
   assert.ok(f.calls.every((c) => c.status === 'ACTIVE'));
 });
 
 test('Shopify 报错:记失败、不改本地状态,下一轮会重试', async () => {
   seed({ banners: [{ id: 'b1', kind: 'banner', state: 'approved', title: 'X', start: null, end: null, shopifyId: 'gid://1', syncedStatus: 'DRAFT' }] });
-  const r = await runOnce(SHOP, { now: T, token: 'x', setStatus: async () => { throw new Error('Throttled'); } });
+  const r = await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: async () => { throw new Error('Throttled'); } });
   assert.equal(r.failures.length, 1);
   const s = store.load(SHOP);
   assert.equal(s.banners[0].syncedStatus, 'DRAFT');
   assert.equal(s.log[0].action, 'failure');
   assert.match(s.scheduler.lastError, /Throttled/);
   const f = fakeShopify();
-  await runOnce(SHOP, { now: T + 60_000, token: 'x', setStatus: f.setStatus });
+  await runOnce(SHOP, { themeBanners: null, now: T + 60_000, token: 'x', setStatus: f.setStatus });
   assert.equal(f.calls.length, 1);
 });
 
 test('没有店铺授权:不调用、记原因', async () => {
   seed({ banners: [{ id: 'b1', kind: 'banner', state: 'approved', start: null, end: null, shopifyId: 'gid://1', syncedStatus: 'DRAFT' }] });
   const f = fakeShopify();
-  const r = await runOnce(SHOP, { now: T, token: null, setStatus: f.setStatus });
+  const r = await runOnce(SHOP, { themeBanners: null, now: T, token: null, setStatus: f.setStatus });
   assert.equal(f.calls.length, 0);
   assert.equal(r.failures.length, 1);
 });
@@ -101,12 +101,12 @@ test('飞书:自动上下线发一条汇总消息;没填 webhook 不发', async 
   seed({ banners: [{ id: 'b1', kind: 'banner', state: 'approved', title: 'New Lens', start: T, end: null, shopifyId: 'gid://1', syncedStatus: 'DRAFT' }] });
   store.update(SHOP, (s) => { s.settings.larkWebhook = 'https://open.larksuite.com/open-apis/bot/v2/hook/abc'; });
   const cards = [];
-  await runOnce(SHOP, { now: T + 1, token: 'x', setStatus: async () => {}, send: async (cfg, card) => { cards.push(card); } });
+  await runOnce(SHOP, { themeBanners: null, now: T + 1, token: 'x', setStatus: async () => {}, send: async (cfg, card) => { cards.push(card); } });
   assert.equal(cards.length, 1);
   assert.match(cards[0].title, /自动上下线 1 条/);
   store.update(SHOP, (s) => { s.settings.larkWebhook = ''; s.banners[0].syncedStatus = 'DRAFT'; });
   const cards2 = [];
-  await runOnce(SHOP, { now: T + 2, token: 'x', setStatus: async () => {}, send: async (c, card) => cards2.push(card) });
+  await runOnce(SHOP, { themeBanners: null, now: T + 2, token: 'x', setStatus: async () => {}, send: async (c, card) => cards2.push(card) });
   assert.equal(cards2.length, 0);
 });
 
@@ -115,8 +115,8 @@ test('飞书:到点还没批准的提醒只发一次', async () => {
   store.update(SHOP, (s) => { s.settings.larkWebhook = 'https://open.larksuite.com/open-apis/bot/v2/hook/abc'; });
   const cards = [];
   const send = async (c, card) => cards.push(card);
-  await runOnce(SHOP, { now: T, token: 'x', setStatus: async () => {}, send });
-  await runOnce(SHOP, { now: T + 60_000, token: 'x', setStatus: async () => {}, send });
+  await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: async () => {}, send });
+  await runOnce(SHOP, { themeBanners: null, now: T + 60_000, token: 'x', setStatus: async () => {}, send });
   assert.equal(cards.filter((c) => /还没批准/.test(c.title)).length, 1);
 });
 
@@ -125,7 +125,7 @@ test('飞书:没开审批时,跟随的活动还是草稿 → 提醒说「活动�
     banners: [{ id: 'b8', kind: 'banner', state: 'approved', title: 'BF Banner', campaign: 'c1', start: null, end: null }] });
   store.update(SHOP, (s) => { s.settings.larkWebhook = 'https://open.larksuite.com/open-apis/bot/v2/hook/abc'; });
   const cards = [];
-  await runOnce(SHOP, { now: T, token: 'x', setStatus: async () => {}, send: async (c, card) => cards.push(card) });
+  await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: async () => {}, send: async (c, card) => cards.push(card) });
   const c = cards.find((x) => /活动还是草稿/.test(x.title));
   assert.ok(c, '有「活动还是草稿」的提醒');
   assert.ok(!JSON.stringify(cards).includes('审核'));
@@ -154,4 +154,17 @@ test('置顶排序的促销标签整个去掉(2026-10-29):设过的清掉、店�
   await dropPinPromo({ shop: 'x', token: 't' }, st2, { now: T, gql: async () => { throw new Error('网络断了'); } });
   assert.equal(st2.pins[0].badge, 'B');
   assert.ok(st2.log.some((l) => l.action === 'failure'));
+});
+
+test('主题编辑器里的备用 Banner(2026-11-02):同步了记一笔;出错只在第一次 / 原因变了时记', async () => {
+  seed({});
+  const f = fakeShopify();
+  const ok = async (ctx, state) => { state.themeBanners = { count: 3 }; return { done: true, count: 3, removed: 37, theme: '正式主题' }; };
+  await runOnce(SHOP, { now: T, token: 'x', setStatus: f.setStatus, collections: null, themeBanners: ok });
+  assert.match(store.load(SHOP).log[0].note, /按上线中的 3 张更新了主题「正式主题」.*换掉原来的 37 个/);
+  seed({});
+  const bad = async (ctx, state) => { state.themeBanners = { error: '没权限' }; return { done: false, error: '没权限' }; };
+  await runOnce(SHOP, { now: T, token: 'x', setStatus: f.setStatus, collections: null, themeBanners: bad });
+  await runOnce(SHOP, { now: T + 60_000, token: 'x', setStatus: f.setStatus, collections: null, themeBanners: bad });
+  assert.equal(store.load(SHOP).log.filter((x) => x.action === 'failure' && /没权限/.test(x.note)).length, 1);
 });

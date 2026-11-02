@@ -36,7 +36,7 @@ fs.mkdirSync(DATA, { recursive: true });
 // ---------------- 1. 假 Shopify ----------------
 const catPath = path.join(ROOT, 'scripts/demo-catalog.json');
 const cat = fs.existsSync(catPath) ? JSON.parse(fs.readFileSync(catPath, 'utf8')) : { products: [], tagCounts: {}, collections: [] };
-const store = { defs: {}, objects: {}, files: {}, n: 1000 };
+const store = { defs: {}, objects: {}, files: {}, themeFiles: {}, n: 1000 }; // themeFiles = app 写进「主题」的文件(只在内存,不碰本地主题文件夹)
 // --core-only:模拟「老店铺已经建过第一期的 4 个类型,还没建首页商品模块的 2 个」(升级场景)
 if (args.has('--core-only')) {
   for (const type of ['cgp_campaign', 'cgp_banner_slide', 'cgp_topbar_message', 'cgp_topbar_style']) store.defs[type] = { id: `gid://shopify/MetaobjectDefinition/${store.n++}`, type, name: type };
@@ -81,7 +81,8 @@ const fakeProduct = (p) => {
     hasOnlyDefaultVariant: true, variants: { nodes: [{ id: `gid://shopify/ProductVariant/${p.id}01`, title: 'Default Title', price: String(price), compareAtPrice: off ? String(Math.round(price / (1 - off / 100))) : null }] } };
 };
 const SCOPES = args.has('--no-scopes') ? ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions']
-  : ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions', 'write_metaobject_definitions', 'write_metaobjects', 'write_files', 'write_products', 'read_inventory'];
+  : ['read_products', 'read_themes', 'read_metaobjects', 'read_metaobject_definitions', 'write_metaobject_definitions', 'write_metaobjects', 'write_files', 'write_products', 'read_inventory',
+    ...(args.has('--no-theme-write') ? [] : ['write_themes'])]; // --no-theme-write:模拟还没开「改主题」权限
 
 // 合集成员(有状态):排期系统真的改合集顺序时,改的就是这里 —— 第一次用到时按合集 handle 的关键词凑一组
 const colMembers = new Map();
@@ -207,7 +208,12 @@ function gql(query, v) {
   }
   if (q.includes('themes(first: 1, roles: [MAIN])')) return { themes: { nodes: [{ id: 'gid://shopify/OnlineStoreTheme/1', name: 'cinegearpro-2-0-1(本地主题文件)' }] } };
   if (q.includes('theme(id: $id) { files')) {
-    return { theme: { files: { nodes: v.f.filter((f) => fs.existsSync(path.join(THEME, f))).map((f) => ({ filename: f, body: { content: fs.readFileSync(path.join(THEME, f), 'utf8') } })) } } };
+    return { theme: { files: { nodes: v.f.filter((f) => store.themeFiles[f] || fs.existsSync(path.join(THEME, f))).map((f) => ({ filename: f, body: { content: store.themeFiles[f] ?? fs.readFileSync(path.join(THEME, f), 'utf8') } })) } } };
+  }
+  if (q.includes('themeFilesUpsert')) {
+    if (!SCOPES.includes('write_themes')) throw new Error('Access denied for themeFilesUpsert field. Required access: `write_themes` access scope.');
+    for (const f of v.files) { JSON.parse(f.body.value.replace(/^\s*\/\*[\s\S]*?\*\//, '')); store.themeFiles[f.filename] = f.body.value; }
+    return { themeFilesUpsert: { upsertedThemeFiles: v.files.map((f) => ({ filename: f.filename })), userErrors: [] } };
   }
   if (q.includes('files(first: 25, query')) {
     const m = v.q.match(/^filename:'?([^'*]+)\*'?$/); const base = m ? m[1] : '';
@@ -321,7 +327,8 @@ http.createServer((req, res) => {
       res.writeHead(c ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ page: pg, pages: Math.max(1, Math.ceil(all.length / per)), total: all.length, products }));
     }
-    if (req.url === '/__state') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ defs: Object.keys(store.defs), objects: Object.values(store.objects), colMeta: Object.fromEntries(colMeta), colSortOrder: Object.fromEntries(colSortOrder) }, null, 1)); }
+    if (req.url === '/__state') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return res.end(JSON.stringify({ defs: Object.keys(store.defs), objects: Object.values(store.objects), colMeta: Object.fromEntries(colMeta), colSortOrder: Object.fromEntries(colSortOrder), themeFiles: Object.keys(store.themeFiles) }, null, 1)); }
+    if (req.url.startsWith('/__theme/')) { const f = decodeURIComponent(req.url.slice(9)); res.writeHead(store.themeFiles[f] ? 200 : 404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end(store.themeFiles[f] || ''); }
     if (req.url === '/__upload') { res.writeHead(201); return res.end(); }
     // GET /__cols 看现在「店里」各合集的顺序(只列被动过的)
     if (req.url.startsWith('/__cols')) {

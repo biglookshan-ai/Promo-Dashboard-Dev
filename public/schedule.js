@@ -816,6 +816,16 @@
       </span>
     </div>`;
   }
+  // 主题编辑器里的备用 Slide(2026-11-02 用户):上线中的 Banner 一变就由定时器同步过去,这里显示同步状态 + 立即同步
+  function themeBannersHtml() {
+    if (MODE !== 'live') return '';
+    const tb = S.themeBanners || {};
+    const what = tb.error ? `<span class="bnsync__err">⚠️ 没同步上:${esc(tb.error)}</span>`
+      : tb.checkedAt ? `✅ 和这里上线中的一样(${tb.count} 张${tb.syncedAt ? `,${fAgo(tb.syncedAt)}更新` : ''})`
+      : '还没同步过(1 分钟内自动同步)';
+    return `<div class="bnsync"><span class="bnsync__k" title="主题编辑器「Full-with slider Banner」里的 Slide 只是备用:这里一张上线的都没有时首页才用它们。上线中的 Banner 一变就自动同步过去,每天再核对一次;这里一张上线的都没有时不动它。">主题编辑器里的备用 Slide</span>
+      <span>${what}</span><button class="linkbtn" type="button" data-tbsync>立即同步</button></div>`;
+  }
   function renderBannerOrder() {
     const editing = !!ord.banner;
     const T = bnF.at ?? now();
@@ -834,8 +844,18 @@
       ${pend ? `<div class="note note--warn">${esc(who(S.pendingOrder.by))} 提交了新的轮播顺序,等审核中;批准前前台保持现在的顺序。</div>` : ''}
       <p class="muted oc__help">${editing ? '拖动卡片,或改右上角的数字换位置。淡色的(还没上线 / 暂停中)也占一个位置,上线后按这个顺序插进去。'
         : '数字 = 在首页轮播里的位置;<b>→5</b> = 上线后会排第 5 张。淡色的是这一刻还没上线的,它们已经排好了位置,到点自动插进去。点卡片打开编辑。'}</p>
-      <div class="ocs ${editing ? 'ocs--edit' : ''}" id="bn-ocs">${list.map((b, i) => orderCard(b, T, list, editing, bnF.at == null, i)).join('') || '<span class="muted">没有上线中或已排期的 Banner</span>'}</div>`;
+      <div class="ocs ${editing ? 'ocs--edit' : ''}" id="bn-ocs">${list.map((b, i) => orderCard(b, T, list, editing, bnF.at == null, i)).join('') || '<span class="muted">没有上线中或已排期的 Banner</span>'}</div>
+      ${editing ? '' : themeBannersHtml()}`;
     if (!editing) wireTimeline('bn', points, () => bnF.at, (v) => { bnF.at = v; renderBannerOrder(); });
+    $('#bn-order [data-tbsync]')?.addEventListener('click', async (e) => {
+      const b = e.target; b.disabled = true; b.textContent = '同步中…';
+      try {
+        const r = await api('POST', '/api/schedule/theme-banners/sync', {});
+        S.themeBanners = r.themeBanners;
+        toast(r.rep.done ? `已同步到主题编辑器:${r.rep.count} 张(换掉原来的 ${r.rep.removed} 个)` : r.rep.error ? `没同步上:${r.rep.error}` : r.rep.skipped === 'none-live' ? '这里一张上线中的都没有,先不动主题编辑器里的' : '主题编辑器里的已经一样,不用改', !r.rep.error);
+      } catch (err) { toast(err.message, false); }
+      renderBannerOrder();
+    });
     $$('#bn-order [data-ordact]').forEach((b) => b.addEventListener('click', () => {
       const a = b.dataset.ordact;
       if (a === 'edit') { ord.banner = ordPipeline('banner').map((x) => x.id); bnF.at = null; renderBannerOrder(); }

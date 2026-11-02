@@ -14,6 +14,7 @@ import { alignCollections } from './collection-order.js';
 import { syncAllJoint, syncNotes } from './joint-sync.js';
 import { historyRecorder } from './col-history.js';
 import { graphql } from './shopify.js';
+import { syncThemeBanners } from './theme-banner-sync.js';
 
 export const INTERVAL_MS = 60_000;
 
@@ -33,7 +34,7 @@ export function logColReport(state, col, by, now = Date.now()) {
 }
 
 // 跑一个店铺一轮。依赖都可以注入,方便测试。
-export function runOnce(shop, { now = Date.now(), token = getToken(shop), setStatus = realSetStatus, send, sendDm, gql = graphql, collections = alignCollections } = {}) {
+export function runOnce(shop, { now = Date.now(), token = getToken(shop), setStatus = realSetStatus, send, sendDm, gql = graphql, collections = alignCollections, themeBanners = syncThemeBanners } = {}) {
   return withLock(shop, async () => {
     const state = load(shop);
     const camps = campaignIndex(state.campaigns);
@@ -78,6 +79,15 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
           for (const x of syncNotes(r)) appendLog(state, { at: now, action: x.failed ? 'failure' : 'edit', kind: 'callout', title: r.name, note: x.note, by: '定时器' });
         }
       } catch (e) { appendLog(state, { at: now, action: 'failure', kind: 'callout', title: '联合推广', note: String(e.message || e), by: '定时器' }); }
+    }
+
+    // 首页 Banner 的备用:上线中的 Banner 变了就同步进主题编辑器的轮播模块(每天还核对一次);出错只记第一次
+    if (token && themeBanners) {
+      const prevErr = state.themeBanners?.error || null;
+      const tb = await themeBanners({ shop, token }, state, { now, gql });
+      if (tb.done) appendLog(state, { at: now, action: 'edit', kind: 'banner', title: '主题编辑器里的备用 Banner', by: '定时器',
+        note: `按上线中的 ${tb.count} 张更新了主题「${tb.theme}」首页轮播模块里的 Slide(换掉原来的 ${tb.removed} 个)` });
+      if (tb.error && tb.error !== prevErr) appendLog(state, { at: now, action: 'failure', kind: 'banner', title: '主题编辑器里的备用 Banner', note: tb.error, by: '定时器' });
     }
 
     const opts = { appUrl: state.appUrl || '', now };

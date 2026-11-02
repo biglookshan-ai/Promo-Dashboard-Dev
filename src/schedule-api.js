@@ -5,6 +5,7 @@ import { applyAction, ActionError, findItem, LIST } from './schedule-actions.js'
 import { performAction, withLock, runEffects, syncItem } from './sync.js';
 import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQUIRED_SCOPES, TYPE_OF } from './metaobjects.js';
 import { schedulerInfo, logColReport } from './scheduler.js';
+import { syncThemeBanners } from './theme-banner-sync.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
 import { uploadImage } from './files.js';
@@ -131,7 +132,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
       { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, released: c.released || null, at: c.at }])),
     sortFlags: Object.fromEntries(Object.entries(state.sortFlags || {}).map(([k, f]) => [k, { pinName: f.pinName, title: f.title }])),
     jointSync: state.jointSync || {}, // 联合推广:兼容产品合集最近一次同步的结果
-    pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler,
+    pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler, themeBanners: state.themeBanners || null,
     settings: { notify: state.settings.notify, approvers: state.settings.approvers || {}, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
     collections: [], products: [], tagCounts: {},
   };
@@ -537,6 +538,19 @@ export function scheduleRouter() {
   })));
 
   // ---- 合集排序:立即跑一次(不用等定时器那一分钟),顺便把结果说清楚 ----
+  // 首页 Banner 的备用:马上同步一次到主题编辑器(不管上次写过什么,都读主题核对)
+  r.post('/theme-banners/sync', wrap((req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'banners');
+    const s = load(req.ctx.shop);
+    const a = actorFor(s, req.ctx.user);
+    const rep = await syncThemeBanners(req.ctx, s, { now: Date.now(), force: true, gql: graphql });
+    if (rep.done) appendLog(s, { at: Date.now(), action: 'edit', kind: 'banner', title: '主题编辑器里的备用 Banner', by: a.name,
+      note: `按上线中的 ${rep.count} 张更新了主题「${rep.theme}」首页轮播模块里的 Slide(换掉原来的 ${rep.removed} 个)` });
+    replace(req.ctx.shop, s);
+    req.audit = { mod: 'banners', text: rep.done ? `同步备用 Banner 到主题编辑器(${rep.count} 张)` : rep.error ? `同步备用 Banner 到主题编辑器失败:${rep.error}` : '核对主题编辑器里的备用 Banner(已经一样)' };
+    return { rep, themeBanners: s.themeBanners };
+  })));
+
   r.post('/col-run', wrap((req) => withLock(req.ctx.shop, async () => {
     needPage(req, 'pins');
     const s = load(req.ctx.shop);

@@ -56,6 +56,12 @@
   **「结束」**(`schedule-actions` 的 `end`,2026-11-02 用户:暂停的一直占着轮播顺序):暂停中的内容编辑器底部有「结束」(再点一次确认)→ 取消暂停、结束时间设成现在(还没开始的开始也设成现在;跟随活动的变成自己的时间),
   变成已结束,不再参与排序(`orderPipeline` 只认 上线中 / 已排期 / 待审核 / 等活动 / 暂停)。活动不能用(改活动的结束时间)。
   已结束 / 暂停的条目在店里是草稿:Liquid 遍历 `.values` 只返回 ACTIVE(草稿不算进一次最多 50 个,也不拖慢前台);每个类型最多存 1,000,000 条。太多了用「设置 → 清理内容」批量删。
+  **主题编辑器里的备用 Slide 自动同步**(`src/theme-banner-sync.js`,2026-11-02 用户:编辑器里那一串 Slide 全部清掉,以后跟着 app 上线中的 Banner 走,编辑器尽量简单):
+  定时器每分钟算「上线中的 Banner」(顺序 / 图 / 文字 / 按钮 / 角标)的指纹,变了就写一次,没变也每天读一次核对(有人在编辑器改过 / 编辑器开久了保存把旧的盖回去 → 改回来);Banner 页「立即同步」= 强制核对。
+  ⛔ 只改正在用的主题(MAIN)`templates/index.json` 里**没隐藏的** gpt-slider-banner-3 section 的 `blocks` + `block_order`(读 → 只换这两个键 → `themeFilesUpsert` 写回),
+  别的 section、这个 section 的设置、隐藏的 section、文件开头的 /* */ 说明都原样;block 名字一律「App 同步」、id `cgp_<Banner id>`;图片写 `shopify://shop_images/<文件名>`(不是文件库的图留空),`/collections/x` 写成 `shopify://collections/x`,视频只认 YouTube / Vimeo。
+  一张上线的都没有时不写(留着上一次的,免得首页空);写之前原文件存 `DATA_DIR/theme-backup/<店>/`(最近 20 份,和排期数据分开放 —— 别放进 schedule 目录,listShops 会当成店铺)。
+  要 **write_themes** 权限;没有时状态记在 `state.themeBanners.error`,Banner 页显示原因,30 分钟后(或 Banner 变了 / 手动点)再试,操作记录只记第一次。本地 harness 默认有这个权限(`--no-theme-write` 模拟没有),写的文件只在内存,`GET :4894/__theme/templates/index.json` 看。
 - **主题改造外观不变、只换数据源,且必须保留回退**:没有活动数据时显示原编辑器设置。
 - **主题仓库是共享的**(`~/Vibe Coding Dev/Shopify Dev/cinegearpro-search-Development-test-1.0`,还装着搜索 / Setup Kit / FAQ):
   本地副本停在 2026-06-12,且有 FAQ 的未提交改动 → **拉线上主题必须在独立 worktree/分支做**,不能在主工作区拉。
@@ -289,6 +295,6 @@
 
 ### ⛔ 注意
 
-- 写操作只限:建 `cgp_*` 内容类型、写 / 切换 `cgp_*` 条目、上传 Banner 图片;合集排序 / 改价模块各自写的那几样(见上面各节,合集默认排序会写合集字段 `custom.cgp_*` 和合集排序方式;联合推广会改它选定的那一个手动合集的成员,也能新建空的手动合集并发布到网店)。**别碰产品、主题、别的 app 的数据**;新增任何其他 mutation 前先和用户确认设计。
-- 主题扫描**只读**,绝不改主题文件。
+- 写操作只限:建 `cgp_*` 内容类型、写 / 切换 `cgp_*` 条目、上传 Banner 图片;首页 Banner 备用 Slide 同步进主题首页模板(只动那一个 section 的 slide);合集排序 / 改价模块各自写的那几样(见上面各节,合集默认排序会写合集字段 `custom.cgp_*` 和合集排序方式;联合推广会改它选定的那一个手动合集的成员,也能新建空的手动合集并发布到网店)。**别碰产品、主题、别的 app 的数据**;新增任何其他 mutation 前先和用户确认设计。
+- 主题扫描**只读**,绝不改主题文件。唯一的例外:首页 Banner 的备用 Slide 同步(见 Banner 一节,只动那一个 section 的 slide)。
 - Railway 的 App URL 必须是公网域名(`*.up.railway.app`),别填 `*.railway.internal`(内网,Shopify 解析不到)。
