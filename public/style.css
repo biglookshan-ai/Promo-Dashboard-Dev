@@ -603,7 +603,15 @@ textarea.inp { resize: vertical; }
 .pv-stage .slide.is-main { width: 250px; }
 .pv-stage .slide.is-side { width: 250px; opacity: .45; transform: scale(.94); }
 .pv-cap { margin-top: 8px; font-size: 12px; }
-.drawer__b--banner { grid-template-columns: minmax(0, 1fr) minmax(0, 460px); }
+.drawer__b--banner { grid-template-columns: minmax(0, 1fr) minmax(0, 580px); }
+/* Banner 编辑器:预览放大(2026-11-02 用户:缩略图看不清)—— 抽屉加宽、中间那张 380 宽,左右露一点相邻的 */
+.drawer:has(.drawer__b--banner) { width: min(1240px, 100vw); }
+.drawer__b--banner .pv-stage { padding: 22px 0; gap: 14px; }
+.drawer__b--banner .pv-stage .slide.is-main { width: 380px; box-shadow: 0 8px 24px rgba(0,0,0,.22); }
+.drawer__b--banner .pv-stage .slide.is-side { width: 380px; }
+@media (max-width: 1100px) { .drawer__b--banner { grid-template-columns: minmax(0, 1fr) minmax(0, 440px); } .drawer__b--banner .pv-stage .slide.is-main, .drawer__b--banner .pv-stage .slide.is-side { width: 300px; } }
+.upl.is-busy { pointer-events: none; opacity: .7; }
+.edsec.is-drop { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--accent-soft); }
 .pv-pdp { display: grid; grid-template-columns: 110px 1fr; gap: 12px; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .pv-pdp__img { aspect-ratio: 1; border-radius: 6px; background: linear-gradient(135deg, #ececf0, #dcdce2); }
 .pv-pdp__info { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
@@ -663,18 +671,30 @@ textarea.inp { resize: vertical; }
 .bcard__t { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .oc__help { margin: -4px 0 10px; font-size: 12px; }
-.ocs { display: flex; gap: 14px; overflow-x: auto; padding: 14px 12px 10px; background: var(--sl-bg, #f5f5f5); border-radius: 10px; }
-.oc { flex: none; width: 130px; position: relative; display: flex; flex-direction: column; gap: 5px; cursor: pointer; user-select: none; border-radius: 8px; }
-.ocs--edit .oc { width: 180px; cursor: grab; }
+.ocs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 26px 16px; padding: 22px 16px 14px; background: var(--sl-bg, #f5f5f5); border-radius: 10px; }
+@media (max-width: 1180px) { .ocs { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .ocs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.oc { min-width: 0; position: relative; display: flex; flex-direction: column; gap: 8px; cursor: pointer; user-select: none; border-radius: 8px; }
+.oc:hover .slide { box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.ocs--edit .oc { cursor: grab; }
 .ocs--edit .oc .slide { box-shadow: 0 4px 14px rgba(0,0,0,.18); }
-.oc .slide { pointer-events: none; }
+.oc .slide { pointer-events: none; transition: box-shadow .15s; }
 .oc.is-off .slide { opacity: .45; }
 .oc.is-drag { opacity: .35; }
-.oc__n { position: absolute; top: -8px; left: -8px; z-index: 5; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: var(--text); color: #fff; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.oc.is-moved .slide { outline: 3px solid var(--accent); outline-offset: 2px; }
+.oc__n { position: absolute; top: -13px; right: -9px; z-index: 5; min-width: 26px; height: 26px; padding: 0 7px; border-radius: 13px; background: var(--text); color: #fff; font-size: 13px; font-weight: 700; display: grid; place-items: center; }
 .oc.is-off .oc__n { background: var(--accent); }
-.oc__t { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.oc__lab { align-self: flex-start; font-size: 12px; color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 6px; }
-.oc__warn { align-self: flex-start; font-size: 12px; color: #7a4d00; background: #fff3cd; border-radius: 4px; padding: 0 6px; }
+.oc__pos { position: absolute; top: -15px; right: -10px; z-index: 5; width: 42px; height: 28px; border-radius: 14px; border: 2px solid #fff; background: var(--text); color: #fff; font: 700 13px/1 inherit; text-align: center; padding: 0 2px; box-shadow: 0 1px 4px rgba(0,0,0,.2); cursor: text; }
+.oc.is-off .oc__pos { background: var(--accent); }
+.oc__pos::-webkit-inner-spin-button, .oc__pos::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.oc__pos { -moz-appearance: textfield; }
+.oc__info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.oc__t { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.oc__sub { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oc__when { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.oc__when.is-warn { color: #7a4d00; }
+.oc__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.oc__tags .kchip { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #fff; }
 .panel__h .muted .btn { margin-left: 4px; }
 
 .tbstyles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }

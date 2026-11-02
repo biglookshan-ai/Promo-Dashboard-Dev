@@ -782,23 +782,37 @@
 
   // ================= Banner =================
   const bnF = { st: 'live', tag: '', at: null };
-  function orderCard(b, T, list, editing, isNow) {
+  // 轮播顺序卡片(2026-11-02 用户:平铺成网格、一行 6 个,每张写清楚名字 / 时间 / 状态,缩略图要看得清)
+  const fHM = (ms) => fmt(ms, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const fMDHM = (ms) => `${fMD(ms)} ${fHM(ms)}`;
+  function orderCard(b, T, list, editing, isNow, i) {
     const liveAtT = list.filter((x) => status(x, T) === 'live');
     const s = status(b, T);
-    let label, n = null;
-    if (s === 'live') { n = liveAtT.indexOf(b) + 1; label = endingSoon(b) && isNow ? `<span class="oc__warn">⚠️ ${fMD(win(b).end)} 下架</span>` : ''; }
-    else if (s === 'scheduled') { label = `<span class="oc__lab">${fMD(win(b).start)} 上线</span>`; }
-    else if (s === 'ended') { label = '<span class="oc__lab">已下架</span>'; }
-    else { label = `<span class="oc__lab">${ST[s]}</span>`; }
+    let n = null;
+    if (s === 'live') n = liveAtT.indexOf(b) + 1;
     if (n == null && ['scheduled', 'pending', 'waiting'].includes(s)) {
       const t2 = Math.max(T, win(b).start ?? T) + 1000;
       const set = list.filter((x) => x === b || status(x, t2) === 'live');
       n = set.indexOf(b) + 1;
     }
+    const w = win(b);
+    // 时间一行:上线中的说什么时候下架,没上线的说什么时候上线
+    const when = w.start == null && w.end == null ? '长期显示'
+      : w.start != null && w.start > T ? `${fMDHM(w.start)} 上线${w.end != null ? ` · ${fMD(w.end)} 下架` : ''}`
+      : w.end != null ? `${fMDHM(w.end)} 下架` : '长期显示';
+    const warn = s === 'live' && isNow && endingSoon(b);
+    const st = s === 'live' ? '' : `<span class="stb stb--${s}"><span class="dot"></span>${ST[s]}</span>`;
+    const pos = editing ? `<input class="oc__pos" type="number" min="1" max="${list.length}" value="${i + 1}" data-ordpos="${b.id}" aria-label="排第几" title="改数字换位置"/>`
+      : `<span class="oc__n">${n ? (s === 'live' ? n : '→' + n) : '–'}</span>`;
     return `<div class="oc ${s === 'live' ? '' : 'is-off'}" ${editing ? `draggable="true" data-ord="${b.id}"` : ''} data-pop="${b.id}" ${editing ? '' : `data-open="${b.id}"`}>
-      <span class="oc__n">${n ? (s === 'live' ? n : '→' + n) : '–'}</span>
-      ${slideHtml(b, { w: editing ? 400 : 300 })}
-      <span class="oc__t">${esc(b.title || '未命名')}</span>${label}
+      ${pos}
+      ${slideHtml(b, { w: 520 })}
+      <span class="oc__info">
+        <span class="oc__t">${esc(b.title || '未命名')}</span>
+        ${b.subtitle ? `<span class="oc__sub">${esc(b.subtitle)}</span>` : ''}
+        <span class="oc__when ${warn ? 'is-warn' : ''}">${warn ? '⚠️ ' : ''}${esc(when)}</span>
+        <span class="oc__tags">${st}<span class="kchip">${esc(TAGCN[b.tag] || '无角标')}</span>${w.via ? `<span class="kchip kchip--campaign" title="跟随活动「${esc(w.via.name)}」的时间">跟随「${esc(w.via.name)}」</span>` : ''}</span>
+      </span>
     </div>`;
   }
   function renderBannerOrder() {
@@ -817,8 +831,9 @@
       </div>
       ${editing ? '' : tlHtml('bn', points, bnF.at) + tlChanges(points, bnF.at)}
       ${pend ? `<div class="note note--warn">${esc(who(S.pendingOrder.by))} 提交了新的轮播顺序,等审核中;批准前前台保持现在的顺序。</div>` : ''}
-      <p class="muted oc__help">数字 = 在首页轮播里的位置;<b>→5</b> = 上线后会排第 5 张。淡色的是这一刻还没上线的,它们已经排好了位置,到点自动插进去。</p>
-      <div class="ocs ${editing ? 'ocs--edit' : ''}" id="bn-ocs">${list.map((b) => orderCard(b, T, list, editing, bnF.at == null)).join('') || '<span class="muted">没有上线中或已排期的 Banner</span>'}</div>`;
+      <p class="muted oc__help">${editing ? '拖动卡片,或改右上角的数字换位置。淡色的(还没上线 / 暂停中)也占一个位置,上线后按这个顺序插进去。'
+        : '数字 = 在首页轮播里的位置;<b>→5</b> = 上线后会排第 5 张。淡色的是这一刻还没上线的,它们已经排好了位置,到点自动插进去。点卡片打开编辑。'}</p>
+      <div class="ocs ${editing ? 'ocs--edit' : ''}" id="bn-ocs">${list.map((b, i) => orderCard(b, T, list, editing, bnF.at == null, i)).join('') || '<span class="muted">没有上线中或已排期的 Banner</span>'}</div>`;
     if (!editing) wireTimeline('bn', points, () => bnF.at, (v) => { bnF.at = v; renderBannerOrder(); });
     $$('#bn-order [data-ordact]').forEach((b) => b.addEventListener('click', () => {
       const a = b.dataset.ordact;
@@ -826,7 +841,21 @@
       else if (a === 'cancel') { ord.banner = null; renderBannerOrder(); }
       else saveOrder('banner');
     }));
-    if (editing) wireOrderDrag('#bn-ocs', 'banner', renderBannerOrder);
+    if (editing) {
+      wireOrderDrag('#bn-ocs', 'banner', renderBannerOrder);
+      // 改数字换位置(网格里拖远了不方便)
+      $$('#bn-ocs [data-ordpos]').forEach((inp) => {
+        inp.addEventListener('mousedown', (e) => e.stopPropagation());
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+        inp.addEventListener('change', () => {
+          const ids = ord.banner; const from = ids.indexOf(inp.dataset.ordpos);
+          const to = Math.max(0, Math.min(ids.length - 1, (parseInt(inp.value, 10) || 1) - 1));
+          if (from < 0 || from === to) return renderBannerOrder();
+          ids.splice(to, 0, ids.splice(from, 1)[0]); renderBannerOrder();
+          const card = $(`#bn-ocs [data-ord="${CSS.escape(inp.dataset.ordpos)}"]`); card?.classList.add('is-moved'); setTimeout(() => card?.classList.remove('is-moved'), 1200);
+        });
+      });
+    }
   }
   function renderBanners() {
     const TAGC = [['', '全部角标'], ['new', '新品'], ['sale', '促销'], ['event', '活动'], ['none', '无角标']];
@@ -3870,17 +3899,18 @@
     if (it.kind === 'salelink') return slFormHtml(it);
     if (it.kind === 'callout') return coFormHtml(it);
     if (it.kind === 'banner') {
+      // 2026-11-02 用户:都是直接上传新图,上面那排「已有的图」(别的 Banner 的图)不需要 —— 只在演示模式(不能上传)留着
       const seenImg = new Set();
-      const imgs = S.banners.filter((b) => b.image && !seenImg.has(b.image) && seenImg.add(b.image)).slice(0, 40);
+      const imgs = MODE === 'live' ? [] : S.banners.filter((b) => b.image && !seenImg.has(b.image) && seenImg.add(b.image)).slice(0, 40);
       const p = it.state !== 'new' ? bannerPos(it) : null;
       return `
         ${p ? `<div class="note">${p.future ? `上线后在首页轮播排 <b>第 ${p.n} 张</b>` : `现在在首页轮播排 <b>第 ${p.n} 张</b>`}。要换位置,去 Banner 页点「调整顺序」。</div>` : ''}
-        ${edSec(1, '图片', `竖图 ${S.site.slide.w}×${S.site.slide.h}`, `<div class="fld">
-          <div class="imgpick" id="ed-imgs">${imgs.map((b) => `<button type="button" class="imgpick__i ${b.image === it.image ? 'is-on' : ''}" data-img="${esc(b.image)}" data-imgid="${esc(b.imageId || '')}" style="background-image:url('${esc(thumb(b.image, 200))}')"></button>`).join('')}</div>
-          <div class="rowin"><input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/>
-            ${MODE === 'live' ? '<label class="btn btn-sm upl">上传新图<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>' : ''}</div>
+        ${edSec(1, '图片', `竖图 ${S.site.slide.w}×${S.site.slide.h}`, `<div class="fld bnimg" id="ed-imgdrop">
+          ${imgs.length ? `<div class="imgpick" id="ed-imgs">${imgs.map((b) => `<button type="button" class="imgpick__i ${b.image === it.image ? 'is-on' : ''}" data-img="${esc(b.image)}" data-imgid="${esc(b.imageId || '')}" style="background-image:url('${esc(thumb(b.image, 200))}')"></button>`).join('')}</div>` : ''}
+          <div class="rowin">${MODE === 'live' ? `<label class="btn btn-sm ${it.image ? '' : 'btn-primary'} upl">${it.image ? '换一张图' : '上传图片'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>` : ''}
+            <input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/></div>
           <input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
-          <em>竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。${MODE === 'live' ? '上传的图存进 Shopify 文件库;也可以从上面已有的图里选。' : '演示时从现有图片里选;正式数据里可以直接上传。'}</em>
+          <em>竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。${MODE === 'live' ? '图片也可以直接拖到这一块里;上传的图存进 Shopify 文件库。' : '演示时从现有图片里选;正式数据里可以直接上传。'}</em>
         </div>
 `)}
         ${edSec(2, '文字和按钮', '都可以留空', `${fld('标题', inp('title', it.title, '如:DZOFILM Arles Zoom'))}
@@ -3995,7 +4025,7 @@
       const prev = live[(idx - 1 + live.length) % live.length], next = live[idx % live.length];
       return `<div class="pv-label">首页轮播里的样子</div>
         <div class="pv-stage">
-          ${prev ? slideHtml(prev, { w: 300, cls: 'is-side' }) : ''}${slideHtml(v, { w: 700, cls: 'is-main' })}${next ? slideHtml(next, { w: 300, cls: 'is-side' }) : ''}
+          ${prev ? slideHtml(prev, { w: 500, cls: 'is-side' }) : ''}${slideHtml(v, { w: 900, cls: 'is-main' })}${next ? slideHtml(next, { w: 500, cls: 'is-side' }) : ''}
         </div>
         <p class="muted pv-cap">和前台同比例:电脑卡片 ${S.site.slide.w}×${S.site.slide.h},手机 ${S.site.slide.mw}×${S.site.slide.mh}。字号、按钮、角标颜色都取自主题设置。</p>`;
     }
@@ -4475,11 +4505,12 @@
       if (e.target.name === 'image' && f.querySelector('[name="imageId"]')) f.querySelector('[name="imageId"]').value = '';
       refreshPv();
     });
-    // 上传新图(正式数据):传到服务器 → Shopify 文件库 → 拿回文件 id 和图片地址
-    f.querySelector('#ed-upload')?.addEventListener('change', async (e) => {
-      const file = e.target.files?.[0]; if (!file) return;
+    // 上传新图(正式数据):传到服务器 → Shopify 文件库 → 拿回文件 id 和图片地址。点按钮选文件,或把图片拖到「图片」那一块
+    const upImg = async (file) => {
+      const lab = f.querySelector('#ed-upload')?.closest('label'); if (!file || !lab) return;
+      if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) return toast('只能上传 JPG / PNG / WebP / GIF 图片', false);
       if (file.size > 20 * 1024 * 1024) return toast('图片太大了(最多 20MB)', false);
-      const lab = e.target.closest('label'); const old = lab.firstChild.textContent; lab.firstChild.textContent = '上传中…';
+      const old = lab.firstChild.textContent; lab.firstChild.textContent = '上传中…'; lab.classList.add('is-busy');
       try {
         // 请求头和其他接口一样由 auth.js 给(后台里的 Shopify 凭证 + 飞书登录会话)
         const res = await fetch(`/api/schedule/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { ...(await window.cgpHeaders()), 'Content-Type': file.type }, body: file });
@@ -4487,9 +4518,18 @@
         if (!res.ok) throw new Error(j.error || res.statusText);
         f.querySelector('[name="image"]').value = j.url; f.querySelector('[name="imageId"]').value = j.id;
         refreshPv(); toast('图片已上传到 Shopify 文件库');
+        lab.firstChild.textContent = '换一张图'; lab.classList.remove('btn-primary', 'is-busy'); return;
       } catch (err) { toast('上传失败:' + err.message, false); }
-      lab.firstChild.textContent = old; e.target.value = '';
-    });
+      lab.firstChild.textContent = old; lab.classList.remove('is-busy');
+    };
+    f.querySelector('#ed-upload')?.addEventListener('change', async (e) => { await upImg(e.target.files?.[0]); e.target.value = ''; });
+    const drop = f.querySelector('#ed-imgdrop')?.closest('.edsec');
+    if (drop && f.querySelector('#ed-upload')) {
+      const hasFile = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+      drop.addEventListener('dragover', (e) => { if (!hasFile(e)) return; e.preventDefault(); drop.classList.add('is-drop'); });
+      drop.addEventListener('dragleave', (e) => { if (!drop.contains(e.relatedTarget)) drop.classList.remove('is-drop'); });
+      drop.addEventListener('drop', (e) => { if (!hasFile(e)) return; e.preventDefault(); drop.classList.remove('is-drop'); upImg(e.dataTransfer.files[0]); });
+    }
     // ---- 合集排序网格:「只显示前 N 个」开关、输入序号移动、拖拽 ----
     f.addEventListener('change', (e) => { // 颜色代码框离开时:认不出就恢复成色块现在的颜色,认得出就统一写法
       if (!e.target.classList.contains('clr__hex')) return;
