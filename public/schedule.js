@@ -818,8 +818,8 @@
   }
   // 主题编辑器里的备用 Slide(2026-11-02 用户):上线中的 Banner 一变就由定时器同步过去,这里显示同步状态 + 立即同步
   function themeBannersHtml() {
-    if (MODE !== 'live') return '';
-    const tb = S.themeBanners || {};
+    if (MODE !== 'live' || !S.themeBanners) return ''; // 功能关着(默认)时服务器给 null
+    const tb = S.themeBanners;
     const what = tb.error ? `<span class="bnsync__err">⚠️ 没同步上:${esc(tb.error)}</span>`
       : tb.checkedAt ? `✅ 和这里上线中的一样(${tb.count} 张${tb.syncedAt ? `,${fAgo(tb.syncedAt)}更新` : ''})`
       : '还没同步过(1 分钟内自动同步)';

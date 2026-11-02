@@ -14,7 +14,7 @@ import { alignCollections } from './collection-order.js';
 import { syncAllJoint, syncNotes } from './joint-sync.js';
 import { historyRecorder } from './col-history.js';
 import { graphql } from './shopify.js';
-import { syncThemeBanners } from './theme-banner-sync.js';
+import { syncThemeBanners, themeBannerSyncOn } from './theme-banner-sync.js';
 
 export const INTERVAL_MS = 60_000;
 
@@ -82,7 +82,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     }
 
     // 首页 Banner 的备用:上线中的 Banner 变了就同步进主题编辑器的轮播模块(每天还核对一次);出错只记第一次
-    if (token && themeBanners) {
+    if (token && themeBanners && (themeBanners !== syncThemeBanners || themeBannerSyncOn())) { // 默认关(2026-11-02 用户暂停),测试注入的照跑
       const prevErr = state.themeBanners?.error || null;
       const tb = await themeBanners({ shop, token }, state, { now, gql });
       if (tb.done) appendLog(state, { at: now, action: 'edit', kind: 'banner', title: '主题编辑器里的备用 Banner', by: '定时器',

@@ -10,12 +10,15 @@
 // (有人在编辑器里改过 / 编辑器开着很久再保存把旧的盖回去 → 改回来)。一张上线的都没有时不写(留着上一次的,免得首页轮播空掉)。
 // 写之前把原文件存一份(DATA_DIR/theme-backup/<店>/,只留最近 20 份),要回退直接拿它。
 // 要 write_themes 权限;没有就只记状态,Banner 页提示去开(出错后 30 分钟才再试,不刷屏)。
+// ★ 2026-11-02 用户:先暂停(要写主题,之后再评估),编辑器里的旧 Slide 用户自己手动删、留几张长期能用的当备用。
+//   总开关:Railway 设 THEME_BANNER_SYNC=on 才跑(还要 write_themes 权限);关着时定时器不跑、Banner 页不显示、接口直接拒绝。
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { graphql } from './shopify.js';
 import { itemStatus, campaignIndex } from './schedule-core.js';
 
+export const themeBannerSyncOn = () => process.env.THEME_BANNER_SYNC === 'on';
 const SECTION_TYPE = 'gpt-slider-banner-3';
 const FILE = 'templates/index.json';
 const MAX_SLIDES = 50; // section 默认最多 50 个 block;主题读 app 的 Banner 一次也只读 50 个

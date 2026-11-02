@@ -57,11 +57,13 @@
   变成已结束,不再参与排序(`orderPipeline` 只认 上线中 / 已排期 / 待审核 / 等活动 / 暂停)。活动不能用(改活动的结束时间)。
   已结束 / 暂停的条目在店里是草稿:Liquid 遍历 `.values` 只返回 ACTIVE(草稿不算进一次最多 50 个,也不拖慢前台);每个类型最多存 1,000,000 条。太多了用「设置 → 清理内容」批量删。
   **主题编辑器里的备用 Slide 自动同步**(`src/theme-banner-sync.js`,2026-11-02 用户:编辑器里那一串 Slide 全部清掉,以后跟着 app 上线中的 Banner 走,编辑器尽量简单):
+  ★ **同一天用户决定先暂停**(要写主题,之后再评估;旧 Slide 用户自己手动删、留几张长期能用的当备用)→ 代码保留,**默认关**:Railway 设 `THEME_BANNER_SYNC=on`(还要给 app 加 write_themes)才跑;
+  关着时定时器不跑、Banner 页不显示那一行、`POST /api/schedule/theme-banners/sync` 直接拒绝。本地测要 `live-harness.mjs --theme-sync`。以下是打开后的行为:
   定时器每分钟算「上线中的 Banner」(顺序 / 图 / 文字 / 按钮 / 角标)的指纹,变了就写一次,没变也每天读一次核对(有人在编辑器改过 / 编辑器开久了保存把旧的盖回去 → 改回来);Banner 页「立即同步」= 强制核对。
   ⛔ 只改正在用的主题(MAIN)`templates/index.json` 里**没隐藏的** gpt-slider-banner-3 section 的 `blocks` + `block_order`(读 → 只换这两个键 → `themeFilesUpsert` 写回),
   别的 section、这个 section 的设置、隐藏的 section、文件开头的 /* */ 说明都原样;block 名字一律「App 同步」、id `cgp_<Banner id>`;图片写 `shopify://shop_images/<文件名>`(不是文件库的图留空),`/collections/x` 写成 `shopify://collections/x`,视频只认 YouTube / Vimeo。
   一张上线的都没有时不写(留着上一次的,免得首页空);写之前原文件存 `DATA_DIR/theme-backup/<店>/`(最近 20 份,和排期数据分开放 —— 别放进 schedule 目录,listShops 会当成店铺)。
-  要 **write_themes** 权限;没有时状态记在 `state.themeBanners.error`,Banner 页显示原因,30 分钟后(或 Banner 变了 / 手动点)再试,操作记录只记第一次。本地 harness 默认有这个权限(`--no-theme-write` 模拟没有),写的文件只在内存,`GET :4894/__theme/templates/index.json` 看。
+  要 **write_themes** 权限;没有时状态记在 `state.themeBanners.error`,Banner 页显示原因,30 分钟后(或 Banner 变了 / 手动点)再试,操作记录只记第一次。本地 harness(要加 `--theme-sync`)默认有这个权限(`--no-theme-write` 模拟没有),写的文件只在内存,`GET :4894/__theme/templates/index.json` 看。
 - **主题改造外观不变、只换数据源,且必须保留回退**:没有活动数据时显示原编辑器设置。
 - **主题仓库是共享的**(`~/Vibe Coding Dev/Shopify Dev/cinegearpro-search-Development-test-1.0`,还装着搜索 / Setup Kit / FAQ):
   本地副本停在 2026-06-12,且有 FAQ 的未提交改动 → **拉线上主题必须在独立 worktree/分支做**,不能在主工作区拉。

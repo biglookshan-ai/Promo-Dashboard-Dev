@@ -5,7 +5,7 @@ import { applyAction, ActionError, findItem, LIST } from './schedule-actions.js'
 import { performAction, withLock, runEffects, syncItem } from './sync.js';
 import { grantedScopes, missingScopes, definitionStatus, ensureDefinitions, REQUIRED_SCOPES, TYPE_OF } from './metaobjects.js';
 import { schedulerInfo, logColReport } from './scheduler.js';
-import { syncThemeBanners } from './theme-banner-sync.js';
+import { syncThemeBanners, themeBannerSyncOn } from './theme-banner-sync.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
 import { uploadImage } from './files.js';
@@ -132,7 +132,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
       { title: c.title, pinId: c.pinId, pinName: c.pinName, removed: c.removed || [], hold: c.hold || null, released: c.released || null, at: c.at }])),
     sortFlags: Object.fromEntries(Object.entries(state.sortFlags || {}).map(([k, f]) => [k, { pinName: f.pinName, title: f.title }])),
     jointSync: state.jointSync || {}, // 联合推广:兼容产品合集最近一次同步的结果
-    pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler, themeBanners: state.themeBanners || null,
+    pendingOrder: state.pendingOrder, log: state.log.slice(0, 200), imported: state.imported, scheduler: state.scheduler, themeBanners: themeBannerSyncOn() ? state.themeBanners || {} : null,
     settings: { notify: state.settings.notify, approvers: state.settings.approvers || {}, larkWebhookSet: !!hook, larkWebhookTail: hook ? `…${hook.slice(-6)}` : '', larkSecretSet: !!state.settings.larkSecret },
     collections: [], products: [], tagCounts: {},
   };
@@ -541,6 +541,7 @@ export function scheduleRouter() {
   // 首页 Banner 的备用:马上同步一次到主题编辑器(不管上次写过什么,都读主题核对)
   r.post('/theme-banners/sync', wrap((req) => withLock(req.ctx.shop, async () => {
     needPage(req, 'banners');
+    if (!themeBannerSyncOn()) throw new ActionError('同步到主题编辑器暂时关着(要在 Railway 设 THEME_BANNER_SYNC=on 才开)');
     const s = load(req.ctx.shop);
     const a = actorFor(s, req.ctx.user);
     const rep = await syncThemeBanners(req.ctx, s, { now: Date.now(), force: true, gql: graphql });

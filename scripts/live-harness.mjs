@@ -363,6 +363,7 @@ const app = spawn(process.execPath, ['src/server.js'], {
   cwd: ROOT, stdio: 'inherit',
   env: { ...process.env, SHOPIFY_API_VERSION: args.has('--old-api') ? '2026-04' : '2026-07', PORT: String(P.app), DATA_DIR: DATA, SHOPIFY_API_KEY: KEY, SHOPIFY_API_SECRET: SECRET, SHOPIFY_ADMIN_TOKEN: 'harness-token', SHOPIFY_SHOP: SHOP, SHOPIFY_GRAPHQL_ORIGIN: `http://localhost:${P.fake}`, STOREFRONT_ORIGIN: `http://localhost:${P.fake}`,
     // 假飞书只在 --lark 时打开(本地测试用的假凭证,和真飞书无关)
+    ...(args.has('--theme-sync') ? { THEME_BANNER_SYNC: 'on' } : {}), // 首页 Banner 备用同步到主题编辑器(默认关)
     ...(args.has('--lark') ? { LARK_APP_ID: 'harness-lark-app', LARK_APP_SECRET: 'harness-lark-only', TEAM_MODE: 'on', LARK_OPEN_ORIGIN: `http://localhost:${P.fake}/lark-open`, LARK_ACCOUNTS_ORIGIN: `http://localhost:${P.fake}/lark-accounts`, APP_URL: `http://localhost:${P.entry}` } : {}) },
 });
 process.on('exit', () => app.kill());
