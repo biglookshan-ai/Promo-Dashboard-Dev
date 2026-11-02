@@ -657,6 +657,12 @@ textarea.inp { resize: vertical; }
 .pop__when .ico { width: 13px; height: 13px; margin-top: 3px; }
 .pop__row { display: flex; gap: 12px; align-items: flex-start; }
 .pop__slide { width: 150px; flex: none; }
+/* Banner 悬停:大图在上、信息在下;图宽 340,窗口矮时按高度缩(430×600 竖图) */
+.pop--banner { width: auto; max-width: calc(100vw - 16px); }
+.pop--banner .pop__row { flex-direction: column; gap: 8px; }
+.pop--banner .pop__slide { width: min(340px, calc((100vh - 200px) * 430 / 600)); }
+.pop--banner .pop__info { width: min(340px, calc((100vh - 200px) * 430 / 600)); }
+.pop--banner .pop__info .mono { -webkit-line-clamp: 1; }
 .pop__info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pop__info .mono { word-break: break-all; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .pop__camp { display: flex; flex-direction: column; gap: 6px; }

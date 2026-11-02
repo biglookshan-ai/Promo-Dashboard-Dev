@@ -96,6 +96,25 @@ test('暂停只能审核人做;默认样式不能暂停 / 删除', () => {
   assert.throws(() => applyAction(doc({ banners: [banner()] }), { type: 'pause', id: 'b1' }, editor, T), /审批人\(或管理员\)/);
 });
 
+test('结束(2026-11-02):暂停的 Banner 点结束 → 已结束、不再占轮播顺序;跟随活动的改成自己的结束时间;还没开始的也能结束', () => {
+  const camp = { id: 'c1', kind: 'campaign', state: 'approved', name: 'BF', start: T - D, end: T + 9 * D };
+  const d = doc({ campaigns: [camp], banners: [banner({ id: 'a', order: 0, paused: true }), banner({ id: 'b', order: 1, campaign: 'c1', paused: true }), banner({ id: 'c', order: 2, start: T + 2 * D, end: T + 5 * D }), banner({ id: 'd', order: 3 })] });
+  assert.deepEqual(orderPipeline(d, 'banner', T).map((x) => x.id), ['a', 'b', 'c', 'd']);
+  let r = applyAction(d, { type: 'end', id: 'a' }, approver, T);
+  assert.deepEqual(r.effects, [{ type: 'sync', id: 'a' }]);
+  r = applyAction(r.doc, { type: 'end', id: 'b' }, approver, T);
+  const b = r.doc.banners.find((x) => x.id === 'b');
+  assert.equal(b.paused, false); assert.equal(b.end, T); assert.equal(b.campaign, 'c1');
+  r = applyAction(r.doc, { type: 'end', id: 'c' }, approver, T);
+  const c = r.doc.banners.find((x) => x.id === 'c'); assert.equal(c.start, T); assert.equal(c.end, T);
+  assert.deepEqual(orderPipeline(r.doc, 'banner', T).map((x) => x.id), ['d']);
+  assert.equal(r.doc.log.at(-1).action, 'end');
+  assert.throws(() => applyAction(r.doc, { type: 'end', id: 'a' }, approver, T + 1), /已经结束/);
+  assert.throws(() => applyAction(d, { type: 'end', id: 'a' }, editor, T), /审批人\(或管理员\)/);
+  assert.throws(() => applyAction(d, { type: 'end', id: 'c1' }, approver, T), /活动/);
+  assert.throws(() => applyAction(doc({ banners: [banner({ state: 'draft' })] }), { type: 'end', id: 'b1' }, approver, T), /已发布/);
+});
+
 test('不改动传入的数据(纯函数)', () => {
   const d = doc({ banners: [banner()] });
   const snap = JSON.stringify(d);

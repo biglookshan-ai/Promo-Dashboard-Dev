@@ -188,7 +188,7 @@ export function scheduleRouter() {
     const out = await performAction(shop, req.ctx, (state) => { before = state; const a = actorFor(state, req.ctx.user); who = a.name; return applyAction(state, action, a); }, { appUrl: info.appUrl });
     // 历史版本:动过的那条内容记一版(轮播顺序不算)
     if (action.type !== 'order' && action.id !== '__order') {
-      const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', delete: '删除', purge: '批量清理' };
+      const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', end: '结束', delete: '删除', purge: '批量清理' };
       const it = findItem(out.state, action.id || out.id);
       const name = action.type === 'save' ? ACT[action.mode] : action.type === 'pause' ? (it?.paused ? '暂停' : '恢复显示') : ACT[action.type] || action.type;
       const KCN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶排序', salelink: '促销链接', callout: '产品页推广' };

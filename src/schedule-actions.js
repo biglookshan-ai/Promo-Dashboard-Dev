@@ -304,6 +304,23 @@ function run(input, action, actor, now) {
       return { doc, effects, message: it.paused ? '已暂停 · 前台立即不再显示' : '已恢复 · 按时间正常显示', id: it.id };
     }
 
+    // 结束(2026-11-02 用户:暂停了的 Banner 一直占着轮播顺序里的位置 —— 点「结束」就变成已结束,不再参与排序;
+    // 店里的条目照旧是草稿(前台本来就读不到草稿),以后要再用,打开改时间重新排期就行)
+    case 'end': {
+      const it = findItem(doc, action.id) || fail('找不到这条内容');
+      if (!canApprove(actor, doc, it)) fail('只有这条内容的审批人(或管理员)能结束');
+      if (it.isDefault) fail('默认样式 / 平时版本不能结束');
+      if (it.kind === 'campaign') fail('活动请在编辑里改结束时间');
+      if (it.state !== 'approved') fail('只有已发布的内容能结束');
+      if (itemStatus(it, campaignIndex(doc.campaigns), now) === 'ended') fail('已经结束了');
+      it.paused = false;
+      if (it.start != null && it.start > now) it.start = now; // 还没开始的:开始和结束都定在现在
+      it.end = now; // 跟随活动时间的:有了自己的结束时间,就不再跟着活动
+      addLog(doc, now, 'end', it, '', actor);
+      effects.push({ type: 'sync', id: it.id });
+      return { doc, effects, message: '已结束 · 不再显示,也不占顺序;要再用就打开改时间', id: it.id };
+    }
+
     case 'delete': {
       const it = findItem(doc, action.id) || fail('找不到这条内容');
       if (it.isDefault) fail('默认样式不能删除');

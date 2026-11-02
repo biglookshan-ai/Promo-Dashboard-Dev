@@ -382,7 +382,7 @@
     let body = '';
     if (x.kind === 'banner') {
       const p = bannerPos(x);
-      body = `<div class="pop__row"><span class="pop__slide">${slideHtml(x, { w: 400 })}</span><div class="pop__info">
+      body = `<div class="pop__row"><span class="pop__slide">${slideHtml(x, { w: 800 })}</span><div class="pop__info">
         ${p ? `<div>${p.future ? `上线后排<b>第 ${p.n} 张</b>` : `首页轮播<b>第 ${p.n} 张</b>`}</div>` : ''}
         ${x.button1_url ? `<div class="muted mono">${esc(x.button1_url)}</div>` : ''}
         ${endingTag(x)}</div></div>`;
@@ -410,7 +410,8 @@
   function showPop(e, id) {
     const x = byId(id); if (!x) return;
     if (!popEl) { popEl = document.createElement('div'); popEl.className = 'pop'; document.body.appendChild(popEl); }
-    if (popEl.dataset.id !== id) { popEl.innerHTML = popHtml(x); popEl.dataset.id = id; }
+    // Banner 的悬停卡片放大到和编辑页预览差不多(2026-11-02 用户:网格里的缩略图看不清,悬停要能看清)
+    if (popEl.dataset.id !== id) { popEl.innerHTML = popHtml(x); popEl.dataset.id = id; popEl.classList.toggle('pop--banner', x.kind === 'banner'); }
     popEl.hidden = false; movePop(e);
   }
   function movePop(e) {
@@ -2913,7 +2914,7 @@
   }
 
   // ================= 设置 =================
-  const ACT = { up: '上线', down: '下线', publish: '发布', import: '导入', approve: '批准', reject: '退回', submit: '提交审核', draft: '存草稿', reorder: '调整顺序', pause: '暂停', resume: '恢复', delete: '删除', edit: '修改' };
+  const ACT = { up: '上线', down: '下线', publish: '发布', import: '导入', approve: '批准', reject: '退回', submit: '提交审核', draft: '存草稿', reorder: '调整顺序', pause: '暂停', resume: '恢复', end: '结束', delete: '删除', edit: '修改' };
   const logRow = (l) => `<div class="logrow"><span class="logrow__t">${fDT(l.at)}</span><span class="lact lact--${l.action}">${ACT[l.action] || l.action}</span>${kindChip(l.kind)}<span class="logrow__x">${esc(l.title)}</span><span class="muted">${esc(l.note || '')}${l.by ? ' · ' + esc(l.by) : ''}</span></div>`;
   // ---- v3 飞书登录:我 / 成员与角色(管理员)/ 角色能看的页面 ----
   let MEM = null; // { members, roles, pages }(管理员才有)
@@ -4310,6 +4311,8 @@
       let h = '';
       if (ok) {
         if (!isNew && live && !it.isDefault && canAppr(it)) h += `<button class="btn" data-act="pause" type="button">${it.paused ? '恢复显示' : s === 'live' ? '暂停(立即下线)' : '暂停'}</button>`;
+        // 暂停中的可以直接「结束」:变成已结束,不再占轮播顺序里的位置(2026-11-02 用户)
+        if (!isNew && live && it.paused && !it.isDefault && it.kind !== 'campaign' && canAppr(it)) h += '<button class="btn" data-act="end" type="button" title="变成已结束,不再参与排序;以后要再用,改时间重新排期">结束</button>';
         if (isNew || it.state !== 'approved') h += '<button class="btn" data-act="draft" type="button">存草稿</button>';
         h += `<button class="btn btn-primary" data-act="publish" type="button">${live ? '保存修改' : '保存并排期'}</button>`;
       } else {
@@ -4926,6 +4929,7 @@
       }
       if (kindOfAct === 'dup') return dupItem({ ...readForm(base), kind: it.kind, isDefault: !!it.isDefault });
       if (kindOfAct === 'delete' && !a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '再点一次确认删除'; a.classList.add('btn-danger'); return; }
+      if (kindOfAct === 'end' && !a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '再点一次确认结束'; return; }
       runDrawerAction(kindOfAct, a);
     };
 
@@ -4933,7 +4937,7 @@
     async function runDrawerAction(kindOfAct, btn) {
       const busy = (on) => $$('#drawer .drawer__f .btn').forEach((b) => { b.disabled = on; });
       let r;
-      if (kindOfAct === 'pause' || kindOfAct === 'delete') {
+      if (kindOfAct === 'pause' || kindOfAct === 'delete' || kindOfAct === 'end') {
         busy(true); r = await act({ type: kindOfAct, id: it.id }); busy(false);
         if (r) { closeDrawer(); toast([r.message, ...colSay(r.colRep, it.collection?.id)].join(' · '), !(r.colRep?.failures?.length)); }
         return;

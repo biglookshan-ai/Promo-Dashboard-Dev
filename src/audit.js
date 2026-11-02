@@ -53,7 +53,7 @@ export function describe(p, body = {}) {
   if (p === '/schedule/act') {
     const a = body.action || {}; const kind = a.kind;
     const what = KIND_CN[kind] || '内容'; const name = a.values?.name || a.values?.title || '';
-    const verb = a.type === 'save' ? (a.isNew ? '新建' : SAVE_CN[a.mode] || '保存') : { approve: '批准', reject: '退回', pause: '暂停 / 恢复', delete: '删除', purge: '批量删除', order: '调整顺序' }[a.type] || a.type;
+    const verb = a.type === 'save' ? (a.isNew ? '新建' : SAVE_CN[a.mode] || '保存') : { approve: '批准', reject: '退回', pause: '暂停 / 恢复', end: '结束', delete: '删除', purge: '批量删除', order: '调整顺序' }[a.type] || a.type;
     return [KIND_MOD[kind] || 'other', `${verb}${what}${name ? `「${name}」` : ''}`];
   }
   if (p === '/price/act') {
