@@ -610,6 +610,7 @@ textarea.inp { resize: vertical; }
 .drawer__b--banner .pv-stage .slide.is-main { width: 380px; box-shadow: 0 8px 24px rgba(0,0,0,.22); }
 .drawer__b--banner .pv-stage .slide.is-side { width: 380px; }
 @media (max-width: 1100px) { .drawer__b--banner { grid-template-columns: minmax(0, 1fr) minmax(0, 440px); } .drawer__b--banner .pv-stage .slide.is-main, .drawer__b--banner .pv-stage .slide.is-side { width: 300px; } }
+.bnimg__acts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .upl.is-busy { pointer-events: none; opacity: .7; }
 .edsec.is-drop { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--accent-soft); }
 .pv-pdp { display: grid; grid-template-columns: 110px 1fr; gap: 12px; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }

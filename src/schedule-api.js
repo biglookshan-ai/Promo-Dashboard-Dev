@@ -8,7 +8,7 @@ import { schedulerInfo, logColReport } from './scheduler.js';
 import { syncThemeBanners, themeBannerSyncOn } from './theme-banner-sync.js';
 import { readMainTheme, buildImport } from './theme-import.js';
 import { planThemeSync, applyThemeSync, planCount, compareView } from './theme-sync.js';
-import { uploadImage } from './files.js';
+import { uploadImage, imageById } from './files.js';
 import { scopeCounts, calloutScope, calloutOptions, productCampaigns, tabProducts, collectionProducts, productsInfo, productsStock, productVariants } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
@@ -452,6 +452,13 @@ export function scheduleRouter() {
     if (!req.body?.length) throw new ActionError('没收到图片');
     const name = String(req.query.filename || 'banner.jpg').replace(/[^\w.\-]+/g, '_').slice(0, 80);
     return uploadImage(req.ctx, req.body, name, req.headers['content-type']);
+  }));
+
+  // Shopify 文件选择器里选的图(只给回文件 id)→ 图片地址
+  r.get('/file', wrap(async (req) => {
+    needPage(req, ['banners', 'callouts', 'campaigns', 'topbar']);
+    try { return await imageById(req.ctx, String(req.query.id || '')); }
+    catch (e) { throw new ActionError(e.message); }
   }));
 
   // ---- 首页商品模块:页签预览(取前几个产品给编辑器看)----

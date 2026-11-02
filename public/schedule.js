@@ -3928,10 +3928,11 @@
         ${p ? `<div class="note">${p.future ? `上线后在首页轮播排 <b>第 ${p.n} 张</b>` : `现在在首页轮播排 <b>第 ${p.n} 张</b>`}。要换位置,去 Banner 页点「调整顺序」。</div>` : ''}
         ${edSec(1, '图片', `竖图 ${S.site.slide.w}×${S.site.slide.h}`, `<div class="fld bnimg" id="ed-imgdrop">
           ${imgs.length ? `<div class="imgpick" id="ed-imgs">${imgs.map((b) => `<button type="button" class="imgpick__i ${b.image === it.image ? 'is-on' : ''}" data-img="${esc(b.image)}" data-imgid="${esc(b.imageId || '')}" style="background-image:url('${esc(thumb(b.image, 200))}')"></button>`).join('')}</div>` : ''}
-          <div class="rowin">${MODE === 'live' ? `<label class="btn btn-sm ${it.image ? '' : 'btn-primary'} upl">${it.image ? '换一张图' : '上传图片'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label>` : ''}
-            <input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/></div>
+          ${MODE === 'live' ? `<div class="bnimg__acts"><button type="button" class="btn btn-sm btn-primary" data-pickimg>从 Shopify 文件库选 / 上传</button>
+            <label class="btn btn-sm upl">从电脑直接上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label></div>` : ''}
+          <div class="rowin"><input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/></div>
           <input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
-          <em>竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。${MODE === 'live' ? '图片也可以直接拖到这一块里;上传的图存进 Shopify 文件库。' : '演示时从现有图片里选;正式数据里可以直接上传。'}</em>
+          <em>竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。${MODE === 'live' ? '「从 Shopify 文件库选」打开 Shopify 自己的选图窗口(和主题编辑器里选图一样);图片也可以直接拖到这一块里。' : '演示时从现有图片里选;正式数据里可以直接上传。'}</em>
         </div>
 `)}
         ${edSec(2, '文字和按钮', '都可以留空', `${fld('标题', inp('title', it.title, '如:DZOFILM Arles Zoom'))}
@@ -4541,11 +4542,32 @@
         if (!res.ok) throw new Error(j.error || res.statusText);
         f.querySelector('[name="image"]').value = j.url; f.querySelector('[name="imageId"]').value = j.id;
         refreshPv(); toast('图片已上传到 Shopify 文件库');
-        lab.firstChild.textContent = '换一张图'; lab.classList.remove('btn-primary', 'is-busy'); return;
+        lab.firstChild.textContent = old; lab.classList.remove('is-busy'); return;
       } catch (err) { toast('上传失败:' + err.message, false); }
       lab.firstChild.textContent = old; lab.classList.remove('is-busy');
     };
     f.querySelector('#ed-upload')?.addEventListener('change', async (e) => { await upImg(e.target.files?.[0]); e.target.value = ''; });
+    // 从 Shopify 文件库选(2026-11-02 用户:用 Shopify 自己的媒体功能)—— App Bridge intents「pick:shopify/File」,
+    // 选完只给回文件 id,再问服务器要图片地址。不在 Shopify 后台里(没有这个能力)就退回「从电脑上传」
+    f.querySelector('[data-pickimg]')?.addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      if (typeof window.shopify?.intents?.invoke !== 'function') { toast('Shopify 文件库要在 Shopify 后台里打开网站更新中心才能用,先用「从电脑直接上传」', false); return; }
+      const cur = f.querySelector('[name="imageId"]').value;
+      const label = b.innerHTML; b.disabled = true;
+      try {
+        const activity = await window.shopify.intents.invoke('pick:shopify/File', { data: { mediaTypes: ['MediaImage'], multiSelect: false, ...(/^gid:\/\/shopify\/MediaImage\/\d+$/.test(cur) ? { selectedFiles: [cur] } : {}) } });
+        const r = await activity.complete;
+        if (r.code === 'error') throw new Error(r.message || '文件库打不开');
+        const id = r.code === 'ok' ? r.data?.ids?.[0] : null;
+        if (id && id !== cur) {
+          b.textContent = '读取图片中…';
+          const img = await api('GET', `/api/schedule/file?id=${encodeURIComponent(id)}`);
+          f.querySelector('[name="image"]').value = img.url; f.querySelector('[name="imageId"]').value = img.id;
+          refreshPv(); toast('已换成文件库里的这张图');
+        }
+      } catch (err) { toast('选图失败:' + err.message, false); }
+      b.disabled = false; b.innerHTML = label;
+    });
     const drop = f.querySelector('#ed-imgdrop')?.closest('.edsec');
     if (drop && f.querySelector('#ed-upload')) {
       const hasFile = (e) => [...(e.dataTransfer?.types || [])].includes('Files');

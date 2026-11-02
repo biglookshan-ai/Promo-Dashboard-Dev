@@ -225,7 +225,9 @@ function gql(query, v) {
     store.files[id] = { id, url: src.includes('__uploaded') ? `https://cdn.shopify.com/s/files/1/1258/4351/files/${src.split('/').pop().replace(/^\d+-/, '')}` : src };
     return { fileCreate: { files: [{ id }], userErrors: [] } };
   }
-  if (q.includes('node(id: $id)')) { const f = store.files[v.id]; return { node: f ? { id: f.id, fileStatus: 'READY', image: { url: f.url } } : null }; }
+  if (q.includes('node(id: $id)')) {
+    const PICKED = { 'gid://shopify/MediaImage/990001': 'https://cdn.shopify.com/s/files/1/1258/4351/files/PDMOVIE_Smart_Fusion_web_banner2.jpg', 'gid://shopify/MediaImage/990002': 'https://cdn.shopify.com/s/files/1/1258/4351/files/dzofilm_sale_2.jpg' }; // 假文件选择器给的
+    const f = store.files[v.id] || (PICKED[v.id] && { id: v.id, url: PICKED[v.id] }); return { node: f ? { id: f.id, fileStatus: 'READY', image: { url: f.url } } : null }; }
   if (q.includes('nodes(ids: $ids)')) {
     return { nodes: v.ids.map((id) => {
       const c = cat.collections.find((x) => `gid://shopify/Collection/${x.id}` === id);
@@ -390,7 +392,10 @@ const fakeBridge = (user) => `<script>
     // 模拟 Shopify 选择器:返回真实的合集 / 产品(数据来自前台公开目录);合集每点一次换下一个,方便试不同情况
     resourcePicker: async ({ type }) => { const L = (${JSON.stringify(PICK)})[type];
       if (type !== 'collection') return L;
-      window.__pick = ((window.__pick || 0) + 1) % L.length; return [L[window.__pick]]; } };
+      window.__pick = ((window.__pick || 0) + 1) % L.length; return [L[window.__pick]]; },
+    // 模拟 Shopify 文件选择器(intents pick:shopify/File):每次给回一张「文件库里的图」(990001 / 990002 轮流);window.__pickCancel = true 模拟关掉
+    intents: { invoke: async (intent, opts) => { window.__intent = { intent, opts }; window.__fpick = ((window.__fpick || 0) % 2) + 1;
+      return { complete: Promise.resolve(window.__pickCancel ? { code: 'closed' } : { code: 'ok', data: { ids: ['gid://shopify/MediaImage/99000' + window.__fpick] } }) }; } } };
 </script>`;
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');

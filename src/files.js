@@ -3,6 +3,7 @@
 //   1. 后台编辑器里上传的新图 → uploadImage(先要一个临时上传地址,传上去,再登记成文件)
 //   2. 主题里本来就有的图(shopify://shop_images/xxx.jpg)→ findImageByFilename 在文件库里按文件名找
 //   3. 粘贴的图片网址 → createImageFromUrl,让 Shopify 自己去抓
+//   4. 在 Shopify 自己的文件选择器里选的(App Bridge intents pick:shopify/File,只给回文件 id)→ imageById 查图片地址
 import { graphql } from './shopify.js';
 
 // fileStatus 在 File 接口上;node(id:) 返回的是 Node,要用 ... on File 才查得到(直接写会报「Field 'fileStatus' doesn't exist on type 'Node'」)
@@ -33,6 +34,14 @@ async function waitReady(ctx, id, gql, tries = 10) {
     await new Promise((r) => setTimeout(r, 800));
   }
   return { id, url: '', status: 'PROCESSING' };
+}
+
+// 文件选择器给回的文件 id → 图片地址(刚在选择器里上传的可能还在处理,等一会儿)
+export async function imageById(ctx, id, gql = graphql) {
+  if (!/^gid:\/\/shopify\/MediaImage\/\d+$/.test(String(id || ''))) throw new Error('选的不是图片');
+  const r = await waitReady(ctx, id, gql, 8);
+  if (!r.url) throw new Error('这张图 Shopify 还在处理,过一会儿再选一次');
+  return r;
 }
 
 export async function createImageFromUrl(ctx, url, gql = graphql, alt = '') {
