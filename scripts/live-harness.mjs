@@ -44,7 +44,9 @@ if (args.has('--core-only')) {
 const nid = (type) => `gid://shopify/${type}/${store.n++}`;
 
 // 假飞书(--lark):授权页列出几个测试身份,点哪个就以谁登录;换 token / 读用户信息都在本地
-const FAKE_USERS = { ou_admin: '测试管理员', ou_staff: '测试员工', ou_design: '测试设计' };
+const FAKE_USERS = { ou_admin: '测试管理员', ou_staff: '测试员工', ou_design: '测试设计', ou_mail: '邮箱同事' };
+// 飞书给的邮箱(测试设计不给,模拟没开邮箱权限)
+const FAKE_MAILS = { ou_admin: 'admin@cgp.test', ou_staff: 'staff@cgp.test', ou_mail: 'Mail.Person@CGP.test' };
 const DMS = []; // 机器人发出的私信(GET /__dms 查看)
 function fakeLark(req, res, body) {
   const u = new URL(req.url, 'http://x');
@@ -68,7 +70,7 @@ function fakeLark(req, res, body) {
   }
   if (u.pathname === '/lark-open/open-apis/authen/v1/user_info') {
     const id = String(req.headers.authorization || '').replace('Bearer tok:', '');
-    return json({ code: 0, data: { open_id: id, union_id: `on_${id}`, name: FAKE_USERS[id], avatar_url: '', tenant_key: 'tenant-test' } });
+    return json({ code: 0, data: { open_id: id, union_id: `on_${id}`, name: FAKE_USERS[id], avatar_url: '', tenant_key: 'tenant-test', ...(FAKE_MAILS[id] ? { email: FAKE_MAILS[id] } : {}) } });
   }
   res.writeHead(404); res.end();
 }

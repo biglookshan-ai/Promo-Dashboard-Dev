@@ -20,6 +20,9 @@ export const teamEnabled = () => larkEnabled() && process.env.TEAM_MODE === 'on'
 
 export function authorizeUrl(redirectUri, state) {
   const q = new URLSearchParams({ client_id: process.env.LARK_APP_ID, redirect_uri: redirectUri, response_type: 'code', state });
+  // 可选:登录时另外向飞书要的权限(空格分隔,如 contact:user.email:readonly)。⛔ 只能填飞书开发者后台已经开通的权限,
+  // 填了没开通的,飞书授权页直接报 20027、谁都登录不了 —— 所以不写死在代码里,出问题在 Railway 删掉这个变量就恢复
+  if (process.env.LARK_LOGIN_SCOPE) q.set('scope', process.env.LARK_LOGIN_SCOPE.trim());
   return `${ACCOUNTS}/open-apis/authen/v1/authorize?${q}`;
 }
 
@@ -30,7 +33,8 @@ async function call(path, init) {
   return j;
 }
 
-// code → 用户信息 { openId, unionId, name, avatar, tenantKey }
+// code → 用户信息 { openId, unionId, name, enName, emails, avatar, tenantKey }
+// emails:飞书的邮箱(email,要「获取用户邮箱信息」权限)和企业邮箱(enterprise_email,要「获取用户受雇信息」权限),没开权限就是空的
 export async function loginWithCode(code, redirectUri) {
   const tok = await call('/open-apis/authen/v2/oauth/token', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -40,7 +44,8 @@ export async function loginWithCode(code, redirectUri) {
   const info = await call('/open-apis/authen/v1/user_info', { headers: { Authorization: `Bearer ${tok.access_token}` } });
   const d = info.data || {};
   if (!d.open_id) throw new Error('飞书没有返回用户信息');
-  return { openId: d.open_id, unionId: d.union_id || '', name: d.name || d.en_name || '', enName: d.en_name || '', avatar: d.avatar_url || d.avatar_thumb || '', tenantKey: d.tenant_key || '' };
+  const emails = [d.email, d.enterprise_email].map((e) => String(e || '').trim().toLowerCase()).filter(Boolean);
+  return { openId: d.open_id, unionId: d.union_id || '', name: d.name || d.en_name || '', enName: d.en_name || '', emails: [...new Set(emails)], avatar: d.avatar_url || d.avatar_thumb || '', tenantKey: d.tenant_key || '' };
 }
 
 // ---------- app 会话 ----------

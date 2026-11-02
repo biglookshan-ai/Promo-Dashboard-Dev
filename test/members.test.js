@@ -165,7 +165,7 @@ test('预先按名字设好角色(2026-10-29):同事第一次登录名字对上�
   // 英文名对上(大小写、空格不一样也算)
   const tom = upsertOnLogin(s, { ...u('ou_tom', '李汤姆'), enName: 'tom lee' }, { fromAdmin: false, now: 200 });
   assert.equal(tom.status, 'active'); assert.deepEqual(tom.roles, ['design']);
-  assert.deepEqual(tom.fromInvite, { name: 'Tom  Lee', by: '老板', at: 200 });
+  assert.deepEqual(tom.fromInvite, { name: 'Tom  Lee', by: '老板', at: 200, via: 'name' });
   assert.deepEqual(s.invites.map((x) => x.name), ['张三']); // 用掉的预设删掉
   // 名字对不上:照旧待分配
   const other = upsertOnLogin(s, u('ou_x', '王五'), { fromAdmin: false });
@@ -209,5 +209,59 @@ test('预设的限制:不能给管理员、不能重复、已登录过的待分�
 test('两条预设都对上(不该发生)就不猜', () => {
   const s = { invites: [{ id: '1', name: 'Tom', roles: ['design'] }, { id: '2', name: '汤姆', roles: ['ops'] }] };
   assert.equal(matchInvite(s, { name: '汤姆', enName: 'Tom' }), null);
-  assert.equal(matchInvite(s, { name: '汤姆', enName: '' }).id, '2');
+  assert.equal(matchInvite(s, { name: '汤姆', enName: '' }).invite.id, '2');
+});
+
+test('按飞书邮箱预设(2026-11-02):邮箱对上就开通;不分大小写、企业邮箱也认;飞书给了邮箱却对不上就不按名字认', () => {
+  const s = { members: [] };
+  const boss = upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: true });
+  assert.deepEqual(s.emailCheck, { ok: false, at: s.emailCheck.at, name: '老板' }); // 飞书没给邮箱 → 面板提醒去开权限
+  assert.equal(s.emailCheck.okAt, undefined);
+  assert.throws(() => addInvite(s, boss, { roles: ['design'] }), /邮箱或名字/);
+  assert.throws(() => addInvite(s, boss, { email: 'tom@', roles: ['design'] }), /不像邮箱/);
+  const a = addInvite(s, boss, { email: ' Tom@CGP.co.uk ', roles: ['design'] }, 100).invite;
+  assert.equal(a.email, 'tom@cgp.co.uk'); assert.equal(a.name, '');
+  assert.throws(() => addInvite(s, boss, { email: 'tom@cgp.co.uk', name: 'X', roles: ['ops'] }), /已经预设过/);
+  // 名字和别人一样、都填了邮箱:可以
+  addInvite(s, boss, { name: '张三', email: 'zs1@cgp.co.uk', roles: ['ops'] });
+  addInvite(s, boss, { name: '张三', email: 'zs2@cgp.co.uk', roles: ['pricing'] });
+  assert.throws(() => addInvite(s, boss, { name: '张三', roles: ['ops'] }), /同名/); // 没邮箱分不清是谁
+  // 邮箱对上(飞书名字随便叫什么)
+  const tom = upsertOnLogin(s, { ...u('ou_tom', 'Thomas'), emails: ['TOM@cgp.co.uk'] }, { fromAdmin: false, now: 200 });
+  assert.equal(tom.status, 'active'); assert.deepEqual(tom.roles, ['design']);
+  assert.deepEqual(tom.fromInvite, { name: 'tom@cgp.co.uk', by: '老板', at: 200, via: 'email' });
+  assert.deepEqual(tom.emails, ['tom@cgp.co.uk']); assert.equal(s.emailCheck.ok, true); assert.equal(s.emailCheck.okAt, 200);
+  // 同名的两个张三:按邮箱分
+  const zs2 = upsertOnLogin(s, { ...u('ou_zs2', '张三'), emails: ['x@other.com', 'zs2@cgp.co.uk'] }, { fromAdmin: false });
+  assert.deepEqual(zs2.roles, ['pricing']);
+  // 飞书给了邮箱但对不上:同名也不认(只剩 zs1 的预设)
+  const fake = upsertOnLogin(s, { ...u('ou_fake', '张三'), emails: ['fake@cgp.co.uk'] }, { fromAdmin: false });
+  assert.equal(fake.status, 'pending');
+  // 飞书没给邮箱:退回按名字(预设里有名字才行)
+  const okAt = s.emailCheck.okAt;
+  const zs1 = upsertOnLogin(s, u('ou_zs1', '张三'), { fromAdmin: false });
+  assert.deepEqual(zs1.roles, ['ops']); assert.equal(zs1.fromInvite.via, 'name');
+  assert.equal(s.emailCheck.ok, false); assert.equal(s.emailCheck.okAt, okAt); // 个别人没邮箱,不当成权限没开
+  assert.equal(s.invites.length, 0);
+});
+
+test('按邮箱预设:已登录过的按邮箱找;只有名字的预设可以补邮箱', () => {
+  const s = { members: [] };
+  const boss = upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: true });
+  const p = upsertOnLogin(s, { ...u('ou_p', 'Peter'), emails: ['peter@cgp.co.uk'] }, { fromAdmin: false });
+  const r = addInvite(s, boss, { email: 'PETER@cgp.co.uk', name: '彼得', roles: ['ops'] });
+  assert.equal(r.member.id, 'ou_p'); assert.equal(p.status, 'active');
+  // 预设填了邮箱、成员表里同名的人邮箱不一样:不是他,存成预设
+  upsertOnLogin(s, { ...u('ou_q', 'Amy'), emails: ['amy1@cgp.co.uk'] }, { fromAdmin: false });
+  assert.ok(addInvite(s, boss, { email: 'amy2@cgp.co.uk', name: 'Amy', roles: ['ops'] }).invite);
+  // 补邮箱
+  const inv = addInvite(s, boss, { name: 'Lily', roles: ['design'] }).invite;
+  updateInvite(s, boss, inv.id, { email: 'Lily@CGP.co.uk' }); assert.equal(inv.email, 'lily@cgp.co.uk');
+  assert.throws(() => updateInvite(s, boss, inv.id, { email: 'amy2@cgp.co.uk' }), /已经预设过/);
+  assert.throws(() => updateInvite(s, boss, inv.id, { email: 'peter@cgp.co.uk' }), /已经用这个邮箱登录过了/);
+  updateInvite(s, boss, inv.id, { email: '' }); assert.equal(inv.email, ''); // 有名字可以清空
+  const only = addInvite(s, boss, { email: 'only@cgp.co.uk', roles: ['design'] }).invite;
+  assert.throws(() => updateInvite(s, boss, only.id, { email: '' }), /不能清空/);
+  assert.deepEqual(updateInvite(s, boss, only.id, { roles: ['ops'] }).roles, ['ops']); // 只改角色不动邮箱
+  assert.equal(only.email, 'only@cgp.co.uk');
 });

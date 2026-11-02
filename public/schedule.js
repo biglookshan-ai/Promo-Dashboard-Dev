@@ -2941,24 +2941,37 @@
       const names = Object.entries(MEM.pages).filter(([k]) => set.has(k) && !['settings', 'tools'].includes(k)).map(([, v]) => v);
       return names.length ? names.join('、') : '<span class="tag tag--warn">没勾页面:什么都看不到</span>';
     };
-    // 预先添加(2026-10-29 用户:只有名字、没有飞书 id —— 先按名字设好角色,登录时名字对上自动开通;管理员不能预设)
+    // 预先添加(2026-10-29 用户:只有名字、没有飞书 id;2026-11-02 加邮箱)—— 先设好角色,登录时邮箱 / 名字对上自动开通;管理员不能预设
     const invRoles = MEM.roles.filter((r) => r.key !== 'admin');
     const invs = MEM.invites || [];
     const recent = list.filter((m) => m.fromInvite && Date.now() - m.fromInvite.at < 7 * DAY);
+    const ec = MEM.emailCheck;
+    // 飞书登录给不给邮箱:每次有人登录都记一下,告诉管理员按邮箱能不能对上
+    const mailNote = !ec ? '<div class="invbox__mail">还不知道飞书登录会不会给邮箱:你退出再用飞书登录一次,这里就会显示。</div>'
+      : ec.okAt ? `<div class="invbox__mail is-ok">✅ 飞书登录会给邮箱(${esc(ec.okName)} ${fAgo(ec.okAt)}登录时拿到了),按邮箱对得上。</div>`
+      : `<div class="invbox__mail is-warn">⚠️ 飞书登录时没有给邮箱(${esc(ec.name)} ${fAgo(ec.at)}登录),现在只能按名字对上。
+          <details><summary>怎么让飞书给邮箱</summary><ol>
+            <li>飞书开发者后台 → 这个应用 → 权限管理,开通「获取用户邮箱信息」(contact:user.email:readonly);用飞书企业邮箱的再开「获取用户受雇信息」。</li>
+            <li>版本管理与发布 → 创建版本 → 发布(企业自建应用,管理员通过即可)。</li>
+            <li>回到这里退出、重新用飞书登录一次,这行变成 ✅ 就好了。</li>
+            ${MEM.loginScope ? '' : '<li>发布了还是没有:在 Railway 加变量 <code>LARK_LOGIN_SCOPE</code> = <code>contact:user.email:readonly</code>(一定要先完成第 1、2 步,不然谁都登录不了)。</li>'}
+          </ol></details></div>`;
     const invHtml = `<div class="invbox">
-        <div class="invbox__h"><b>预先添加同事</b><span class="muted">还没登录过的同事:填他<b>飞书里显示的名字</b>(中文名或英文名都行,不分大小写、空格),勾好角色。他第一次用飞书登录时名字对上就自动开通。管理员不能预设,要等他登录后在下面成员表里给。</span></div>
-        <div class="invbox__f"><input class="inp" id="inv-name" placeholder="名字,如:张三 / Tom Lee" maxlength="30"/>
+        <div class="invbox__h"><b>预先添加同事</b><span class="muted">还没登录过的同事:填他的<b>飞书邮箱</b>(最准)或<b>飞书里显示的名字</b>,勾好角色,他第一次用飞书登录时对上就自动开通。管理员不能预设。</span></div>
+        ${mailNote}
+        <div class="invbox__f"><input class="inp" id="inv-email" type="email" placeholder="飞书邮箱,如:tom@cinegearpro.co.uk" maxlength="80" autocomplete="off"/>
+          <input class="inp inp--name" id="inv-name" placeholder="名字(可不填)" maxlength="30"/>
           <span class="invbox__roles">${invRoles.map((r) => `<label class="chk"><input type="checkbox" data-invnew="${esc(r.key)}"/>${esc(r.name)}</label>`).join('')}</span>
           <button class="btn btn-sm btn-primary" id="inv-add" type="button">添加</button></div>
-        ${invs.length ? `<table class="mtable mtable--inv"><thead><tr><th>等登录的同事</th><th>预设的角色</th><th>添加</th><th></th></tr></thead><tbody>
-          ${invs.map((v) => `<tr data-inv="${esc(v.id)}"><td><span class="avatar avatar--ghost">${esc((v.name || '?').slice(0, 1).toUpperCase())}</span><b>${esc(v.name)}</b> <span class="tag">等他登录</span></td>
+        ${invs.length ? `<table class="mtable mtable--inv"><thead><tr><th>等登录的同事</th><th>飞书邮箱</th><th>预设的角色</th><th></th></tr></thead><tbody>
+          ${invs.map((v) => `<tr data-inv="${esc(v.id)}"><td><span class="avatar avatar--ghost">${esc((v.name || v.email || '?').slice(0, 1).toUpperCase())}</span><b>${esc(v.name || v.email)}</b> <span class="tag">等他登录</span><div class="mtable__mail">${fAgo(v.at)}添加${v.by ? ` · ${esc(v.by)}` : ''}</div></td>
+            <td><input class="inp inp--sm" data-invmail type="email" value="${esc(v.email || '')}" placeholder="补上邮箱更准" maxlength="80" autocomplete="off"/></td>
             <td>${invRoles.map((r) => `<label class="chk"><input type="checkbox" data-invrole="${esc(r.key)}" ${(v.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
-            <td class="muted">${fAgo(v.at)}${v.by ? ` · ${esc(v.by)}` : ''}</td>
-            <td><button class="linkbtn" type="button" data-invdel="${esc(v.id)}">删除</button></td></tr>`).join('')}</tbody></table>` : ''}
+            <td class="nowrap"><button class="linkbtn" type="button" data-invdel="${esc(v.id)}">删除</button></td></tr>`).join('')}</tbody></table>` : ''}
       </div>
-      ${recent.length ? `<div class="note note--sm">最近按预设名字自动开通:${recent.map((m) => `<b>${esc(m.name)}</b>(${fAgo(m.fromInvite.at)})`).join('、')}。名字不是唯一身份,核对一下是不是本人;不对就把他停用。</div>` : ''}`;
+      ${recent.length ? `<div class="note note--sm">最近按预设自动开通:${recent.map((m) => `<b>${esc(m.name)}</b>(${m.fromInvite.via === 'email' ? '邮箱' : '名字'}对上,${fAgo(m.fromInvite.at)})`).join('、')}。核对一下是不是本人;不对就把他停用。</div>` : ''}`;
     el.innerHTML = `${invHtml}<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>角色</th><th>能看的页面</th><th>最近登录</th></tr></thead><tbody>
-      ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : `<span class="avatar">${esc((m.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}${m.fromInvite ? ` <span class="tag tag--accent" title="${esc(m.fromInvite.by || '管理员')}预设了「${esc(m.fromInvite.name)}」,他第一次登录时名字对上自动开通">按预设自动开通</span>` : ''}</td>
+      ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : `<span class="avatar">${esc((m.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}${m.fromInvite ? ` <span class="tag tag--accent" title="${esc(m.fromInvite.by || '管理员')}预设了「${esc(m.fromInvite.name)}」,他第一次登录时${m.fromInvite.via === 'email' ? '邮箱' : '名字'}对上自动开通">按预设自动开通</span>` : ''}${(m.emails || []).length ? `<div class="mtable__mail">${esc(m.emails.join(' · '))}</div>` : ''}</td>
         <td><select class="sel sel--sm" data-mstatus>${Object.entries(ST_CN).map(([k, v]) => `<option value="${k}" ${m.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td>${MEM.roles.map((r) => `<label class="chk"><input type="checkbox" data-mrole="${esc(r.key)}" ${(m.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
         <td style="font-size:12.5px">${canSeeOf(m)}</td>
@@ -2966,17 +2979,23 @@
       ${list.some((m) => m.status === 'pending') ? '<p class="muted">「待分配」的人勾上角色后会自动启用。</p>' : ''}`;
     const reload = async (msg) => { if (msg) toast(msg); MEM = await api('GET', '/api/members'); drawMembers(); };
     $('#inv-add')?.addEventListener('click', async (e) => {
-      const name = $('#inv-name').value.trim(); const roles = $$('#st-members [data-invnew]:checked').map((x) => x.dataset.invnew);
+      const name = $('#inv-name').value.trim(), email = $('#inv-email').value.trim(); const roles = $$('#st-members [data-invnew]:checked').map((x) => x.dataset.invnew);
       e.target.disabled = true;
-      try { const r = await api('POST', '/api/invites', { name, roles }); await reload(r.message); }
+      try { const r = await api('POST', '/api/invites', { name, email, roles }); await reload(r.message); }
       catch (err) { toast(err.message, false); e.target.disabled = false; }
     });
-    $('#inv-name')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#inv-add').click(); } });
+    $$('#inv-name, #inv-email').forEach((x) => x.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#inv-add').click(); } }));
     $$('#st-members tr[data-inv]').forEach((tr) => {
       tr.querySelectorAll('[data-invrole]').forEach((c) => c.addEventListener('change', async () => {
         try { await api('PUT', `/api/invites/${encodeURIComponent(tr.dataset.inv)}`, { roles: [...tr.querySelectorAll('[data-invrole]:checked')].map((x) => x.dataset.invrole) }); await reload('预设的角色已更新'); }
         catch (err) { toast(err.message, false); drawMembers(); }
       }));
+      const mail = tr.querySelector('[data-invmail]');
+      mail?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); mail.blur(); } });
+      mail?.addEventListener('change', async () => {
+        try { await api('PUT', `/api/invites/${encodeURIComponent(tr.dataset.inv)}`, { email: mail.value.trim() }); await reload(mail.value.trim() ? '邮箱已存好,他登录时按邮箱对' : '邮箱已清空,按名字对'); }
+        catch (err) { toast(err.message, false); drawMembers(); }
+      });
       tr.querySelector('[data-invdel]')?.addEventListener('click', async (e) => {
         const b = e.target; if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次删除'; return; }
         try { await api('DELETE', `/api/invites/${encodeURIComponent(tr.dataset.inv)}`); await reload('已删掉这条预设'); } catch (err) { toast(err.message, false); }

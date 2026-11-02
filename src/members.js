@@ -57,15 +57,21 @@ export function upsertOnLogin(state, user, { fromAdmin, adminIds = [], now = Dat
   const pinned = adminIds.length > 0;
   const forceAdmin = pinned && adminIds.includes(user.openId);
   const bootstrap = !pinned && fromAdmin && !state.bootstrapDone;
+  const emails = emailsOf(user);
+  // 飞书登录时有没有给邮箱(要在飞书开发者后台开「获取用户邮箱信息」权限):成员面板上告诉管理员按邮箱预设能不能对上
+  // ok = 这次给了;okAt / okName = 最近一次给了邮箱的登录(个别同事飞书里没填邮箱,不代表权限没开)
+  const prevOk = state.emailCheck?.okAt ? { okAt: state.emailCheck.okAt, okName: state.emailCheck.okName } : {};
+  state.emailCheck = { ok: emails.length > 0, at: now, name: user.name || '', ...(emails.length ? { okAt: now, okName: user.name || '' } : prevOk) };
   if (!m) {
     m = { id: user.openId, name: user.name || '新成员', avatar: user.avatar || '', roles: [], status: 'pending', joinedAt: now };
-    // 管理员预先按名字设好了角色(2026-10-29 用户:只有名字、没有飞书 id)→ 第一次登录名字对上就直接开通
-    const inv = matchInvite(state, user);
-    if (inv) {
+    // 管理员预先按邮箱 / 名字设好了角色(2026-10-29 名字、2026-11-02 邮箱)→ 第一次登录对上就直接开通
+    const hit = matchInvite(state, user);
+    if (hit) {
+      const inv = hit.invite;
       const keys = new Set(rolesOf(state).map((r) => r.key));
       m.roles = inv.roles.filter((k) => keys.has(k) && k !== 'admin');
       if (m.roles.length) m.status = 'active';
-      m.fromInvite = { name: inv.name, by: inv.by || '', at: now };
+      m.fromInvite = { name: invLabel(inv), by: inv.by || '', at: now, via: hit.via };
       state.invites = state.invites.filter((x) => x.id !== inv.id);
     }
     state.members.push(m);
@@ -75,47 +81,85 @@ export function upsertOnLogin(state, user, { fromAdmin, adminIds = [], now = Dat
     if (bootstrap) { m.bootstrap = true; state.bootstrapDone = true; }
   }
   m.name = user.name || m.name; m.avatar = user.avatar || m.avatar; m.lastSeen = now;
+  if (emails.length) m.emails = emails;
   return m;
 }
 
 export class MemberError extends Error {}
 const fail = (msg) => { throw new MemberError(msg); };
 
-// ---------- 预先按名字设好角色(还没登录过的同事)----------
-// 管理员只有同事的名字、没有飞书 id:先存一条「预设」,他第一次用飞书登录时名字(中文名或英文名,不分大小写、空格)对上就套用。
-// ⛔ 名字不是唯一身份:预设不能给「管理员」;自动开通的成员标 fromInvite,成员表和操作记录里都看得到,管理员可以核对。
+// ---------- 预先设好角色(还没登录过的同事)----------
+// 管理员没有同事的飞书 id:先存一条「预设」(飞书邮箱和 / 或名字),他第一次用飞书登录时对上就套用。
+//   · 邮箱(2026-11-02 用户):飞书登录要给邮箱才对得上(开发者后台开「获取用户邮箱信息」权限);飞书的邮箱和企业邮箱都认,不分大小写。
+//     预设填了邮箱、飞书也给了邮箱 → 只按邮箱对(同名的别人对不上);飞书没给邮箱 → 退回按名字对(预设里也填了名字才行)。
+//   · 名字:中文名或英文名,不分大小写、空格。
+// ⛔ 邮箱 / 名字都是飞书管理员录入的,不是本人验证过的:预设不能给「管理员」;自动开通的成员标 fromInvite,成员表和操作记录里都看得到。
 export const normName = (s) => String(s || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+export const normEmail = (s) => String(s || '').trim().toLowerCase();
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const emailsOf = (user) => [...new Set((user.emails || []).map(normEmail).filter((e) => EMAIL_RE.test(e)))];
+export const invLabel = (inv) => inv.name || inv.email || '';
 export function matchInvite(state, user) {
+  const invs = state.invites || [];
+  const emails = emailsOf(user);
+  if (emails.length) {
+    const hits = invs.filter((x) => x.email && emails.includes(normEmail(x.email)));
+    if (hits.length) return hits.length === 1 ? { invite: hits[0], via: 'email' } : null;
+  }
+  // 按名字:预设填了邮箱、飞书也给了邮箱却没对上 = 不是这个人,不再按名字认
   const names = [user.name, user.enName].map(normName).filter(Boolean);
-  const hits = (state.invites || []).filter((x) => names.includes(normName(x.name)));
-  return hits.length === 1 ? hits[0] : null; // 对上两条以上(不该发生,添加时就拦了)就不猜,等管理员分配
+  const hits = invs.filter((x) => x.name && names.includes(normName(x.name)) && !(x.email && emails.length));
+  return hits.length === 1 ? { invite: hits[0], via: 'name' } : null; // 对上两条以上就不猜,等管理员分配
 }
-export function addInvite(state, actor, { name, roles } = {}, now = Date.now()) {
-  if (!isAdmin(actor)) fail('只有管理员能预先添加同事');
-  const n = String(name || '').trim().slice(0, 30); if (!n) fail('先填同事的名字(和他飞书里显示的一样)');
+const cleanEmail = (email) => {
+  const e = normEmail(email);
+  if (e && (!EMAIL_RE.test(e) || e.length > 80)) fail(`「${String(email).trim()}」不像邮箱,检查一下`);
+  return e;
+};
+const inviteRoles = (state, roles, msg) => {
   const keys = new Set(rolesOf(state).map((r) => r.key).filter((k) => k !== 'admin'));
   const rs = [...new Set(roles || [])].filter((k) => keys.has(k));
-  if (!rs.length) fail('至少勾一个角色(管理员不能预设,要等他登录后在成员表里给)');
-  // 已经登录过的:待分配的直接开通,别的提示去成员表改
-  const m = (state.members || []).find((x) => normName(x.name) === normName(n));
+  if (!rs.length) fail(msg);
+  return rs;
+};
+const emailTaken = (state, e, exceptId) => (state.invites || []).find((x) => x.id !== exceptId && x.email && normEmail(x.email) === e);
+export function addInvite(state, actor, { name, email, roles } = {}, now = Date.now()) {
+  if (!isAdmin(actor)) fail('只有管理员能预先添加同事');
+  const n = String(name || '').trim().slice(0, 30);
+  const e = cleanEmail(email);
+  if (!n && !e) fail('先填同事的飞书邮箱或名字(和他飞书里的一样)');
+  const rs = inviteRoles(state, roles, '至少勾一个角色(管理员不能预设,要等他登录后在成员表里给)');
+  // 已经登录过的:待分配的直接开通,别的提示去成员表改。按邮箱找;没填邮箱(或这人登录时飞书没给邮箱)才按名字找
+  const members = state.members || [];
+  const m = (e && members.find((x) => (x.emails || []).includes(e)))
+    || (n && members.find((x) => normName(x.name) === normName(n) && !(e && (x.emails || []).length)));
   if (m) {
     if (m.status !== 'pending') fail(`「${m.name}」已经登录过了,直接在下面的成员表里改他的角色`);
     m.roles = rs; m.status = 'active';
     return { member: m };
   }
   state.invites ||= [];
-  if (state.invites.some((x) => normName(x.name) === normName(n))) fail(`已经预设过「${n}」了,要改角色就在预设里改`);
-  const inv = { id: `inv_${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: n, roles: rs, at: now, by: actor.name || '' };
+  if (e && emailTaken(state, e)) fail(`已经预设过「${e}」了,要改角色就在预设里改`);
+  // 同名:两条里有一条没填邮箱就分不清是谁,拦住;都填了邮箱可以同名
+  if (n && state.invites.some((x) => x.name && normName(x.name) === normName(n) && !(e && x.email))) fail(`已经预设过「${n}」了,要改角色就在预设里改;同名的两个人请都填上邮箱`);
+  const inv = { id: `inv_${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: n, email: e, roles: rs, at: now, by: actor.name || '' };
   state.invites.push(inv);
   return { invite: inv };
 }
-export function updateInvite(state, actor, id, { roles } = {}) {
+// 改预设:角色,或者补 / 改邮箱(先只填了名字的,后来拿到邮箱)
+export function updateInvite(state, actor, id, { roles, email } = {}) {
   if (!isAdmin(actor)) fail('只有管理员能改');
   const inv = (state.invites || []).find((x) => x.id === id) || fail('找不到这条预设');
-  const keys = new Set(rolesOf(state).map((r) => r.key).filter((k) => k !== 'admin'));
-  const rs = [...new Set(roles || [])].filter((k) => keys.has(k));
-  if (!rs.length) fail('至少勾一个角色;不要了就删掉这条预设');
-  inv.roles = rs; return inv;
+  if (roles !== undefined) inv.roles = inviteRoles(state, roles, '至少勾一个角色;不要了就删掉这条预设');
+  if (email !== undefined) {
+    const e = cleanEmail(email);
+    if (!e && !inv.name) fail('这条预设只有邮箱,不能清空;不要了就删掉');
+    if (e && emailTaken(state, e, id)) fail(`已经预设过「${e}」了`);
+    const m = e && (state.members || []).find((x) => (x.emails || []).includes(e));
+    if (m) fail(`「${m.name}」已经用这个邮箱登录过了,直接在下面的成员表里改他的角色,再删掉这条预设`);
+    inv.email = e;
+  }
+  return inv;
 }
 export function removeInvite(state, actor, id) {
   if (!isAdmin(actor)) fail('只有管理员能删');
