@@ -3928,11 +3928,11 @@
         ${p ? `<div class="note">${p.future ? `上线后在首页轮播排 <b>第 ${p.n} 张</b>` : `现在在首页轮播排 <b>第 ${p.n} 张</b>`}。要换位置,去 Banner 页点「调整顺序」。</div>` : ''}
         ${edSec(1, '图片', `竖图 ${S.site.slide.w}×${S.site.slide.h}`, `<div class="fld bnimg" id="ed-imgdrop">
           ${imgs.length ? `<div class="imgpick" id="ed-imgs">${imgs.map((b) => `<button type="button" class="imgpick__i ${b.image === it.image ? 'is-on' : ''}" data-img="${esc(b.image)}" data-imgid="${esc(b.imageId || '')}" style="background-image:url('${esc(thumb(b.image, 200))}')"></button>`).join('')}</div>` : ''}
-          ${MODE === 'live' ? `<div class="bnimg__acts"><button type="button" class="btn btn-sm btn-primary" data-pickimg>从 Shopify 文件库选 / 上传</button>
-            <label class="btn btn-sm upl">从电脑直接上传<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></label></div>` : ''}
+          ${MODE === 'live' ? `<div class="bnimg__acts"><button type="button" class="btn btn-sm btn-primary upl" data-pickimg>上传图片</button>
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="ed-upload" hidden/></div>` : ''}
           <div class="rowin"><input class="inp" name="image" value="${esc(it.image)}" placeholder="或粘贴图片地址"/></div>
           <input type="hidden" name="imageId" value="${esc(it.imageId || '')}"/>
-          <em>竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。${MODE === 'live' ? '「从 Shopify 文件库选」打开 Shopify 自己的选图窗口(和主题编辑器里选图一样);图片也可以直接拖到这一块里。' : '演示时从现有图片里选;正式数据里可以直接上传。'}</em>
+          <em>竖图 ${S.site.slide.w}×${S.site.slide.h}(电脑)/ ${S.site.slide.mw}×${S.site.slide.mh}(手机),两边比例几乎一样,一张图就够。${MODE === 'live' ? '「上传图片」打开 Shopify 文件库(和主题编辑器里选图是同一个窗口),选已有的或上传新的都行;图片也可以直接拖到这一块里。' : '演示时从现有图片里选;正式数据里可以直接上传。'}</em>
         </div>
 `)}
         ${edSec(2, '文字和按钮', '都可以留空', `${fld('标题', inp('title', it.title, '如:DZOFILM Arles Zoom'))}
@@ -4531,10 +4531,11 @@
     });
     // 上传新图(正式数据):传到服务器 → Shopify 文件库 → 拿回文件 id 和图片地址。点按钮选文件,或把图片拖到「图片」那一块
     const upImg = async (file) => {
-      const lab = f.querySelector('#ed-upload')?.closest('label'); if (!file || !lab) return;
+      const lab = f.querySelector('[data-pickimg]') || f.querySelector('#ed-upload')?.closest('label'); if (!file || !lab) return;
+      const txt = lab.tagName === 'LABEL' ? lab.firstChild : lab; // 产品页推广是 label 里套 input;Banner 是一个按钮(input 在旁边藏着)
       if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) return toast('只能上传 JPG / PNG / WebP / GIF 图片', false);
       if (file.size > 20 * 1024 * 1024) return toast('图片太大了(最多 20MB)', false);
-      const old = lab.firstChild.textContent; lab.firstChild.textContent = '上传中…'; lab.classList.add('is-busy');
+      const old = txt.textContent; txt.textContent = '上传中…'; lab.classList.add('is-busy');
       try {
         // 请求头和其他接口一样由 auth.js 给(后台里的 Shopify 凭证 + 飞书登录会话)
         const res = await fetch(`/api/schedule/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { ...(await window.cgpHeaders()), 'Content-Type': file.type }, body: file });
@@ -4542,18 +4543,18 @@
         if (!res.ok) throw new Error(j.error || res.statusText);
         f.querySelector('[name="image"]').value = j.url; f.querySelector('[name="imageId"]').value = j.id;
         refreshPv(); toast('图片已上传到 Shopify 文件库');
-        lab.firstChild.textContent = old; lab.classList.remove('is-busy'); return;
+        txt.textContent = old; lab.classList.remove('is-busy'); return;
       } catch (err) { toast('上传失败:' + err.message, false); }
-      lab.firstChild.textContent = old; lab.classList.remove('is-busy');
+      txt.textContent = old; lab.classList.remove('is-busy');
     };
     f.querySelector('#ed-upload')?.addEventListener('change', async (e) => { await upImg(e.target.files?.[0]); e.target.value = ''; });
-    // 从 Shopify 文件库选(2026-11-02 用户:用 Shopify 自己的媒体功能)—— App Bridge intents「pick:shopify/File」,
-    // 选完只给回文件 id,再问服务器要图片地址。不在 Shopify 后台里(没有这个能力)就退回「从电脑上传」
+    // 「上传图片」= 打开 Shopify 文件库(2026-11-02 用户:用 Shopify 自己的媒体功能,一个按钮就够 —— 直接传的图本来也进文件库)
+    // App Bridge intents「pick:shopify/File」,选完只给回文件 id,再问服务器要图片地址。不在 Shopify 后台里(没有这个能力)就打开电脑的选文件窗口
     f.querySelector('[data-pickimg]')?.addEventListener('click', async (e) => {
       const b = e.currentTarget;
-      if (typeof window.shopify?.intents?.invoke !== 'function') { toast('Shopify 文件库要在 Shopify 后台里打开网站更新中心才能用,先用「从电脑直接上传」', false); return; }
+      if (typeof window.shopify?.intents?.invoke !== 'function') { f.querySelector('#ed-upload')?.click(); return; }
       const cur = f.querySelector('[name="imageId"]').value;
-      const label = b.innerHTML; b.disabled = true;
+      const label = b.textContent; b.disabled = true;
       try {
         const activity = await window.shopify.intents.invoke('pick:shopify/File', { data: { mediaTypes: ['MediaImage'], multiSelect: false, ...(/^gid:\/\/shopify\/MediaImage\/\d+$/.test(cur) ? { selectedFiles: [cur] } : {}) } });
         const r = await activity.complete;
@@ -4563,10 +4564,10 @@
           b.textContent = '读取图片中…';
           const img = await api('GET', `/api/schedule/file?id=${encodeURIComponent(id)}`);
           f.querySelector('[name="image"]').value = img.url; f.querySelector('[name="imageId"]').value = img.id;
-          refreshPv(); toast('已换成文件库里的这张图');
+          refreshPv(); toast('图片已换好,保存后生效');
         }
       } catch (err) { toast('选图失败:' + err.message, false); }
-      b.disabled = false; b.innerHTML = label;
+      b.disabled = false; b.textContent = label;
     });
     const drop = f.querySelector('#ed-imgdrop')?.closest('.edsec');
     if (drop && f.querySelector('#ed-upload')) {
