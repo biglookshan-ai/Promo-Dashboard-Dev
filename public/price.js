@@ -148,54 +148,52 @@ const FILTERS = [
 ];
 const ORDER = { running: 0, paused: 1, scheduled: 2, pending: 3, rejected: 4, draft: 5, ended: 6, done: 7 };
 
-// ---- 分组 / 筛选(2026-11-03 用户:计划几十上百个时好找)----
-// 「我的分组」= 计划上自己填的分组名(plan.folder);「智能分组」= 按活动 / 品牌 / 月份自动分(页面上算,不存)
-const LV = { by: localStorage.getItem('cgp-pr-by') || '', folder: '', camp: '', brand: '', q: '', sel: new Set(),
-  open: (() => { try { return JSON.parse(localStorage.getItem('cgp-pr-open') || '{}'); } catch { return {}; } })() };
-const BY = [['folder', '我的分组'], ['campaign', '智能分组 · 按活动'], ['brand', '智能分组 · 按品牌'], ['month', '智能分组 · 按月份'], ['none', '不分组']];
-const byNow = () => LV.by || (S.plans.some((p) => p.folder) ? 'folder' : 'campaign');
+// ---- 分组(2026-11-03 用户:计划几十上百个时好找;同一天改成「一排分组标签」—— 原来「分组方式 + 三个筛选下拉」叠在一起太绕)----
+// 列表上面一排标签就是分组(带数量),点一个只看它;左边小开关切换「我的分组 / 按活动 / 按品牌」。
+// 「我的分组」= 计划上自己起的分组名(plan.folder);按活动 / 品牌是自动分的(页面上算,不存)
+const LV = { by: ['folder', 'campaign', 'brand'].includes(localStorage.getItem('cgp-pr-by2')) ? localStorage.getItem('cgp-pr-by2') : 'folder',
+  chip: '__all', q: '', sel: new Set(), newFolder: false };
+const BY = [['folder', '我的分组'], ['campaign', '按活动'], ['brand', '按品牌']];
+const NONE = { folder: '未分组', campaign: '没关联活动', brand: '还没有产品' };
 const foldersAll = () => [...new Set([...S.plans.map((p) => p.folder), ...(S.folders || [])].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
-// 计划里的品牌,按选项数多到少(第一个 = 主要品牌,按品牌分组时放在它下面)
+// 计划里的品牌,按选项数多到少
 function brandsOf(p) {
   const m = new Map(); for (const sl of p.slots) for (const i of sl.items) if (i.vendor) m.set(i.vendor, (m.get(i.vendor) || 0) + 1);
   return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v);
 }
-const monthOf = (p) => { const st = A.planSummary(p).start; return Number.isFinite(st) ? toInput(st).slice(0, 7) : ''; };
-function groupKeyOf(p, by) {
-  if (by === 'folder') return [p.folder || '', p.folder || '未分组'];
-  if (by === 'campaign') return [p.campaign?.id || '', p.campaign?.name || '没关联活动'];
-  if (by === 'brand') { const b = brandsOf(p)[0] || ''; return [b, b || '还没有产品']; }
-  const m = monthOf(p); return [m, m ? `${m.slice(0, 4)} 年 ${Number(m.slice(5))} 月开始` : '没设时间'];
-}
+// 这个计划属于哪几个标签('' = 未分组 / 没关联活动 / 没有产品);一个计划可以有几个品牌,几个品牌标签里都算它
+const keysOf = (p, by = LV.by) => (by === 'folder' ? [p.folder || ''] : by === 'campaign' ? [p.campaign?.id || ''] : brandsOf(p).length ? brandsOf(p) : ['']);
 const qOf = () => LV.q.trim().toLowerCase();
-function planMatch(p) {
-  if (LV.folder && (LV.folder === '__none' ? !!p.folder : p.folder !== LV.folder)) return false;
-  if (LV.camp && (LV.camp === '__none' ? !!p.campaign : p.campaign?.id !== LV.camp)) return false;
-  if (LV.brand && !brandsOf(p).includes(LV.brand)) return false;
+function searchMatch(p) {
   const q = qOf(); if (!q) return true;
-  return [p.name, p.folder, p.campaign?.name].some((x) => String(x || '').toLowerCase().includes(q))
+  return [p.name, p.folder, p.campaign?.name, ...brandsOf(p)].some((x) => String(x || '').toLowerCase().includes(q))
     || p.slots.some((sl) => sl.items.some((i) => `${i.product || i.title} ${i.variant || ''} ${i.sku || ''}`.toLowerCase().includes(q)));
 }
+const chipMatch = (p) => LV.chip === '__all' || keysOf(p).includes(LV.chip);
 // 搜的是产品时,告诉人这个计划里命中了哪个产品
 function hitOf(p) {
   const q = qOf(); if (!q || String(p.name || '').toLowerCase().includes(q)) return '';
   const it = p.slots.flatMap((sl) => sl.items).find((i) => `${i.product || i.title} ${i.variant || ''} ${i.sku || ''}`.toLowerCase().includes(q));
   return it ? `<div class="plan__hit">包含 <b>${esc(it.product || it.title)}</b>${it.variant ? ` · ${esc(it.variant)}` : ''}${it.sku ? ` <span class="muted">${esc(it.sku)}</span>` : ''}${it.price != null ? ` → <b>${money(it.price)}</b>` : ''}</div>` : '';
 }
-function listToolsHtml() {
-  const by = byNow(); const camps = new Map(); S.plans.forEach((p) => p.campaign && camps.set(p.campaign.id, p.campaign.name));
-  const brands = [...new Set(S.plans.flatMap(brandsOf))].sort((a, b) => a.localeCompare(b));
-  const opt = (v, l, cur) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`;
-  const any = LV.folder || LV.camp || LV.brand || LV.q;
-  return `<div class="pl-tools">
-    <label class="pl-tools__by">分组方式 <select class="sel sel--sm" data-lv="by">${BY.map(([k, l]) => opt(k, l, by)).join('')}</select></label>
-    <select class="sel sel--sm" data-lv="folder" title="只看某个我的分组">${opt('', '全部我的分组', LV.folder)}${opt('__none', '未分组', LV.folder)}${foldersAll().map((f) => opt(f, f, LV.folder)).join('')}</select>
-    <select class="sel sel--sm" data-lv="camp" title="只看某个活动">${opt('', '全部活动', LV.camp)}${opt('__none', '没关联活动', LV.camp)}${[...camps].map(([id, n]) => opt(id, n, LV.camp)).join('')}</select>
-    <select class="sel sel--sm" data-lv="brand" title="只看包含某个品牌的计划">${opt('', '全部品牌', LV.brand)}${brands.map((b) => opt(b, b, LV.brand)).join('')}</select>
-    <input class="inp inp--sm pl-tools__q" data-lv="q" placeholder="搜计划名 / 产品 / SKU" value="${esc(LV.q)}"/>
-    ${any ? '<button type="button" class="linkbtn" data-a="lclear">清除筛选</button>' : ''}
-  </div>
-  ${LV.q && !S.allPlans ? '<p class="muted pl-tools__more">已结束的计划还没一起搜。<button type="button" class="linkbtn" data-a="filter" data-f="all">连已结束的一起搜</button></p>' : ''}`;
+// 分组标签条。base = 按状态页签 + 搜索筛过的计划(标签上的数字按它算,和下面列表对得上)
+function groupBarHtml(base, shown) {
+  const by = LV.by; const counts = new Map();
+  for (const { p } of base) for (const k of keysOf(p)) counts.set(k, (counts.get(k) || 0) + 1);
+  if (by === 'folder') for (const f of foldersAll()) if (!counts.has(f)) counts.set(f, 0); // 我的分组:这个状态下没有计划的也列出来(数字 0)
+  if (LV.chip !== '__all' && !counts.has(LV.chip)) counts.set(LV.chip, 0);
+  const camps = new Map(S.plans.filter((p) => p.campaign).map((p) => [p.campaign.id, p.campaign.name]));
+  const label = (k) => (!k ? NONE[by] : by === 'campaign' ? camps.get(k) || '活动' : k);
+  const keys = [...counts.keys()].sort((a, b) => (!a) - (!b) || label(a).localeCompare(label(b), 'zh'));
+  const chip = (k, txt, n) => `<button type="button" class="pl-chip ${LV.chip === k ? 'is-on' : ''} ${!n && k !== '__all' ? 'is-empty' : ''}" data-a="lchip" data-k="${esc(k)}">${esc(txt)} <b>${n}</b></button>`;
+  const ids = shown.map((x) => x.p.id); const allSel = ids.length && ids.every((id) => LV.sel.has(id));
+  return `<div class="pl-bar">
+    <span class="pr-seg pr-seg--sm pl-bar__by">${BY.map(([k, l]) => `<button type="button" class="${by === k ? 'is-on' : ''}" data-a="lby" data-v="${k}">${l}</button>`).join('')}</span>
+    <div class="pl-chips">${chip('__all', '全部', base.length)}${keys.map((k) => chip(k, label(k), counts.get(k))).join('')}
+      ${by === 'folder' ? (LV.newFolder ? `<span class="pl-newf"><input class="inp inp--sm" id="pl-newf" maxlength="${A.FOLDER_MAX}" placeholder="新分组的名字,回车"/><button type="button" class="linkbtn" data-a="lnewf0">取消</button></span>`
+        : '<button type="button" class="pl-chip pl-chip--add" data-a="lnewf" title="先勾选下面的计划,再点这里起名字,勾选的就放进新分组">＋ 新分组</button>') : ''}</div>
+    ${ids.length ? `<label class="pl-bar__all"><input type="checkbox" data-a="lselgrp" data-ids="${ids.join(',')}" ${allSel ? 'checked' : ''}/>全选这 ${ids.length} 个</label>` : ''}
+  </div>`;
 }
 function bulkHtml() {
   const n = LV.sel.size; if (!n) return '';
@@ -206,22 +204,6 @@ function bulkHtml() {
       <button type="button" class="btn btn-sm" data-a="lcamp">关联</button></span>
     <button type="button" class="linkbtn" data-a="lnone">取消选择</button></div>`;
 }
-// 一组计划:标题(可收起)+ 计划行;已经全部结束的组默认收起
-function planGroupHtml(g, by, ovIdx) {
-  const key = `${by}:${g.k}`; const n = (f) => g.items.filter((x) => f(x.s)).length;
-  const allEnded = g.items.every((x) => ['ended', 'done'].includes(x.s));
-  const open = LV.open[key] ?? !allEnded;
-  const ids = g.items.map((x) => x.p.id); const allSel = ids.every((id) => LV.sel.has(id));
-  const run = n((s) => ['running', 'paused'].includes(s)), sch = n((s) => s === 'scheduled'), end = n((s) => ['ended', 'done'].includes(s)), dr = n((s) => ['draft', 'rejected', 'pending'].includes(s));
-  return `<section class="pl-grp ${open ? '' : 'is-closed'}">
-    <div class="pl-grp__h">
-      <input type="checkbox" class="pl-grp__all" data-a="lselgrp" data-ids="${ids.join(',')}" ${allSel ? 'checked' : ''} title="选中这一组的全部计划"/>
-      <button type="button" class="pl-grp__t" data-a="lgtoggle" data-k="${esc(key)}" data-o="${open ? 1 : 0}"><span class="pl-grp__arr">${open ? '▾' : '▸'}</span><b>${esc(g.label)}</b>
-        <span class="muted">${g.items.length} 个计划${run ? ` · ${run} 进行中` : ''}${sch ? ` · ${sch} 已排期` : ''}${dr ? ` · ${dr} 草稿 / 待审` : ''}${end ? ` · ${end} 已结束` : ''}</span></button>
-    </div>
-    ${open ? g.items.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id), by)).join('') : ''}
-  </section>`;
-}
 
 function plansHtml() {
   const st = S.plans.map((p) => ({ p, s: statusOf(p) }));
@@ -231,15 +213,8 @@ function plansHtml() {
   const showPending = !!S.approvals || count(FILTERS[3][2]) > 0; // 多人协作关着时,所有人都能直接批准,基本不会有待审核
   const f = FILTERS.find((x) => x[0] === filter) || FILTERS[0];
   const ovIdx = core.overlapIndex(S.plans, now()); // 还没结束的限时计划之间,改到同一个产品又时间重叠的
-  const list = st.filter(({ p, s }) => f[2](s, p) && planMatch(p)).sort((a, b) => ORDER[a.s] - ORDER[b.s] || A.planSummary(a.p).start - A.planSummary(b.p).start);
-  const by = byNow();
-  const listBody = () => {
-    if (by === 'none') return list.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id), by)).join('');
-    const gm = new Map();
-    for (const x of list) { const [k, label] = groupKeyOf(x.p, by); if (!gm.has(k)) gm.set(k, { k, label, items: [] }); gm.get(k).items.push(x); }
-    const gs = [...gm.values()].sort((a, b) => (!a.k) - (!b.k) || (by === 'month' ? b.k.localeCompare(a.k) : a.label.localeCompare(b.label, 'zh')));
-    return gs.map((g) => planGroupHtml(g, by, ovIdx)).join('');
-  };
+  const base = st.filter(({ p, s }) => f[2](s, p) && searchMatch(p));
+  const list = base.filter(({ p }) => chipMatch(p)).sort((a, b) => ORDER[a.s] - ORDER[b.s] || A.planSummary(a.p).start - A.planSummary(b.p).start);
   return `
   <div class="stats">
     <button class="stat" data-a="filter" data-f="running"><div class="stat__n">${count(FILTERS[1][2])}</div><div class="stat__l">进行中的计划</div></button>
@@ -255,10 +230,12 @@ function plansHtml() {
     <span class="tipify">Flash 每天一组:建好第一天,在计划里点「复制成下一天」。时间一律按英国时间(店铺时区),夏令时自动处理。</span>
     <span class="spacer"></span>
   </div>
-  <div class="pr-tabs">${FILTERS.filter(([k]) => k !== 'pending' || showPending).map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
-  ${listToolsHtml()}
+  <div class="pl-top"><div class="pr-tabs">${FILTERS.filter(([k]) => k !== 'pending' || showPending).map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
+    <input class="inp inp--sm pl-top__q" data-lv="q" placeholder="搜计划 / 产品 / SKU / 品牌" value="${esc(LV.q)}"/></div>
+  ${LV.q && !S.allPlans ? '<p class="muted pl-top__more">已结束的计划还没一起搜。<button type="button" class="linkbtn" data-a="filter" data-f="all">连已结束的一起搜</button></p>' : ''}
+  ${groupBarHtml(base, list)}
   ${bulkHtml()}
-  ${loadingAll ? '<div class="pr-empty">正在读已结束的计划…</div>' : list.length ? listBody() : `<div class="pr-empty">${LV.folder || LV.camp || LV.brand || LV.q ? '没有符合筛选的计划' : '这里还没有计划'}</div>`}`;
+  ${loadingAll ? '<div class="pr-empty">正在读已结束的计划…</div>' : list.length ? list.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id))).join('') : `<div class="pr-empty">${LV.q || LV.chip !== '__all' ? '没有符合的计划' : '这里还没有计划'}</div>`}`;
 }
 
 const leftTxt = (ms) => {
@@ -275,7 +252,7 @@ function planSay(p) {
   const how = gs.length > 1 ? `分 ${gs.length} 组改价(${gs.map((g) => (g.name ? `${esc(g.name)}:` : '') + (RULE_MODES[g.rule.mode]?.label || '')).join(' / ')})` : r ? r.say(gs[0].rule.value) : '按逐个产品设定的价格';
   return `把 <b>${n}</b> 个产品${p.kind === 'permanent' ? '永久' : '在活动期间'}:${how}`;
 }
-function planRow(p, s, ovs = [], by = '') {
+function planRow(p, s, ovs = []) {
   const sum = A.planSummary(p);
   const items = p.slots.flatMap((x) => x.items).filter((i) => i.price != null);
   const maxOff = items.reduce((m, i) => Math.max(m, core.discountPct(i.refPrice, i.price)), 0);
@@ -304,8 +281,8 @@ function planRow(p, s, ovs = [], by = '') {
         ${p.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${holds ? `<span class="tag tag--danger">${holds} 个暂停接管</span>` : ''}
         ${ovs.length ? `<span class="tag tag--warn" title="${esc(ovs.map((o) => `「${o.name}」:${o.n} 个选项,重叠时用「${o.wins ? p.name : o.name}」的价`).join('\n'))}">⚠️ 和「${esc(ovs[0].name)}」${ovs.length > 1 ? `等 ${ovs.length} 个计划` : ''}改到同一批产品(${ovs.reduce((n, o) => n + o.n, 0)} 个选项)</span>` : ''}
-        ${p.campaign && by !== 'campaign' ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : p.followCampaign ? '<span class="tag">跟随活动时间</span>' : ''}
-        ${p.folder && by !== 'folder' ? `<span class="tag">分组:${esc(p.folder)}</span>` : ''}
+        ${p.campaign ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : ''}
+        ${p.folder && LV.by !== 'folder' ? `<span class="tag">分组:${esc(p.folder)}</span>` : ''}
         ${S.approvals ? `<span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}` : ''}
       </div>
       <div class="plan__say">${planSay(p)}</div>
@@ -1278,8 +1255,10 @@ document.addEventListener('click', async (ev) => {
       case 'lsel': { const id = el.dataset.id; el.checked ? LV.sel.add(id) : LV.sel.delete(id); if (LV.sel.size) loadCampaigns(); render(); break; }
       case 'lselgrp': { const ids = el.dataset.ids.split(',').filter(Boolean); ids.forEach((id) => (el.checked ? LV.sel.add(id) : LV.sel.delete(id))); if (LV.sel.size) loadCampaigns(); render(); break; }
       case 'lnone': LV.sel.clear(); render(); break;
-      case 'lgtoggle': LV.open[el.dataset.k] = el.dataset.o !== '1'; localStorage.setItem('cgp-pr-open', JSON.stringify(LV.open)); render(); break;
-      case 'lclear': Object.assign(LV, { folder: '', camp: '', brand: '', q: '' }); render(); break;
+      case 'lby': LV.by = el.dataset.v; LV.chip = '__all'; LV.newFolder = false; localStorage.setItem('cgp-pr-by2', LV.by); render(); break;
+      case 'lchip': LV.chip = el.dataset.k; render(); break;
+      case 'lnewf': if (!LV.sel.size) { toast('先在下面勾选要放进新分组的计划,再点「＋ 新分组」', false); return; } LV.newFolder = true; render(); document.querySelector('#pl-newf')?.focus(); break;
+      case 'lnewf0': LV.newFolder = false; render(); break;
       case 'lmove': case 'lunfolder': {
         const f = a === 'lunfolder' ? '' : A.cleanFolder($('#pl-folder')?.value);
         if (a === 'lmove' && !f) { toast('先填分组名', false); $('#pl-folder')?.focus(); return; }
@@ -1456,7 +1435,6 @@ document.addEventListener('change', async (ev) => {
   if (!el.closest('#section-price')) return;
   if (el.dataset.a === 'notify') { try { await api('PUT', '/api/price/settings', { notify: { [el.dataset.k]: el.checked } }); await load(); } catch (e) { toast(e.message, false); } return; }
   if (el.id === 'lplan') { ledgerQ.plan = el.value; ledgerQ.offset = 0; loadLedger(); return; }
-  if (el.dataset.lv && el.dataset.lv !== 'q') { LV[el.dataset.lv] = el.value; if (el.dataset.lv === 'by') localStorage.setItem('cgp-pr-by', el.value); render(); return; }
   if (el.id === 'ukloc') { try { await api('PUT', '/api/price/settings', { ukLocation: el.value }); STK.map.clear(); STK.loc = null; STK.err = ''; toast('已保存:UK 可售按这个仓库算'); await load(); render(); } catch (e) { toast(e.message, false); } return; }
   if (!E) return;
   if (el.name === 'rmode') {
@@ -1543,6 +1521,12 @@ document.addEventListener('keydown', (ev) => {
 });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'coll-q') $('[data-a=collsearch]')?.click(); });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && PH) { PH = null; drawPH(); } });
+// 「＋ 新分组」:起名字回车 = 勾选的计划放进这个新分组
+document.addEventListener('keydown', async (ev) => {
+  if (ev.target.id !== 'pl-newf' || ev.key !== 'Enter') return; ev.preventDefault();
+  const f = A.cleanFolder(ev.target.value); if (!f) return;
+  try { await act({ type: 'organize', ids: [...LV.sel], folder: f }); LV.sel.clear(); LV.newFolder = false; LV.by = 'folder'; LV.chip = f; render(); } catch (e) { toast(e.message, false); }
+});
 
 async function loadLocations() {
   if (cache.locsBusy) return; cache.locsBusy = true;

@@ -2099,21 +2099,9 @@ body.is-booting #modnav, body.is-booting #me-chip { visibility: hidden; }
 #section-price .plan__sel input { width: 16px; height: 16px; cursor: pointer; }
 #section-price .plan.is-sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 #section-price .plan__hit { font-size: 12px; color: var(--text-2); background: var(--accent-soft); border-radius: 4px; padding: 2px 8px; margin-top: 4px; width: fit-content; }
-#section-price .pl-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
-#section-price .pl-tools__by { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); margin-right: 6px; }
-#section-price .pl-tools__q { width: 220px; }
-#section-price .pl-tools__more { margin: -6px 0 10px; font-size: 12px; }
 #section-price .pl-bulk { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 10px; box-shadow: var(--shadow); font-size: 13px; }
 #section-price .pl-bulk__g { display: inline-flex; align-items: center; gap: 6px; }
 #section-price .pl-bulk__g .inp { width: 190px; }
-#section-price .pl-grp { margin-bottom: 14px; }
-#section-price .pl-grp__h { display: flex; align-items: center; gap: 10px; padding: 6px 2px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
-#section-price .pl-grp__all { width: 16px; height: 16px; margin: 0 2px 0 13px; cursor: pointer; }
-#section-price .pl-grp__t { display: inline-flex; align-items: baseline; gap: 8px; background: none; border: none; padding: 0; font: inherit; cursor: pointer; text-align: left; }
-#section-price .pl-grp__t b { font-size: 14px; }
-#section-price .pl-grp__t .muted { font-size: 12px; }
-#section-price .pl-grp__arr { width: 12px; color: var(--text-3); }
-#section-price .pl-grp.is-closed .pl-grp__h { margin-bottom: 0; }
 #section-price .pr-group__name { margin-bottom: 12px; }
 #section-price .pr-group__name .inp { max-width: 320px; }
 #section-price .pr-stockf { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
@@ -2181,3 +2169,22 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-price .pr-ph__pn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 #section-price .pr-ph__its { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; margin-top: 4px; }
 #section-price .pr-tbl .nowrap { white-space: nowrap; }
+
+/* ---- 改价计划列表:一排分组标签(2026-11-03 用户选的;代替「分组方式 + 三个筛选下拉」)---- */
+#section-price .pl-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+#section-price .pl-top .pr-tabs { margin-bottom: 0; }
+#section-price .pl-top__q { width: 240px; margin-left: auto; }
+#section-price .pl-top__more { margin: -4px 0 8px; font-size: 12px; text-align: right; }
+#section-price .pl-bar { display: flex; align-items: flex-start; gap: 10px 14px; margin: 0 0 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+#section-price .pl-bar__by { flex: none; }
+#section-price .pl-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+#section-price .pl-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 20px; padding: 3px 11px; font: inherit; font-size: 13px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+#section-price .pl-chip b { font-size: 12px; font-weight: 600; color: var(--text-3); }
+#section-price .pl-chip:hover { border-color: var(--border-strong); color: var(--text); }
+#section-price .pl-chip.is-on { background: var(--text); border-color: var(--text); color: #fff; }
+#section-price .pl-chip.is-on b { color: rgba(255,255,255,.75); }
+#section-price .pl-chip.is-empty:not(.is-on) { opacity: .55; }
+#section-price .pl-chip--add { border-style: dashed; color: var(--accent); }
+#section-price .pl-newf { display: inline-flex; align-items: center; gap: 6px; }
+#section-price .pl-newf .inp { width: 180px; }
+#section-price .pl-bar__all { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-3); white-space: nowrap; padding-top: 4px; cursor: pointer; }
