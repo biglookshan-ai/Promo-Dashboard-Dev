@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Promo popup · B Light</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<img class="site" src="img/home-m.jpg" alt="CineGearPro homepage (live screenshot)">
+<div class="pvbar"><b>Preview 预览</b>
+  <button type="button" data-mode="keep" aria-pressed="true"><span class="pv-l">一直显示 Keep visible</span><span class="pv-s">常显 Keep</span></button>
+  <button type="button" data-mode="play" aria-pressed="false"><span class="pv-l">▶ 真实效果 Real timing</span><span class="pv-s">▶ 真实 Play</span></button>
+  <em></em></div>
+
+<div class="chat"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h12a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5H9l-4 3v-3H4A1.5 1.5 0 0 1 2.5 12.5V5A1.5 1.5 0 0 1 4 3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Chat</div>
+
+<aside class="cgpp cgpp--light" role="region" aria-label="Promotion" data-state="off" data-cgp-section="popup" data-cgp-section-name="Promo popup / 促销弹窗">
+  <a class="cgpp__link" href="#">
+    <img class="cgpp__img" src="img/bf-thumb.jpg" alt="" width="92" height="92">
+    <div class="cgpp__body">
+      <p class="cgpp__t">Early Black Friday</p>
+      <p class="cgpp__s">Up to 75% off</p>
+      <p class="cgpp__cd" data-cd><span>Ends in </span></p>
+    </div>
+    <span class="cgpp__btn">Shop now</span>
+  </a>
+  <button class="cgpp__x" type="button" aria-label="Close"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2 2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+  <i class="cgpp__bar" aria-hidden="true"></i>
+</aside>
+<script src="popup.js"></script>
+</body>
+</html>

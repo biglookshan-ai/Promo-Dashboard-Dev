@@ -1,0 +1,56 @@
+{
+  "slug": "promo-popup",
+  "title": "Holiday promo popup (small card, not full screen)",
+  "title_zh": "节日促销弹窗(小卡片,不是全屏)",
+  "summary": "A small promo card slides in when a customer arrives, shows a live countdown and hides itself after 5 seconds. Bottom left on desktop, a bar along the bottom on mobile. It never covers the whole page.",
+  "summary_zh": "客人打开网站时滑出一张活动小卡片,带倒计时,5 秒后自动隐藏。电脑在左下角,手机在底部一条,不会盖住整个页面。",
+  "areas": ["module"],
+  "project": "Promo Dashboard · Theme",
+  "deploy": ["app", "theme"],
+  "pages": [
+    {
+      "id": "home",
+      "name": "Homepage · popup showing",
+      "name_zh": "首页 · 弹窗出现",
+      "path": "/",
+      "live": "https://www.cinegearpro.co.uk/",
+      "note": "Use the buttons at the top right: Keep visible (for reviewing) or Real timing (appears after 2s, stays 5s, hover to pause).",
+      "note_zh": "右上角两个按钮:一直显示(方便看和评论)/ 真实效果(2 秒后出现,停 5 秒,鼠标放上去暂停)。"
+    },
+    {
+      "id": "first",
+      "name": "First visit · with cookie notice",
+      "name_zh": "第一次来 · 有 Cookie 提示",
+      "path": "/",
+      "isNew": true,
+      "note": "Desktop: the card sits above the cookie notice. Mobile: the card waits until the cookie notice is answered. Restart brings the cookie notice back.",
+      "note_zh": "电脑:卡片排在 Cookie 提示上面。手机:等客人点完 Cookie 提示才弹。「重来」让 Cookie 提示重新出现。"
+    }
+  ],
+  "rounds": [
+    {
+      "option": "A",
+      "optionName": "Black & gold (Black Friday)",
+      "optionName_zh": "黑金(黑五)",
+      "notes": "First draft. Dark card with gold countdown, same black and gold as the Black Friday countdowns already on the site. Rules: shows once, then not again for at least 1 hour, max 3 times a day. Closing it with × hides it for the rest of the day. Not shown on the Black Friday page itself (where the button goes), the cart or account pages, or while the cart, search or menu is open. Copy is a placeholder from the current Early Black Friday banner.",
+      "notes_zh": "初稿。深色卡片 + 金色倒计时,和网站上现有的黑五倒计时同一套黑金。规则:弹过一次至少隔 1 小时才再弹,每天最多 3 次;点 × 关掉当天不再弹;按钮去的黑五活动页本身、购物车和会员页不弹,购物车 / 搜索 / 菜单开着时也不弹。文案先用现在 Early Black Friday Banner 的。",
+      "files": {
+        "home": { "d": "home-a.html", "m": "home-a.m.html" },
+        "first": { "d": "first-a.html", "m": "first-a.m.html" }
+      },
+      "resolves": []
+    },
+    {
+      "option": "B",
+      "optionName": "Light (matches the site)",
+      "optionName_zh": "浅色(跟网站一样)",
+      "notes": "First draft. White card with a thin border, red countdown (same as the product page deal countdown) and the yellow site button. Same rules as option A.",
+      "notes_zh": "初稿。白色卡片 + 细边框,红色倒计时(和产品页促销倒计时一样),黄色按钮跟网站一致。规则和方案 A 一样。",
+      "files": {
+        "home": { "d": "home-b.html", "m": "home-b.m.html" },
+        "first": { "d": "first-b.html", "m": "first-b.m.html" }
+      },
+      "resolves": []
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+ "d": {
+  "title": "CineGearPro - Cine Tools for Every Story and Creator – CINEGEARPRO SHOP",
+  "body": {
+   "font": "\"Instrument Sans\", sans-serif",
+   "size": "14px",
+   "weight": "400",
+   "color": "rgb(28, 34, 45)",
+   "bg": "rgb(255, 255, 255)",
+   "radius": "0px"
+  },
+  "h2": {
+   "font": "\"Instrument Sans\", sans-serif",
+   "size": "16px",
+   "weight": "600",
+   "color": "rgb(0, 0, 0)",
+   "bg": "rgba(0, 0, 0, 0)",
+   "radius": "0px"
+  },
+  "price": null,
+  "button": {
+   "font": "\"Instrument Sans\", sans-serif",
+   "bg": "rgb(252, 201, 0)",
+   "color": "rgb(28, 34, 45)",
+   "radius": "8px",
+   "text": "Skip to content"
+  },
+  "fonts": [
+   "https://fonts.googleapis.com/",
+   "https://fonts.gstatic.com/",
+   "https://cdn.jsdelivr.net/npm/remixicon@4.8.0/fonts/remixicon.woff2?t=1766743011500",
+   "https://cdn.jsdelivr.net/npm/remixicon@4.8.0/fonts/remixicon.css",
+   "https://fonts.googleapis.com/css2?family=Helvetica+Neue:wght@400;700&display=swap",
+   "https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap"
+  ],
+  "slides": [
+   "https://www.cinegearpro.co.uk/cdn/shop/files/Early_Black_Friday_3-4_Banner_67d2f93b-20b4-4ac0-b6c7-ad98d6f02d02.jpg?v=1793347203&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/3-4_banner_Simera-C_100mm_330a0e65-d93a-4876-84df-d1af4a542ed5.jpg?v=1793346957&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/DZO_5_BlackFriday.jpg?v=1793089866&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/PDMOVIE_Smart_Fusion_web_banner2.jpg?v=1790065170&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/Arles_Zoom_3-4_banner.jpg?v=1790235834&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/Monitoring_4_e0dd7d11-888e-487b-bf1d-de48892ff2c1_600x.jpg?v=1756370636",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/537455_2c9e8c3f-231a-4580-a1bf-92a0fe1ef220.jpg?v=1730772824&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/105mm-i-4_05e551ba-8db1-4591-9bf6-d1ea5b762423.jpg?v=1757485729&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/28mm-e-1_0b9dafc8-67bf-4c84-9703-3ac8d0106ae9.jpg?v=1734430051&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/35mm-E-1_2985ebbf-d6bc-4f93-8dd6-881a7115226b.jpg?v=1734338295&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/537455_2c9e8c3f-231a-4580-a1bf-92a0fe1ef220.jpg?v=1730772824&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/RX-18TDXIII_9140e765-b048-48e3-89eb-30c63eabfce4.jpg?v=1731115358&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/F120C-1_2b68eecf-a677-46b5-b9ff-4bf859f66b80.jpg?v=1763533148&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/RX-724III_f46eae74-ea73-48cf-a0e0-3dc218fbf3fc.jpg?v=1731120957&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/1_d248924f-afb0-4f8b-827c-e1a2ebfaad50.webp?v=1784714485&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/WLC-T06-1_185a3403-eee7-4c96-a50f-3bfc45eee3fb.jpg?v=1750390010&width=320"
+  ],
+  "prices": [
+   "£5,599.00\n          ",
+   "£5,599.00\n          ",
+   "£5,599.00"
+  ],
+  "height": 4185
+ },
+ "m": {
+  "title": "CineGearPro - Cine Tools for Every Story and Creator – CINEGEARPRO SHOP",
+  "body": {
+   "font": "\"Instrument Sans\", sans-serif",
+   "size": "12px",
+   "weight": "400",
+   "color": "rgb(28, 34, 45)",
+   "bg": "rgb(255, 255, 255)",
+   "radius": "0px"
+  },
+  "h2": {
+   "font": "\"Instrument Sans\", sans-serif",
+   "size": "16px",
+   "weight": "600",
+   "color": "rgb(0, 0, 0)",
+   "bg": "rgba(0, 0, 0, 0)",
+   "radius": "0px"
+  },
+  "price": null,
+  "button": {
+   "font": "\"Instrument Sans\", sans-serif",
+   "bg": "rgb(252, 201, 0)",
+   "color": "rgb(28, 34, 45)",
+   "radius": "8px",
+   "text": "Skip to content"
+  },
+  "fonts": [
+   "https://fonts.googleapis.com/",
+   "https://fonts.gstatic.com/",
+   "https://cdn.jsdelivr.net/npm/remixicon@4.8.0/fonts/remixicon.woff2?t=1766743011500",
+   "https://cdn.jsdelivr.net/npm/remixicon@4.8.0/fonts/remixicon.css",
+   "https://fonts.googleapis.com/css2?family=Helvetica+Neue:wght@400;700&display=swap",
+   "https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap"
+  ],
+  "slides": [
+   "https://www.cinegearpro.co.uk/cdn/shop/files/Early_Black_Friday_3-4_Banner_67d2f93b-20b4-4ac0-b6c7-ad98d6f02d02.jpg?v=1793347203&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/3-4_banner_Simera-C_100mm_330a0e65-d93a-4876-84df-d1af4a542ed5.jpg?v=1793346957&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/DZO_5_BlackFriday.jpg?v=1793089866&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/PDMOVIE_Smart_Fusion_web_banner2.jpg?v=1790065170&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/Arles_Zoom_3-4_banner.jpg?v=1790235834&width=912",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/Monitoring_4_e0dd7d11-888e-487b-bf1d-de48892ff2c1_600x.jpg?v=1756370636",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/537455_2c9e8c3f-231a-4580-a1bf-92a0fe1ef220.jpg?v=1730772824&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/105mm-i-4_05e551ba-8db1-4591-9bf6-d1ea5b762423.jpg?v=1757485729&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/28mm-e-1_0b9dafc8-67bf-4c84-9703-3ac8d0106ae9.jpg?v=1734430051&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/35mm-E-1_2985ebbf-d6bc-4f93-8dd6-881a7115226b.jpg?v=1734338295&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/537455_2c9e8c3f-231a-4580-a1bf-92a0fe1ef220.jpg?v=1730772824&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/RX-18TDXIII_9140e765-b048-48e3-89eb-30c63eabfce4.jpg?v=1731115358&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/F120C-1_2b68eecf-a677-46b5-b9ff-4bf859f66b80.jpg?v=1763533148&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/RX-724III_f46eae74-ea73-48cf-a0e0-3dc218fbf3fc.jpg?v=1731120957&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/1_d248924f-afb0-4f8b-827c-e1a2ebfaad50.webp?v=1784714485&width=700",
+   "https://www.cinegearpro.co.uk/cdn/shop/files/WLC-T06-1_185a3403-eee7-4c96-a50f-3bfc45eee3fb.jpg?v=1750390010&width=320"
+  ],
+  "prices": [
+   "£5,599.00\n          ",
+   "£5,599.00\n          ",
+   "£5,599.00"
+  ],
+  "height": 3421
+ }
+}

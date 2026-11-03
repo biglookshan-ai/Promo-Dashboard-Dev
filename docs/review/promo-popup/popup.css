@@ -1,0 +1,76 @@
+/* 促销弹窗(预览稿)—— 以后主题里的 snippets/cgp-promo-popup.liquid 照这份样式做 */
+.cgpp {
+  --ink: #1c222d; --muted: #5f6670; --brand: #fcc900; --brand-h: #f0bd00;
+  position: fixed; left: 20px; bottom: 20px; z-index: 10000; width: 360px; max-width: calc(100vw - 40px);
+  font-family: "Instrument Sans", system-ui, sans-serif; border-radius: 14px; overflow: hidden;
+  transition: opacity .28s ease, transform .32s cubic-bezier(.2, .8, .2, 1), bottom .3s ease, visibility 0s linear 0s;
+}
+.cgpp[data-state="off"] { opacity: 0; transform: translateY(14px); visibility: hidden; pointer-events: none; transition: opacity .24s ease, transform .24s ease, bottom .3s ease, visibility 0s linear .24s; }
+
+/* A 黑金(黑五) */
+.cgpp--dark { background: #12161c; color: #fff; --muted: #a9b0ba; --cd: #f5c518; --bar: #f5c518; box-shadow: 0 14px 36px rgba(0, 0, 0, .32); }
+/* B 浅色(跟网站) */
+.cgpp--light { background: #fff; color: var(--ink); --cd: #d10000; --bar: var(--brand); border: 1px solid #e3e6ea; box-shadow: 0 14px 36px rgba(16, 24, 40, .16); }
+
+.cgpp__link { display: grid; grid-template-columns: 92px minmax(0, 1fr); grid-template-areas: "img body" "img btn"; column-gap: 14px; align-items: center; padding: 14px 40px 14px 14px; color: inherit; text-decoration: none; }
+.cgpp__img { grid-area: img; width: 92px; height: 92px; border-radius: 9px; object-fit: cover; display: block; }
+.cgpp__body { grid-area: body; min-width: 0; }
+.cgpp__t { margin: 0; font-size: 16px; line-height: 1.25; font-weight: 700; }
+.cgpp__s { margin: 2px 0 0; font-size: 14px; line-height: 1.35; color: var(--muted); }
+.cgpp__cd { margin: 6px 0 0; font-size: 13px; line-height: 1.3; font-weight: 500; color: var(--cd); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cgpp__cd b { font-weight: 700; }
+.cgpp__btn { grid-area: btn; justify-self: start; display: inline-flex; align-items: center; height: 34px; margin-top: 10px; padding: 0 14px; border-radius: 8px; background: var(--brand); color: #1c222d; font-size: 13.5px; font-weight: 600; white-space: nowrap; transition: background .15s; }
+.cgpp__link:hover .cgpp__btn { background: var(--brand-h); }
+.cgpp__x { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; }
+.cgpp__x:hover { background: rgba(127, 127, 127, .18); color: inherit; }
+.cgpp__x svg { width: 14px; height: 14px; }
+/* 自动隐藏前的倒计时细条(悬停 / 按住时停下) */
+.cgpp__bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--bar); transform-origin: left; transform: scaleX(0); }
+
+/* 手机:底部整条 */
+@media (max-width: 749px) {
+  .cgpp { left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); width: auto; max-width: none; border-radius: 14px; }
+  .cgpp[data-state="off"] { transform: translateY(calc(100% + 24px)); opacity: 1; }
+  .cgpp__link { grid-template-columns: 60px minmax(0, 1fr) auto; grid-template-areas: "img body btn"; column-gap: 10px; padding: 10px 12px 10px 10px; }
+  .cgpp__img { width: 60px; height: 60px; border-radius: 8px; }
+  .cgpp__t { font-size: 15px; padding-right: 4px; }
+  .cgpp__s { font-size: 13px; margin-top: 1px; }
+  .cgpp__cd { font-size: 12.5px; margin-top: 3px; }
+  .cgpp__btn { align-self: end; height: 32px; margin: 0; padding: 0 12px; font-size: 13px; }
+  .cgpp__x { top: 4px; right: 4px; width: 26px; height: 26px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cgpp, .cgpp[data-state="off"] { transform: none !important; }
+}
+
+/* ---- 以下只是预览用的东西(网站上原有的 Cookie 提示 / 聊天按钮照线上样子画,和预览控制条) ---- */
+html, body { margin: 0; }
+body { background: #fff; }
+.site { display: block; width: 100%; height: auto; }
+.ckb { position: fixed; left: 20px; bottom: 20px; z-index: 9999; max-width: 400px; box-sizing: border-box; padding: 20px; border-radius: 20px; background: #fff; color: #000;
+  box-shadow: 0 0 10px rgba(0, 0, 0, .2); font: 400 16px/1.8 "Instrument Sans", sans-serif; transition: opacity .2s; }
+.ckb p { margin: 0 0 20px; }
+.ckb__b { display: flex; gap: 12px; }
+.ckb__b span { padding: 10px 20px; border-radius: 24px; cursor: pointer; line-height: 1.2; }
+.ckb__ok { background: #1c222d; color: #fff; }
+.ckb__no { background: #fff; color: #000; border: 1px solid #000; }
+.ckb[data-gone] { display: none; }
+@media (max-width: 749px) { .ckb { max-width: 340px; left: 20px; right: auto; } }
+.chat { position: fixed; right: 20px; bottom: 20px; z-index: 9990; display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 18px; border-radius: 25px;
+  background: #4b4f52; color: #fff; font: 500 17px "Instrument Sans", sans-serif; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+.chat svg { width: 18px; height: 18px; }
+.pvbar { position: fixed; top: 12px; right: 12px; z-index: 10001; display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 10px; background: rgba(20, 22, 26, .86); color: #fff;
+  font: 500 12px/1.2 system-ui, sans-serif; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
+.pvbar b { padding: 0 6px; color: #fcc900; font-weight: 600; }
+.pvbar button { height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: rgba(255, 255, 255, .12); color: #fff; font: inherit; cursor: pointer; }
+.pvbar button[aria-pressed="true"] { background: #fcc900; color: #1c222d; }
+.pvbar em { font-style: normal; color: #c9cdd3; padding: 0 4px; max-width: 220px; }
+.pv-s { display: none; }
+.pvbar em:empty { display: none; }
+@media (max-width: 749px) {
+  .pvbar { top: 8px; right: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 240px; padding: 4px; gap: 4px; font-size: 11px; background: rgba(20, 22, 26, .78); }
+  .pvbar > b, .pv-l { display: none; }
+  .pv-s { display: inline; }
+  .pvbar button { height: 24px; padding: 0 8px; border-radius: 6px; }
+  .pvbar em { flex-basis: 100%; padding: 2px 4px 3px; line-height: 1.35; }
+}
