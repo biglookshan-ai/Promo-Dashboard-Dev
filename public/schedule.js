@@ -5145,14 +5145,15 @@
   // 历史记录页:点开才去读(不跟着每次刷新一起读)
   // 左侧导航收起 / 展开(2026-10-20 改版):记在这台电脑上;窗口窄(< 900px)默认收起
   (() => {
-    let saved = null; try { saved = localStorage.getItem('cgp-nav-mini'); } catch { /* 无痕模式 */ }
-    document.body.classList.toggle('nav-mini', saved != null ? saved === '1' : window.innerWidth < 900);
+    // 2026-11-03 用户:默认收起成图标,省出宽度给右边;点左下角的按钮展开,记在这台电脑上(换了新的记法,以前存的「展开」不算)
+    let saved = null; try { saved = localStorage.getItem('cgp-nav-mini2'); } catch { /* 无痕模式 */ }
+    document.body.classList.toggle('nav-mini', saved != null ? saved === '1' : true);
     $('#nav-fold')?.addEventListener('click', () => {
       const on = !document.body.classList.contains('nav-mini'); document.body.classList.toggle('nav-mini', on);
-      try { localStorage.setItem('cgp-nav-mini', on ? '1' : '0'); } catch { /* 无痕模式 */ }
+      try { localStorage.setItem('cgp-nav-mini2', on ? '1' : '0'); } catch { /* 无痕模式 */ }
     });
-    // 收起时鼠标停在图标上显示名字
-    $$('#modnav .modnav__item').forEach((b) => { if (!b.title) b.title = b.querySelector('span')?.textContent.trim() || ''; });
+    // 收起时鼠标停在图标上马上弹出名字(CSS 用 data-label 画;不用 title,浏览器自带的提示要等一秒多)
+    $$('#modnav .modnav__item').forEach((b) => { b.dataset.label = b.querySelector('span')?.textContent.trim() || b.title || ''; b.removeAttribute('title'); });
   })();
   document.querySelector('#modnav [data-section="history"]')?.addEventListener('click', () => loadHistoryPage());
   document.querySelector('#modnav [data-section="audit"]')?.addEventListener('click', () => loadAudit());

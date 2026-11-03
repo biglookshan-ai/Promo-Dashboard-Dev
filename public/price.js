@@ -252,7 +252,7 @@ function plansHtml() {
   <div class="toolbar">
     <button class="btn btn-primary" data-a="new" data-kind="window">+ 限时改价</button>
     <button class="btn" data-a="new" data-kind="permanent">+ 永久调价</button>
-    <span class="muted">Flash 每天一组:建好第一天,在计划里点「复制成下一天」</span>
+    <span class="tipify">Flash 每天一组:建好第一天,在计划里点「复制成下一天」。时间一律按英国时间(店铺时区),夏令时自动处理。</span>
     <span class="spacer"></span>
   </div>
   <div class="pr-tabs">${FILTERS.filter(([k]) => k !== 'pending' || showPending).map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
@@ -320,7 +320,6 @@ function planRow(p, s, ovs = [], by = '') {
         ${(p.tagsAdd || []).length ? `<span>加标签 ${p.tagsAdd.map(esc).join('、')}</span>` : ''}
         ${p.state === 'rejected' && p.rejectNote ? `<span style="color:var(--danger)">退回意见:${esc(p.rejectNote)}</span>` : ''}
       </div>
-      <div class="muted plan__tz">店铺时区 Europe/London · 你的时区 ${Intl.DateTimeFormat().resolvedOptions().timeZone}</div>
     </div>
     <div class="plan__acts">${acts}</div>
   </div>`;
@@ -409,9 +408,7 @@ function cdHtml(p, ro) {
       <label class="pr-fld">样式 <em>和活动倒计时同一套</em>
         <select class="sel" data-f="cdstyle" ${ro ? 'disabled' : ''}>${Object.entries(CD_STY).map(([k, v]) => `<option value="${k}" ${sty === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label>
       <div class="pr-fld">预览 <em>和网站上一模一样${sty === 'pill' || sty === 'dark' ? ';胶囊 / 黑金最后一天会整条变实心(反色),提醒快结束了' : ''}</em>${cdPreview(p, sty, bg, fg)}</div>
-    </div>
-    <p class="muted">显示在产品页、搜索页和 Collection 页的产品卡上。同一个产品也在活动里时,<b>活动的徽章照常显示,倒计时换成这个</b>;没改价的产品还是显示活动的倒计时。
-      只给真的在这个价格上的产品(有人在后台手动改过价的不显示),计划结束、暂停、提前结束时自动去掉。</p>` : ''}`;
+    </div>` : ''}`;
 }
 const SCOPE_MODES = { products: '指定产品', collections: '指定 Collection', search: '按品牌 / 标签 / 类型', all: '全店所有产品' }; // 2026-10-29 用户:选产品优先(默认、排第一)
 
@@ -531,7 +528,7 @@ function editorHtml() {
           <input class="inp" data-f="folder" list="pr-folders" value="${esc(p.folder || '')}" placeholder="可不填,比如:Black Friday 2026 / 清货 / 日常调价" maxlength="${A.FOLDER_MAX}" ${E.showPending ? 'disabled' : ''} style="max-width:420px"/>
           <datalist id="pr-folders">${foldersAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist></label>`, '只有后台看得到,顾客看不到')}
 
-      ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
+      ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价。同一个产品出现在好几组时,以<b>排在下面的那组</b>为准 —— 比如第 1 组全场 9 折,第 2 组某个品牌 8 折,这个品牌就是 8 折。')}
 
 
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
@@ -549,14 +546,14 @@ function editorHtml() {
           ${E.panel === 'slotcoll' ? collPanel('slotcoll') : ''}</div>` : ''}
         ${p.kind === 'window' ? `<label class="pr-fld" style="margin-top:12px">优先级 <em>1–10,默认 10(最高)。只有两个限时计划改到同一个产品、时间又重叠时才用得到:<b>数字大的说了算,一样大时开始晚的说了算</b>(比如黑五期间加一天 Flash,那天自动用 Flash 的价,过了回到黑五的价)。想让这个计划让位就调低</em>
           <input class="inp" type="number" min="1" max="${core.PRIO_MAX}" step="1" data-f="priority" value="${core.prioOf(p)}" ${ro ? 'disabled' : ''} style="width:90px"/></label>` : ''}
-        <p class="muted">时间一律按英国时间(店铺时区),夏令时自动处理。</p>`)}
+      `, '时间一律按英国时间(店铺时区),夏令时自动处理')}
 
-      ${p.kind === 'window' ? sec('倒计时', cdHtml(p, ro), '产品页和产品卡上倒数到改价结束;比活动的倒计时优先') : ''}
+      ${p.kind === 'window' ? sec('倒计时', cdHtml(p, ro), '产品页和产品卡上倒数到改价结束;比活动的倒计时优先。显示在产品页、搜索页和 Collection 页的产品卡上。同一个产品也在活动里时,<b>活动的徽章照常显示,倒计时换成这个</b>;没改价的产品还是显示活动的倒计时。只给真的在这个价格上的产品(有人在后台手动改过价的不显示),计划结束、暂停、提前结束时自动去掉。') : ''}
 
       ${sec('产品标签', `<div class="grid2">
         <div class="pr-fld">生效期间加上 <em>结束自动去掉;产品本来就有的不动</em>${tagChips('tagsAdd', ro)}</div>
         <div class="pr-fld">生效期间去掉 <em>结束自动加回来</em>${tagChips('tagsRemove', ro)}</div></div>
-        <p class="muted">用来驱动「按标签自动归类」的 Collection,比如 FlashDeal、TOP DEALS。</p>`, '可不填')}
+      `, '可不填;用来驱动「按标签自动归类」的 Collection,比如 FlashDeal、TOP DEALS')}
 
       ${sec(S.approvals ? '负责人与审批' : '关联活动与备注', `<div class="grid2">
         ${S.approvals ? `<label class="pr-fld">负责人<select class="sel" data-f="owner" ${ro ? 'disabled' : ''}><option value="">不指定</option>${S.people.map((u) => `<option value="${u.id}" ${p.owner === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>
@@ -610,13 +607,12 @@ function groupsHtml(ro) {
         <div class="pr-group__lab">改哪些产品</div>${scopeHtml(ro)}
         <div class="pr-group__lab">改什么价</div>${ruleHtml(ro)}
         <div class="pr-group__lab">划线价 <span class="muted">这一组改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样</span></div>${cmpHtml(ro, g)}
-        <div class="pr-group__lab">产品和新价 <span class="muted">${ro ? '这一组的产品和新价' : '选了产品马上列出来,改规则自动刷新;手改的价格、去掉的产品都会保留'}</span></div>
+        <div class="pr-group__lab">产品和新价 <span class="muted">${ro ? '这一组的产品和新价' : '选了产品马上列出来,改规则自动刷新;手改的价格、去掉的产品都会保留。<br>新价可以<b>一个个直接改</b>(标「手改」,点「用规则价」恢复)。划线价也能<b>单独例外</b>:灰字是按上面方式算出来的;填数字 = 这个选项用这个划线价,填 0 = 不显示,清空 = 回到上面的方式(标「例外」)'}</span></div>
         ${groupListHtml(ro, g, mine, over)}
       </div>` : ''}
     </div>`;
   }).join('')}</div>
-  ${ro ? '' : `<button class="pr-gadd" type="button" data-a="gadd">＋ 再加一组<span>另一批产品用另一个改价规则,比如 A 牌子 85 折、B 牌子逐个填价</span></button>`}
-  ${multi ? '<p class="muted" style="margin-top:8px">同一个产品出现在好几组时,以<b>排在下面的那组</b>为准 —— 比如第 1 组全场 9 折,第 2 组某个品牌 8 折,这个品牌就是 8 折。</p>' : ''}`;
+  ${ro ? '' : `<button class="pr-gadd" type="button" data-a="gadd">＋ 再加一组<span>另一批产品用另一个改价规则,比如 A 牌子 85 折、B 牌子逐个填价</span></button>`}`;
 }
 
 function tagChips(key, ro) {
@@ -638,10 +634,9 @@ function scopeHtml(ro) {
       ${sc.products.length ? `<div class="pr-picked">${sc.products.slice(0, 12).map((x) => `<span class="pr-picked__i" title="${esc(x.title)}">${x.image ? `<img src="${esc(x.image)}" alt="">` : ''}</span>`).join('')}${sc.products.length > 12 ? `<span class="muted">…共 ${sc.products.length} 个</span>` : ''}</div>` : ''}`;
   } else if (sc.mode === 'search') {
     body = `<div class="grid2">
-      <label class="pr-fld">品牌<input class="inp" data-f="svendor" list="pr-vendors" value="${esc(sc.vendor || '')}" placeholder="如 TILTA" ${ro ? 'disabled' : ''}/><datalist id="pr-vendors">${(cache.vendors || []).map((v) => `<option value="${esc(v)}">`).join('')}</datalist></label>
+      <label class="pr-fld">品牌 <em>品牌、标签、类型填几项,就要同时满足几项</em><input class="inp" data-f="svendor" list="pr-vendors" value="${esc(sc.vendor || '')}" placeholder="如 TILTA" ${ro ? 'disabled' : ''}/><datalist id="pr-vendors">${(cache.vendors || []).map((v) => `<option value="${esc(v)}">`).join('')}</datalist></label>
       <label class="pr-fld">标签<input class="inp" data-f="stag" value="${esc(sc.tag || '')}" placeholder="如 New Gear" ${ro ? 'disabled' : ''}/></label>
-      <label class="pr-fld">产品类型<input class="inp" data-f="stype" value="${esc(sc.type || '')}" placeholder="如 Cine Lens" ${ro ? 'disabled' : ''}/></label></div>
-      <p class="muted">填几项就要同时满足几项。</p>`;
+      <label class="pr-fld">产品类型<input class="inp" data-f="stype" value="${esc(sc.type || '')}" placeholder="如 Cine Lens" ${ro ? 'disabled' : ''}/></label></div>`;
   } else {
     body = '<p class="muted">全店所有产品都会被改价。产品多的话执行会慢一些(摘要里有预计时间);下面点「读出全店产品」先看看每个产品的新价。</p>';
   }
@@ -778,7 +773,7 @@ function previewHtml(ro, gid, keep = null) {
       <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div>${pick && notPicked(it.productId) > 0 ? `<div class="pcell__s pcell__np">另有 ${notPicked(it.productId)} 个选项没选,不改价</div>` : ''}
         ${(() => { const sib = live.filter((x) => x.productId === it.productId); return rowAct && sib.length > 1 ? `<button class="linkbtn pcell__all" data-a="${rowAct}" data-vs="${sib.map((x) => x.variantId).join(',')}" title="${rowAct === 'exclude' ? `这个产品的 ${sib.length} 个选项一起移出,下一分钟回到改价前的价格` : pick ? `这个产品整个从选的清单里删掉` : `这个产品的 ${sib.length} 个选项一起排除`}">整个产品${actLabel}(${sib.length} 个选项)</button>` : ''; })()}</div></div>` : ''}</td>
       <td><div class="vcell">${vimgOf(it) ? `<img class="vimg" src="${esc(vimgOf(it))}" loading="lazy" alt=""/>` : ''}<div>${esc(it.variant || '')}<div class="pcell__s">${esc(it.sku || '')}</div></div></div></td>
-      <td class="num">${stockCell(it.variantId)}</td>
+      <td class="ctr">${stockCell(it.variantId)}</td>
       <td class="num">${money(it.refPrice)}${it.refCompareAt && Number(it.refCompareAt) > Number(it.refPrice) ? `<div><s>${money(it.refCompareAt)}</s></div>` : ''}${Number(it.cost) > 0 ? `<div class="pcell__s">成本 ${money(it.cost)}</div>` : ''}</td>
       <td class="num">${ro || gone ? `<b>${it.price != null ? money(it.price) : '不变'}</b>` : `<input class="inp ${needsPrice(p, it) ? 'is-todo' : ''}" data-f="iprice" data-v="${it.variantId}" value="${it.price ?? ''}" placeholder="${needsPrice(p, it) ? '填新价' : '不变'}"/>`}
         ${it.manual && !ro && !gone ? `<div><span class="pr-mtag">手改</span><button class="linkbtn" data-a="unmanual" data-v="${it.variantId}" title="回到这一组规则算出来的价">用规则价</button></div>` : ''}</td>
@@ -792,14 +787,12 @@ function previewHtml(ro, gid, keep = null) {
           ${it.cmpManual ? `<div><span class="pr-mtag">例外</span><button class="linkbtn" data-a="uncmp" data-v="${it.variantId}" title="回到上面选的划线价方式">用规则</button></div>` : ''}`;
       })()}</td>
       <td class="num">${d == null ? '' : d > 0 ? `<span class="off">-${d}%</span>` : d < 0 ? `<span class="up">+${-d}%</span>` : '0%'}</td>
-      <td>${gone ? '<span class="w w--warn">已移出</span>' : ''}${w.map((x) => `<span class="w w--${x.level}">${esc(x.text)}</span>`).join('')}</td>
+      <td class="ctr">${gone ? '<span class="w w--warn">已移出</span>' : ''}${w.map((x) => `<button type="button" class="tip tip--${x.level}" aria-label="${esc(x.text)}"><span class="tip__i" aria-hidden="true">!</span><span class="tip__c">${esc(x.text)}</span></button>`).join('')}</td>
       <td class="num">${gone || !rowAct ? '' : `<button class="linkbtn" data-a="${rowAct}" data-v="${it.variantId}" title="${actTip}">${actLabel}</button>`}</td>
     </tr>`;
   }).join('');
   if (!its.length) return '<p class="muted" style="margin-top:8px">没有符合筛选的产品。</p>';
-  return `${ro ? '' : `<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,改规则、加产品都会保留;点「用规则价」恢复)。
-      ${setCompare ? '' : '划线价也能<b>单独例外</b>:灰字是按上面方式算出来的;填数字 = 这个选项用这个划线价,填 0 = 不显示,清空 = 回到上面的方式(标「例外」)。'}</p>`}
-    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>选项 / SKU</th><th class="num" title="Shopify 里 ${esc(STK.loc?.name || 'UK 仓')} 的 Available(可售数),不含别的仓">UK 可售</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
+  return `    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>选项 / SKU</th><th class="ctr" title="Shopify 里 ${esc(STK.loc?.name || 'UK 仓')} 的 Available(可售数),不含别的仓">UK 可售</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th class="ctr">检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${its.length > 20 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 20 个' : `展开全部 ${its.length} 个选项`}</button>` : ''}`;
 }
 

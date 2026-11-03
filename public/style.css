@@ -69,7 +69,7 @@ body.nav-mini .modnav__n { position: absolute; top: 2px; right: 2px; padding: 0 
 body.nav-mini .sidenav__brand { justify-content: center; padding: 2px 0 10px; }
 body.nav-mini .sidenav__foot { flex-direction: column; }
 body.nav-mini .mechip { padding: 2px; } body.nav-mini .mechip > :not(.avatar):not(.avatar-img) { display: none; }
-.content { max-width: 1280px; padding: 20px 28px 60px; min-width: 0; }
+.content { max-width: 1480px; padding: 20px 28px 60px; min-width: 0; } /* 2026-11-03 用户:界面不够宽 —— 放宽,左边导航默认也收起了 */
 
 .statusbar { font-size: var(--fs-xs); color: var(--text-3); margin: 0 0 18px; }
 .section { display: none; }
@@ -2122,3 +2122,46 @@ body.is-booting #modnav, body.is-booting #me-chip { visibility: hidden; }
 #section-price .pr-seg--sm button { padding: 4px 10px; font-size: 12px; }
 #section-price .stk-zero { color: var(--text-3); }
 #section-price .stk-neg { color: var(--danger); font-weight: 600; }
+
+/* ---- 说明收成 ⓘ 图标(2026-11-03,public/tips.js;整个 app 通用)---- */
+.tip { display: inline-grid; place-items: center; vertical-align: middle; width: 16px; height: 16px; margin: 0 0 0 5px; padding: 0; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface); color: var(--text-3); cursor: help; flex: none; position: relative; top: -1px; font: inherit; }
+.tip:hover, .tip:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.tip__i { font: italic 600 10px/1 Georgia, 'Times New Roman', serif; }
+.tip__c { display: none; }
+.tipbox { position: fixed; z-index: 1000; max-width: 340px; background: #1f2328; color: #f3f4f6; font-size: 12.5px; line-height: 1.55; font-weight: 400; padding: 8px 11px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.22); pointer-events: auto; white-space: normal; text-align: left; }
+.tipbox[hidden] { display: none; }
+.tipbox b { color: #fff; } .tipbox s { color: #c3c7cf; } .tipbox a { color: #9ab4ff; }
+.tipbox .muted { color: #c3c7cf; }
+/* 标签名后面跟图标时别换行 */
+.tip-row { display: inline-flex; align-items: center; gap: 0; }
+.phead h2, .panel__h h3 { display: inline-flex; align-items: center; }
+
+/* ---- 左边导航默认收起成图标(2026-11-03 用户:省出位置给右边);鼠标停在图标上马上弹出名字 ---- */
+body.nav-mini .modnav__item:hover::after, body.nav-mini .modnav__item:focus-visible::after {
+  content: attr(data-label); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); z-index: 50;
+  background: #1f2328; color: #fff; font-size: 12.5px; font-weight: 500; white-space: nowrap; padding: 5px 10px; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.18); pointer-events: none; }
+body.nav-mini .sidenav { overflow: visible; }
+
+/* ---- 改价页排版(2026-11-03 用户:选 Collection 和下面的框粘在一起、表格挤、UK 可售没对齐、右边显示不全)---- */
+#section-price .pr-panel { margin-top: 10px; }
+#section-price .pr-tbl .ctr { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#section-price .pr-tbl .inp { width: 84px; }
+#section-price .pcell { min-width: 200px; }
+#section-price .pcell__t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#section-price .pr-tbl th, #section-price .pr-tbl td { padding-left: 7px; padding-right: 7px; }
+#section-price .pr-tbl td:last-child, #section-price .pr-tbl th:last-child { padding-right: 12px; }
+.tip.tip--error, .tip.tip--warn { width: 18px; height: 18px; border: none; margin: 0 1px; }
+.tip.tip--error { background: var(--danger-soft); color: var(--danger); }
+.tip.tip--warn { background: var(--warn-soft); color: var(--warn); }
+.tip.tip--error .tip__i, .tip.tip--warn .tip__i { font: 700 11px/1 inherit; font-style: normal; }
+
+/* 收起的导航:左下角账号只留头像(名字是文字节点,用字号 0 藏起来) */
+body.nav-mini .mechip { font-size: 0; gap: 0; justify-content: center; }
+body.nav-mini .mechip .avatar { font-size: 12px; }
+/* 改价编辑页:窗口不够宽时(Shopify 后台里常见),摘要和检查挪到上面并排,编辑区用满整行,表格不被挤掉 */
+@media (max-width: 1420px) {
+  #section-price .pr-grid { grid-template-columns: minmax(0, 1fr); }
+  #section-price .pr-side { position: static; order: -1; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+  #section-price .pr-side > * { margin: 0; }
+}
+@media (max-width: 760px) { #section-price .pr-side { grid-template-columns: 1fr; } }

@@ -54,7 +54,7 @@ app.use((req, res, next) => {
 // 每次部署给页面资源加版本号,免得浏览器还用旧缓存(Railway 注入提交号;本地用启动时间)
 const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || String(Date.now());
 const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8')
-  .replace(/(href|src)="(style\.css|auth\.js|app\.js|registry\.js|schedule\.js|price\.js)"/g, `$1="$2?v=${BUILD}"`);
+  .replace(/(href|src)="(style\.css|auth\.js|app\.js|tips\.js|registry\.js|schedule\.js|price\.js)"/g, `$1="$2?v=${BUILD}"`);
 function sendIndex(req, res) {
   res.set('Cache-Control', 'no-store');
   res.set('Content-Type', 'text/html').send(indexHtml.replaceAll('%%API_KEY%%', API_KEY));
