@@ -2165,3 +2165,19 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
   #section-price .pr-side > * { margin: 0; }
 }
 @media (max-width: 760px) { #section-price .pr-side { grid-template-columns: 1fr; } }
+
+/* ---- 一个产品的改价记录(2026-11-03,改价第 2 期)---- */
+#section-price .pcell__hist { font-size: 12px; }
+#section-price .pr-modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; }
+#section-price .pr-modal__bg { position: absolute; inset: 0; background: rgba(15, 15, 20, .35); }
+#section-price .pr-modal__box { position: relative; width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--surface); border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+#section-price .pr-modal__h { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+#section-price .pr-modal__h b { font-size: 15px; }
+#section-price .pr-modal__b { padding: 12px 18px 18px; overflow: auto; }
+#section-price .pr-modal__b h4 { margin: 16px 0 8px; font-size: 13px; display: flex; align-items: center; }
+#section-price .pr-modal__b .tblwrap { max-height: 320px; }
+#section-price .pr-ph__sum { font-size: 13px; background: var(--surface-2); border-radius: var(--radius); padding: 8px 12px; }
+#section-price .pr-ph__plan { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 6px; }
+#section-price .pr-ph__pn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+#section-price .pr-ph__its { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; margin-top: 4px; }
+#section-price .pr-tbl .nowrap { white-space: nowrap; }

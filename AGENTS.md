@@ -183,6 +183,11 @@
     `POST /api/price/catalog/stock { ids }`(最多 500 个,服务器每批 50)→ `{ 款式: 数字 | null(不追踪库存) }`,这个仓没记录 = 0;操作记录不记(audit SKIP)。产品表多一列「UK 可售」(0 灰、负数红)。
     组的 `scope.stock = 'uk'`「只要 UK 仓有货的」:**按选项**筛掉 Available ≤ 0 的(不追踪库存的照算有货);库存没读到的先不放进清单,`stale()` 等它读齐,保存前 `ensureCalc` 等库存读完。只对 Collection / 品牌标签 / 全店有效;指定产品是自己点选的,只给「删除没货的 N 个选项」按钮。
     是**编辑时的库存**,保存后清单固定;进行中卖完照样打折,到期回原价(用户 11/3 定:不要「卖完自动回原价」)。本地 harness 的假店和正式店一样读不到仓库名字;伦敦仓的可售数按款式 id 编(有正有零有负,每 23 个一个不追踪)。
+  **第 2 期 · 产品改价记录**(2026-11-03):产品表每个产品下面「改价记录」、受管产品 / 价格账本里点产品名 → 弹窗:app 改过几次价、在几个计划里、现在谁接管;
+  逐条改价(时间、开始 / 换价 / 回到改价前、改前 → 改后、哪个计划,计划名能点开)+ 包含这个产品的所有计划(状态、时间、计划的价);多选项产品能按选项看。`GET /api/price/product-history?product=`。
+  ⛔ **价格账本挪到单独的只追加文件** `DATA_DIR/price/<店>.ledger.jsonl`(以前存在主文件里最多 5 万条,执行器每分钟读写整个文件):`appendLedger` 照旧先放进 `state.ledger`,**`save()` 时写进文件再清空**(老数据第一次保存时整批搬过去);
+  读一律用 `readLedger(shop)`(最新在前,文件没变就用缓存,重复的只算一条)。别再直接读 `state.ledger`。文件名 .jsonl,`listShops` 只认 .json,不会当成店铺。
+  只记得到 app 改的价;不在任何计划里时有人直接在 Shopify 后台改的价记不到(Shopify 没有价格历史)。
   页面 `public/price.js`(点开「改价」才加载),样式在 style.css 末尾、**全部限定在 `#section-price` 里**,和排期页同名的样式加了 `pr-` 前缀 —— 别去掉,否则两边互相干扰。
   飞书私信:`src/lark-bot.js`(同一个飞书应用的机器人,需要 `im:message:send_as_bot`)。本地测:harness 的 `/__price`(改过价的变体)、`/__price/set`(模拟手动改价)、`/__dms`(发出的私信),产品数据 `node scripts/fetch-price-catalog.mjs`。
 - **合集排序(置顶清单)**:自己一个导航页(`renderPins`,`#section-pins`),按合集分组 + 共用时间线 + 「复制成下一天」;写进 `cgp_collection_pin`。

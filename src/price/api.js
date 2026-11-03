@@ -1,6 +1,6 @@
 // 改价模块的接口(挂在 /api/price 下;server.js 里已经限定:只有能看「改价」页面的人 —— 定价角色和管理员)。
 import express from 'express';
-import { load, save, withLock, appendLog } from './store.js';
+import { load, save, withLock, appendLog, readLedger } from './store.js';
 import { planStatus } from './price-core.js';
 import { applyAction, ActionError } from './price-actions.js';
 import { runOnce } from './executor.js';
@@ -59,7 +59,7 @@ export function priceRouter() {
       endedCount: state.plans.filter(ended).length, planNames: state.plans.map((p) => ({ id: p.id, name: p.name })),
       folders: [...new Set(state.plans.map((p) => p.folder).filter(Boolean))], // 我的分组的名字(已结束的计划没发过来,名字也要能选)
       vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState, goneCollections: state.goneCollections || {},
-      log: state.log.slice(0, 300), engine: state.engine, ledgerCount: state.ledger.length,
+      log: state.log.slice(0, 300), engine: state.engine, ledgerCount: readLedger(req.ctx.shop).length,
       settings: { maxDiscountPct: state.settings.maxDiscountPct, sweepMinutes: state.settings.sweepMinutes, notify: state.settings.notify, ukLocation: state.settings.ukLocation || null },
     };
   }));
@@ -133,12 +133,31 @@ export function priceRouter() {
   r.get('/ledger', wrap((req) => {
     const state = load(req.ctx.shop);
     const qtext = String(req.query.q || '').toLowerCase();
-    let rows = state.ledger;
+    let rows = readLedger(req.ctx.shop);
     if (req.query.plan) rows = rows.filter((x) => x.planId === req.query.plan);
     if (req.query.variant) rows = rows.filter((x) => x.variantId === req.query.variant);
     if (qtext) rows = rows.filter((x) => `${x.title} ${x.sku} ${x.plan}`.toLowerCase().includes(qtext));
     const offset = Number(req.query.offset) || 0; const limit = Math.min(Number(req.query.limit) || 100, 500);
     return { total: rows.length, rows: rows.slice(offset, offset + limit) };
+  }));
+  // 一个产品的改价记录(2026-11-03 用户:改过几次价、分别在哪个计划,能追溯)
+  //   rows = 账本里这个产品的每一次改价(app 改的,最新在前);plans = 包含这个产品的所有计划(不管状态);vault = 现在 app 接管着的选项
+  //   ⚠️ 只记得到 app 改的价;不在任何计划里时有人直接在 Shopify 后台改的价记不到(Shopify 没有价格历史)
+  r.get('/product-history', wrap((req) => {
+    const pid = String(req.query.product || ''); if (!pid) throw new ActionError('没说是哪个产品');
+    const same = (a) => numId(a) === numId(pid);
+    const state = load(req.ctx.shop); const now = Date.now();
+    const rows = readLedger(req.ctx.shop).filter((x) => same(x.productId));
+    const plans = state.plans.filter((p) => (p.slots || []).some((sl) => (sl.items || []).some((i) => same(i.productId)))).map((p) => ({
+      id: p.id, name: p.name, status: planStatus(p, now), kind: p.kind, folder: p.folder || '', campaign: p.campaign?.name || '',
+      slots: p.slots.map((sl) => ({ start: sl.start, end: sl.end })),
+      items: p.slots.flatMap((sl) => sl.items).filter((i) => same(i.productId)).map((i) => ({ variantId: i.variantId, variant: i.variant || '', sku: i.sku || '',
+        price: i.price ?? null, refPrice: i.refPrice ?? null, compareAt: i.compareAt ?? null, excluded: (p.excluded || []).includes(i.variantId) })),
+    })).sort((a, b) => Math.min(...b.slots.map((x) => x.start ?? 0)) - Math.min(...a.slots.map((x) => x.start ?? 0)));
+    const vault = Object.entries(state.vault).filter(([, v]) => same(v.productId)).map(([id, v]) => ({ id, title: v.title, sku: v.sku, base: v.base || null, written: v.written || null, hold: v.hold || null,
+      plan: state.plans.find((p) => p.id === (v.written?.planId || v.hold?.planId))?.name || '' }));
+    const title = state.plans.flatMap((p) => p.slots.flatMap((sl) => sl.items)).find((i) => same(i.productId))?.product || rows[0]?.title || '';
+    return { product: { id: pid, title }, rows: rows.slice(0, 500), total: rows.length, plans, vault };
   }));
   // 还原表格:app 万一挂了,照这张表在后台手工改回原价
   r.get('/export/vault.csv', wrap((req, res) => {
@@ -153,7 +172,7 @@ export function priceRouter() {
   }));
   r.get('/export/ledger.csv', wrap((req, res) => {
     const state = load(req.ctx.shop);
-    let rows = state.ledger;
+    let rows = readLedger(req.ctx.shop);
     if (req.query.plan) rows = rows.filter((x) => x.planId === req.query.plan);
     const out = [['时间(英国)', '产品', 'SKU', '变体ID', '动作', '原售价', '原划线价', '新售价', '新划线价', '计划', '备注']];
     const OP = { start: '开始活动价', switch: '换时段价', restore: '恢复原价', permanent: '永久调价' };

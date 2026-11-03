@@ -770,7 +770,7 @@ function previewHtml(ro, gid, keep = null) {
     const d = it.price != null ? core.discountPct(it.refPrice, it.price) : null;
     const gone = ex.has(it.variantId);
     return `<tr class="${first ? 'is-first' : ''} ${E.fresh?.has(it.productId) ? 'is-fresh' : ''}" style="${gone ? 'opacity:.45' : ''}">
-      <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div>${pick && notPicked(it.productId) > 0 ? `<div class="pcell__s pcell__np">另有 ${notPicked(it.productId)} 个选项没选,不改价</div>` : ''}
+      <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')} · <button type="button" class="linkbtn pcell__hist" data-a="phist" data-p="${esc(it.productId)}" data-t="${esc(it.product || it.title)}">改价记录</button></div>${pick && notPicked(it.productId) > 0 ? `<div class="pcell__s pcell__np">另有 ${notPicked(it.productId)} 个选项没选,不改价</div>` : ''}
         ${(() => { const sib = live.filter((x) => x.productId === it.productId); return rowAct && sib.length > 1 ? `<button class="linkbtn pcell__all" data-a="${rowAct}" data-vs="${sib.map((x) => x.variantId).join(',')}" title="${rowAct === 'exclude' ? `这个产品的 ${sib.length} 个选项一起移出,下一分钟回到改价前的价格` : pick ? `这个产品整个从选的清单里删掉` : `这个产品的 ${sib.length} 个选项一起排除`}">整个产品${actLabel}(${sib.length} 个选项)</button>` : ''; })()}</div></div>` : ''}</td>
       <td><div class="vcell">${vimgOf(it) ? `<img class="vimg" src="${esc(vimgOf(it))}" loading="lazy" alt=""/>` : ''}<div>${esc(it.variant || '')}<div class="pcell__s">${esc(it.sku || '')}</div></div></div></td>
       <td class="ctr">${stockCell(it.variantId)}</td>
@@ -1143,7 +1143,7 @@ function vaultHtml() {
   </div>`).join('')}` : ''}
   <h3>正在活动价上(${live.length})</h3>
   ${live.length ? `<div class="tblwrap"><table class="pr-tbl"><thead><tr><th>产品</th><th>SKU</th><th class="num">原价</th><th class="num">现在</th><th>计划</th><th>开始接管</th></tr></thead><tbody>
-    ${live.map((v) => `<tr><td>${esc(v.title)}</td><td>${esc(v.sku || '')}</td><td class="num">${money(v.base?.price)}${v.base?.compareAt ? `<div><s>${money(v.base.compareAt)}</s></div>` : ''}</td>
+    ${live.map((v) => `<tr><td><button type="button" class="linkbtn" data-a="phist" data-p="${esc(v.productId)}" data-t="${esc(v.title)}" title="看这个产品的改价记录">${esc(v.title)}</button></td><td>${esc(v.sku || '')}</td><td class="num">${money(v.base?.price)}${v.base?.compareAt ? `<div><s>${money(v.base.compareAt)}</s></div>` : ''}</td>
       <td class="num"><b>${money(v.written.price)}</b>${v.written.compareAt ? `<div><s>${money(v.written.compareAt)}</s></div>` : ''}</td><td>${esc(plan(v.written.planId))}</td><td>${fmtT(v.since)}</td></tr>`).join('')}
   </tbody></table></div>` : '<div class="pr-empty">现在没有产品在活动价上</div>'}
   ${colls.length ? `<h3>app 管着的 Collection 成员</h3>${colls.map(([id, c]) => `<div class="pr-kv"><span>${esc(c.title || id)}</span>${c.via === 'shared' ? '条件和别的 Collection 共用:app 不碰,产品照它的条件进出' : `${c.via === 'sources' ? '带条件的 Collection · ' : ''}app ${c.via === 'sources' ? '加进「单独加入的产品」' : '加进去'} ${c.managed.length} 个产品(时段结束拿掉)${c.preexisting.length ? `;${c.preexisting.length} 个本来就在,不动` : ''}`}
@@ -1174,12 +1174,59 @@ async function loadLedger() {
       <select class="sel" id="lplan"><option value="">全部计划</option>${(S.planNames || S.plans).map((p) => `<option value="${p.id}" ${ledgerQ.plan === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
       <button class="btn" data-a="dlledger">导出 CSV</button></div>
       ${d.rows.length ? `<div class="tblwrap"><table class="pr-tbl"><thead><tr><th>时间(英国)</th><th>产品</th><th>SKU</th><th>动作</th><th class="num">改前</th><th class="num">改后</th><th>计划</th><th>备注</th></tr></thead><tbody>
-      ${d.rows.map((x) => `<tr><td>${fmtT(x.at)}</td><td>${esc(x.title)}</td><td>${esc(x.sku || '')}</td><td>${OP_CN[x.op] || x.op}</td>
+      ${d.rows.map((x) => `<tr><td>${fmtT(x.at)}</td><td>${x.productId ? `<button type="button" class="linkbtn" data-a="phist" data-p="${esc(x.productId)}" data-t="${esc(x.title)}" title="看这个产品的改价记录">${esc(x.title)}</button>` : esc(x.title)}</td><td>${esc(x.sku || '')}</td><td>${OP_CN[x.op] || x.op}</td>
         <td class="num">${money(x.from?.price)}${x.from?.compareAt ? `<div><s>${money(x.from.compareAt)}</s></div>` : ''}</td><td class="num"><b>${money(x.to?.price)}</b>${x.to?.compareAt ? `<div><s>${money(x.to.compareAt)}</s></div>` : ''}</td>
         <td>${esc(x.plan || '')}</td><td class="muted">${esc(x.note || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="pr-empty">还没有改价记录</div>'}
       <div class="pager"><span class="pager__info">共 ${d.total} 条</span><div class="pager__btns">
         <button class="pgbtn" data-a="lpage" data-d="-1" ${ledgerQ.offset ? '' : 'disabled'}>上一页</button><button class="pgbtn" data-a="lpage" data-d="1" ${ledgerQ.offset + 100 < d.total ? '' : 'disabled'}>下一页</button></div></div>`;
   } catch (e) { el.innerHTML = `<div class="banner banner--danger">${esc(e.message)}</div>`; }
+}
+
+// ================= 一个产品的改价记录(2026-11-03 用户:改过几次价、分别在哪个计划,能追溯)=================
+let PH = null; // { pid, title, data, err, v: 正在看的选项('' = 全部) }
+async function openProductHistory(pid, title) {
+  PH = { pid, title, data: null, err: '', v: '' }; drawPH();
+  try { PH.data = await api('GET', `/api/price/product-history?product=${encodeURIComponent(pid)}`); } catch (e) { PH.err = e.message; }
+  if (PH?.pid === pid) drawPH();
+}
+function drawPH() {
+  let el = document.getElementById('pr-ph');
+  if (!PH) { el?.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'pr-ph'; el.className = 'pr-modal'; $('#section-price').appendChild(el); }
+  const d = PH.data;
+  const body = PH.err ? `<div class="banner banner--danger">${esc(PH.err)}</div>` : !d ? '<div class="pr-load"><span class="pr-spin"></span>正在读…</div>' : (() => {
+    // 这个产品有哪些选项(从计划和账本里收集)
+    const vs = new Map();
+    for (const p of d.plans) for (const i of p.items) if (!vs.has(i.variantId)) vs.set(i.variantId, [i.variant, i.sku].filter(Boolean).join(' · ') || '默认选项');
+    for (const r of d.rows) if (!vs.has(r.variantId)) vs.set(r.variantId, (r.title || '').split(' - ').slice(1).join(' - ') || r.sku || '默认选项');
+    const pickV = (id) => !PH.v || id === PH.v;
+    const rows = d.rows.filter((r) => pickV(r.variantId));
+    const writes = rows.filter((r) => ['start', 'switch', 'restore', 'permanent'].includes(r.op)).length;
+    const plans = d.plans.filter((p) => p.items.some((i) => pickV(i.variantId)));
+    const now0 = d.vault.filter((x) => pickV(x.id));
+    const nowTxt = now0.length ? now0.map((x) => x.hold ? `<span class="tx-warn">暂停接管(${esc(x.plan)})</span>` : x.written ? `「${esc(x.plan)}」接管中 <b>${money(x.written.price)}</b>` : '').filter(Boolean).join(';') : '原价(没有计划接管)';
+    const multi = vs.size > 1;
+    const vname = (id) => (multi ? vs.get(id) || '' : '');
+    const pair = (x) => (x ? `${money(x.price)}${x.compareAt ? ` <s>${money(x.compareAt)}</s>` : ''}` : '—');
+    return `
+      <div class="pr-ph__sum">app 改过 <b>${writes}</b> 次价 · 在 <b>${plans.length}</b> 个计划里 · 现在:${nowTxt}</div>
+      ${multi ? `<div class="pr-chipfs" style="margin:8px 0">${[['', '全部选项'], ...vs].map(([id, n]) => `<button type="button" class="pr-chipf ${PH.v === id ? 'is-on' : ''}" data-a="phv" data-v="${esc(id)}">${esc(n)}</button>`).join('')}</div>` : ''}
+      <h4>改价记录 <span class="tipify">app 每次改这个产品的价都记一笔(最新在前)。只记得到 app 改的;不在任何计划里时有人直接在 Shopify 后台改的价记不到。</span></h4>
+      ${rows.length ? `<div class="tblwrap"><table class="pr-tbl"><thead><tr><th>时间(英国)</th>${multi ? '<th>选项</th>' : ''}<th>动作</th><th class="num">改前</th><th class="num">改后</th><th>计划</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><td class="nowrap">${fmtT(r.at)}</td>${multi ? `<td>${esc(vname(r.variantId))}</td>` : ''}<td>${OP_CN[r.op] || esc(r.op)}${r.note ? ` <span class="tipify">${esc(r.note)}</span>` : ''}</td>
+          <td class="num">${pair(r.from)}</td><td class="num"><b>${pair(r.to)}</b></td><td>${r.planId ? `<button type="button" class="linkbtn" data-a="phopen" data-id="${esc(r.planId)}">${esc(r.plan || '计划')}</button>` : esc(r.plan || '')}</td></tr>`).join('')}
+      </tbody></table></div>${d.total > d.rows.length ? `<p class="muted">只列最近 ${d.rows.length} 条(共 ${d.total} 条),全部的在「价格账本」导出</p>` : ''}` : '<div class="pr-empty">app 还没改过这个产品的价</div>'}
+      <h4>包含这个产品的计划</h4>
+      ${plans.length ? plans.map((p) => `<div class="pr-ph__plan">
+          <div class="pr-ph__pn"><span class="tag ${STATUS_TAG[p.status]}">${core.STATUS_CN[p.status]}</span><button type="button" class="linkbtn" data-a="phopen" data-id="${esc(p.id)}"><b>${esc(p.name)}</b></button>
+            ${p.folder ? `<span class="tag">分组:${esc(p.folder)}</span>` : ''}${p.campaign ? `<span class="tag">活动:${esc(p.campaign)}</span>` : ''}</div>
+          <div class="muted">${p.slots.map((sl) => `${fmtT(sl.start)}${sl.end ? ' → ' + fmtT(sl.end) : ' 起'}`).join(';')}${p.kind === 'permanent' ? ' · 永久调价' : ''}</div>
+          <div class="pr-ph__its">${p.items.filter((i) => pickV(i.variantId)).map((i) => `<span>${multi ? `${esc(vs.get(i.variantId) || '')}:` : ''}${money(i.refPrice)} → <b>${i.price != null ? money(i.price) : '售价不变'}</b>${i.excluded ? ' <span class="tag">已移出</span>' : ''}</span>`).join('')}</div>
+        </div>`).join('') : '<div class="pr-empty">没有计划包含这个产品</div>'}`;
+  })();
+  el.innerHTML = `<div class="pr-modal__bg" data-a="phclose"></div><div class="pr-modal__box" role="dialog" aria-label="改价记录">
+    <div class="pr-modal__h"><div><div class="muted" style="margin:0">改价记录</div><b>${esc(d?.product?.title || PH.title || '')}</b></div><button type="button" class="btn btn-ghost" data-a="phclose">关闭</button></div>
+    <div class="pr-modal__b">${body}</div></div>`;
 }
 
 // ================= 改价设置 =================
@@ -1218,6 +1265,14 @@ document.addEventListener('click', async (ev) => {
         filter = el.dataset.f;
         if (wantAll() && !S.allPlans) { loadingAll = true; render(); try { await load(true); } catch (e) { toast(e.message, false); } loadingAll = false; }
         render(); break;
+      }
+      // ---- 一个产品的改价记录 ----
+      case 'phist': openProductHistory(el.dataset.p, el.dataset.t || ''); break;
+      case 'phv': PH.v = el.dataset.v; drawPH(); break;
+      case 'phclose': PH = null; drawPH(); break;
+      case 'phopen': { // 从记录里打开计划:有没保存的改动先提醒
+        if (E && E.dirty && E.plan.id !== el.dataset.id && !armed(el, '有未保存的改动,再点一次打开')) return;
+        PH = null; drawPH(); const p = await planByIdAll(el.dataset.id); if (p) { openEditor(p, false); loadCampaigns(); } else toast('这个计划已经删掉了', false); break;
       }
       // ---- 计划列表:分组 / 多选整理 ----
       case 'lsel': { const id = el.dataset.id; el.checked ? LV.sel.add(id) : LV.sel.delete(id); if (LV.sel.size) loadCampaigns(); render(); break; }
@@ -1487,6 +1542,7 @@ document.addEventListener('keydown', (ev) => {
   else ev.target.value = '';
 });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'coll-q') $('[data-a=collsearch]')?.click(); });
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && PH) { PH = null; drawPH(); } });
 
 async function loadLocations() {
   if (cache.locsBusy) return; cache.locsBusy = true;

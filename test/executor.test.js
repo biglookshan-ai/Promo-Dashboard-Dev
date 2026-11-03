@@ -8,7 +8,7 @@ import path from 'node:path';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'price-exec-'));
 const { runOnce } = await import('../src/price/executor.js');
 const { reportMessages } = await import('../src/price/notifier.js');
-const { load, save, emptyState } = await import('../src/price/store.js');
+const { load, save, emptyState, readLedger } = await import('../src/price/store.js');
 
 const H = 3600_000;
 let n = 0;
@@ -70,8 +70,9 @@ test('开始 → 写入、读回、记账;结束 → 恢复,保险库清空', as
   assert.equal(r.written.length, 2);
   assert.deepEqual(price(io, 'v1'), { price: '85.00', compareAt: '100.00' });
   let st = load(shop);
-  assert.equal(st.ledger.length, 2);
-  assert.equal(st.ledger[0].plan, 'site');
+  assert.equal(readLedger(shop).length, 2); // 账本在单独的文件里(2026-11-03),主文件里不留
+  assert.equal(st.ledger.length, 0);
+  assert.equal(readLedger(shop)[0].plan, 'site');
   assert.deepEqual(st.vault.v2.base, { price: '200.00', compareAt: '250.00' });
   assert.ok(st.log.some((l) => /开始活动价:2 个变体/.test(l.note)));
   await run(shop, io, 10 * H);
@@ -79,9 +80,9 @@ test('开始 → 写入、读回、记账;结束 → 恢复,保险库清空', as
   assert.deepEqual(price(io, 'v2'), { price: '200.00', compareAt: '250.00' });
   st = load(shop);
   assert.deepEqual(st.vault, {});
-  assert.equal(st.ledger.length, 4);
-  assert.equal(st.ledger[0].op, 'restore');
-  assert.equal(st.ledger[0].plan, 'site'); // 恢复原价的账也记得是哪个计划
+  assert.equal(readLedger(shop).length, 4);
+  assert.equal(readLedger(shop)[0].op, 'restore');
+  assert.equal(readLedger(shop)[0].plan, 'site'); // 恢复原价的账也记得是哪个计划
 });
 
 test('Shopify 明确拒绝:记失败,不接管,下一轮自动重试', async () => {
@@ -121,7 +122,7 @@ test('改完还没核对就中断:下一轮开头核对意图,补记,原价正�
   const st = load(shop);
   assert.equal(st.vault.v1.intent, undefined);
   assert.deepEqual(st.vault.v1.base, { price: '100.00', compareAt: null }); // ★ 不是 85
-  assert.ok(st.ledger.some((l) => /中断后核对/.test(l.note)));
+  assert.ok(readLedger(shop).some((l) => /中断后核对/.test(l.note)));
   await run(shop, io, 10 * H);
   assert.deepEqual(price(io, 'v1'), { price: '100.00', compareAt: null });
 });
@@ -358,4 +359,15 @@ test('改价倒计时:有人手动改了价(暂停接管)的产品不显示;计�
   assert.deepEqual(Object.keys(io.cd), ['P-v1']);
   await run(shop, io, 6 * H);                                              // 结束
   assert.deepEqual(Object.keys(io.cd), []);
+});
+
+test('价格账本挪到单独的文件(2026-11-03):老数据第一次保存时整批搬过去、顺序不变;重复的只算一条;主文件不再留账本', async () => {
+  const shop = newShop();
+  const old = [{ at: 3, variantId: 'v1', productId: 'P', op: 'restore', plan: 'A' }, { at: 2, variantId: 'v1', productId: 'P', op: 'start', plan: 'A', to: { price: '9.00' } }]; // 老格式:最新在前
+  save(shop, { ...emptyState(), ledger: old.map((x) => ({ ...x })) });
+  assert.deepEqual(readLedger(shop).map((x) => x.at), [3, 2]);
+  assert.equal(load(shop).ledger.length, 0);
+  const st = load(shop); st.ledger = [{ at: 4, variantId: 'v2', productId: 'Q', op: 'start' }, { ...old[1] }]; // 新的一条 + 一条重复的(断电重写)
+  save(shop, st);
+  assert.deepEqual(readLedger(shop).map((x) => `${x.at}${x.variantId}`), ['4v2', '3v1', '2v1']);
 });
