@@ -168,6 +168,15 @@
   新版接口出错时退回老接口只信「查到了」,查不到当「不确定」下一分钟再查(别判成删除)。「受管产品」里能手动「不再管这个 Collection」(`POST /api/price/coll-release`)。
   选时段 Collection 的搜索也用 2026-07(`catalog.findCollections`),带条件的能选、条件共用的不能选。
   `plan.tagsAdd` / `tagsRemove`:生效期间加减产品标签(驱动按标签自动归类的合集),结束还原;只动计划里填的标签,产品本来就有的不碰(`price-core.planTags` + `state.tagState` 记账)。
+  **第二轮第 1 期**(2026-11-03,方案 `docs/price-v2/PLAN.md`):
+  · **计划分组**:`plan.folder` = 自己起的分组名(「我的分组」,最多 40 字);按活动 / 品牌(计划里选项最多的那个品牌)/ 开始月份自动分的叫「智能分组」,在页面上算、不存。
+    改分组 / 关联活动走 `organize` 动作(`ids` + `folder` / `campaign`):**任何状态都能改、不走「已开始锁定」和审批、不碰价格**;跟随活动时间的计划不能这样换活动(会改时间)。
+    列表:分组方式(记在 localStorage `cgp-pr-by`)+ 我的分组 / 活动 / 品牌筛选 + 搜计划名 / 产品 / SKU(命中产品时行上写「包含 xxx → 新价」;已结束的要点「连已结束的一起搜」)+ 勾选多个计划一起「移到分组 / 关联活动」;全部结束的组默认收起(`cgp-pr-open`)。编辑页「分组」框:已有计划改了马上存(不用点保存)。
+  · **组名**:`groups[].name`(最多 30 字),不填叫「第 N 组」。
+  · **UK 库存**:读 Shopify 各仓库存(唯一真源),UK 仓 = 名字里有 Cinegearpro 的仓(「改价设置 → 库存」可换,存 `settings.ukLocation`),读 **Available**;只要 read_inventory。
+    `POST /api/price/catalog/stock { ids }`(最多 500 个,服务器每批 50)→ `{ 款式: 数字 | null(不追踪库存) }`,这个仓没记录 = 0;操作记录不记(audit SKIP)。产品表多一列「UK 可售」(0 灰、负数红)。
+    组的 `scope.stock = 'uk'`「只要 UK 仓有货的」:**按选项**筛掉 Available ≤ 0 的(不追踪库存的照算有货);库存没读到的先不放进清单,`stale()` 等它读齐,保存前 `ensureCalc` 等库存读完。只对 Collection / 品牌标签 / 全店有效;指定产品是自己点选的,只给「删除没货的 N 个选项」按钮。
+    是**编辑时的库存**,保存后清单固定;进行中卖完照样打折,到期回原价(用户 11/3 定:不要「卖完自动回原价」)。本地 harness 的假店:Cinegearpro 仓的可售数按款式 id 编(有正有零有负,每 23 个一个不追踪)。
   页面 `public/price.js`(点开「改价」才加载),样式在 style.css 末尾、**全部限定在 `#section-price` 里**,和排期页同名的样式加了 `pr-` 前缀 —— 别去掉,否则两边互相干扰。
   飞书私信:`src/lark-bot.js`(同一个飞书应用的机器人,需要 `im:message:send_as_bot`)。本地测:harness 的 `/__price`(改过价的变体)、`/__price/set`(模拟手动改价)、`/__dms`(发出的私信),产品数据 `node scripts/fetch-price-catalog.mjs`。
 - **合集排序(置顶清单)**:自己一个导航页(`renderPins`,`#section-pins`),按合集分组 + 共用时间线 + 「复制成下一天」;写进 `cgp_collection_pin`。

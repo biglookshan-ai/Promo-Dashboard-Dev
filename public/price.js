@@ -148,6 +148,81 @@ const FILTERS = [
 ];
 const ORDER = { running: 0, paused: 1, scheduled: 2, pending: 3, rejected: 4, draft: 5, ended: 6, done: 7 };
 
+// ---- 分组 / 筛选(2026-11-03 用户:计划几十上百个时好找)----
+// 「我的分组」= 计划上自己填的分组名(plan.folder);「智能分组」= 按活动 / 品牌 / 月份自动分(页面上算,不存)
+const LV = { by: localStorage.getItem('cgp-pr-by') || '', folder: '', camp: '', brand: '', q: '', sel: new Set(),
+  open: (() => { try { return JSON.parse(localStorage.getItem('cgp-pr-open') || '{}'); } catch { return {}; } })() };
+const BY = [['folder', '我的分组'], ['campaign', '智能分组 · 按活动'], ['brand', '智能分组 · 按品牌'], ['month', '智能分组 · 按月份'], ['none', '不分组']];
+const byNow = () => LV.by || (S.plans.some((p) => p.folder) ? 'folder' : 'campaign');
+const foldersAll = () => [...new Set([...S.plans.map((p) => p.folder), ...(S.folders || [])].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
+// 计划里的品牌,按选项数多到少(第一个 = 主要品牌,按品牌分组时放在它下面)
+function brandsOf(p) {
+  const m = new Map(); for (const sl of p.slots) for (const i of sl.items) if (i.vendor) m.set(i.vendor, (m.get(i.vendor) || 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v);
+}
+const monthOf = (p) => { const st = A.planSummary(p).start; return Number.isFinite(st) ? toInput(st).slice(0, 7) : ''; };
+function groupKeyOf(p, by) {
+  if (by === 'folder') return [p.folder || '', p.folder || '未分组'];
+  if (by === 'campaign') return [p.campaign?.id || '', p.campaign?.name || '没关联活动'];
+  if (by === 'brand') { const b = brandsOf(p)[0] || ''; return [b, b || '还没有产品']; }
+  const m = monthOf(p); return [m, m ? `${m.slice(0, 4)} 年 ${Number(m.slice(5))} 月开始` : '没设时间'];
+}
+const qOf = () => LV.q.trim().toLowerCase();
+function planMatch(p) {
+  if (LV.folder && (LV.folder === '__none' ? !!p.folder : p.folder !== LV.folder)) return false;
+  if (LV.camp && (LV.camp === '__none' ? !!p.campaign : p.campaign?.id !== LV.camp)) return false;
+  if (LV.brand && !brandsOf(p).includes(LV.brand)) return false;
+  const q = qOf(); if (!q) return true;
+  return [p.name, p.folder, p.campaign?.name].some((x) => String(x || '').toLowerCase().includes(q))
+    || p.slots.some((sl) => sl.items.some((i) => `${i.product || i.title} ${i.variant || ''} ${i.sku || ''}`.toLowerCase().includes(q)));
+}
+// 搜的是产品时,告诉人这个计划里命中了哪个产品
+function hitOf(p) {
+  const q = qOf(); if (!q || String(p.name || '').toLowerCase().includes(q)) return '';
+  const it = p.slots.flatMap((sl) => sl.items).find((i) => `${i.product || i.title} ${i.variant || ''} ${i.sku || ''}`.toLowerCase().includes(q));
+  return it ? `<div class="plan__hit">包含 <b>${esc(it.product || it.title)}</b>${it.variant ? ` · ${esc(it.variant)}` : ''}${it.sku ? ` <span class="muted">${esc(it.sku)}</span>` : ''}${it.price != null ? ` → <b>${money(it.price)}</b>` : ''}</div>` : '';
+}
+function listToolsHtml() {
+  const by = byNow(); const camps = new Map(); S.plans.forEach((p) => p.campaign && camps.set(p.campaign.id, p.campaign.name));
+  const brands = [...new Set(S.plans.flatMap(brandsOf))].sort((a, b) => a.localeCompare(b));
+  const opt = (v, l, cur) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`;
+  const any = LV.folder || LV.camp || LV.brand || LV.q;
+  return `<div class="pl-tools">
+    <label class="pl-tools__by">分组方式 <select class="sel sel--sm" data-lv="by">${BY.map(([k, l]) => opt(k, l, by)).join('')}</select></label>
+    <select class="sel sel--sm" data-lv="folder" title="只看某个我的分组">${opt('', '全部我的分组', LV.folder)}${opt('__none', '未分组', LV.folder)}${foldersAll().map((f) => opt(f, f, LV.folder)).join('')}</select>
+    <select class="sel sel--sm" data-lv="camp" title="只看某个活动">${opt('', '全部活动', LV.camp)}${opt('__none', '没关联活动', LV.camp)}${[...camps].map(([id, n]) => opt(id, n, LV.camp)).join('')}</select>
+    <select class="sel sel--sm" data-lv="brand" title="只看包含某个品牌的计划">${opt('', '全部品牌', LV.brand)}${brands.map((b) => opt(b, b, LV.brand)).join('')}</select>
+    <input class="inp inp--sm pl-tools__q" data-lv="q" placeholder="搜计划名 / 产品 / SKU" value="${esc(LV.q)}"/>
+    ${any ? '<button type="button" class="linkbtn" data-a="lclear">清除筛选</button>' : ''}
+  </div>
+  ${LV.q && !S.allPlans ? '<p class="muted pl-tools__more">已结束的计划还没一起搜。<button type="button" class="linkbtn" data-a="filter" data-f="all">连已结束的一起搜</button></p>' : ''}`;
+}
+function bulkHtml() {
+  const n = LV.sel.size; if (!n) return '';
+  return `<div class="pl-bulk"><b>已选 ${n} 个计划</b>
+    <span class="pl-bulk__g">移到分组 <input class="inp inp--sm" id="pl-folder" list="pl-folders" placeholder="新的或已有的分组名" maxlength="${A.FOLDER_MAX}"/><datalist id="pl-folders">${foldersAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist>
+      <button type="button" class="btn btn-sm btn-primary" data-a="lmove">移过去</button><button type="button" class="linkbtn" data-a="lunfolder">移出分组</button></span>
+    <span class="pl-bulk__g">关联活动 <select class="sel sel--sm" id="pl-camp"><option value="">不关联</option>${(cache.campaigns || []).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
+      <button type="button" class="btn btn-sm" data-a="lcamp">关联</button></span>
+    <button type="button" class="linkbtn" data-a="lnone">取消选择</button></div>`;
+}
+// 一组计划:标题(可收起)+ 计划行;已经全部结束的组默认收起
+function planGroupHtml(g, by, ovIdx) {
+  const key = `${by}:${g.k}`; const n = (f) => g.items.filter((x) => f(x.s)).length;
+  const allEnded = g.items.every((x) => ['ended', 'done'].includes(x.s));
+  const open = LV.open[key] ?? !allEnded;
+  const ids = g.items.map((x) => x.p.id); const allSel = ids.every((id) => LV.sel.has(id));
+  const run = n((s) => ['running', 'paused'].includes(s)), sch = n((s) => s === 'scheduled'), end = n((s) => ['ended', 'done'].includes(s)), dr = n((s) => ['draft', 'rejected', 'pending'].includes(s));
+  return `<section class="pl-grp ${open ? '' : 'is-closed'}">
+    <div class="pl-grp__h">
+      <input type="checkbox" class="pl-grp__all" data-a="lselgrp" data-ids="${ids.join(',')}" ${allSel ? 'checked' : ''} title="选中这一组的全部计划"/>
+      <button type="button" class="pl-grp__t" data-a="lgtoggle" data-k="${esc(key)}" data-o="${open ? 1 : 0}"><span class="pl-grp__arr">${open ? '▾' : '▸'}</span><b>${esc(g.label)}</b>
+        <span class="muted">${g.items.length} 个计划${run ? ` · ${run} 进行中` : ''}${sch ? ` · ${sch} 已排期` : ''}${dr ? ` · ${dr} 草稿 / 待审` : ''}${end ? ` · ${end} 已结束` : ''}</span></button>
+    </div>
+    ${open ? g.items.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id), by)).join('') : ''}
+  </section>`;
+}
+
 function plansHtml() {
   const st = S.plans.map((p) => ({ p, s: statusOf(p) }));
   // 已结束的没读进来时,「已结束 / 全部」的数字用服务器给的
@@ -156,7 +231,15 @@ function plansHtml() {
   const showPending = !!S.approvals || count(FILTERS[3][2]) > 0; // 多人协作关着时,所有人都能直接批准,基本不会有待审核
   const f = FILTERS.find((x) => x[0] === filter) || FILTERS[0];
   const ovIdx = core.overlapIndex(S.plans, now()); // 还没结束的限时计划之间,改到同一个产品又时间重叠的
-  const list = st.filter(({ p, s }) => f[2](s, p)).sort((a, b) => ORDER[a.s] - ORDER[b.s] || A.planSummary(a.p).start - A.planSummary(b.p).start);
+  const list = st.filter(({ p, s }) => f[2](s, p) && planMatch(p)).sort((a, b) => ORDER[a.s] - ORDER[b.s] || A.planSummary(a.p).start - A.planSummary(b.p).start);
+  const by = byNow();
+  const listBody = () => {
+    if (by === 'none') return list.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id), by)).join('');
+    const gm = new Map();
+    for (const x of list) { const [k, label] = groupKeyOf(x.p, by); if (!gm.has(k)) gm.set(k, { k, label, items: [] }); gm.get(k).items.push(x); }
+    const gs = [...gm.values()].sort((a, b) => (!a.k) - (!b.k) || (by === 'month' ? b.k.localeCompare(a.k) : a.label.localeCompare(b.label, 'zh')));
+    return gs.map((g) => planGroupHtml(g, by, ovIdx)).join('');
+  };
   return `
   <div class="stats">
     <button class="stat" data-a="filter" data-f="running"><div class="stat__n">${count(FILTERS[1][2])}</div><div class="stat__l">进行中的计划</div></button>
@@ -173,7 +256,9 @@ function plansHtml() {
     <span class="spacer"></span>
   </div>
   <div class="pr-tabs">${FILTERS.filter(([k]) => k !== 'pending' || showPending).map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
-  ${loadingAll ? '<div class="pr-empty">正在读已结束的计划…</div>' : list.length ? list.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id))).join('') : '<div class="pr-empty">这里还没有计划</div>'}`;
+  ${listToolsHtml()}
+  ${bulkHtml()}
+  ${loadingAll ? '<div class="pr-empty">正在读已结束的计划…</div>' : list.length ? listBody() : `<div class="pr-empty">${LV.folder || LV.camp || LV.brand || LV.q ? '没有符合筛选的计划' : '这里还没有计划'}</div>`}`;
 }
 
 const leftTxt = (ms) => {
@@ -187,10 +272,10 @@ function planSay(p) {
   const n = new Set(its.map((i) => i.productId)).size;
   const gs = groupsOf(p);
   const r = gs[0]?.rule ? RULE_MODES[gs[0].rule.mode] : null;
-  const how = gs.length > 1 ? `分 ${gs.length} 组改价(${gs.map((g) => RULE_MODES[g.rule.mode]?.label || '').join(' / ')})` : r ? r.say(gs[0].rule.value) : '按逐个产品设定的价格';
+  const how = gs.length > 1 ? `分 ${gs.length} 组改价(${gs.map((g) => (g.name ? `${esc(g.name)}:` : '') + (RULE_MODES[g.rule.mode]?.label || '')).join(' / ')})` : r ? r.say(gs[0].rule.value) : '按逐个产品设定的价格';
   return `把 <b>${n}</b> 个产品${p.kind === 'permanent' ? '永久' : '在活动期间'}:${how}`;
 }
-function planRow(p, s, ovs = []) {
+function planRow(p, s, ovs = [], by = '') {
   const sum = A.planSummary(p);
   const items = p.slots.flatMap((x) => x.items).filter((i) => i.price != null);
   const maxOff = items.reduce((m, i) => Math.max(m, core.discountPct(i.refPrice, i.price)), 0);
@@ -209,8 +294,9 @@ function planRow(p, s, ovs = []) {
     btn('qdup', '复制'),
     ...(p.kind === 'window' && sum.end ? [btn('qdupnext', '复制成下一天')] : []),
   ].join('');
-  return `<div class="plan">
+  return `<div class="plan ${LV.sel.has(p.id) ? 'is-sel' : ''}">
     <div class="plan__bar ${layerCls(p)}" style="${p.color ? `background:${esc(p.color)}` : ''}"></div>
+    <label class="plan__sel" title="选中后可以一起移到分组 / 关联活动"><input type="checkbox" data-a="lsel" data-id="${p.id}" ${LV.sel.has(p.id) ? 'checked' : ''}/></label>
     <div data-a="open" data-id="${p.id}" style="cursor:pointer">
       <div class="plan__name">${esc(p.name || '未命名计划')}
         <span class="tag ${STATUS_TAG[s]}">${core.STATUS_CN[s]}</span>
@@ -218,10 +304,12 @@ function planRow(p, s, ovs = []) {
         ${p.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${holds ? `<span class="tag tag--danger">${holds} 个暂停接管</span>` : ''}
         ${ovs.length ? `<span class="tag tag--warn" title="${esc(ovs.map((o) => `「${o.name}」:${o.n} 个选项,重叠时用「${o.wins ? p.name : o.name}」的价`).join('\n'))}">⚠️ 和「${esc(ovs[0].name)}」${ovs.length > 1 ? `等 ${ovs.length} 个计划` : ''}改到同一批产品(${ovs.reduce((n, o) => n + o.n, 0)} 个选项)</span>` : ''}
-        ${p.campaign ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : ''}
+        ${p.campaign && by !== 'campaign' ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : p.followCampaign ? '<span class="tag">跟随活动时间</span>' : ''}
+        ${p.folder && by !== 'folder' ? `<span class="tag">分组:${esc(p.folder)}</span>` : ''}
         ${S.approvals ? `<span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}` : ''}
       </div>
       <div class="plan__say">${planSay(p)}</div>
+      ${hitOf(p)}
       <div class="plan__prods">${prods.slice(0, 3).map((i) => `<span>${esc(i.product || i.title)}</span>`).join('')}${prods.length > 3 ? `<span class="muted">…另有 ${prods.length - 3} 个产品</span>` : ''}</div>
       <div class="plan__meta">
         <span>${fmtT(sum.start)}${sum.end ? ' → ' + fmtT(sum.end) : ' 起生效'}</span>
@@ -357,7 +445,7 @@ function openEditor(plan, isNew) {
   for (const g of p.groups) g.compare ||= p.compare || cmpDefault(p); // 老计划:各组用计划的划线价方式
   for (const it of p.slots[0].items || []) it.group ??= p.groups[0].id; // 老计划的变体没记分组 = 第 1 组
   E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0,
-    calcKey: scopeKey(p), lists: {}, fresh: new Set(), tf: {} };
+    calcKey: scopeKey(p), lists: {}, fresh: new Set(), tf: {}, stockOut: {} };
   renderChrome(); render(); window.scrollTo(0, 0);
   // 2026-10-29 用户:选了就要看到产品 —— 打开时先在后台把每组的产品读出来(之后改规则就能马上算);这一步不改计划内容
   if (!readonly()) for (const g of p.groups) if (g.scope.mode !== 'all') loadGroup(g, { initial: (p.slots[0].items || []).length > 0 }); // 已有 / 复制来的计划:先不重算
@@ -367,6 +455,8 @@ const curSlot = () => P().slots[0];
 const started = () => !E.isNew && E.orig?.state === 'approved' && E.orig.slots.some((s) => s.start <= now());
 const scopeKey = (p) => JSON.stringify([p.groups || [{ scope: p.scope, rule: p.rule }], p.compare]);
 const groupsOf = (p) => (p.groups?.length ? p.groups : [{ id: 'g0', scope: p.scope, rule: p.rule }]);
+// 组名(2026-11-03 用户:只有第 1、2、3 组看不出是什么)—— 没起名字就叫「第 N 组」
+const gName = (g, i, multi = true) => g?.name || (multi ? `第 ${i + 1} 组` : '改价规则');
 const G = () => groupsOf(P())[Math.min(E.gi || 0, groupsOf(P()).length - 1)];   // 正在看的那一组
 const EG = () => E.plan.groups[Math.min(E.gi || 0, E.plan.groups.length - 1)]; // 正在改的那一组
 const ruleSay = (r) => `${RULE_MODES[r.mode]?.say(r.value) || ''}${r.rounding ? `,尾数取 ${r.rounding === '99' ? '.99' : '整数'}` : ''}${r.from === 'compare' ? ',按划线价算' : ''}`;
@@ -376,7 +466,10 @@ function scopeSayOf(sc) {
       : sc.mode === 'products' ? `手选的 ${sc.products.length} 个产品`
         : [sc.vendor && `品牌 ${sc.vendor}`, sc.tag && `标签 ${sc.tag}`, sc.type && `类型 ${sc.type}`].filter(Boolean).join(' + ') || '(还没选条件)';
 }
-const stale = () => Object.values(E.lists || {}).some((L) => L.status === 'loading') || scopeKey(P()) !== E.calcKey; // 产品还在读 / 还没按最新设置算
+// 加上库存条件的说法(列表、摘要、组标题用)
+const scopeSayFull = (sc) => `${scopeSayOf(sc)}${sc.stock === 'uk' && sc.mode !== 'products' ? ' · 只要 UK 仓有货的' : ''}`;
+const stale = () => Object.values(E.lists || {}).some((L) => L.status === 'loading') || scopeKey(P()) !== E.calcKey // 产品还在读 / 还没按最新设置算
+  || E.plan.groups.some((g) => stockInfo(g).wait > 0); // 「只要有货」的库存还在读
 function readonly() {
   if (E.showPending) return true;
   if (E.isNew) return false;
@@ -402,7 +495,7 @@ function summaryHtml() {
   return `<div class="pr-sum">
     <div class="pr-sum__h"><span class="pr-dot" style="background:${esc(p.color)}"></span><b>${esc(p.name || '(还没起名字)')}</b></div>
     <ul>
-      ${gs.map((g, i) => line(`${gs.length > 1 ? `<b>第 ${i + 1} 组</b>:` : ''}${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${gs.length > 1 ? ` · ${CMP_SHORT[gCmp(p, g)]}` : ''}`)).join('')}
+      ${gs.map((g, i) => line(`${gs.length > 1 || g.name ? `<b>${esc(gName(g, i, gs.length > 1))}</b>:` : ''}${esc(scopeSayFull(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${gs.length > 1 ? ` · ${CMP_SHORT[gCmp(p, g)]}` : ''}`)).join('')}
       ${gs.length > 1 ? line('<span class="muted">同一个产品在几组里时,以排在下面的那组为准</span>') : ''}
       ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束后<b>售价和划线价都回到改价前</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
       ${line(`${gs.length > 1 ? '划线价按分组设' : cmpOpts(p).find((o) => o[0] === gCmp(p, gs[0]))?.[1] || '显示原来的划线价'}${(() => { const n = items().filter((i) => i.cmpManual).length; return n ? `,另有 <b>${n}</b> 个选项单独设了划线价` : ''; })()}`)}
@@ -433,7 +526,10 @@ function editorHtml() {
     <div class="pr-main">
       ${sec('名称', `<div class="row">
         <span class="pr-colors">${COLORS.map((c) => `<button type="button" class="pr-color ${p.color === c ? 'is-on' : ''}" style="background:${c}" data-a="color" data-v="${c}" ${ro ? 'disabled' : ''}></button>`).join('')}</span>
-        <input class="inp" data-f="name" value="${esc(p.name)}" placeholder="比如:Early Black Friday · 全场 85 折" ${ro ? 'disabled' : ''} style="flex:1;min-width:200px"/></div>`, '只有后台看得到,顾客看不到')}
+        <input class="inp" data-f="name" value="${esc(p.name)}" placeholder="比如:Early Black Friday · 全场 85 折" ${ro ? 'disabled' : ''} style="flex:1;min-width:200px"/></div>
+        <label class="pr-fld" style="margin-top:10px">分组 <em>自己起的分组,计划列表按它归类;随时能改,不影响改价${E.isNew ? '' : '(改了马上生效,不用点保存)'}</em>
+          <input class="inp" data-f="folder" list="pr-folders" value="${esc(p.folder || '')}" placeholder="可不填,比如:Black Friday 2026 / 清货 / 日常调价" maxlength="${A.FOLDER_MAX}" ${E.showPending ? 'disabled' : ''} style="max-width:420px"/>
+          <datalist id="pr-folders">${foldersAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist></label>`, '只有后台看得到,顾客看不到')}
 
       ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价')}
 
@@ -500,8 +596,8 @@ function groupsHtml(ro) {
     return `<div class="pr-group ${open ? 'is-open' : ''}">
       <div class="pr-group__h" data-a="gopen" data-i="${i}">
         <span class="pr-group__no">${i + 1}</span>
-        <span class="pr-group__n">${multi ? `第 ${i + 1} 组` : '改价规则'}</span>
-        <span class="pr-group__s">${esc(scopeSayOf(g.scope))} · <b>${esc(ruleSay(g.rule))}</b> · ${CMP_SHORT[gCmp(P(), g)] || ''}${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个选项</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
+        <span class="pr-group__n">${esc(gName(g, i, multi))}</span>
+        <span class="pr-group__s">${esc(scopeSayFull(g.scope))} · <b>${esc(ruleSay(g.rule))}</b> · ${CMP_SHORT[gCmp(P(), g)] || ''}${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个选项</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
         ${open ? '' : '<span class="pr-group__go">点开修改</span>'}
         ${ro || !multi ? '' : `<span class="pr-group__acts">
           <button type="button" class="btn btn-ghost btn-xs" data-a="gup" data-i="${i}" ${i ? '' : 'disabled'} title="上移">↑</button>
@@ -509,6 +605,8 @@ function groupsHtml(ro) {
           <button type="button" class="btn btn-ghost btn-xs" data-a="gdel" data-i="${i}" title="删掉这一组">删除</button></span>`}
       </div>
       ${open ? `<div class="pr-group__b">
+        <label class="pr-fld pr-group__name">这一组的名字 <em>可不填;起个名字一眼看出这组是什么,比如「工作日价」「Leaplight 清货」</em>
+          <input class="inp" data-f="gname" value="${esc(g.name || '')}" maxlength="30" placeholder="${multi ? `第 ${i + 1} 组` : '改价规则'}" ${ro ? 'disabled' : ''}/></label>
         <div class="pr-group__lab">改哪些产品</div>${scopeHtml(ro)}
         <div class="pr-group__lab">改什么价</div>${ruleHtml(ro)}
         <div class="pr-group__lab">划线价 <span class="muted">这一组改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样</span></div>${cmpHtml(ro, g)}
@@ -547,7 +645,11 @@ function scopeHtml(ro) {
   } else {
     body = '<p class="muted">全店所有产品都会被改价。产品多的话执行会慢一些(摘要里有预计时间);下面点「读出全店产品」先看看每个产品的新价。</p>';
   }
-  return `<div class="pr-seg pr-seg--wrap" style="margin-bottom:10px">${Object.keys(SCOPE_MODES).map(tab).join('')}</div>${body}
+  // 2026-11-03 用户:清货只给有货的打折 —— 按选项看 UK 仓的 Available;指定产品是自己点选的,不自动筛(表格上有「删除没货的」)
+  const stockRow = sc.mode === 'products' ? '' : `<div class="pr-stockf"><span class="pr-stockf__l">库存</span>
+      <span class="pr-seg pr-seg--sm"><button type="button" class="${sc.stock !== 'uk' ? 'is-on' : ''}" data-a="sstock" data-v="" ${ro ? 'disabled' : ''}>全部选项</button><button type="button" class="${sc.stock === 'uk' ? 'is-on' : ''}" data-a="sstock" data-v="uk" ${ro ? 'disabled' : ''}>只要 UK 仓有货的</button></span>
+      <em class="muted">按选项算(没货的颜色 / 卡口不改价);按现在的库存选,保存后清单就固定了</em></div>`;
+  return `<div class="pr-seg pr-seg--wrap" style="margin-bottom:10px">${Object.keys(SCOPE_MODES).map(tab).join('')}</div>${body}${stockRow}
     ${P().campaign && !ro ? `<button type="button" class="btn btn-sm" data-a="fromcamp" style="margin-top:8px">用活动「${esc(P().campaign.name)}」圈定的产品</button>` : ''}`;
 }
 
@@ -562,7 +664,7 @@ function groupListHtml(ro, g, mine, over) {
   const head = L?.status === 'loading' ? '<div class="pr-load"><span class="pr-spin"></span>正在从店里读这一组的产品…</div>'
     : L?.status === 'err' ? `<div class="banner banner--danger" style="margin-top:6px">读不到产品:${esc(L.err)} <button class="btn btn-sm" data-a="reload" data-g="${g.id}">重试</button></div>` : '';
   if (!mine.length) {
-    const why = L?.status === 'loading' ? '' : scopeEmpty(sc) ? '在上面选好产品,这里马上列出来。' : over > 0 ? '这一组的产品全被下面的组接手了(同一个产品以排在下面的组为准)。' : L?.status === 'ok' ? '这一组没有产品。' : '';
+    const why = L?.status === 'loading' ? '' : stockInfo(g).wait ? '正在读 UK 仓库存…' : scopeEmpty(sc) ? '在上面选好产品,这里马上列出来。' : over > 0 ? '这一组的产品全被下面的组接手了(同一个产品以排在下面的组为准)。' : L?.status === 'ok' ? '这一组没有产品。' : '';
     return head + (why ? `<p class="muted" style="margin-top:6px">${why}</p>` : '') + removedHtml(ro, g);
   }
   const tf = E.tf?.[g.id] || {}; const q = (tf.q || '').trim().toLowerCase();
@@ -573,10 +675,13 @@ function groupListHtml(ro, g, mine, over) {
   const chip = (v, label, n) => `<button type="button" class="pr-chipf ${(tf.only || '') === v ? 'is-on' : ''}" data-a="tfilter" data-g="${g.id}" data-v="${v}">${label}${n != null ? ` <b>${n}</b>` : ''}</button>`;
   const fill = !ro && gCmp(p, g) === 'set' ? `<div class="pr-fill">一键填划线价 = 现价的 <input class="inp inp--xs" id="fillpct-${g.id}" type="number" min="101" step="1" value="120" style="width:70px"/> %
       <button type="button" class="btn btn-sm" data-a="fillcmp" data-g="${g.id}">填上</button><span class="muted">${g.rule.mode === 'keep' ? '售价不变、划线价调高 = 虚拟折扣;' : ''}填完还能在表格里一个个改</span></div>` : '';
-  return `${head}${fill}
+  const stkErr = STK.err ? `<div class="banner banner--warn" style="margin-top:6px">读不到 UK 仓库存:${esc(STK.err)} <button class="btn btn-sm" data-a="stkretry">重试</button></div>` : '';
+  return `${head}${stkErr}${fill}
     ${zero && !ro ? `<div class="banner banner--warn" style="margin-top:6px">有 <b>${zero}</b> 个选项现价是 £0(多半是询价 / 还没定价的产品),改不了价,不${isPick(g) ? '删除' : '排除'}就存不了。<button class="btn btn-sm" data-a="rmzero" data-g="${g.id}" style="margin-left:8px">${isPick(g) ? '删除' : '排除'}这 ${zero} 个</button></div>` : ''}
     <div class="pr-tbar">
-      <span class="pr-tbar__n">${new Set(mine.map((i) => i.productId)).size} 个产品 / ${mine.length} 个选项${over > 0 ? ` <span class="muted">· 另有 ${over} 个也在下面的组里,按下面那组的价</span>` : ''}</span>
+      <span class="pr-tbar__n">${new Set(mine.map((i) => i.productId)).size} 个产品 / ${mine.length} 个选项${over > 0 ? ` <span class="muted">· 另有 ${over} 个也在下面的组里,按下面那组的价</span>` : ''}${(() => { if (sc.stock !== 'uk' || isPick(g)) return ''; const so = stockInfo(g);
+        return ` <span class="muted">· 没货不改价的 ${so.out} 个${so.wait ? `,还有 ${so.wait} 个在读库存…` : ''}</span>`; })()}</span>
+      ${!ro && isPick(g) ? (() => { const n = mine.filter((i) => noStock(stockOf(i.variantId))).length; return n ? `<button type="button" class="btn btn-sm" data-a="rmnostock" data-g="${g.id}" title="UK 仓 Available ≤ 0 的选项从选的清单里删掉">删除没货的 ${n} 个选项</button>` : ''; })() : ''}
       <span class="pr-chipfs">${chip('', '全部')}${chip('bad', '有问题', nBad)}${chip('man', '手改过', nMan)}</span>
       <input class="inp inp--sm" data-tq="${g.id}" placeholder="找产品 / SKU" value="${esc(tf.q || '')}" style="width:170px"/>
       ${ro ? '' : `<button type="button" class="linkbtn" data-a="reload" data-g="${g.id}" title="店里刚改过产品或价格时用">从店里重新读</button>`}
@@ -593,6 +698,48 @@ function removedHtml(ro, g) {
     <div class="pr-removed__b">${rm.slice(0, 60).map((id) => `<span class="tag">${esc(names.get(id) || '(名字还没读到)')}${ro ? '' : `<button type="button" class="chip__x" data-a="unrm" data-g="${g.id}" data-v="${esc(id)}" title="恢复">↺</button>`}</span>`).join('')}
       ${rm.length > 60 ? `<span class="muted">…共 ${rm.length} 个</span>` : ''}${ro ? '' : `<button type="button" class="linkbtn" data-a="unrm" data-g="${g.id}">全部恢复</button>`}</div></details>`;
 }
+// ---- UK 仓库存(2026-11-03 用户)----
+// 读 Shopify 里 UK 仓(Cinegearpro)的 Available,按款式小批量问服务器;读过的这次打开页面里不再读(「从店里重新读」会刷新)
+const STK = (cache.stk ||= { map: new Map(), queue: new Set(), busy: false, loc: null, err: '', waiters: [] });
+const stockOf = (id) => (STK.map.has(id) ? STK.map.get(id) : undefined); // undefined = 还没读到;null = 这个选项不追踪库存
+const noStock = (n) => n !== undefined && n !== null && n <= 0;
+function wantStock(ids) {
+  for (const id of ids) if (!STK.map.has(id)) STK.queue.add(id);
+  if (STK.queue.size && !STK.busy && !STK.err) pumpStock();
+}
+async function pumpStock() {
+  STK.busy = true;
+  while (STK.queue.size) {
+    const batch = [...STK.queue].slice(0, 250);
+    try {
+      const d = await api('POST', '/api/price/catalog/stock', { ids: batch });
+      STK.loc = d.location;
+      for (const id of batch) { STK.map.set(id, Object.prototype.hasOwnProperty.call(d.stock, id) ? d.stock[id] : 0); STK.queue.delete(id); }
+    } catch (e) { STK.err = e.message || '读不到库存'; STK.queue.clear(); break; }
+  }
+  STK.busy = false;
+  STK.waiters.splice(0).forEach((f) => f());
+  if (E) { if (!readonly() && E.plan.groups.some((g) => g.scope.stock === 'uk')) recompute(); render(); }
+}
+// 等这些选项的库存读齐(保存前用);读失败也返回,由调用的地方看 STK.err
+function stockReady(ids) {
+  wantStock(ids);
+  return new Promise((res) => { const check = () => (STK.err || ids.every((id) => STK.map.has(id)) ? res() : STK.waiters.push(check)); check(); });
+}
+const groupVariantIds = (g) => (E.lists?.[g.id]?.products || []).flatMap((x) => x.variants.map((v) => v.id));
+// 「只要 UK 仓有货的」这一组:有几个选项因为没货不改价、几个还在读库存(按这一组读到的产品算,和重算用同一套条件)
+function stockInfo(g) {
+  const out = { out: 0, wait: 0 }; if (g.scope.stock !== 'uk' || isPick(g)) return out;
+  const rm = new Set(g.removed || []);
+  for (const pr of E.lists?.[g.id]?.products || []) for (const v of pr.variants) {
+    if (rm.has(v.id)) continue; const k = stockOf(v.id);
+    if (k === undefined) out.wait++; else if (noStock(k)) out.out++;
+  }
+  return out;
+}
+const stockCell = (id) => { const n = stockOf(id);
+  return n === undefined ? '<span class="muted">…</span>' : n === null ? '<span class="muted" title="这个选项在 Shopify 里不追踪库存">不追踪</span>' : `<span class="${n < 0 ? 'stk-neg' : n === 0 ? 'stk-zero' : ''}">${n}</span>`; };
+
 // 表格:默认只看前 20 个,可以展开全部;keep = 筛选 / 搜索
 const VIMG = (cache.vimg ||= { map: new Map(), asked: new Set(), busy: false });
 const vimgOf = (it) => { const u = VIMG.map.get(it.variantId); return u && u !== it.image ? u : ''; };
@@ -608,7 +755,7 @@ function previewHtml(ro, gid, keep = null) {
   const needFill = its.some((i) => needsPrice(p, i) && !ex.has(i.variantId));
   const all = (E.showAllG || {})[gid];
   const show = all || needFill ? its : its.slice(0, 20);
-  setTimeout(() => wantVimages(show), 0);
+  setTimeout(() => { wantVimages(show); wantStock(show.map((i) => i.variantId)); }, 0);
   const setCompare = gCmp(p, groupsOf(p).find((g) => g.id === gid)) === 'set';
   let lastPid = null;
   // 2026-10-28 用户:进行中的计划看不到移出 —— 表格只读时按钮被一起藏了。移出是安全方向(下一分钟恢复原价),开始后照样能用
@@ -631,6 +778,7 @@ function previewHtml(ro, gid, keep = null) {
       <td>${first ? `<div class="pcell">${it.image ? `<img class="pimg" src="${esc(it.image)}" loading="lazy" alt=""/>` : '<span class="pimg"></span>'}<div><div class="pcell__t">${esc(it.product || it.title)}</div><div class="pcell__s">${esc(it.vendor || '')}</div>${pick && notPicked(it.productId) > 0 ? `<div class="pcell__s pcell__np">另有 ${notPicked(it.productId)} 个选项没选,不改价</div>` : ''}
         ${(() => { const sib = live.filter((x) => x.productId === it.productId); return rowAct && sib.length > 1 ? `<button class="linkbtn pcell__all" data-a="${rowAct}" data-vs="${sib.map((x) => x.variantId).join(',')}" title="${rowAct === 'exclude' ? `这个产品的 ${sib.length} 个选项一起移出,下一分钟回到改价前的价格` : pick ? `这个产品整个从选的清单里删掉` : `这个产品的 ${sib.length} 个选项一起排除`}">整个产品${actLabel}(${sib.length} 个选项)</button>` : ''; })()}</div></div>` : ''}</td>
       <td><div class="vcell">${vimgOf(it) ? `<img class="vimg" src="${esc(vimgOf(it))}" loading="lazy" alt=""/>` : ''}<div>${esc(it.variant || '')}<div class="pcell__s">${esc(it.sku || '')}</div></div></div></td>
+      <td class="num">${stockCell(it.variantId)}</td>
       <td class="num">${money(it.refPrice)}${it.refCompareAt && Number(it.refCompareAt) > Number(it.refPrice) ? `<div><s>${money(it.refCompareAt)}</s></div>` : ''}${Number(it.cost) > 0 ? `<div class="pcell__s">成本 ${money(it.cost)}</div>` : ''}</td>
       <td class="num">${ro || gone ? `<b>${it.price != null ? money(it.price) : '不变'}</b>` : `<input class="inp ${needsPrice(p, it) ? 'is-todo' : ''}" data-f="iprice" data-v="${it.variantId}" value="${it.price ?? ''}" placeholder="${needsPrice(p, it) ? '填新价' : '不变'}"/>`}
         ${it.manual && !ro && !gone ? `<div><span class="pr-mtag">手改</span><button class="linkbtn" data-a="unmanual" data-v="${it.variantId}" title="回到这一组规则算出来的价">用规则价</button></div>` : ''}</td>
@@ -651,7 +799,7 @@ function previewHtml(ro, gid, keep = null) {
   if (!its.length) return '<p class="muted" style="margin-top:8px">没有符合筛选的产品。</p>';
   return `${ro ? '' : `<p class="muted" style="margin:8px 0 0">新价可以<b>一个个直接改</b>(改过的标「手改」,改规则、加产品都会保留;点「用规则价」恢复)。
       ${setCompare ? '' : '划线价也能<b>单独例外</b>:灰字是按上面方式算出来的;填数字 = 这个选项用这个划线价,填 0 = 不显示,清空 = 回到上面的方式(标「例外」)。'}</p>`}
-    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>选项 / SKU</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>选项 / SKU</th><th class="num" title="Shopify 里 ${esc(STK.loc?.name || 'UK 仓')} 的 Available(可售数),不含别的仓">UK 可售</th><th class="num">现价</th><th class="num">新价</th><th class="num">划线价</th><th class="num">变化</th><th>检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${its.length > 20 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 20 个' : `展开全部 ${its.length} 个选项`}</button>` : ''}`;
 }
 
@@ -867,6 +1015,7 @@ function loadGroup(g, { force = false, initial = false } = {}) {
   entry.promise = productsOf(g.scope, force).then((ps) => {
     if (!E || E.lists[g.id] !== entry) return;
     entry.status = 'ok'; entry.products = ps;
+    if (g.scope.stock === 'uk' && !isPick(g)) setTimeout(() => wantStock(ps.flatMap((x) => x.variants.map((v) => v.id))), 0);
     if (isPick(g)) { normalizePick(g, ps, initial); entry.key = srcKey(g.scope); }
     else if (!initial && g.removed?.length) { const have = new Set(ps.flatMap((x) => x.variants.map((v) => v.id))); g.removed = g.removed.filter((id) => have.has(id)); }
     if (initial) { if (!isPick(g)) seedRemoved(g, ps); E.calcKey = scopeKey(P()); }
@@ -891,15 +1040,19 @@ function recompute() {
   if (!E || readonly() || E.showPending) return;
   const p = E.plan; const s = p.slots[0];
   const old = new Map(s.items.map((i) => [i.variantId, i]));
-  const by = new Map(); E.groupHits = {};
+  const by = new Map(); E.groupHits = {}; E.stockOut = {};
   for (const g of p.groups) {
     const L = E.lists[g.id]; const rm = new Set(isPick(g) ? [] : g.removed || []); const sel = isPick(g) ? pickedVariants(g) : null;
     const put = (it) => { by.delete(it.variantId); by.set(it.variantId, it); }; // 先删再放:被下面的组接手时,顺序跟着下面的组
+    const byStock = g.scope.stock === 'uk' && !isPick(g); // 只要 UK 仓有货的:没货的不进清单,库存还没读到的先不放(读到了再放,免得混进没货的)
+    const so = (E.stockOut[g.id] = { out: 0, wait: [] });
     if (L && L.status === 'ok' && L.key === srcKey(g.scope)) {
       let n = 0;
       for (const pr of L.products) for (const v of pr.variants) {
         const vs = sel?.get(pr.id); if (sel && (!sel.has(pr.id) || (vs && !vs.has(v.id)))) continue; // 指定产品:没选的选项不算
-        if (rm.has(v.id)) continue; n++;
+        if (rm.has(v.id)) continue;
+        if (byStock) { const k = stockOf(v.id); if (k === undefined) { so.wait.push(v.id); continue; } if (noStock(k)) { so.out++; continue; } }
+        n++;
         const it = toItem(pr, v, g.rule); it.group = g.id;
         const o = old.get(v.id);
         if (o?.manual && o.price != null) { it.price = o.price; it.manual = true; } // 手改过的保留
@@ -912,6 +1065,7 @@ function recompute() {
       // 这一组的产品还没读到(或读不到):先用原来的条目,价格按现在的规则重算
       for (const o of s.items) {
         if (o.group !== g.id || rm.has(o.variantId)) continue;
+        if (byStock && noStock(stockOf(o.variantId))) { so.out++; continue; }
         if (sel && (!sel.has(o.productId) || (sel.get(o.productId) && !sel.get(o.productId).has(o.variantId)))) continue;
         const it = { ...o };
         if (!it.manual) { it.price = null; try { if (!['keep', 'manual'].includes(g.rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, g.rule); } catch { /* 规则没填好 */ } }
@@ -921,6 +1075,7 @@ function recompute() {
   }
   s.items = [...by.values()];
   E.calcKey = scopeKey(p);
+  const wait = Object.values(E.stockOut).flatMap((x) => x.wait); if (wait.length) setTimeout(() => wantStock(wait), 0);
 }
 // 改了「改哪些产品」:读这一组(读过的马上出来);全店产品要点按钮才读(几千个,要等一会儿)
 function scopeChanged(g = EG()) {
@@ -939,6 +1094,13 @@ async function ensureCalc() {
     else await loadGroup(g);
     const L = E.lists[g.id]; if (L?.status === 'err') throw new Error(`${E.plan.groups.length > 1 ? `第 ${E.plan.groups.indexOf(g) + 1} 组:` : ''}读不到产品:${L.err}`);
   }
+  // 「只要 UK 仓有货的」:等这一组所有选项的库存读齐再算(不然没读到的会被漏掉)
+  const need = E.plan.groups.filter((g) => g.scope.stock === 'uk' && !isPick(g)).flatMap(groupVariantIds);
+  if (need.length) {
+    await stockReady(need);
+    if (STK.err) throw new Error(`读不到 UK 仓库存:${STK.err}`);
+    recompute(); return;
+  }
   if (scopeKey(P()) !== E.calcKey) recompute();
 }
 async function withBusy(btn, fn) {
@@ -952,7 +1114,7 @@ function values() {
     countdown: p.kind === 'window' ? { on: !!p.countdown?.on, label: String(p.countdown?.label || '').trim(), days: Number(p.countdown?.days) || 0, style: p.countdown?.style || 'classic' } : null,
     compare: p.groups?.[0]?.compare || cmpOf(p), campaign: p.campaign, note: p.note, slots: p.slots,
     groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
-    owner: p.owner || null, approver: p.approver || null, cc: p.cc || [] };
+    owner: p.owner || null, approver: p.approver || null, cc: p.cc || [], folder: p.folder || '' };
 }
 
 async function act(action, msg) {
@@ -1039,6 +1201,12 @@ function settingsHtml() {
     <div class="grid2"><label class="pr-fld">降幅上限 % <em>超过的在预览里标黄提醒</em><input class="inp" type="number" id="maxoff" value="${s.maxDiscountPct}" ${ap ? '' : 'disabled'}/></label>
       <label class="pr-fld">巡检间隔(分钟)<em>多久核对一次「正在活动价上的产品有没有被人手动改过」</em><input class="inp" type="number" id="sweep" value="${s.sweepMinutes}" ${ap ? '' : 'disabled'}/></label></div>
     ${ap ? '<div class="row" style="margin-top:10px"><button class="btn btn-sm btn-primary" data-a="savesafe">保存</button></div>' : ''}</div>
+  <div class="pr-card"><div class="pr-card__t">库存 <span class="muted">编辑计划时「只要 UK 仓有货的」和产品表「UK 可售」按这个仓库的 Available 算</span></div>
+    ${(() => { if (!cache.locs) { loadLocations(); return '<p class="muted">正在读仓库…</p>'; }
+      if (cache.locs.err) return `<p class="muted">读不到仓库:${esc(cache.locs.err)}</p>`;
+      return `<label class="pr-fld">UK 仓 <em>默认自动认名字里有 Cinegearpro 的仓库</em><select class="sel" id="ukloc" ${ap ? '' : 'disabled'} style="max-width:320px">
+        <option value="" ${!s.ukLocation ? 'selected' : ''}>自动(现在是:${esc(cache.locs.uk?.name || '没找到')})</option>
+        ${cache.locs.locations.filter((l) => l.active).map((l) => `<option value="${esc(l.id)}" ${s.ukLocation === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>`; })()}</div>
   <div class="pr-card"><div class="pr-card__t">执行器</div>
     <div class="pr-kv"><span>状态</span>${S.engine.lastRun ? `上次对齐 ${ago(S.engine.lastRun)},改了 ${S.engine.lastWrites} 个选项` : '还没运行'}${S.engine.lastError ? ` · <span style="color:var(--danger)">${esc(S.engine.lastError)}</span>` : ''}</div>
     <div class="pr-kv"><span>时区</span>英国时间(Europe/London,自动处理夏令时)</div>
@@ -1057,6 +1225,21 @@ document.addEventListener('click', async (ev) => {
         filter = el.dataset.f;
         if (wantAll() && !S.allPlans) { loadingAll = true; render(); try { await load(true); } catch (e) { toast(e.message, false); } loadingAll = false; }
         render(); break;
+      }
+      // ---- 计划列表:分组 / 多选整理 ----
+      case 'lsel': { const id = el.dataset.id; el.checked ? LV.sel.add(id) : LV.sel.delete(id); if (LV.sel.size) loadCampaigns(); render(); break; }
+      case 'lselgrp': { const ids = el.dataset.ids.split(',').filter(Boolean); ids.forEach((id) => (el.checked ? LV.sel.add(id) : LV.sel.delete(id))); if (LV.sel.size) loadCampaigns(); render(); break; }
+      case 'lnone': LV.sel.clear(); render(); break;
+      case 'lgtoggle': LV.open[el.dataset.k] = el.dataset.o !== '1'; localStorage.setItem('cgp-pr-open', JSON.stringify(LV.open)); render(); break;
+      case 'lclear': Object.assign(LV, { folder: '', camp: '', brand: '', q: '' }); render(); break;
+      case 'lmove': case 'lunfolder': {
+        const f = a === 'lunfolder' ? '' : A.cleanFolder($('#pl-folder')?.value);
+        if (a === 'lmove' && !f) { toast('先填分组名', false); $('#pl-folder')?.focus(); return; }
+        await withBusy(el, async () => { await act({ type: 'organize', ids: [...LV.sel], folder: f }); LV.sel.clear(); render(); }); break;
+      }
+      case 'lcamp': {
+        const c = (cache.campaigns || []).find((x) => x.id === $('#pl-camp')?.value);
+        await withBusy(el, async () => { await act({ type: 'organize', ids: [...LV.sel], campaign: c ? { id: c.id, name: c.name } : null }); LV.sel.clear(); render(); }); break;
       }
       case 'tab': if (E && E.dirty && !armed(el, '有未保存的改动,再点一次离开')) return; E = null; tab = el.dataset.t; renderChrome(); render(); break;
       case 'new': openEditor(newPlan(el.dataset.kind), true); loadCampaigns(); break;
@@ -1128,8 +1311,17 @@ document.addEventListener('click', async (ev) => {
         try { if (!['keep', 'manual'].includes(g.rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, g.rule); } catch { /* 规则没填好 */ }
         touch(); render(); break;
       }
-      case 'reload': { const g = E.plan.groups.find((x) => x.id === el.dataset.g) || EG(); await withBusy(el, () => loadGroup(g, { force: true })); toast('已从店里重新读'); break; } // 店里改了产品 / 价格时用
+      case 'reload': { const g = E.plan.groups.find((x) => x.id === el.dataset.g) || EG();
+        await withBusy(el, () => loadGroup(g, { force: true })); groupVariantIds(g).forEach((id) => STK.map.delete(id)); STK.err = '';
+        if (g.scope.stock === 'uk') wantStock(groupVariantIds(g)); toast('已从店里重新读(价格和库存)'); render(); break; } // 店里改了产品 / 价格 / 库存时用
       case 'tfilter': (E.tf[el.dataset.g] ||= {}).only = el.dataset.v || ''; render(); break;
+      case 'sstock': if (el.disabled) return; { const g = EG(); if (el.dataset.v) g.scope.stock = 'uk'; else delete g.scope.stock;
+        if (g.scope.stock) wantStock(groupVariantIds(g)); ruleChanged(); } break;
+      case 'stkretry': STK.err = ''; wantStock(E.plan.groups.flatMap(groupVariantIds)); render(); break;
+      case 'rmnostock': { const g = E.plan.groups.find((x) => x.id === el.dataset.g); if (!g) return;
+        const ids = curSlot().items.filter((i) => i.group === g.id && noStock(stockOf(i.variantId))).map((i) => i.variantId);
+        if (!ids.length) return; pickDelete(g, ids); curSlot().items = curSlot().items.filter((i) => !ids.includes(i.variantId)); E.calcKey = scopeKey(P()); touch(); render();
+        toast(`删除了 ${ids.length} 个 UK 仓没货的选项`); break; }
       case 'cmpopen': (E.cmpOpen ||= {})[el.dataset.g] = !E.cmpOpen[el.dataset.g]; render(); break;
       case 'fillcmp': { // 逐个指定划线价:一键填 = 现价 × X%(手动单独改过的不动)
         const pct = Number($(`#fillpct-${el.dataset.g}`)?.value); if (!(pct > 100)) { toast('填一个大于 100 的百分比,比如 120', false); return; }
@@ -1216,6 +1408,8 @@ document.addEventListener('change', async (ev) => {
   if (!el.closest('#section-price')) return;
   if (el.dataset.a === 'notify') { try { await api('PUT', '/api/price/settings', { notify: { [el.dataset.k]: el.checked } }); await load(); } catch (e) { toast(e.message, false); } return; }
   if (el.id === 'lplan') { ledgerQ.plan = el.value; ledgerQ.offset = 0; loadLedger(); return; }
+  if (el.dataset.lv && el.dataset.lv !== 'q') { LV[el.dataset.lv] = el.value; if (el.dataset.lv === 'by') localStorage.setItem('cgp-pr-by', el.value); render(); return; }
+  if (el.id === 'ukloc') { try { await api('PUT', '/api/price/settings', { ukLocation: el.value }); STK.map.clear(); STK.loc = null; STK.err = ''; toast('已保存:UK 可售按这个仓库算'); await load(); render(); } catch (e) { toast(e.message, false); } return; }
   if (!E) return;
   if (el.name === 'rmode') {
     EG().rule.mode = el.value;
@@ -1230,7 +1424,15 @@ document.addEventListener('change', async (ev) => {
   const norm = (v) => { const t = String(v).trim().replace(/^£/, ''); if (!t) return null; const n = Number(t); return Number.isFinite(n) ? n.toFixed(2) : undefined; };
   switch (f) {
     case 'name': E.plan.name = el.value; touch(); break;
+    case 'folder': { // 分组随时能改、不影响改价:已有的计划马上存(不用点保存,也不会把编辑中的其他改动带上)
+      const f = A.cleanFolder(el.value); E.plan.folder = f;
+      if (E.isNew || !E.orig) { touch(); break; }
+      try { await api('POST', '/api/price/act', { action: { type: 'organize', ids: [E.orig.id], folder: f } }); E.orig.folder = f; toast(f ? `已移到分组「${f}」` : '已移出分组'); load().catch(() => {}); }
+      catch (e) { toast(e.message, false); }
+      break;
+    }
     case 'note': E.plan.note = el.value; touch(); break;
+    case 'gname': EG().name = el.value.replace(/\s+/g, ' ').trim().slice(0, 30); touch(); render(); break;
     case 'compare': EG().compare = el.value; E.plan.compare = E.plan.groups[0].compare; (E.cmpOpen ||= {})[EG().id] = false; touch(); render(); break; // 改的是正在编辑的那一组;选完收起
     case 'cdon': E.plan.countdown.on = el.checked; touch(); render(); break;
     case 'cdlabel': E.plan.countdown.label = el.value.slice(0, 60); touch(); render(); break;
@@ -1266,6 +1468,11 @@ document.addEventListener('change', async (ev) => {
   }
 });
 document.addEventListener('input', (ev) => {
+  if (ev.target.dataset?.lv === 'q' && !E) { // 搜计划 / 产品 / SKU:停一下再刷新,刷新后光标放回去
+    const v = ev.target.value; clearTimeout(LV.qT);
+    LV.qT = setTimeout(() => { LV.q = v; render(); const n = document.querySelector('#section-price [data-lv="q"]'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250);
+    return;
+  }
   if (ev.target.id === 'lq') { clearTimeout(ev.target._t); ev.target._t = setTimeout(() => { ledgerQ.q = ev.target.value; ledgerQ.offset = 0; loadLedger(); }, 300); }
   if (!E || !ev.target.closest('#section-price')) return;
   const f = ev.target.dataset.f;
@@ -1288,10 +1495,15 @@ document.addEventListener('keydown', (ev) => {
 });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'coll-q') $('[data-a=collsearch]')?.click(); });
 
+async function loadLocations() {
+  if (cache.locsBusy) return; cache.locsBusy = true;
+  try { cache.locs = await api('GET', '/api/price/catalog/locations'); } catch (e) { cache.locs = { err: e.message, locations: [] }; }
+  cache.locsBusy = false; if (!E && tab === 'settings') render();
+}
 async function loadCampaigns(rerender) {
   if (cache.campaigns) { if (rerender) render(); return; }
   try { cache.campaigns = (await api('GET', '/api/price/campaigns')).campaigns; } catch { cache.campaigns = []; }
-  if (E) render();
+  if (E || LV.sel.size) render(); // 列表多选时「关联活动」下拉要用
 }
 
 // 每 30 秒刷新一次状态(执行器在后台改价;只在看改价页、没在编辑时)

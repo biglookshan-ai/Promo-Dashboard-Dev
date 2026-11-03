@@ -18,7 +18,7 @@ export const KIND_MOD = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar'
 const KIND_CN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶排序', salelink: '促销链接', callout: '产品页推广' };
 
 // 只读的 POST(带 body 查东西)不算操作
-const SKIP = new Set(['/schedule/tab-products', '/schedule/counts', '/schedule/callout-scope', '/schedule/products-stock', '/auth/lark/start', '/auth/lark/redeem']);
+const SKIP = new Set(['/schedule/tab-products', '/schedule/counts', '/schedule/callout-scope', '/schedule/products-stock', '/price/catalog/stock', '/auth/lark/start', '/auth/lark/redeem']);
 const PATHS = {
   '/schedule/collection-create': ['callouts', '新建 Collection'],
   '/schedule/joint-sync': ['callouts', '同步联合推广的产品'],
@@ -43,7 +43,7 @@ const PATHS = {
   '/annotations': ['tools', '改元数据备注'],
 };
 const SAVE_CN = { draft: '存草稿', submit: '提交审核', publish: '保存' };
-const PRICE_CN = { approve: '批准', reject: '退回', pause: '暂停', resume: '继续', stop: '提前结束', delete: '删除', exclude: '移出产品', resolve: '处理暂停接管', dup: '复制' };
+const PRICE_CN = { approve: '批准', reject: '退回', pause: '暂停', resume: '继续', stop: '提前结束', delete: '删除', exclude: '移出产品', resolve: '处理暂停接管', dup: '复制', organize: '整理分组' };
 
 // 没有 req.audit 时,按接口 + 请求内容猜一句话
 export function describe(p, body = {}) {

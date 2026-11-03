@@ -191,3 +191,27 @@ test('没开审批(actor.direct):保存 = 发布,提示和日志都不说「批�
   assert.equal(r.message, '已保存,到时间自动执行');
   assert.ok(!JSON.stringify(r.doc.log).includes('批准'));
 });
+
+test('整理分组(2026-11-03):几个计划一起移到分组 / 关联活动;进行中、已结束都能改;跟随活动时间的不能换活动', () => {
+  let doc = run(empty(), { type: 'save', mode: 'publish', isNew: true, values: values() }, boss);
+  doc = run(doc, { type: 'save', mode: 'publish', isNew: true, values: values({ id: 'p2', name: 'Leaplight 清货', folder: '清货' }) }, boss);
+  assert.equal(doc.plans[1].folder, '清货'); // 新建时就能填分组
+  // 已经开始(15 点在第一段里)也能整理;编辑也能整理(不碰价格)
+  let r = applyAction(doc, { type: 'organize', ids: ['p1', 'p2'], folder: '  Black   Friday 2026 ' }, ed, 15 * H);
+  assert.deepEqual(r.doc.plans.map((p) => p.folder), ['Black Friday 2026', 'Black Friday 2026']);
+  assert.match(r.message, /2 个计划移到分组「Black Friday 2026」/);
+  assert.equal(r.doc.log[0].action, 'organize');
+  assert.deepEqual(r.doc.plans[0].slots, doc.plans[0].slots); // 时间、产品、价格一点没动
+  r = applyAction(r.doc, { type: 'organize', ids: ['p1'], folder: '' }, ed, 15 * H);
+  assert.equal('folder' in r.doc.plans[0], false); // 移出分组
+  r = applyAction(r.doc, { type: 'organize', ids: ['p1', 'p2'], campaign: { id: 'c1', name: 'BFCM' } }, ed, 50 * H);
+  assert.deepEqual(r.doc.plans.map((p) => p.campaign?.name), ['BFCM', 'BFCM']);
+  // 跟随活动时间的:换活动会改时间,要在编辑里改
+  const d3 = { ...r.doc, plans: r.doc.plans.map((p) => (p.id === 'p2' ? { ...p, followCampaign: true } : p)) };
+  assert.throws(() => applyAction(d3, { type: 'organize', ids: ['p1', 'p2'], campaign: { id: 'c2', name: 'Xmas' } }, ed), /跟随活动的时间/);
+  assert.doesNotThrow(() => applyAction(d3, { type: 'organize', ids: ['p2'], folder: 'x' }, ed)); // 只改分组没关系
+  assert.throws(() => applyAction(d3, { type: 'organize', ids: [] }, ed), /还没选计划/);
+  assert.throws(() => applyAction(d3, { type: 'organize', ids: ['p1'] }, ed), /没有要改的/);
+  assert.throws(() => applyAction(d3, { type: 'organize', ids: ['nope'], folder: 'x' }, ed), /不存在/);
+  assert.equal(validate({ ...values(), folder: 'x'.repeat(41) }), '分组名最多 40 个字');
+});

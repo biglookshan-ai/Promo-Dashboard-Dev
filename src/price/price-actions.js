@@ -13,7 +13,10 @@ export const canApprove = (a, plan) => !!a && (isAdminActor(a) || (!!plan?.appro
 
 // 计划里可编辑的字段
 export const EDIT_KEYS = ['name', 'kind', 'layer', 'priority', 'compare', 'campaign', 'note', 'slots', 'rule', 'approver', 'owner', 'cc',
-  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups', 'countdown'];
+  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups', 'countdown', 'folder'];
+// 自己起的分组名(2026-11-03 用户:计划多了要能分组;按活动 / 品牌 / 月份自动分的叫「智能分组」,在页面上算,不存)
+export const FOLDER_MAX = 40;
+export const cleanFolder = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, FOLDER_MAX);
 const pick = (v) => Object.fromEntries(EDIT_KEYS.filter((k) => k in v).map((k) => [k, clone(v[k])]));
 
 export function addLog(doc, now, action, plan, note, actor) {
@@ -27,6 +30,7 @@ export function validate(p, settings = {}) {
   if (!['window', 'permanent'].includes(p.kind)) return '请选择类型(限时 / 永久)';
   if (p.kind === 'window' && p.priority != null && !(Number.isInteger(Number(p.priority)) && Number(p.priority) >= 1 && Number(p.priority) <= 10)) return '优先级填 1–10 的整数(数字大的优先)';
   if (p.followCampaign && !p.campaign?.id) return '勾了「跟随活动时间」就要先选一个活动';
+  if (String(p.folder ?? '').length > FOLDER_MAX) return `分组名最多 ${FOLDER_MAX} 个字`;
   if (p.countdown?.on) {
     if (p.kind !== 'window') return '只有限时改价能显示倒计时(永久调价没有结束时间)';
     if (String(p.countdown.label || '').length > 60) return '倒计时文字最多 60 个字';
@@ -249,6 +253,30 @@ export function applyAction(input, action, actor, now = Date.now()) {
       addLog(doc, now, 'resolve', null, `${label}:${note}`, actor);
       effects.push({ type: 'run' });
       return { doc, effects, message: '已处理' };
+    }
+
+    case 'organize': {
+      // 整理:把几个计划一起移到某个分组 / 关联到某个活动。只改分组名和关联的活动,不碰价格、时间、产品 ——
+      // 所以任何状态(进行中、已结束)都能改,也不走「已经开始的锁定」和审批
+      const ids = [...new Set(action.ids || [])];
+      if (!ids.length) fail('还没选计划');
+      const plans = ids.map(find);
+      const parts = [];
+      if (action.folder !== undefined) {
+        const f = cleanFolder(action.folder);
+        for (const p of plans) { if (f) p.folder = f; else delete p.folder; }
+        parts.push(f ? `移到分组「${f}」` : '移出分组');
+      }
+      if (action.campaign !== undefined) {
+        const c = action.campaign?.id ? { id: String(action.campaign.id), name: String(action.campaign.name || '') } : null;
+        const locked = plans.find((p) => p.followCampaign && p.campaign?.id !== c?.id);
+        if (locked) fail(`「${locked.name}」跟随活动的时间,换活动会改它的时间 —— 请打开这个计划在编辑里改`);
+        for (const p of plans) p.campaign = c;
+        parts.push(c ? `关联活动「${c.name}」` : '不关联活动');
+      }
+      if (!parts.length) fail('没有要改的');
+      for (const p of plans) addLog(doc, now, 'organize', p, parts.join(','), actor);
+      return { doc, effects, message: `${plans.length > 1 ? `${plans.length} 个计划` : '已'}${parts.join(',')}` };
     }
 
     default:

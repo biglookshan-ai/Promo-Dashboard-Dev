@@ -134,3 +134,30 @@ export async function variantImages(ctx, productIds) {
   for (const n of d.nodes || []) for (const v of n?.variants?.nodes || []) { const u = v.media?.nodes?.[0]?.preview?.image?.url; if (u) out[v.id] = u; }
   return out;
 }
+
+// ---------- 库存(2026-11-03 用户:清货只给有货的打折;产品表显示 UK 仓可售数)----------
+// 只读 Shopify 各仓的库存(唯一真源);UK 仓 = Shopify 里叫 Cinegearpro 的伦敦仓(设置里可以换)。读 Available(可售),不是 On hand。
+// 只要 read_inventory(Location / InventoryLevel 都认它),不用另开权限。
+export async function locations(ctx) {
+  const d = await graphql(ctx, '{ locations(first: 50) { nodes { id name isActive } } }');
+  return d.locations.nodes.map((l) => ({ id: l.id, name: l.name, active: l.isActive !== false }));
+}
+// 用哪个仓当 UK 仓:设置里选的 > 名字有 Cinegearpro > 名字像伦敦 / 英国 > 第一个在用的
+export function pickUkLocation(list, preferId) {
+  const live = list.filter((l) => l.active);
+  return list.find((l) => l.id === preferId) || live.find((l) => /cinegearpro/i.test(l.name)) || live.find((l) => /london|\buk\b|united kingdom/i.test(l.name)) || live[0] || null;
+}
+// 款式在这个仓的可售数:{ 款式 id: 数字 | null };null = 这个款式不追踪库存(没法说有没有货);这个仓没有这个款式的记录 = 0
+export async function variantStock(ctx, variantIds, locationId, gql = graphql) {
+  const out = {};
+  for (let i = 0; i < variantIds.length; i += 50) {
+    const d = await gql(ctx, `query($ids: [ID!]!, $loc: ID!) { nodes(ids: $ids) { ... on ProductVariant { id inventoryItem { tracked inventoryLevel(locationId: $loc) { quantities(names: ["available"]) { quantity } } } } } }`,
+      { ids: variantIds.slice(i, i + 50), loc: locationId });
+    for (const n of d.nodes || []) {
+      if (!n?.id) continue;
+      const it = n.inventoryItem;
+      out[n.id] = it && it.tracked === false ? null : it?.inventoryLevel?.quantities?.[0]?.quantity ?? 0;
+    }
+  }
+  return out;
+}

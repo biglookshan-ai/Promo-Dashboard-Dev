@@ -37,6 +37,12 @@ export function priceRouter() {
       console.error('[price]', e); res.status(500).json({ error: String(e.message || e) });
     }
   };
+  // 仓库清单 10 分钟内不重复读(读库存时每批都要用到 UK 仓的 id)
+  const locCache = new Map();
+  const locationsCached = async (ctx) => {
+    const c = locCache.get(ctx.shop); if (c && Date.now() - c.at < 600_000) return c.list;
+    const list = await catalog.locations(ctx); locCache.set(ctx.shop, { at: Date.now(), list }); return list;
+  };
   const needAdmin = (req) => { if (actorOfReq(req).role !== 'approver') throw new ActionError('只有管理员能做这个操作'); };
 
   r.get('/state', wrap(async (req) => {
@@ -51,9 +57,10 @@ export function priceRouter() {
       me: { id: me.id, name: me.name, admin: me.role === 'approver' }, people: pricePeople(req.ctx.shop), team: teamEnabled(), approvals: approvalsOn(),
       plans: all ? state.plans : state.plans.filter((p) => !ended(p)), allPlans: all,
       endedCount: state.plans.filter(ended).length, planNames: state.plans.map((p) => ({ id: p.id, name: p.name })),
+      folders: [...new Set(state.plans.map((p) => p.folder).filter(Boolean))], // 我的分组的名字(已结束的计划没发过来,名字也要能选)
       vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState, goneCollections: state.goneCollections || {},
       log: state.log.slice(0, 300), engine: state.engine, ledgerCount: state.ledger.length,
-      settings: { maxDiscountPct: state.settings.maxDiscountPct, sweepMinutes: state.settings.sweepMinutes, notify: state.settings.notify },
+      settings: { maxDiscountPct: state.settings.maxDiscountPct, sweepMinutes: state.settings.sweepMinutes, notify: state.settings.notify, ukLocation: state.settings.ukLocation || null },
     };
   }));
 
@@ -68,7 +75,9 @@ export function priceRouter() {
         const pl = doc.plans.find((x) => x.id === (action.id || id)) || state.plans.find((x) => x.id === action.id);
         const V = { draft: '存草稿', submit: '提交审核', publish: '保存', approve: '批准', reject: '退回', pause: '暂停', resume: '继续', stop: '提前结束', delete: '删除', exclude: `移出 ${(action.variantIds || []).length} 个变体`, resolve: '处理暂停接管' };
         const verb = action.type === 'save' ? (action.isNew ? '新建' : V[action.mode] || '保存') : V[action.type] || action.type;
-        req.audit = { mod: 'price', text: `${verb}${action.type === 'exclude' ? ':' : ''}改价计划${pl ? `「${pl.name}」` : ''}` };
+        req.audit = action.type === 'organize'
+          ? { mod: 'price', text: `整理改价计划:${message}(${(action.ids || []).map((x) => doc.plans.find((p) => p.id === x)?.name).filter(Boolean).slice(0, 5).map((n) => `「${n}」`).join('')}${(action.ids || []).length > 5 ? ` 等 ${action.ids.length} 个` : ''})` }
+          : { mod: 'price', text: `${verb}${action.type === 'exclude' ? ':' : ''}改价计划${pl ? `「${pl.name}」` : ''}` };
       }
       const beforePlans = state.plans;
       Object.assign(state, { plans: doc.plans, vault: doc.vault, log: doc.log });
@@ -159,6 +168,17 @@ export function priceRouter() {
   r.get('/catalog/search', wrap((req) => catalog.searchProducts(req.ctx, { vendor: req.query.vendor, tag: req.query.tag, type: req.query.type, all: req.query.all === '1' })));
   r.get('/catalog/collections', wrap((req) => catalog.findCollections(req.ctx, String(req.query.q || '')).then((collections) => ({ collections }))));
   r.get('/catalog/vendors', wrap((req) => catalog.vendors(req.ctx).then((vendors) => ({ vendors }))));
+  // 库存(2026-11-03):仓库清单(设置里选 UK 仓)、款式在 UK 仓的可售数(只读)
+  r.get('/catalog/locations', wrap(async (req) => {
+    const list = await catalog.locations(req.ctx);
+    return { locations: list, uk: catalog.pickUkLocation(list, load(req.ctx.shop).settings.ukLocation) };
+  }));
+  r.post('/catalog/stock', wrap(async (req) => {
+    const ids = [...new Set((req.body?.ids || []).map(String))].filter((x) => /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(x)).slice(0, 500);
+    const uk = catalog.pickUkLocation(await locationsCached(req.ctx), load(req.ctx.shop).settings.ukLocation);
+    if (!uk) throw new ActionError('店里找不到可以当 UK 仓的仓库');
+    return { location: { id: uk.id, name: uk.name }, stock: ids.length ? await catalog.variantStock(req.ctx, ids, uk.id) : {} };
+  }));
   // 本 app 的活动(排期里的活动,含还没批准的)
   const campaignsOf = (shop) => (loadSchedule(shop).campaigns || []).map((c) => ({ id: c.id, name: c.name || '未命名活动', start: c.start, end: c.end, state: c.state, collections: c.collections || [], tags: c.tags || [], products: c.products || [] }));
   r.get('/campaigns', wrap((req) => ({ campaigns: campaignsOf(req.ctx.shop).map(({ id, name, start, end, state }) => ({ id, name, start, end, state })) })));
@@ -194,6 +214,7 @@ export function priceRouter() {
     if (b.maxDiscountPct != null) { const v = Number(b.maxDiscountPct); if (!(v > 0 && v < 100)) throw new ActionError('降幅上限要在 1–99 之间'); s.maxDiscountPct = v; }
     if (b.sweepMinutes != null) { const v = Number(b.sweepMinutes); if (!(v >= 1 && v <= 60)) throw new ActionError('巡检间隔要在 1–60 分钟之间'); s.sweepMinutes = v; }
     if (b.notify) s.notify = { ...s.notify, ...Object.fromEntries(Object.entries(b.notify).map(([k, v]) => [k, !!v])) };
+    if (b.ukLocation !== undefined) { s.ukLocation = b.ukLocation ? String(b.ukLocation) : null; locCache.delete(req.ctx.shop); }
     save(req.ctx.shop, state);
     return { ok: true };
   })));

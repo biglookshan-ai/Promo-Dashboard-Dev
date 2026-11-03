@@ -53,6 +53,12 @@ export function priceGql(q, v = {}) {
   if (q.includes('tagsRemove')) { const p = products.get(v.id); if (p) p.tags = (p.tags || []).filter((t) => !v.tags.includes(t)); return { tagsRemove: { userErrors: [] } }; }
   if (q.includes('on Product { id tags }')) return { nodes: v.ids.map((id) => (products.has(id) ? { id, tags: products.get(id).tags || [] } : null)) };
   if (q.includes('inCollection')) return { nodes: v.ids.map((id) => (products.has(id) ? { id, inCollection: collections.get(v.c)?.members.has(id) || false } : null)) };
+  // 库存(2026-11-03):两个仓库;UK 仓的 Available 按款式 id 编一个固定的数(有正有零有负,每 23 个有一个不追踪库存),EW 仓都是 0
+  if (q.includes('locations(first')) return { locations: { nodes: [{ id: 'gid://shopify/Location/43451853', name: 'Cinegearpro', isActive: true }, { id: 'gid://shopify/Location/90000001', name: 'External Warehouse', isActive: true }] } };
+  if (q.includes('inventoryLevel(locationId')) return { nodes: v.ids.map((id) => {
+    if (!variants.has(id)) return null; const n = Number(num(id));
+    return { id, inventoryItem: { tracked: n % 23 !== 0, inventoryLevel: v.loc.endsWith('/43451853') ? { quantities: [{ quantity: (n % 9) - 2 }] } : null } };
+  }) };
   if (q.includes('on ProductVariant')) return { nodes: v.ids.map((id) => (variants.has(id) ? vShape(variants.get(id)) : null)) };
   if (!q.includes('variants(first: 100)') && !q.includes('collections(first: 30') && !q.includes('productVendors')) return undefined;
   if (q.includes('nodes(ids')) return { nodes: v.ids.map((id) => (products.has(id) ? pShape(products.get(id)) : null)) };

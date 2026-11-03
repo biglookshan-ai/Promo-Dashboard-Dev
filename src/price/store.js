@@ -20,7 +20,7 @@ export function emptyState() {
     ledger: [],       // 价格账本(最新在前)
     log: [],          // 操作日志
     // 成员和飞书设置用网站更新中心的(schedule-store 的 members);这里只放改价自己的设置
-    settings: { maxDiscountPct: 60, sweepMinutes: 5, notify: { ...DEFAULT_NOTIFY } },
+    settings: { maxDiscountPct: 60, sweepMinutes: 5, notify: { ...DEFAULT_NOTIFY }, ukLocation: null }, // ukLocation:当 UK 仓的 Shopify 仓库 id(空 = 自动认 Cinegearpro)
     notified: {},
     appUrl: '',
     engine: { lastRun: null, lastSweep: null, lastError: null, lastWrites: 0 },
