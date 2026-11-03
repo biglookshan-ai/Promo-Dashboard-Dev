@@ -2188,3 +2188,30 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-price .pl-newf { display: inline-flex; align-items: center; gap: 6px; }
 #section-price .pl-newf .inp { width: 180px; }
 #section-price .pl-bar__all { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-3); white-space: nowrap; padding-top: 4px; cursor: pointer; }
+
+/* ---- 改价第 3 期:几段时间 / 每周重复 / 多个价格 ---- */
+#section-price .pr-vers { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 12px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
+#section-price .pr-vers__l { font-size: 13px; font-weight: 600; margin-right: 4px; }
+#section-price .pr-ver { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 20px; padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; color: var(--text-2); }
+#section-price .pr-ver i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+#section-price .pr-ver.is-on { border-color: var(--text); color: var(--text); font-weight: 600; box-shadow: 0 0 0 1px var(--text) inset; }
+#section-price .pr-ver--add { border-style: dashed; color: var(--accent); }
+#section-price .pr-segs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+#section-price .pr-segs__h, #section-price .pr-segs__r { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(130px, 170px) 60px; gap: 8px; align-items: center; }
+#section-price .pr-segs__h span { font-size: 12px; color: var(--text-3); }
+#section-price .pr-segs__r.is-locked { opacity: .75; }
+#section-price .pr-week { display: flex; flex-direction: column; gap: 8px; }
+#section-price .pr-week .row { gap: 12px; }
+#section-price .pr-week__r { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+#section-price .pr-days { display: inline-flex; gap: 3px; }
+#section-price .pr-days button { width: 30px; height: 28px; border: 1px solid var(--border); background: var(--surface); border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer; color: var(--text-3); }
+#section-price .pr-days button.is-on { background: var(--text); border-color: var(--text); color: #fff; }
+#section-price .inp--time { width: 92px; }
+#section-price .pr-tl { margin: 12px 0 4px; }
+#section-price .pr-tl__bar { position: relative; height: 22px; border-radius: 6px; background: repeating-linear-gradient(45deg, #eceef2, #eceef2 6px, #f6f7f9 6px, #f6f7f9 12px); overflow: hidden; }
+#section-price .pr-tl__seg { position: absolute; top: 0; bottom: 0; border-right: 1px solid rgba(255,255,255,.7); }
+#section-price .pr-tl__ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-3); margin-top: 4px; }
+#section-price .pr-tl__leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin-top: 4px; }
+#section-price .pr-tl__leg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+#section-price .pr-tl__leg i.is-gap { background: repeating-linear-gradient(45deg, #d5d8de, #d5d8de 3px, #f2f3f5 3px, #f2f3f5 6px); }
+#section-price .pr-ph__v { font-style: normal; font-size: 12px; color: var(--text-3); }

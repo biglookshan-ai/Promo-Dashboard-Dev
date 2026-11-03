@@ -215,3 +215,34 @@ test('整理分组(2026-11-03):几个计划一起移到分组 / 关联活动;进
   assert.throws(() => applyAction(d3, { type: 'organize', ids: ['nope'], folder: 'x' }, ed), /不存在/);
   assert.equal(validate({ ...values(), folder: 'x'.repeat(41) }), '分组名最多 40 个字');
 });
+
+test('第 3 期:一个计划多段时间 + 多个价格;进行中的那段能改结束时间,以后的段能改 / 删 / 加', () => {
+  const v = (extra = {}) => ({ id: 'pm', name: '周末价', kind: 'window', versions: [{ id: 'A', name: '平时价' }, { id: 'B', name: '周末价' }],
+    slots: [{ id: 'a1', start: 10 * H, end: 20 * H, version: 'A', items: [item('v1', '90.00')] },
+      { id: 'b1', start: 20 * H, end: 30 * H, version: 'B', items: [item('v1', '80.00')] },
+      { id: 'a2', start: 30 * H, end: 40 * H, version: 'A', items: [item('v1', '90.00')] }], ...extra });
+  assert.equal(validate(v()), '');
+  assert.match(validate(v({ versions: [...v().versions, ...['C', 'D', 'E', 'F', 'G'].map((id) => ({ id, name: '' }))] })), /最多 6 个价格/);
+  assert.match(validate(v({ slots: v().slots.map((x) => (x.id === 'b1' ? { ...x, version: 'Z' } : x)) })), /价格已经删掉/);
+  assert.match(validate(v({ followCampaign: true, campaign: { id: 'c' } })), /跟随活动时间的计划只能是「一段时间」/);
+  assert.match(validate(v({ slots: Array.from({ length: 61 }, (_, i) => ({ id: `s${i}`, start: i * H, end: (i + 1) * H, version: 'A', items: [item(`v${i}`, '90.00')] })) })), /最多 60 段/);
+  let doc = run(empty(), { type: 'save', mode: 'publish', isNew: true, values: v() }, boss);
+  // 15 点(第一段进行中):第一段能改结束时间;以后的段能改价格版本 / 删掉 / 加新的
+  const ok = v({ slots: [{ ...v().slots[0], end: 18 * H }, { ...v().slots[1], start: 18 * H }, { id: 'b2', start: 40 * H, end: 50 * H, version: 'B', items: [item('v1', '80.00')] }] });
+  doc = applyAction(doc, { type: 'save', mode: 'publish', id: 'pm', values: ok }, boss, 15 * H).doc;
+  assert.deepEqual(doc.plans[0].slots.map((x) => x.id), ['a1', 'b1', 'b2']);
+  assert.equal(doc.plans[0].slots[0].end, 18 * H);
+  // 进行中那段:开始时间 / 价格不能改,结束时间不能改到现在之前,也不能删
+  assert.throws(() => applyAction(doc, { type: 'save', mode: 'publish', id: 'pm', values: v({ slots: [{ ...doc.plans[0].slots[0], items: [item('v1', '70.00')] }, ...doc.plans[0].slots.slice(1)] }) }, boss, 15 * H), /不能改/);
+  assert.throws(() => applyAction(doc, { type: 'save', mode: 'publish', id: 'pm', values: v({ slots: [{ ...doc.plans[0].slots[0], end: 14 * H }, ...doc.plans[0].slots.slice(1)] }) }, boss, 15 * H), /现在之前/);
+  assert.throws(() => applyAction(doc, { type: 'save', mode: 'publish', id: 'pm', values: v({ slots: doc.plans[0].slots.slice(1) }) }, boss, 15 * H), /不能删除/);
+});
+
+test('一段时间的计划开始后也能改结束时间(以前页面说能改,其实存不了)', () => {
+  const one = (end) => ({ id: 'p1', name: 'x', kind: 'window', slots: [{ id: 's1', start: 10 * H, end, items: [item('v1', '85.00')] }] });
+  let doc = run(empty(), { type: 'save', mode: 'publish', isNew: true, values: one(20 * H) }, boss);
+  doc = applyAction(doc, { type: 'save', mode: 'publish', id: 'p1', values: one(30 * H) }, boss, 15 * H).doc;
+  assert.equal(doc.plans[0].slots[0].end, 30 * H);
+  doc = applyAction(doc, { type: 'save', mode: 'publish', id: 'p1', values: one(16 * H) }, boss, 15 * H).doc; // 提前到还没过的时间:可以
+  assert.equal(doc.plans[0].slots[0].end, 16 * H);
+});

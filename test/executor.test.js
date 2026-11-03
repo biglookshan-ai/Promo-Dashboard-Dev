@@ -371,3 +371,21 @@ test('价格账本挪到单独的文件(2026-11-03):老数据第一次保存时�
   save(shop, st);
   assert.deepEqual(readLedger(shop).map((x) => `${x.at}${x.variantId}`), ['4v2', '3v1', '2v1']);
 });
+
+test('第 3 期:一个计划几段时间、几种价格 —— 连着的两段直接换价、中间空着回到改价前、最后回原价;账本记清楚', async () => {
+  const io = fakeIO({ v1: '100.00' });
+  const it = (price) => ({ ...item('v1', price) });
+  const p = { ...plan('wk', 'brand', [
+    { id: 'a1', start: 1 * H, end: 5 * H, version: 'A', items: [it('90.00')] },   // 工作日价
+    { id: 'b1', start: 5 * H, end: 7 * H, version: 'B', items: [it('80.00')] },   // 周末价,紧接着 → 直接换
+    { id: 'a2', start: 9 * H, end: 12 * H, version: 'A', items: [it('90.00')] },  // 中间 7–9 点空着 → 回到原价
+  ]), versions: [{ id: 'A', name: '工作日价' }, { id: 'B', name: '周末价' }] };
+  const shop = setup([p]);
+  await run(shop, io, 2 * H); assert.equal(price(io, 'v1').price, '90.00');
+  await run(shop, io, 5 * H); assert.equal(price(io, 'v1').price, '80.00');                 // 换价,没先回原价
+  await run(shop, io, 8 * H); assert.deepEqual(price(io, 'v1'), { price: '100.00', compareAt: null }); // 空档:回到改价前
+  await run(shop, io, 9 * H); assert.equal(price(io, 'v1').price, '90.00');                 // 又开始
+  await run(shop, io, 12 * H); assert.deepEqual(price(io, 'v1'), { price: '100.00', compareAt: null });
+  assert.deepEqual(readLedger(shop).map((x) => x.op).reverse(), ['start', 'switch', 'restore', 'start', 'restore']);
+  assert.deepEqual(load(shop).vault, {});
+});

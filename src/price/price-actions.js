@@ -13,7 +13,11 @@ export const canApprove = (a, plan) => !!a && (isAdminActor(a) || (!!plan?.appro
 
 // 计划里可编辑的字段
 export const EDIT_KEYS = ['name', 'kind', 'layer', 'priority', 'compare', 'campaign', 'note', 'slots', 'rule', 'approver', 'owner', 'cc',
-  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups', 'countdown', 'folder'];
+  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups', 'countdown', 'folder', 'versions', 'schedule'];
+// 一个计划多段时间 + 多个价格(2026-11-03 改价第 3 期):versions = [{ id: 'A' | 'B' …, name }],每个时段 slot.version 指一个;
+// 时段里照旧带全部条目和价格(保存时由编辑器按版本展开),执行器不用改。schedule = 编辑器怎么排的(一段 / 几段 / 每周重复),只给编辑器用
+export const MAX_VERSIONS = 6;
+export const MAX_SLOTS = 60;
 // 自己起的分组名(2026-11-03 用户:计划多了要能分组;按活动 / 品牌 / 月份自动分的叫「智能分组」,在页面上算,不存)
 export const FOLDER_MAX = 40;
 export const cleanFolder = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, FOLDER_MAX);
@@ -38,6 +42,16 @@ export function validate(p, settings = {}) {
   const slots = p.slots || [];
   if (!slots.length) return '至少要有一个时段';
   if (p.kind === 'permanent' && slots.length !== 1) return '永久调价只能有一个生效时间';
+  if (slots.length > MAX_SLOTS) return `一个计划最多 ${MAX_SLOTS} 段时间(现在 ${slots.length} 段);时间太长就分成几个计划`;
+  if (p.followCampaign && slots.length > 1) return '跟随活动时间的计划只能是「一段时间」;要分几段就先取消跟随活动';
+  if (p.versions?.length) {
+    if (p.versions.length > MAX_VERSIONS) return `最多 ${MAX_VERSIONS} 个价格`;
+    const ids = new Set(p.versions.map((v) => v.id));
+    if (ids.size !== p.versions.length) return '价格版本重复了';
+    if (p.versions.some((v) => String(v.name || '').length > 20)) return '价格的名字最多 20 个字';
+    const bad = slots.find((sl) => sl.version && !ids.has(sl.version));
+    if (bad) return '有一段时间用的价格已经删掉了,请重新选';
+  }
   for (const [i, s] of slots.entries()) {
     const name = slots.length > 1 ? `第 ${i + 1} 个时段` : '时段';
     if (s.start == null) return `${name}还没设开始时间`;
@@ -65,7 +79,8 @@ export function validate(p, settings = {}) {
 }
 
 // 已经开始的时段锁死:不能改时间、不能改价格、不能删(要停就用暂停 / 停止 / 排除产品)
-const slotKey = (s) => JSON.stringify({ start: s.start, end: s.end, collection: s.collection?.id || null, items: s.items.map((i) => [i.variantId, i.price ?? null, i.compareAt ?? null, ...(i.cmpManual ? [1] : [])]) });
+// 已经开始的时段锁住开始时间、Collection、产品和价格;结束时间可以改(2026-11-03:页面一直写「已经开始的计划也能改结束时间」,以前其实存不了)
+const slotKey = (s) => JSON.stringify({ start: s.start, version: s.version || null, collection: s.collection?.id || null, items: s.items.map((i) => [i.variantId, i.price ?? null, i.compareAt ?? null, ...(i.cmpManual ? [1] : [])]) });
 function checkLocked(plan, next, now) {
   if (plan.state !== 'approved') return;
   if (plan.kind === 'permanent' && Object.keys(plan.applied || {}).length) fail('这个永久调价已经开始执行,不能再改;要停就点「停止」');
@@ -73,7 +88,8 @@ function checkLocked(plan, next, now) {
     if (s.start > now || plan.followCampaign) continue; // 跟随活动的时间由活动决定,不算人为改动
     const n = (next.slots || []).find((x) => x.id === s.id);
     if (!n) fail('已经开始的时段不能删除;要提前结束请用「停止」或「排除产品」');
-    if (slotKey(n) !== slotKey(s)) fail('已经开始的时段不能改(时间、产品、价格都锁定了);只能暂停、停止或排除产品');
+    if (slotKey(n) !== slotKey(s)) fail('已经开始的时段不能改(开始时间、产品、价格都锁定了,结束时间可以改);只能暂停、停止或排除产品');
+    if (n.end !== s.end && plan.kind === 'window' && (n.end == null || n.end <= now) && (s.end == null || s.end > now)) fail('进行中的那段,结束时间不能改到现在之前;要马上结束请点「提前结束」');
   }
   // 优先级开始后也能改(发现和别的计划重叠时要能调);类型 / 划线价方式开始后锁定
   if (plan.slots.some((s) => s.start <= now)) {

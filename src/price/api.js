@@ -151,8 +151,10 @@ export function priceRouter() {
     const plans = state.plans.filter((p) => (p.slots || []).some((sl) => (sl.items || []).some((i) => same(i.productId)))).map((p) => ({
       id: p.id, name: p.name, status: planStatus(p, now), kind: p.kind, folder: p.folder || '', campaign: p.campaign?.name || '',
       slots: p.slots.map((sl) => ({ start: sl.start, end: sl.end })),
-      items: p.slots.flatMap((sl) => sl.items).filter((i) => same(i.productId)).map((i) => ({ variantId: i.variantId, variant: i.variant || '', sku: i.sku || '',
-        price: i.price ?? null, refPrice: i.refPrice ?? null, compareAt: i.compareAt ?? null, excluded: (p.excluded || []).includes(i.variantId) })),
+      // 几段时间的计划:同一个选项在每段都有一条,按「选项 + 价格」只留一条,写上是哪个价格
+      items: [...new Map(p.slots.flatMap((sl) => sl.items.filter((i) => same(i.productId)).map((i) => [`${i.variantId}|${sl.version || ''}`, { i, v: sl.version || '' }]))).values()]
+        .map(({ i, v }) => ({ variantId: i.variantId, variant: i.variant || '', sku: i.sku || '', price: i.price ?? null, refPrice: i.refPrice ?? null, compareAt: i.compareAt ?? null,
+          excluded: (p.excluded || []).includes(i.variantId), vname: v && (p.versions || []).length > 1 ? `价格 ${v}${p.versions.find((x) => x.id === v)?.name ? ` · ${p.versions.find((x) => x.id === v).name}` : ''}` : '' })),
     })).sort((a, b) => Math.min(...b.slots.map((x) => x.start ?? 0)) - Math.min(...a.slots.map((x) => x.start ?? 0)));
     const vault = Object.entries(state.vault).filter(([, v]) => same(v.productId)).map(([id, v]) => ({ id, title: v.title, sku: v.sku, base: v.base || null, written: v.written || null, hold: v.hold || null,
       plan: state.plans.find((p) => p.id === (v.written?.planId || v.hold?.planId))?.name || '' }));

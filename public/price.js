@@ -278,6 +278,7 @@ function planRow(p, s, ovs = []) {
       <div class="plan__name">${esc(p.name || '未命名计划')}
         <span class="tag ${STATUS_TAG[s]}">${core.STATUS_CN[s]}</span>
         <span class="tag ${p.kind === 'window' ? 'tag--' + layerCls(p) : ''}">${kindLabel(p)}</span>
+        ${p.slots.length > 1 ? `<span class="tag" title="${esc(p.slots.map((x) => `${x.version ? vName(p, x.version) + ' · ' : ''}${fmtT(x.start)} → ${fmtT(x.end)}`).join('\n'))}">${p.schedule?.mode === 'weekly' ? '每周重复 · ' : ''}${p.slots.length} 段${versionsOf(p).length > 1 ? ` · ${versionsOf(p).length} 种价格` : ''}</span>` : ''}
         ${p.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${holds ? `<span class="tag tag--danger">${holds} 个暂停接管</span>` : ''}
         ${ovs.length ? `<span class="tag tag--warn" title="${esc(ovs.map((o) => `「${o.name}」:${o.n} 个选项,重叠时用「${o.wins ? p.name : o.name}」的价`).join('\n'))}">⚠️ 和「${esc(ovs[0].name)}」${ovs.length > 1 ? `等 ${ovs.length} 个计划` : ''}改到同一批产品(${ovs.reduce((n, o) => n + o.n, 0)} 个选项)</span>` : ''}
@@ -317,8 +318,8 @@ function ganttHtml() {
       <div class="gantt__lane">${p.slots.map((s, i) => {
         const end = s.end ?? s.start + DAY / 3;
         if (end <= t0 || s.start >= t1) return '';
-        return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''}" style="${p.color ? `background:${esc(p.color)};` : ''}left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
-          title="${esc(p.name)} · ${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个选项">${p.kind === 'permanent' ? '永久' : p.slots.length > 1 ? `第 ${i + 1} 段` : esc(p.name)}</div>`;
+        return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''}" style="${s.version && versionsOf(p).length > 1 ? `background:${vColor(p, s.version)};` : p.color ? `background:${esc(p.color)};` : ''}left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
+          title="${esc(p.name)} · ${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个选项">${p.kind === 'permanent' ? '永久' : p.slots.length > 1 ? (s.version && versionsOf(p).length > 1 ? `${s.version}` : `第 ${i + 1} 段`) : esc(p.name)}</div>`;
       }).join('')}<div class="gantt__now" style="left:${nowLeft}"></div></div>`).join('')}
   </div></div>`;
 }
@@ -417,17 +418,63 @@ function openEditor(plan, isNew) {
   p.countdown = { on: false, label: '', days: 0, style: 'classic', ...(p.countdown || {}) };
   if (!p.groups?.length) p.groups = [{ id: uid('g_'), scope: p.scope, rule: p.rule }]; // 老计划只有一组
   for (const g of p.groups) g.compare ||= p.compare || cmpDefault(p); // 老计划:各组用计划的划线价方式
-  for (const it of p.slots[0].items || []) it.group ??= p.groups[0].id; // 老计划的变体没记分组 = 第 1 组
+  for (const sl of p.slots) for (const it of sl.items || []) it.group ??= p.groups[0].id; // 老计划的变体没记分组 = 第 1 组
+  if (p.kind === 'window') p.schedule = { mode: p.schedule?.mode || (p.slots.length > 1 ? 'multi' : 'one'), ...(p.schedule?.weekly ? { weekly: p.schedule.weekly } : {}) };
+  const vitems = {}; // 每个价格的条目:取用这个价格的第一段
+  for (const v of versionsOf(p)) { const sl = p.slots.find((x) => (x.version || 'A') === v.id); vitems[v.id] = sl ? sl.items : v.id === 'A' ? p.slots[0].items : []; }
   E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0,
-    calcKey: scopeKey(p), lists: {}, fresh: new Set(), tf: {}, stockOut: {} };
+    calcKey: scopeKey(p), lists: {}, fresh: new Set(), tf: {}, stockOut: {},
+    ver: 'A', vitems, segs: p.slots.map((x) => ({ id: x.id, start: x.start, end: x.end, version: x.version || 'A' })) };
   renderChrome(); render(); window.scrollTo(0, 0);
   // 2026-10-29 用户:选了就要看到产品 —— 打开时先在后台把每组的产品读出来(之后改规则就能马上算);这一步不改计划内容
   if (!readonly()) for (const g of p.groups) if (g.scope.mode !== 'all') loadGroup(g, { initial: (p.slots[0].items || []).length > 0 }); // 已有 / 复制来的计划:先不重算
 }
 const P = () => (E.showPending && E.orig?.pendingChange ? { ...E.orig, ...E.orig.pendingChange } : E.plan);
+// ---- 一个计划多段时间 + 多个价格(2026-11-03 改价第 3 期)----
+// versions = 价格 A / B / C…(同一批产品,每一组给每个价格各定一个规则:A 用 g.rule,其余用 g.vrules[版本]);
+// 时间安排 schedule.mode:one 一段时间 / multi 几段时间(E.segs,每段自己的开始、结束、用哪个价格)/ weekly 每周重复(按规则生成几段)。
+// 保存时按段展开成执行器的时段(slot.version + 那个价格的全部条目),执行器不用改;两段之间空着 = 回到改价前,两段连着 = 直接换价
+const VCOLORS = ['#2f5cff', '#e8710a', '#0b8f5b', '#9b3fd6', '#c0342b', '#5f6b7a'];
+const versionsOf = (p) => (p?.versions?.length ? p.versions : [{ id: 'A', name: '' }]);
+const vName = (p, id) => { const v = versionsOf(p).find((x) => x.id === id); return `价格 ${id}${v?.name ? ` · ${v.name}` : ''}`; };
+const vColor = (p, id) => VCOLORS[Math.max(0, versionsOf(p).findIndex((x) => x.id === id)) % VCOLORS.length];
+const ruleOf = (g, v = 'A') => (v === 'A' || !v ? g.rule : ((g.vrules ||= {})[v] ||= clone(g.rule)));
+const curV = () => (E && versionsOf(P()).some((v) => v.id === E.ver) ? E.ver : 'A');
+const schedMode = (p = P()) => (p.kind !== 'window' ? 'one' : p.schedule?.mode || (p.slots.length > 1 ? 'multi' : 'one'));
+const WD = ['', '一', '二', '三', '四', '五', '六', '日'];
+// 每周重复 → 一段一段(按英国时间):每天按规则切出时间段,连着的同一个价格合成一段;编号按开始时间和价格定,开始后重新生成不会变
+function genWeekly(w) {
+  if (!w?.from || !w?.to) return [];
+  const out = []; const [y, m, d] = w.from.split('-').map(Number); const last = w.to;
+  for (let i = 0; i < 400; i++) {
+    const day = new Date(Date.UTC(y, m - 1, d + i)).toISOString().slice(0, 10); if (day > last) break;
+    const wd = ((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7) + 1; // 1 = 周一 … 7 = 周日
+    const next = new Date(Date.UTC(y, m - 1, d + i + 1)).toISOString().slice(0, 10);
+    for (const r of w.rules || []) {
+      if (!(r.days || []).includes(wd)) continue;
+      const st = fromInput(`${day}T${r.from || '00:00'}`);
+      let en = r.to === '24:00' || !r.to ? fromInput(`${next}T00:00`) : fromInput(`${day}T${r.to}`);
+      if (en <= st) en = fromInput(`${next}T${r.to}`); // 结束早于开始 = 跨到第二天
+      out.push({ start: st, end: en, version: r.version || 'A' });
+    }
+  }
+  out.sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const x of out) { const pv = merged[merged.length - 1]; if (pv && pv.version === x.version && pv.end === x.start) pv.end = x.end; else merged.push({ ...x }); }
+  return merged.map((x) => ({ ...x, id: `w${x.start.toString(36)}${x.version}` }));
+}
+// 现在这份时间安排展开后的几段
+function scheduleSegments(p = P()) {
+  const m = schedMode(p);
+  if (m === 'one') { const s0 = p.slots[0]; return [{ id: s0.id, start: s0.start, end: s0.end, version: 'A' }]; }
+  if (m === 'weekly') return genWeekly(p.schedule.weekly);
+  return [...(E.segs || [])].sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+}
+// 这一段是不是已经开始了(保存过、开始时间已过)—— 开始了的段锁住
+const segStarted = (seg) => !E.isNew && E.orig?.state === 'approved' && (E.orig.slots || []).some((x) => x.id === seg.id && x.start <= now());
 const curSlot = () => P().slots[0];
 const started = () => !E.isNew && E.orig?.state === 'approved' && E.orig.slots.some((s) => s.start <= now());
-const scopeKey = (p) => JSON.stringify([p.groups || [{ scope: p.scope, rule: p.rule }], p.compare]);
+const scopeKey = (p) => JSON.stringify([p.groups || [{ scope: p.scope, rule: p.rule }], p.compare, (p.versions || []).map((v) => v.id)]);
 const groupsOf = (p) => (p.groups?.length ? p.groups : [{ id: 'g0', scope: p.scope, rule: p.rule }]);
 // 组名(2026-11-03 用户:只有第 1、2、3 组看不出是什么)—— 没起名字就叫「第 N 组」
 const gName = (g, i, multi = true) => g?.name || (multi ? `第 ${i + 1} 组` : '改价规则');
@@ -453,12 +500,15 @@ function readonly() {
   return started(); // 已经开始改价了:只能改名字和结束时间(和原来那个 app 一样)
 }
 const opts = () => ({ maxDiscountPct: S.settings.maxDiscountPct });
-const items = () => curSlot().items;
+const items = () => (E.vitems?.[curV()] ?? curSlot().items); // 正在看的那个价格的条目
+// 从所有价格里一起拿掉这些条目(产品清单各价格一样,排除 / 删除对所有价格都算)
+function dropItems(test) { for (const k of Object.keys(E.vitems || {})) E.vitems[k] = E.vitems[k].filter((i) => !test(i)); E.plan.slots[0].items = E.vitems.A || E.plan.slots[0].items.filter((i) => !test(i)); }
 
 // ---- 一段大白话摘要(右边那块)----
 function summaryHtml() {
   const p = P(); const s = curSlot();
-  const its = s.items; const ex = new Set(p.excluded || []);
+  const its = items(); const ex = new Set(p.excluded || []);
+  const segs = schedMode() !== 'one' ? scheduleSegments().filter((x) => x.start != null && x.end != null) : null;
   const live = its.filter((i) => !ex.has(i.variantId));
   const offs = live.filter((i) => i.price != null).map((i) => core.discountPct(i.refPrice, i.price));
   const maxOff = offs.length ? Math.max(...offs) : 0;
@@ -469,9 +519,9 @@ function summaryHtml() {
   return `<div class="pr-sum">
     <div class="pr-sum__h"><span class="pr-dot" style="background:${esc(p.color)}"></span><b>${esc(p.name || '(还没起名字)')}</b></div>
     <ul>
-      ${gs.map((g, i) => line(`${gs.length > 1 || g.name ? `<b>${esc(gName(g, i, gs.length > 1))}</b>:` : ''}${esc(scopeSayFull(g.scope))} · <b>${esc(ruleSay(g.rule))}</b>${gs.length > 1 ? ` · ${CMP_SHORT[gCmp(p, g)]}` : ''}`)).join('')}
+      ${gs.map((g, i) => line(`${gs.length > 1 || g.name ? `<b>${esc(gName(g, i, gs.length > 1))}</b>:` : ''}${esc(scopeSayFull(g.scope))} · <b>${esc(multiV() ? versionsOf(p).map((v) => `${v.id}:${ruleSay(ruleOf(g, v.id))}`).join(' / ') : ruleSay(g.rule))}</b>${gs.length > 1 ? ` · ${CMP_SHORT[gCmp(p, g)]}` : ''}`)).join('')}
       ${gs.length > 1 ? line('<span class="muted">同一个产品在几组里时,以排在下面的那组为准</span>') : ''}
-      ${line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束后<b>售价和划线价都回到改价前</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
+      ${segs ? line(segs.length ? `分 <b>${segs.length}</b> 段:<b>${fmtT(Math.min(...segs.map((x) => x.start)))}</b> 开始,<b>${fmtT(Math.max(...segs.map((x) => x.end)))}</b> 结束;${multiV() ? `用 ${new Set(segs.map((x) => x.version)).size} 种价格,` : ''}两段之间空着的时间<b>回到改价前</b>` : '<span class="tx-warn">还没排时间</span>') : line(`<b>${fmtT(s.start)}</b> 开始${p.kind === 'window' ? `,<b>${s.end ? fmtT(s.end) : '(还没设结束时间)'}</b> 结束后<b>售价和划线价都回到改价前</b>` : ',<b>不恢复</b>(永久调价)'}${p.followCampaign ? `(跟随活动「${esc(p.campaign?.name || '')}」,活动改时间它也改)` : ''}`)}
       ${line(`${gs.length > 1 ? '划线价按分组设' : cmpOpts(p).find((o) => o[0] === gCmp(p, gs[0]))?.[1] || '显示原来的划线价'}${(() => { const n = items().filter((i) => i.cmpManual).length; return n ? `,另有 <b>${n}</b> 个选项单独设了划线价` : ''; })()}`)}
       ${p.kind === 'window' && core.prioOf(p) !== core.PRIO_MAX ? line(`优先级 ${core.prioOf(p)}(和别的限时计划改到同一个产品时,数字大的说了算)`) : ''}
       ${p.kind === 'window' && p.countdown?.on ? line(`产品上显示倒计时「${esc(cdLabel(p))}」${Number(p.countdown.days) ? `,最后 ${Number(p.countdown.days)} 天才显示` : ',一直显示'}`) : ''}
@@ -511,10 +561,12 @@ function editorHtml() {
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期回到改价前)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
         ${p.campaign ? `<label class="row" style="margin-bottom:10px;font-size:13px"><input type="checkbox" data-f="followcamp" ${p.followCampaign ? 'checked' : ''} ${ro ? 'disabled' : ''}/> 跟随活动「${esc(p.campaign.name)}」的时间 <span class="muted">活动改时间,这个计划跟着一起改</span></label>` : ''}
-        <div class="grid2">
+        ${p.kind === 'window' && !p.followCampaign ? schedModeHtml() : ''}
+        ${schedMode() === 'one' ? `        <div class="grid2">
           <label class="pr-fld">开始<input class="inp" type="datetime-local" data-f="start" value="${toInput(sl.start)}" ${ro || started() || p.followCampaign ? 'disabled' : ''}/>${!ro && !started() && !p.followCampaign ? `<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">设成现在(${S.approvals ? '批准' : '保存'}后一分钟内执行)</button>` : ''}</label>
           ${p.kind === 'window' ? `<label class="pr-fld">结束(售价和划线价都回到改价前)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
-        </div>
+        </div>` : schedMode() === 'multi' ? segsHtml() : weeklyHtml()}
+        ${schedMode() !== 'one' ? timelineHtml(scheduleSegments()) : ''}
         ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>带条件的也行(加进它的「单独加入的产品」,不动条件);结束拿掉 app 加的,本来就在 / 你们手动加的不动。Flash 当天那一组常用</em>
           ${sl.collection ? `<div class="row"><span class="tag ${S.goneCollections?.[sl.collection.id] ? 'tag--danger' : 'tag--accent'}">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>
             ${S.collState?.[sl.collection.id]?.via === 'shared' ? '<div class="note note--sm">这个 Collection 的条件和别的 Collection 共用:单独加产品会连带改到别的 Collection,所以 app 不加,产品照它的条件进出。</div>' : ''}
@@ -547,8 +599,68 @@ function editorHtml() {
   <div class="footbar">${footHtml()}</div>`;
 }
 
+// ---- 时间安排(一段 / 几段 / 每周重复)和价格版本的界面 ----
+const multiV = () => schedMode() !== 'one' && versionsOf(P()).length > 1;
+// 时间安排还能不能改:看别人提交的修改、已结束、永久调价执行了 → 不能;已经开始的计划还能改「以后的段」和进行中那段的结束时间
+const schedRO = () => E.showPending || (!E.isNew && (['ended', 'done'].includes(statusOf(E.orig)) || (E.orig.kind === 'permanent' && Object.keys(E.orig.applied || {}).length) || E.orig.stopped));
+const verOpts = (cur, dis) => versionsOf(P()).map((v) => `<option value="${v.id}" ${cur === v.id ? 'selected' : ''} ${dis ? 'disabled' : ''}>${esc(vName(P(), v.id))}</option>`).join('');
+function schedModeHtml() {
+  const m = schedMode(); const lock = schedRO() || started();
+  return `<div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['one', '一段时间'], ['multi', '几段时间'], ['weekly', '每周重复']].map(([k, l]) => `<button type="button" class="${m === k ? 'is-on' : ''}" data-a="schedmode" data-v="${k}" ${lock ? 'disabled' : ''}>${l}</button>`).join('')}</span>
+    <span class="tipify">一段时间 = 和以前一样。<br>几段时间 = 自己排每一段的开始、结束、用哪个价格(比如 11/24–11/28 价格 A、11/29–12/1 价格 B)。<br>每周重复 = 选每周哪几天、几点到几点用哪个价格,自动排出每一段。<br>两段之间空着的时间 <b>回到改价前</b>;两段连着就直接换价。价格 A / B 在上面「改价分组」里设。</span></div>`;
+}
+function segsHtml() {
+  const ro = schedRO(); const segs = scheduleSegments();
+  return `<div class="pr-segs"><div class="pr-segs__h"><span>开始</span><span>结束</span><span>用哪个价格</span><span></span></div>
+    ${segs.map((sg, i) => { const st = segStarted(sg); const live = st && (sg.end == null || sg.end > now());
+      return `<div class="pr-segs__r ${st ? 'is-locked' : ''}"><input class="inp" type="datetime-local" data-f="segstart" data-i="${i}" value="${toInput(sg.start)}" ${ro || st ? 'disabled' : ''}/>
+        <input class="inp" type="datetime-local" data-f="segend" data-i="${i}" value="${toInput(sg.end)}" ${ro || (st && !live) ? 'disabled' : ''}/>
+        <select class="sel" data-f="segver" data-i="${i}" ${ro || st ? 'disabled' : ''}>${verOpts(sg.version)}</select>
+        ${ro || st ? `<span class="muted">${live ? '进行中' : st ? '已过' : ''}</span>` : `<button type="button" class="linkbtn" data-a="segdel" data-i="${i}" ${segs.length < 2 ? 'disabled' : ''}>删除</button>`}</div>`; }).join('')}
+    ${ro ? '' : '<button type="button" class="btn btn-sm" data-a="segadd" style="margin-top:6px">＋ 加一段</button>'}</div>`;
+}
+function weeklyHtml() {
+  const ro = schedRO(); const lock = ro || started(); const w = P().schedule.weekly || { rules: [] };
+  return `<div class="pr-week">
+    <div class="row"><label class="pr-fld">从哪天<input class="inp" type="date" data-f="wfrom" value="${esc(w.from || '')}" ${lock ? 'disabled' : ''}/></label>
+      <label class="pr-fld">到哪天(含这一天)<input class="inp" type="date" data-f="wto" value="${esc(w.to || '')}" ${ro ? 'disabled' : ''}/></label></div>
+    ${(w.rules || []).map((r, i) => `<div class="pr-week__r">
+      <span class="pr-days">${[1, 2, 3, 4, 5, 6, 7].map((d) => `<button type="button" class="${(r.days || []).includes(d) ? 'is-on' : ''}" data-a="wday" data-r="${i}" data-d="${d}" ${lock ? 'disabled' : ''}>${WD[d]}</button>`).join('')}</span>
+      <input class="inp inp--time" type="time" data-f="wrfrom" data-r="${i}" value="${esc(r.from || '00:00')}" ${lock ? 'disabled' : ''}/><span class="muted">到</span>
+      <input class="inp inp--time" data-f="wrto" data-r="${i}" value="${esc(r.to || '24:00')}" placeholder="24:00" ${lock ? 'disabled' : ''} title="24:00 = 一整天"/>
+      <select class="sel" data-f="wrver" data-r="${i}" ${lock ? 'disabled' : ''}>${verOpts(r.version || 'A')}</select>
+      ${lock ? '' : `<button type="button" class="linkbtn" data-a="wrdel" data-r="${i}" ${(w.rules || []).length < 2 ? 'disabled' : ''}>删除</button>`}</div>`).join('')}
+    ${lock ? '' : '<button type="button" class="btn btn-sm" data-a="wradd">＋ 加一条</button>'}
+    ${started() && !ro ? '<p class="muted">计划已经开始:每周的规则锁住了,只能改「到哪天」。</p>' : ''}</div>`;
+}
+// 时间条:每一段一块颜色(价格 A 蓝、B 橙…),灰 = 回到改价前
+function timelineHtml(segs) {
+  const ok = segs.filter((x) => x.start != null && x.end != null && x.end > x.start);
+  if (!ok.length) return '';
+  const t0 = Math.min(...ok.map((x) => x.start)), t1 = Math.max(...ok.map((x) => x.end)); const span = t1 - t0 || 1;
+  const p = P(); const used = [...new Set(ok.map((x) => x.version))];
+  const days = Math.round(span / DAY);
+  return `<div class="pr-tl">
+    <div class="pr-tl__bar">${ok.map((x) => `<span class="pr-tl__seg" style="left:${((x.start - t0) / span) * 100}%;width:${((x.end - x.start) / span) * 100}%;background:${vColor(p, x.version)}" title="${esc(vName(p, x.version))} · ${fmtT(x.start)} → ${fmtT(x.end)}"></span>`).join('')}</div>
+    <div class="pr-tl__ends"><span>${fmtT(t0)}</span><span>${days ? `共 ${days} 天 · ` : ''}${ok.length} 段</span><span>${fmtT(t1)}</span></div>
+    <div class="pr-tl__leg">${used.map((v) => `<span><i style="background:${vColor(p, v)}"></i>${esc(vName(p, v))}</span>`).join('')}<span><i class="is-gap"></i>空着 = 回到改价前</span></div>
+    ${segs.some((x) => x.start != null && x.end != null && x.end <= x.start) ? '<div class="note note--warn note--sm">有一段的结束时间早于开始时间,检查一下</div>' : ''}
+  </div>`;
+}
+// 价格版本条(在「改价分组」最上面;一段时间时不显示)
+function versionsBarHtml(ro) {
+  if (schedMode() === 'one') return '';
+  const p = P(); const cv = curV(); const cur = versionsOf(p).find((v) => v.id === cv);
+  return `<div class="pr-vers"><span class="pr-vers__l">价格</span>
+    ${versionsOf(p).map((v) => `<button type="button" class="pr-ver ${cv === v.id ? 'is-on' : ''}" data-a="vpick" data-v="${v.id}"><i style="background:${vColor(p, v.id)}"></i>${esc(vName(p, v.id))}</button>`).join('')}
+    ${ro || versionsOf(p).length >= A.MAX_VERSIONS ? '' : '<button type="button" class="pr-ver pr-ver--add" data-a="vadd">＋ 加一个价格</button>'}
+    ${ro ? '' : `<input class="inp inp--sm" data-f="vname" value="${esc(cur?.name || '')}" placeholder="给价格 ${cv} 起名,比如 周末价" maxlength="20" style="width:190px"/>`}
+    ${!ro && cv !== 'A' ? `<button type="button" class="linkbtn" data-a="vdel">删掉价格 ${cv}</button>` : ''}
+    <span class="tipify">同一批产品,不同时段用不同的价。下面每一组的「改什么价」和产品表里的新价,都是<b>正在看的这个价格</b>的;切到别的价格再设。<br>每一段用哪个价格,在「什么时候生效」里选。</span></div>`;
+}
+
 function ruleHtml(ro) {
-  const p = P(); const r = G().rule; const rm = RULE_MODES[r.mode] || RULE_MODES.percent_off;
+  const p = P(); const r = ruleOf(G(), curV()); const rm = RULE_MODES[r.mode] || RULE_MODES.percent_off;
   return `<div class="pr-radios">${Object.entries(RULE_MODES).filter(([k]) => k !== 'percent_up' || p.kind === 'permanent').map(([k, m]) => `
       <label class="pr-radio ${r.mode === k ? 'is-on' : ''}"><input type="radio" name="rmode" value="${k}" ${r.mode === k ? 'checked' : ''} ${ro ? 'disabled' : ''}/><span>${m.label}</span></label>`).join('')}</div>
     ${['keep', 'manual'].includes(r.mode) ? '' : `<div class="row" style="margin-top:10px">
@@ -560,9 +672,10 @@ function ruleHtml(ro) {
 }
 function groupsHtml(ro) {
   const gs = groupsOf(P()); const gi = Math.min(E.gi || 0, gs.length - 1);
+  const vbar = versionsBarHtml(ro);
   const its = items(); const ex = new Set(P().excluded || []);
   const multi = gs.length > 1;
-  return `<div class="pr-groups">${gs.map((g, i) => {
+  return `${vbar}<div class="pr-groups">${gs.map((g, i) => {
     const open = i === gi;
     const mine = its.filter((it) => it.group === g.id);
     const todo = P().kind === 'window' ? mine.filter((it) => needsPrice(P(), it) && !ex.has(it.variantId)).length : 0;
@@ -571,7 +684,7 @@ function groupsHtml(ro) {
       <div class="pr-group__h" data-a="gopen" data-i="${i}">
         <span class="pr-group__no">${i + 1}</span>
         <span class="pr-group__n">${esc(gName(g, i, multi))}</span>
-        <span class="pr-group__s">${esc(scopeSayFull(g.scope))} · <b>${esc(ruleSay(g.rule))}</b> · ${CMP_SHORT[gCmp(P(), g)] || ''}${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个选项</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
+        <span class="pr-group__s">${esc(scopeSayFull(g.scope))} · <b>${multiV() ? `${esc(curV())}:` : ''}${esc(ruleSay(ruleOf(g, curV())))}</b> · ${CMP_SHORT[gCmp(P(), g)] || ''}${mine.length ? ` <span class="muted">· ${new Set(mine.map((x) => x.productId)).size} 个产品 / ${mine.length} 个选项</span>` : ''}${todo ? ` <span class="tag tag--warn">${todo} 个没填价</span>` : ''}</span>
         ${open ? '' : '<span class="pr-group__go">点开修改</span>'}
         ${ro || !multi ? '' : `<span class="pr-group__acts">
           <button type="button" class="btn btn-ghost btn-xs" data-a="gup" data-i="${i}" ${i ? '' : 'disabled'} title="上移">↑</button>
@@ -646,7 +759,7 @@ function groupListHtml(ro, g, mine, over) {
     && (tf.only === 'bad' ? itemBad(p, i) : tf.only === 'man' ? i.manual || i.cmpManual : true);
   const chip = (v, label, n) => `<button type="button" class="pr-chipf ${(tf.only || '') === v ? 'is-on' : ''}" data-a="tfilter" data-g="${g.id}" data-v="${v}">${label}${n != null ? ` <b>${n}</b>` : ''}</button>`;
   const fill = !ro && gCmp(p, g) === 'set' ? `<div class="pr-fill">一键填划线价 = 现价的 <input class="inp inp--xs" id="fillpct-${g.id}" type="number" min="101" step="1" value="120" style="width:70px"/> %
-      <button type="button" class="btn btn-sm" data-a="fillcmp" data-g="${g.id}">填上</button><span class="muted">${g.rule.mode === 'keep' ? '售价不变、划线价调高 = 虚拟折扣;' : ''}填完还能在表格里一个个改</span></div>` : '';
+      <button type="button" class="btn btn-sm" data-a="fillcmp" data-g="${g.id}">填上</button><span class="muted">${ruleOf(g, curV()).mode === 'keep' ? '售价不变、划线价调高 = 虚拟折扣;' : ''}填完还能在表格里一个个改</span></div>` : '';
   const stkErr = STK.err ? `<div class="banner banner--warn" style="margin-top:6px">读不到 UK 仓库存:${esc(STK.err)} <button class="btn btn-sm" data-a="stkretry">重试</button></div>` : '';
   return `${head}${stkErr}${fill}
     ${zero && !ro ? `<div class="banner banner--warn" style="margin-top:6px">有 <b>${zero}</b> 个选项现价是 £0(多半是询价 / 还没定价的产品),改不了价,不${isPick(g) ? '删除' : '排除'}就存不了。<button class="btn btn-sm" data-a="rmzero" data-g="${g.id}" style="margin-left:8px">${isPick(g) ? '删除' : '排除'}这 ${zero} 个</button></div>` : ''}
@@ -787,7 +900,7 @@ function bannersHtml() {
       <div class="row"><button class="btn btn-sm" data-a="togglepending">${E.showPending ? '看原计划' : '看修改后的版本'}</button>
       ${canApprove({ ...o, ...o.pendingChange }) ? `<button class="btn btn-sm btn-ok" data-a="approve">批准修改</button><button class="btn btn-sm" data-a="panel" data-p="reject">退回修改…</button>` : ''}</div></div>`);
   }
-  if (started() && !o.stopped && statusOf(o) !== 'ended') out.push('<div class="banner banner--info">这个计划已经在改价了:只能改名字和结束时间,或者暂停、提前结束、把个别产品移出。要换价格或范围,请提前结束后新建一个。</div>');
+  if (started() && !o.stopped && statusOf(o) !== 'ended') out.push(`<div class="banner banner--info">这个计划已经在改价了:产品和价格锁住了,${schedMode(o) === 'one' ? '还能改结束时间' : '还能改以后的时间段、进行中那段的结束时间'},或者暂停、提前结束、把个别产品移出。要换价格或范围,请提前结束后新建一个。</div>`);
   if (E.panel === 'reject') out.push(`<div class="pr-panel"><div class="row"><input class="inp" id="reject-note" placeholder="退回原因(会发给提交人)" style="flex:1"/><button class="btn btn-danger" data-a="reject">确认退回</button><button class="btn btn-ghost" data-a="panel" data-p="">取消</button></div></div>`);
   return out.join('');
 }
@@ -867,6 +980,10 @@ function footHtml() {
     } else if (o?.state === 'approved' && !o.stopped) {
       b.push(ap ? `<button class="btn btn-primary" data-a="save" data-m="publish" ${E.dirty ? '' : 'disabled'}>保存修改(直接生效)</button>` : `<button class="btn btn-primary" data-a="save" data-m="submit" ${E.dirty ? '' : 'disabled'}>提交修改审核</button>`);
     }
+  }
+  // 已经开始的计划:价格和产品锁住了,但时间还能改(进行中那段的结束时间、以后的段)—— 以前这里没有保存按钮,「能改结束时间」其实存不了
+  if (ro && started() && !E.showPending && o?.state === 'approved' && !o.stopped && !['ended', 'done'].includes(st) && !(o.kind === 'permanent')) {
+    b.push(ap ? `<button class="btn btn-primary" data-a="save" data-m="publish" ${E.dirty ? '' : 'disabled'}>保存时间修改</button>` : `<button class="btn btn-primary" data-a="save" data-m="submit" ${E.dirty ? '' : 'disabled'}>提交时间修改审核</button>`);
   }
   if (st === 'pending' && ap && !E.dirty) { b.push('<button class="btn btn-ok" data-a="approve">批准</button>'); b.push('<button class="btn" data-a="panel" data-p="reject">退回…</button>'); }
   if (o?.state === 'approved' && !o.stopped && !['ended', 'done'].includes(st)) {
@@ -1008,10 +1125,21 @@ function seedRemoved(g, ps) {
 // 按每组的产品清单 + 规则算出全部变体的新价(本地,马上)。同一个变体在几组里时,下面的组说了算
 function recompute() {
   if (!E || readonly() || E.showPending) return;
-  const p = E.plan; const s = p.slots[0];
-  const old = new Map(s.items.map((i) => [i.variantId, i]));
+  const p = E.plan; E.vitems ||= {};
+  // 每个价格各算一遍(产品清单一样,规则 / 手改的价按价格分开记)
+  for (const v of versionsOf(p)) E.vitems[v.id] = computeItems(p, v.id);
+  for (const k of Object.keys(E.vitems)) if (!versionsOf(p).some((v) => v.id === k)) delete E.vitems[k]; // 删掉的价格
+  p.slots[0].items = E.vitems.A; // 「一段时间」照旧从第一段存
+  E.calcKey = scopeKey(p);
+  const wait = Object.values(E.stockOut).flatMap((x) => x.wait); if (wait.length) setTimeout(() => wantStock(wait), 0);
+}
+function computeItems(p, ver) {
+  const prev = E.vitems[ver] || (ver === 'A' ? p.slots[0].items : null) || E.vitems.A || [];
+  const old = new Map(prev.map((i) => [i.variantId, i]));
+  const keepManual = !!E.vitems[ver] || ver === 'A'; // 新加的价格:先照着 A 的产品,不带 A 手改的价
   const by = new Map(); E.groupHits = {}; E.stockOut = {};
   for (const g of p.groups) {
+    const rule = ruleOf(g, ver);
     const L = E.lists[g.id]; const rm = new Set(isPick(g) ? [] : g.removed || []); const sel = isPick(g) ? pickedVariants(g) : null;
     const put = (it) => { by.delete(it.variantId); by.set(it.variantId, it); }; // 先删再放:被下面的组接手时,顺序跟着下面的组
     const byStock = g.scope.stock === 'uk' && !isPick(g); // 只要 UK 仓有货的:没货的不进清单,库存还没读到的先不放(读到了再放,免得混进没货的)
@@ -1023,8 +1151,8 @@ function recompute() {
         if (rm.has(v.id)) continue;
         if (byStock) { const k = stockOf(v.id); if (k === undefined) { so.wait.push(v.id); continue; } if (noStock(k)) { so.out++; continue; } }
         n++;
-        const it = toItem(pr, v, g.rule); it.group = g.id;
-        const o = old.get(v.id);
+        const it = toItem(pr, v, rule); it.group = g.id;
+        const o = keepManual ? old.get(v.id) : null;
         if (o?.manual && o.price != null) { it.price = o.price; it.manual = true; } // 手改过的保留
         if (o && o.compareAt != null) it.compareAt = o.compareAt;
         if (o?.cmpManual) { it.cmpManual = true; it.compareAt = o.compareAt ?? null; } // 划线价单独例外也保留
@@ -1033,19 +1161,18 @@ function recompute() {
       E.groupHits[g.id] = n;
     } else {
       // 这一组的产品还没读到(或读不到):先用原来的条目,价格按现在的规则重算
-      for (const o of s.items) {
+      for (const o0 of prev) {
+        const o = keepManual ? o0 : { ...o0, manual: false, cmpManual: false };
         if (o.group !== g.id || rm.has(o.variantId)) continue;
         if (byStock && noStock(stockOf(o.variantId))) { so.out++; continue; }
         if (sel && (!sel.has(o.productId) || (sel.get(o.productId) && !sel.get(o.productId).has(o.variantId)))) continue;
         const it = { ...o };
-        if (!it.manual) { it.price = null; try { if (!['keep', 'manual'].includes(g.rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, g.rule); } catch { /* 规则没填好 */ } }
+        if (!it.manual) { it.price = null; try { if (!['keep', 'manual'].includes(rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, rule); } catch { /* 规则没填好 */ } }
         put(it);
       }
     }
   }
-  s.items = [...by.values()];
-  E.calcKey = scopeKey(p);
-  const wait = Object.values(E.stockOut).flatMap((x) => x.wait); if (wait.length) setTimeout(() => wantStock(wait), 0);
+  return [...by.values()];
 }
 // 改了「改哪些产品」:读这一组(读过的马上出来);全店产品要点按钮才读(几千个,要等一会儿)
 function scopeChanged(g = EG()) {
@@ -1082,11 +1209,19 @@ function values() {
   return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer || null : null,
     priority: p.kind === 'window' ? core.prioOf(p) : null,
     countdown: p.kind === 'window' ? { on: !!p.countdown?.on, label: String(p.countdown?.label || '').trim(), days: Number(p.countdown?.days) || 0, style: p.countdown?.style || 'classic' } : null,
-    compare: p.groups?.[0]?.compare || cmpOf(p), campaign: p.campaign, note: p.note, slots: p.slots,
+    compare: p.groups?.[0]?.compare || cmpOf(p), campaign: p.campaign, note: p.note, slots: slotsOut(p),
+    versions: versionsOf(p).length > 1 ? versionsOf(p) : null, schedule: p.kind === 'window' ? { mode: schedMode(p), ...(schedMode(p) === 'weekly' ? { weekly: p.schedule.weekly } : {}) } : null,
     groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
     owner: p.owner || null, approver: p.approver || null, cc: p.cc || [], folder: p.folder || '' };
 }
 
+// 存的时段:一段时间 = 原来那一段;几段 / 每周重复 = 按段展开,每段带上它那个价格的全部条目(执行器照旧按时段改价)
+function slotsOut(p) {
+  if (schedMode(p) === 'one') return [{ ...p.slots[0], items: E.vitems?.A || p.slots[0].items }];
+  const coll = p.slots[0].collection || null;
+  return scheduleSegments(p).map((sg) => ({ id: sg.id, start: sg.start, end: sg.end, version: sg.version, collection: coll,
+    items: clone(E.vitems?.[sg.version] || []) }));
+}
 async function act(action, msg) {
   const r = await api('POST', '/api/price/act', { action });
   toast(msg || r.message || '完成');
@@ -1198,7 +1333,7 @@ function drawPH() {
           <div class="pr-ph__pn"><span class="tag ${STATUS_TAG[p.status]}">${core.STATUS_CN[p.status]}</span><button type="button" class="linkbtn" data-a="phopen" data-id="${esc(p.id)}"><b>${esc(p.name)}</b></button>
             ${p.folder ? `<span class="tag">分组:${esc(p.folder)}</span>` : ''}${p.campaign ? `<span class="tag">活动:${esc(p.campaign)}</span>` : ''}</div>
           <div class="muted">${p.slots.map((sl) => `${fmtT(sl.start)}${sl.end ? ' → ' + fmtT(sl.end) : ' 起'}`).join(';')}${p.kind === 'permanent' ? ' · 永久调价' : ''}</div>
-          <div class="pr-ph__its">${p.items.filter((i) => pickV(i.variantId)).map((i) => `<span>${multi ? `${esc(vs.get(i.variantId) || '')}:` : ''}${money(i.refPrice)} → <b>${i.price != null ? money(i.price) : '售价不变'}</b>${i.excluded ? ' <span class="tag">已移出</span>' : ''}</span>`).join('')}</div>
+          <div class="pr-ph__its">${p.items.filter((i) => pickV(i.variantId)).map((i) => `<span>${multi ? `${esc(vs.get(i.variantId) || '')}:` : ''}${i.vname ? `<em class="pr-ph__v">${esc(i.vname)}</em> ` : ''}${money(i.refPrice)} → <b>${i.price != null ? money(i.price) : '售价不变'}</b>${i.excluded ? ' <span class="tag">已移出</span>' : ''}</span>`).join('')}</div>
         </div>`).join('') : '<div class="pr-empty">没有计划包含这个产品</div>'}`;
   })();
   el.innerHTML = `<div class="pr-modal__bg" data-a="phclose"></div><div class="pr-modal__box" role="dialog" aria-label="改价记录">
@@ -1242,6 +1377,41 @@ document.addEventListener('click', async (ev) => {
         filter = el.dataset.f;
         if (wantAll() && !S.allPlans) { loadingAll = true; render(); try { await load(true); } catch (e) { toast(e.message, false); } loadingAll = false; }
         render(); break;
+      }
+      // ---- 时间安排(第 3 期)----
+      case 'schedmode': {
+        if (el.disabled) return; const m = el.dataset.v; const p = E.plan; if (m === schedMode(p)) return;
+        const segs = scheduleSegments(p).filter((x) => x.start != null);
+        const t0 = segs.length ? Math.min(...segs.map((x) => x.start)) : dayAt(1); const t1 = segs.length ? Math.max(...segs.map((x) => x.end ?? x.start + DAY)) : dayAt(8);
+        if (m === 'one') { p.slots[0].start = t0; p.slots[0].end = t1; }
+        if (m === 'multi') E.segs = segs.map((x) => ({ ...x, id: x.id || uid('s_') }));
+        if (m === 'weekly') p.schedule.weekly ||= { from: toInput(t0).slice(0, 10), to: toInput(t1 - 1).slice(0, 10), rules: [{ id: uid('r_'), days: [1, 2, 3, 4, 5, 6, 7], from: '00:00', to: '24:00', version: 'A' }] };
+        p.schedule.mode = m; touch(); render(); break;
+      }
+      case 'segadd': {
+        const segs = scheduleSegments(); const last = segs[segs.length - 1];
+        const st0 = last?.end ?? dayAt(1); const vs = versionsOf(E.plan); const nextV = vs[(vs.findIndex((v) => v.id === last?.version) + 1) % vs.length]?.id || 'A';
+        E.segs = [...segs, { id: uid('s_'), start: st0, end: st0 + DAY, version: nextV }]; touch(); render(); break;
+      }
+      case 'segdel': { const segs = scheduleSegments(); segs.splice(+el.dataset.i, 1); E.segs = segs; touch(); render(); break; }
+      case 'wday': { const r = E.plan.schedule.weekly.rules[+el.dataset.r]; const d = +el.dataset.d; r.days = r.days.includes(d) ? r.days.filter((x) => x !== d) : [...r.days, d].sort(); touch(); render(); break; }
+      case 'wradd': { const w = E.plan.schedule.weekly; const vs = versionsOf(E.plan); w.rules.push({ id: uid('r_'), days: [6, 7], from: '00:00', to: '24:00', version: vs[1]?.id || 'A' }); touch(); render(); break; }
+      case 'wrdel': { const w = E.plan.schedule.weekly; if (w.rules.length < 2) return; w.rules.splice(+el.dataset.r, 1); touch(); render(); break; }
+      // ---- 价格版本 ----
+      case 'vpick': E.ver = el.dataset.v; render(); break;
+      case 'vadd': {
+        const p = E.plan; const vs = versionsOf(p); if (vs.length >= A.MAX_VERSIONS) return;
+        const id = 'ABCDEFGH'.split('').find((x) => !vs.some((v) => v.id === x));
+        p.versions = [...vs, { id, name: '' }]; for (const g of p.groups) (g.vrules ||= {})[id] = clone(ruleOf(g, curV())); // 照着正在看的价格起步
+        E.ver = id; ruleChanged(); toast(`加了价格 ${id}:照着价格 ${vs.find((v) => v.id === curV())?.id || 'A'} 的规则起步,改一下折扣,再在「什么时候生效」里给某几段选它`); break;
+      }
+      case 'vdel': {
+        const p = E.plan; const id = curV(); if (id === 'A') return;
+        const usedBy = scheduleSegments(p).filter((x) => x.version === id).length + (schedMode(p) === 'weekly' ? (p.schedule.weekly.rules || []).filter((r) => r.version === id).length : 0);
+        if (usedBy) { toast(`还有 ${usedBy} 段 / 条规则在用价格 ${id},先在「什么时候生效」里换成别的价格`, false); return; }
+        if (!armed(el, `再点一次删掉价格 ${id}`)) return;
+        p.versions = versionsOf(p).filter((v) => v.id !== id); for (const g of p.groups) if (g.vrules) delete g.vrules[id];
+        delete E.vitems[id]; E.ver = 'A'; ruleChanged(); break;
       }
       // ---- 一个产品的改价记录 ----
       case 'phist': openProductHistory(el.dataset.p, el.dataset.t || ''); break;
@@ -1324,7 +1494,7 @@ document.addEventListener('click', async (ev) => {
         if (E.plan.groups.length < 2 || !armed(el, '再点一次删掉这组')) return;
         const i = +el.dataset.i; const gid = E.plan.groups[i].id;
         E.plan.groups.splice(i, 1); E.gi = Math.max(0, Math.min(E.gi, E.plan.groups.length - 1));
-        curSlot().items = curSlot().items.filter((it) => it.group !== gid); delete E.lists[gid]; ruleChanged(); break;
+        dropItems((it) => it.group === gid); delete E.lists[gid]; ruleChanged(); break;
       }
       case 'gup': case 'gdown': {
         const i = +el.dataset.i; const j = a === 'gup' ? i - 1 : i + 1; const gs = E.plan.groups;
@@ -1332,10 +1502,11 @@ document.addEventListener('click', async (ev) => {
         [gs[i], gs[j]] = [gs[j], gs[i]]; E.gi = j; ruleChanged(); break;
       }
       case 'unmanual': { // 手改过的变体:回到它那组规则算出来的价
-        const it = curSlot().items.find((x) => x.variantId === el.dataset.v); if (!it) return;
+        const it = items().find((x) => x.variantId === el.dataset.v); if (!it) return;
         const g = E.plan.groups.find((x) => x.id === it.group) || E.plan.groups[0];
         it.manual = false; it.price = null;
-        try { if (!['keep', 'manual'].includes(g.rule.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, g.rule); } catch { /* 规则没填好 */ }
+        const gr = ruleOf(g, curV());
+        try { if (!['keep', 'manual'].includes(gr.mode)) it.price = core.priceByRule({ price: it.refPrice, compareAt: it.refCompareAt }, gr); } catch { /* 规则没填好 */ }
         touch(); render(); break;
       }
       case 'reload': { const g = E.plan.groups.find((x) => x.id === el.dataset.g) || EG();
@@ -1346,28 +1517,28 @@ document.addEventListener('click', async (ev) => {
         if (g.scope.stock) wantStock(groupVariantIds(g)); ruleChanged(); } break;
       case 'stkretry': STK.err = ''; wantStock(E.plan.groups.flatMap(groupVariantIds)); render(); break;
       case 'rmnostock': { const g = E.plan.groups.find((x) => x.id === el.dataset.g); if (!g) return;
-        const ids = curSlot().items.filter((i) => i.group === g.id && noStock(stockOf(i.variantId))).map((i) => i.variantId);
-        if (!ids.length) return; pickDelete(g, ids); curSlot().items = curSlot().items.filter((i) => !ids.includes(i.variantId)); E.calcKey = scopeKey(P()); touch(); render();
+        const ids = items().filter((i) => i.group === g.id && noStock(stockOf(i.variantId))).map((i) => i.variantId);
+        if (!ids.length) return; pickDelete(g, ids); dropItems((i) => ids.includes(i.variantId)); E.calcKey = scopeKey(P()); touch(); render();
         toast(`删除了 ${ids.length} 个 UK 仓没货的选项`); break; }
       case 'cmpopen': (E.cmpOpen ||= {})[el.dataset.g] = !E.cmpOpen[el.dataset.g]; render(); break;
       case 'fillcmp': { // 逐个指定划线价:一键填 = 现价 × X%(手动单独改过的不动)
         const pct = Number($(`#fillpct-${el.dataset.g}`)?.value); if (!(pct > 100)) { toast('填一个大于 100 的百分比,比如 120', false); return; }
-        let n = 0; for (const it of curSlot().items) if (it.group === el.dataset.g && !it.cmpManual) { it.compareAt = (Math.round(Number(it.refPrice) * pct) / 100).toFixed(2); n++; }
+        let n = 0; for (const it of items()) if (it.group === el.dataset.g && !it.cmpManual) { it.compareAt = (Math.round(Number(it.refPrice) * pct) / 100).toFixed(2); n++; }
         toast(`填好了 ${n} 个选项的划线价(现价的 ${pct}%)`); touch(); render(); break;
       }
-      case 'uncmp': { const it = curSlot().items.find((i) => i.variantId === el.dataset.v); if (it) { it.cmpManual = false; delete it.compareAt; } touch(); render(); break; }
+      case 'uncmp': { const it = items().find((i) => i.variantId === el.dataset.v); if (it) { it.cmpManual = false; delete it.compareAt; } touch(); render(); break; }
       case 'showall': E.showAllG ||= {}; E.showAllG[el.dataset.g] = !E.showAllG[el.dataset.g]; render(); break;
       case 'rm': case 'rmzero': { // 去掉:记在这一组上(加产品、改规则、重新读都不会再加回来),下面「已去掉」里能恢复
-        const s = curSlot(); const g = E.plan.groups.find((x) => x.id === el.dataset.g);
-        const ids = a === 'rmzero' ? s.items.filter((i) => i.group === g?.id && !(Number(i.refPrice) > 0)).map((i) => i.variantId) : (el.dataset.vs || el.dataset.v).split(',');
-        const byG = new Map(); for (const it of s.items) if (ids.includes(it.variantId)) byG.set(it.group, [...(byG.get(it.group) || []), it.variantId]);
+        const g = E.plan.groups.find((x) => x.id === el.dataset.g);
+        const ids = a === 'rmzero' ? items().filter((i) => i.group === g?.id && !(Number(i.refPrice) > 0)).map((i) => i.variantId) : (el.dataset.vs || el.dataset.v).split(',');
+        const byG = new Map(); for (const it of items()) if (ids.includes(it.variantId)) byG.set(it.group, [...(byG.get(it.group) || []), it.variantId]);
         let picked = false;
         for (const [gid, vs] of byG) {
           const gg = E.plan.groups.find((x) => x.id === gid); if (!gg) continue;
           if (isPick(gg)) { pickDelete(gg, vs); picked = true; } // 指定产品:直接从选的清单里删掉
           else gg.removed = [...new Set([...(gg.removed || []), ...vs])]; // Collection / 品牌标签 / 全店:排除
         }
-        s.items = s.items.filter((i) => !ids.includes(i.variantId)); E.calcKey = scopeKey(P()); touch(); render();
+        dropItems((i) => ids.includes(i.variantId)); E.calcKey = scopeKey(P()); touch(); render();
         if (a === 'rmzero') toast(picked ? `删除了 ${ids.length} 个现价为 £0 的选项` : `排除了 ${ids.length} 个现价为 £0 的选项,下面「已排除」里能恢复`);
         break;
       }
@@ -1403,6 +1574,7 @@ document.addEventListener('click', async (ev) => {
         const src = clone(P());
         const shift = a === 'dupnext' ? DAY : 0;
         const slots = src.slots.map((s) => ({ ...s, id: uid('s_'), start: s.start + shift, end: s.end == null ? null : s.end + shift }));
+        if (shift && src.schedule?.weekly) { const mv = (d) => new Date(Date.parse(`${d}T12:00:00Z`) + DAY).toISOString().slice(0, 10); src.schedule = { ...src.schedule, weekly: { ...src.schedule.weekly, from: mv(src.schedule.weekly.from), to: mv(src.schedule.weekly.to) } }; }
         const name = a === 'dupnext' ? `${src.name.replace(/(第\s*\d+\s*天|D\d+)$/, '').trim()} ${fmtD(slots[0].start)}` : `${src.name}(副本)`;
         openEditor({ ...src, id: uid('p_'), name, state: 'new', slots, excluded: [], applied: {}, pendingChange: null, paused: false, stopped: false }, true);
         if (shift) toast('已复制成下一天,确认时间和产品后提交');
@@ -1439,7 +1611,7 @@ document.addEventListener('change', async (ev) => {
   if (el.id === 'ukloc') { try { await api('PUT', '/api/price/settings', { ukLocation: el.value }); STK.map.clear(); STK.loc = null; STK.err = ''; toast('已保存:UK 可售按这个仓库算'); await load(); render(); } catch (e) { toast(e.message, false); } return; }
   if (!E) return;
   if (el.name === 'rmode') {
-    EG().rule.mode = el.value;
+    ruleOf(EG(), curV()).mode = el.value;
     if (el.value === 'keep' && E.plan.kind === 'window' && ['original', 'keep', 'price'].includes(EG().compare)) { // 售价不变还用原划线价 = 什么都没改
       EG().compare = 'set'; E.plan.compare = E.plan.groups[0].compare; toast('售价不变时要把划线价调高(虚拟折扣):已切到「逐个指定划线价」,表格上面可以一键填');
     }
@@ -1460,15 +1632,29 @@ document.addEventListener('change', async (ev) => {
     }
     case 'note': E.plan.note = el.value; touch(); break;
     case 'gname': EG().name = el.value.replace(/\s+/g, ' ').trim().slice(0, 30); touch(); render(); break;
+    case 'vname': { const v = versionsOf(E.plan).find((x) => x.id === curV()); if (!E.plan.versions?.length) E.plan.versions = versionsOf(E.plan).map((x) => ({ ...x }));
+      E.plan.versions.find((x) => x.id === curV()).name = el.value.trim().slice(0, 20); void v; touch(); render(); break; }
+    case 'segstart': case 'segend': case 'segver': {
+      const segs = scheduleSegments(); const sg = segs[+el.dataset.i]; if (!sg) return;
+      if (f === 'segver') sg.version = el.value; else sg[f === 'segstart' ? 'start' : 'end'] = fromInput(el.value);
+      E.segs = segs.sort((a, b) => (a.start ?? 0) - (b.start ?? 0)); touch(); render(); break;
+    }
+    case 'wfrom': case 'wto': E.plan.schedule.weekly[f === 'wfrom' ? 'from' : 'to'] = el.value; touch(); render(); break;
+    case 'wrfrom': case 'wrto': case 'wrver': {
+      const r = E.plan.schedule.weekly.rules[+el.dataset.r]; if (!r) return;
+      if (f === 'wrver') r.version = el.value;
+      else { const v = el.value.trim(); if (!/^([01]?\d|2[0-3]):[0-5]\d$|^24:00$/.test(v)) { toast('时间写成 09:00 这样;一整天写 00:00 到 24:00', false); render(); return; } r[f === 'wrfrom' ? 'from' : 'to'] = v.padStart(5, '0'); }
+      touch(); render(); break;
+    }
     case 'compare': EG().compare = el.value; E.plan.compare = E.plan.groups[0].compare; (E.cmpOpen ||= {})[EG().id] = false; touch(); render(); break; // 改的是正在编辑的那一组;选完收起
     case 'cdon': E.plan.countdown.on = el.checked; touch(); render(); break;
     case 'cdlabel': E.plan.countdown.label = el.value.slice(0, 60); touch(); render(); break;
     case 'cddays': E.plan.countdown.days = Number(el.value) || 0; touch(); render(); break;
     case 'cdstyle': E.plan.countdown.style = el.value; touch(); render(); break;
     case 'priority': { const n = Math.round(Number(el.value)); E.plan.priority = n >= 1 && n <= core.PRIO_MAX ? n : core.PRIO_MAX; touch(); render(); break; }
-    case 'rvalue': clearTimeout(E.rvT); if (EG().rule.value !== el.value) { EG().rule.value = el.value; ruleChanged(); } break;
-    case 'rrounding': EG().rule.rounding = el.value; ruleChanged(); break;
-    case 'rfrom': EG().rule.from = el.value; ruleChanged(); break;
+    case 'rvalue': clearTimeout(E.rvT); if (ruleOf(EG(), curV()).value !== el.value) { ruleOf(EG(), curV()).value = el.value; ruleChanged(); } break;
+    case 'rrounding': ruleOf(EG(), curV()).rounding = el.value; ruleChanged(); break;
+    case 'rfrom': ruleOf(EG(), curV()).from = el.value; ruleChanged(); break;
     case 'svendor': case 'stag': case 'stype': { clearTimeout(E.svT); const k = { svendor: 'vendor', stag: 'tag', stype: 'type' }[f]; if (EG().scope[k] !== el.value.trim()) { EG().scope[k] = el.value.trim(); scopeChanged(); } break; }
     case 'campaign': {
       const c = (cache.campaigns || []).find((x) => x.id === el.value);
@@ -1476,7 +1662,7 @@ document.addEventListener('change', async (ev) => {
       if (!c) E.plan.followCampaign = false; else if (E.plan.followCampaign) applyCampaignTime();
       touch(); render(); break;
     }
-    case 'followcamp': E.plan.followCampaign = el.checked; if (el.checked) applyCampaignTime(); touch(); render(); break;
+    case 'followcamp': E.plan.followCampaign = el.checked; if (el.checked) { if (schedMode(E.plan) !== 'one') { const sg = scheduleSegments(E.plan); E.plan.slots[0].start = sg[0]?.start; E.plan.slots[0].end = sg[sg.length - 1]?.end; E.plan.schedule.mode = 'one'; toast('跟随活动时间只能是「一段时间」,已切换'); } applyCampaignTime(); } touch(); render(); break;
     case 'owner': E.plan.owner = el.value || null; touch(); break;
     case 'approver': E.plan.approver = el.value || null; touch(); render(); break; // 换审批人会改变底部按钮(审批人自己提交 = 直接生效)
     case 'cc': { const set = new Set(E.plan.cc || []); el.checked ? set.add(el.value) : set.delete(el.value); E.plan.cc = [...set]; touch(); break; }
@@ -1484,8 +1670,8 @@ document.addEventListener('change', async (ev) => {
     case 'end': s.end = fromInput(el.value); touch(); render(); break;
     case 'iprice': case 'icompare': {
       const v = norm(el.value); if (v === undefined) { toast('价格格式不对', false); render(); return; }
-      const it = s.items.find((i) => i.variantId === el.dataset.v);
-      if (f === 'iprice') { it.price = v; it.manual = true; } // 手改过的,重新试算时保留
+      const it = items().find((i) => i.variantId === el.dataset.v);
+      if (f === 'iprice') { it.price = v; it.manual = true; } // 手改过的,重新试算时保留(只改正在看的那个价格)
       else if (core.cmpModeOf(E.plan, it) === 'set' && !it.cmpManual) it.compareAt = v;
       else if (String(el.value).trim() === '') { it.cmpManual = false; delete it.compareAt; } // 清空 = 回到上面选的方式
       else { it.cmpManual = true; it.compareAt = Number(v) > 0 ? v : null; }              // 单独例外(0 = 这个变体不显示划线价)
@@ -1504,7 +1690,7 @@ document.addEventListener('input', (ev) => {
   if (!E || !ev.target.closest('#section-price')) return;
   const f = ev.target.dataset.f;
   if (f === 'name') { E.plan.name = ev.target.value; E.dirty = true; const b = document.querySelector('#section-price .pr-sum__h b'); if (b) b.textContent = ev.target.value || '(还没起名字)'; }
-  if (f === 'rvalue') { const v = ev.target.value; clearTimeout(E.rvT); E.rvT = setTimeout(() => { if (E && EG().rule.value !== v) { EG().rule.value = v; ruleChanged(); } }, 350); }
+  if (f === 'rvalue') { const v = ev.target.value; clearTimeout(E.rvT); E.rvT = setTimeout(() => { if (E && ruleOf(EG(), curV()).value !== v) { ruleOf(EG(), curV()).value = v; ruleChanged(); } }, 350); }
   if (['svendor', 'stag', 'stype'].includes(f)) {
     const k = { svendor: 'vendor', stag: 'tag', stype: 'type' }[f]; const v = ev.target.value.trim(); clearTimeout(E.svT);
     E.svT = setTimeout(() => { if (E && EG().scope[k] !== v) { EG().scope[k] = v; scopeChanged(); } }, 600);
