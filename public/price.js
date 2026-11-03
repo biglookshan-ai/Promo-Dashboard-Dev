@@ -666,7 +666,7 @@ function removedHtml(ro, g) {
   if (isPick(g)) return ''; // 指定产品模式是直接删除,没有「已排除」
   const rm = g.removed || []; if (!rm.length) return '';
   const names = new Map(); for (const pr of E.lists?.[g.id]?.products || []) for (const v of pr.variants) names.set(v.id, `${pr.title}${v.title && v.title !== 'Default Title' ? ' · ' + v.title : ''}`);
-  return `<details class="pr-removed"><summary>已排除 ${rm.length} 个选项 <span class="muted">(这些不改价${ro ? '' : ';点开可以恢复'})</span></summary>
+  return `<details class="pr-removed" data-rmg="${g.id}" ${E.rmOpen?.[g.id] ? 'open' : ''}><summary>已排除 ${rm.length} 个选项 <span class="muted">(这些不改价${ro ? '' : ';点开可以恢复'})</span></summary>
     <div class="pr-removed__b">${rm.slice(0, 60).map((id) => `<span class="tag">${esc(names.get(id) || '(名字还没读到)')}${ro ? '' : `<button type="button" class="chip__x" data-a="unrm" data-g="${g.id}" data-v="${esc(id)}" title="恢复">↺</button>`}</span>`).join('')}
       ${rm.length > 60 ? `<span class="muted">…共 ${rm.length} 个</span>` : ''}${ro ? '' : `<button type="button" class="linkbtn" data-a="unrm" data-g="${g.id}">全部恢复</button>`}</div></details>`;
 }
@@ -1371,8 +1371,9 @@ document.addEventListener('click', async (ev) => {
         if (a === 'rmzero') toast(picked ? `删除了 ${ids.length} 个现价为 £0 的选项` : `排除了 ${ids.length} 个现价为 £0 的选项,下面「已排除」里能恢复`);
         break;
       }
-      case 'unrm': { // 恢复去掉的(这一组的产品没读到就先读)
+      case 'unrm': { // 恢复去掉的(这一组的产品没读到就先读);恢复一个后「已排除」保持展开,方便接着恢复(2026-11-03 用户)
         const g = E.plan.groups.find((x) => x.id === el.dataset.g); if (!g) return;
+        (E.rmOpen ||= {})[g.id] = !!el.dataset.v; // 恢复全部后就没东西了,不用再展开
         const back = el.dataset.v ? [el.dataset.v] : [...(g.removed || [])];
         g.removed = (g.removed || []).filter((id) => !back.includes(id)); touch();
         if (E.lists[g.id]?.status === 'ok') { recompute(); render(); } else { await loadGroup(g); recompute(); render(); }
@@ -1521,6 +1522,8 @@ document.addEventListener('keydown', (ev) => {
 });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'coll-q') $('[data-a=collsearch]')?.click(); });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && PH) { PH = null; drawPH(); } });
+// 「已排除」展开 / 收起:记住(重画后照样)。toggle 事件不冒泡,用捕获
+document.addEventListener('toggle', (ev) => { const d = ev.target; if (E && d.matches?.('details.pr-removed[data-rmg]')) (E.rmOpen ||= {})[d.dataset.rmg] = d.open; }, true);
 // 「＋ 新分组」:起名字回车 = 勾选的计划放进这个新分组
 document.addEventListener('keydown', async (ev) => {
   if (ev.target.id !== 'pl-newf' || ev.key !== 'Enter') return; ev.preventDefault();
