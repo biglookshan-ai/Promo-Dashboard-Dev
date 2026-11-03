@@ -1204,7 +1204,7 @@ function settingsHtml() {
   <div class="pr-card"><div class="pr-card__t">库存 <span class="muted">编辑计划时「只要 UK 仓有货的」和产品表「UK 可售」按这个仓库的 Available 算</span></div>
     ${(() => { if (!cache.locs) { loadLocations(); return '<p class="muted">正在读仓库…</p>'; }
       if (cache.locs.err) return `<p class="muted">读不到仓库:${esc(cache.locs.err)}</p>`;
-      return `<label class="pr-fld">UK 仓 <em>默认自动认名字里有 Cinegearpro 的仓库</em><select class="sel" id="ukloc" ${ap ? '' : 'disabled'} style="max-width:320px">
+      return `<label class="pr-fld">UK 仓 <em>默认是伦敦仓(编号 43451853,Shopify 里叫 Cinegearpro)${cache.locs.locations.some((l) => l.noName) ? ';app 没有「读取仓库」权限,别的仓只显示编号(不影响读库存)' : ''}</em><select class="sel" id="ukloc" ${ap ? '' : 'disabled'} style="max-width:320px">
         <option value="" ${!s.ukLocation ? 'selected' : ''}>自动(现在是:${esc(cache.locs.uk?.name || '没找到')})</option>
         ${cache.locs.locations.filter((l) => l.active).map((l) => `<option value="${esc(l.id)}" ${s.ukLocation === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>`; })()}</div>
   <div class="pr-card"><div class="pr-card__t">执行器</div>

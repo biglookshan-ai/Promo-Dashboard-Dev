@@ -54,7 +54,9 @@ export function priceGql(q, v = {}) {
   if (q.includes('on Product { id tags }')) return { nodes: v.ids.map((id) => (products.has(id) ? { id, tags: products.get(id).tags || [] } : null)) };
   if (q.includes('inCollection')) return { nodes: v.ids.map((id) => (products.has(id) ? { id, inCollection: collections.get(v.c)?.members.has(id) || false } : null)) };
   // 库存(2026-11-03):两个仓库;UK 仓的 Available 按款式 id 编一个固定的数(有正有零有负,每 23 个有一个不追踪库存),EW 仓都是 0
-  if (q.includes('locations(first')) return { locations: { nodes: [{ id: 'gid://shopify/Location/43451853', name: 'Cinegearpro', isActive: true }, { id: 'gid://shopify/Location/90000001', name: 'External Warehouse', isActive: true }] } };
+  // 和正式店一样:app 没有 read_locations,读仓库名字会被拒(只能读编号)
+  if (q.includes('locations(first') && q.includes('name')) throw new Error('Access denied for name field. Required access: `read_locations` access scope or `read_markets_home` access scope.');
+  if (q.includes('locations(first')) return { locations: { nodes: [{ id: 'gid://shopify/Location/43451853' }, { id: 'gid://shopify/Location/90000001' }] } };
   if (q.includes('inventoryLevel(locationId')) return { nodes: v.ids.map((id) => {
     if (!variants.has(id)) return null; const n = Number(num(id));
     return { id, inventoryItem: { tracked: n % 23 !== 0, inventoryLevel: v.loc.endsWith('/43451853') ? { quantities: [{ quantity: (n % 9) - 2 }] } : null } };

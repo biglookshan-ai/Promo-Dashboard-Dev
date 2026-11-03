@@ -136,16 +136,31 @@ export async function variantImages(ctx, productIds) {
 }
 
 // ---------- 库存(2026-11-03 用户:清货只给有货的打折;产品表显示 UK 仓可售数)----------
-// 只读 Shopify 各仓的库存(唯一真源);UK 仓 = Shopify 里叫 Cinegearpro 的伦敦仓(设置里可以换)。读 Available(可售),不是 On hand。
-// 只要 read_inventory(Location / InventoryLevel 都认它),不用另开权限。
-export async function locations(ctx) {
-  const d = await graphql(ctx, '{ locations(first: 50) { nodes { id name isActive } } }');
-  return d.locations.nodes.map((l) => ({ id: l.id, name: l.name, active: l.isActive !== false }));
+// 只读 Shopify 各仓的库存(唯一真源);读 Available(可售),不是 On hand。读库存本身只要 read_inventory。
+// ⚠️ 仓库的名字要 read_locations 权限(2026-11-03 正式店报「Access denied for name field」),app 没有 ——
+//    所以 UK 仓按编号认:43451853 = 伦敦仓(Shopify 里叫 Cinegearpro;stock-dispatch-app 首次同步核对过);有权限时也读名字,「改价设置 → 库存」可以换
+export const UK_LOCATION_DEFAULT = 'gid://shopify/Location/43451853';
+const KNOWN_LOCATIONS = { [UK_LOCATION_DEFAULT]: 'Cinegearpro(伦敦)' };
+const denied = (e) => /read_locations|access denied|ACCESS_DENIED/i.test(String(e?.message || e));
+export async function locations(ctx, gql = graphql) {
+  try {
+    const d = await gql(ctx, '{ locations(first: 50) { nodes { id name isActive } } }');
+    return d.locations.nodes.map((l) => ({ id: l.id, name: l.name, active: l.isActive !== false }));
+  } catch (e) { if (!denied(e)) throw e; }
+  const label = (id) => KNOWN_LOCATIONS[id] || `仓库 #${String(id).split('/').pop()}`;
+  try { // 没有名字权限:只读编号
+    const d = await gql(ctx, '{ locations(first: 50) { nodes { id } } }');
+    return d.locations.nodes.map((l) => ({ id: l.id, name: label(l.id), active: true, noName: true }));
+  } catch (e) {
+    if (!denied(e)) throw e;
+    return [{ id: UK_LOCATION_DEFAULT, name: label(UK_LOCATION_DEFAULT), active: true, noName: true }]; // 连编号都列不出来:就用伦敦仓(读库存照样行)
+  }
 }
-// 用哪个仓当 UK 仓:设置里选的 > 名字有 Cinegearpro > 名字像伦敦 / 英国 > 第一个在用的
+// 用哪个仓当 UK 仓:设置里选的 > 伦敦仓编号 43451853 > 名字有 Cinegearpro > 名字像伦敦 / 英国 > 第一个在用的
 export function pickUkLocation(list, preferId) {
   const live = list.filter((l) => l.active);
-  return list.find((l) => l.id === preferId) || live.find((l) => /cinegearpro/i.test(l.name)) || live.find((l) => /london|\buk\b|united kingdom/i.test(l.name)) || live[0] || null;
+  return list.find((l) => l.id === preferId) || list.find((l) => l.id === UK_LOCATION_DEFAULT) || live.find((l) => /cinegearpro/i.test(l.name))
+    || live.find((l) => /london|\buk\b|united kingdom/i.test(l.name)) || live[0] || null;
 }
 // 款式在这个仓的可售数:{ 款式 id: 数字 | null };null = 这个款式不追踪库存(没法说有没有货);这个仓没有这个款式的记录 = 0
 export async function variantStock(ctx, variantIds, locationId, gql = graphql) {
