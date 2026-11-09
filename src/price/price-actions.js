@@ -19,7 +19,7 @@ export const EDIT_KEYS = ['name', 'kind', 'layer', 'priority', 'compare', 'campa
 // campaigns = 这个计划关联的所有活动(几个价格各自关联);campaign 仍是第一个(跟随活动时间、老界面用)
 // 一个计划多段时间 + 多个价格(2026-11-03 改价第 3 期):versions = [{ id: 'A' | 'B' …, name }],每个时段 slot.version 指一个;
 // 时段里照旧带全部条目和价格(保存时由编辑器按版本展开),执行器不用改。schedule = 编辑器怎么排的(一段 / 几段 / 每周重复),只给编辑器用
-export const MAX_VERSIONS = 6;
+export const MAX_VERSIONS = 20; // 按时间段时一段一个价格(2026-11-09),所以和段数差不多
 export const MAX_SLOTS = 60;
 // 自己起的分组名(2026-11-03 用户:计划多了要能分组;按活动 / 品牌 / 月份自动分的叫「智能分组」,在页面上算,不存)
 export const FOLDER_MAX = 40;
@@ -53,7 +53,7 @@ export function validate(p, settings = {}) {
   if (slots.length > MAX_SLOTS) return `一个计划最多 ${MAX_SLOTS} 段时间(现在 ${slots.length} 段);时间太长就分成几个计划`;
   if (p.followCampaign && slots.length > 1) return '跟随活动时间的计划只能是「一段时间」;要分几段就先取消跟随活动';
   if (p.versions?.length) {
-    if (p.versions.length > MAX_VERSIONS) return `最多 ${MAX_VERSIONS} 个价格`;
+    if (p.versions.length > MAX_VERSIONS) return `最多 ${MAX_VERSIONS} 个时间段 / 价格`;
     const ids = new Set(p.versions.map((v) => v.id));
     if (ids.size !== p.versions.length) return '价格版本重复了';
     if (p.versions.some((v) => String(v.name || '').length > 20)) return '价格的名字最多 20 个字';

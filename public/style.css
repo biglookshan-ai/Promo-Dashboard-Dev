@@ -2295,3 +2295,10 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-price .pr-vmx__t .sel--sm, #section-price .pr-vmx__t .inp--sm { max-width: 100%; }
 #section-price .pl-ver__set { font-size: 12px; color: var(--text-3); }
 #section-price .pr-sec__b > .pr-vmx, #section-price .pr-sec__b > .pr-vers { border: 0; background: none; padding: 0; margin-bottom: 0; }
+/* 改价时间段:列头的开始 / 结束(2026-11-09) */
+#section-price .pr-vmx__t thead th { min-width: 230px; }
+#section-price .pr-vmx__t thead th.pr-vmx__g { min-width: 160px; font-size: 12px; color: var(--text-3); }
+#section-price .pr-vmx__time { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--text-3); font-weight: 400; }
+#section-price .pr-vmx__time label { display: flex; align-items: center; gap: 6px; }
+#section-price .pr-vmx__time .inp { flex: 1; min-width: 0; }
+#section-price .pr-vmx__time .linkbtn { font-size: 12px; align-self: flex-start; }

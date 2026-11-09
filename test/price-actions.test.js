@@ -222,7 +222,7 @@ test('第 3 期:一个计划多段时间 + 多个价格;进行中的那段能改
       { id: 'b1', start: 20 * H, end: 30 * H, version: 'B', items: [item('v1', '80.00')] },
       { id: 'a2', start: 30 * H, end: 40 * H, version: 'A', items: [item('v1', '90.00')] }], ...extra });
   assert.equal(validate(v()), '');
-  assert.match(validate(v({ versions: [...v().versions, ...['C', 'D', 'E', 'F', 'G'].map((id) => ({ id, name: '' }))] })), /最多 6 个价格/);
+  assert.match(validate(v({ versions: [...v().versions, ...'CDEFGHIJKLMNOPQRSTU'.split('').map((id) => ({ id, name: '' }))] })), /最多 20 个时间段/);
   assert.match(validate(v({ slots: v().slots.map((x) => (x.id === 'b1' ? { ...x, version: 'Z' } : x)) })), /价格已经删掉/);
   assert.match(validate(v({ followCampaign: true, campaign: { id: 'c' } })), /跟随活动时间的计划只能是「一段时间」/);
   assert.match(validate(v({ slots: Array.from({ length: 61 }, (_, i) => ({ id: `s${i}`, start: i * H, end: (i + 1) * H, version: 'A', items: [item(`v${i}`, '90.00')] })) })), /最多 60 段/);
