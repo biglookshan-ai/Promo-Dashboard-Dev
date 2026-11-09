@@ -224,7 +224,8 @@
     这时计划上的「加进 Collection / 倒计时 / 产品标签 / 关联活动」那几段不显示。保存时 `slotsOut` 把价格的设置展开到用它的每一段(`slot.collection / tagsAdd / tagsRemove / campaign / countdown`),
     计划上的 tagsAdd / tagsRemove 存空、countdown 存关、`campaigns` = 各价格的活动(`campaign` = 第一个,跟随活动时间只在一段时间时能用)。切回一段时间:价格 A 的设置回到计划上。
     执行器按段读:`planTags` / `planCountdowns`(`slotCountdown`)段上有就用段的,没有(老计划)用计划的;`planCollections` 本来就按段。两段连着、设置不同 → 换价那一分钟一起换 Collection / 标签 / 倒计时。
-    活动页(schedule.js 活动详情)按 `campaign` 或 `campaigns` 认改价;列表「按活动」一个计划可以在几个活动下面。测试 `test/price-per-version.test.js`。
+    活动页(schedule.js 活动详情 `segsFor`):段上带 campaign 的计划**只算关联了这个活动的那几段**(那个价格的名字、时间、产品数);老计划按计划上的 campaign。列表「按活动」一个计划可以在几个活动下面。测试 `test/price-per-version.test.js`。
+  · **价格总览是单独一段,放在「什么时候生效」上面**(2026-11-09 用户;一开始放在「改价分组」最上面):一段时间时只有一行「＋ 不同时间段用不同价格」入口;点格子仍是打开上面那一组、切到那个价格。
   · 计划内「几段时间」照常显示(撤回系列时恢复)。
   页面 `public/price.js`(点开「改价」才加载),样式在 style.css 末尾、**全部限定在 `#section-price` 里**,和排期页同名的样式加了 `pr-` 前缀 —— 别去掉,否则两边互相干扰。
   飞书私信:`src/lark-bot.js`(同一个飞书应用的机器人,需要 `im:message:send_as_bot`)。本地测:harness 的 `/__price`(改过价的变体)、`/__price/set`(模拟手动改价)、`/__dms`(发出的私信),产品数据 `node scripts/fetch-price-catalog.mjs`。

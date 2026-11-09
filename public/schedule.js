@@ -1164,7 +1164,11 @@
     const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
     const content = HUB_KINDS.flatMap(([k]) => mine(k));
     const canPrice = MODE === 'live' && window.cgpCanSee && window.cgpCanSee('price');
-    const plans = (hubPrice.plans || []).filter((p) => p.campaign?.id === c.id || (p.campaigns || []).some((x) => x?.id === c.id)); // 几个价格各自关联活动时 campaigns 有好几个(2026-11-09)
+    // 几个价格各自关联活动(2026-11-09):段上带 campaign → 只算关联了这个活动的那几段(那个价格的时间 / 产品);老计划按计划上的 campaign
+    const segsFor = (p) => ((p.slots || []).some((s) => 'campaign' in s) ? p.slots.filter((s) => s.campaign?.id === c.id) : p.campaign?.id === c.id ? p.slots || [] : []);
+    const plans = (hubPrice.plans || []).filter((p) => segsFor(p).length);
+    const vNames = (p, segs) => { const ids = [...new Set(segs.map((s) => s.version).filter(Boolean))]; if (!ids.length || (p.versions || []).length < 2) return '';
+      return `${ids.map((id) => (p.versions.find((v) => v.id === id)?.name || `价格 ${id}`)).join('、')} · `; };
     const add = (kind, label) => `<button type="button" class="btn btn-sm" data-new="${kind}" data-for="${c.id}">${I.plus}${label}</button>`;
     const needType = (flag, label) => `<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">${label}(要先补建内容类型)</button>`;
     const adds = add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页商品模块')
@@ -1173,8 +1177,8 @@
       + (MODE === 'live' && S.setup && S.setup.coReady === false ? needType('callout', '产品页推广') : add('callout', '产品页推广'));
     const groups = HUB_KINDS.map(([k, label]) => { const list = mine(k); return list.length
       ? `<div class="hgrp"><div class="hgrp__h">${label}<span class="muted">${list.length}</span></div><div class="hrows">${list.map(hubRow).join('')}</div></div>` : ''; }).join('');
-    const priceRows = plans.map((p) => `<button class="hrow" type="button" data-price="${p.id}"><span class="hrow__ico">${kindChip('price')}</span><span class="hrow__b"><span class="hrow__t">${esc(p.name)}</span>
-      <span class="hrow__s">${p.kind === 'permanent' ? '永久调价' : '限时'} · ${new Set(p.slots.flatMap((s) => s.items.map((i) => i.productId))).size} 个产品 · ${fDT(Math.min(...p.slots.map((s) => s.start)))}</span></span><span class="tag">${PLAN_ST[p.state === 'approved' ? 'scheduled' : p.state] || p.state}</span></button>`).join('');
+    const priceRows = plans.map((p) => { const sg = segsFor(p); return `<button class="hrow" type="button" data-price="${p.id}"><span class="hrow__ico">${kindChip('price')}</span><span class="hrow__b"><span class="hrow__t">${esc(p.name)}</span>
+      <span class="hrow__s">${p.kind === 'permanent' ? '永久调价' : '限时'} · ${esc(vNames(p, sg))}${sg.length < (p.slots || []).length ? `${sg.length} 段 · ` : ''}${new Set(sg.flatMap((s) => s.items.map((i) => i.productId))).size} 个产品 · ${fDT(Math.min(...sg.map((s) => s.start)))}${sg.some((s) => s.end) ? ` → ${fDT(Math.max(...sg.map((s) => s.end || 0)))}` : ''}</span></span><span class="tag">${PLAN_ST[p.state === 'approved' ? 'scheduled' : p.state] || p.state}</span></button>`; }).join('');
     // 审批进度:只在「多人协作」开着时有意义
     let prog = '';
     if (approvalsOn()) {

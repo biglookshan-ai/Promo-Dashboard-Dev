@@ -603,6 +603,8 @@ function editorHtml() {
       ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价。同一个产品出现在好几组时,以<b>排在下面的那组</b>为准 —— 比如第 1 组全场 9 折,第 2 组某个品牌 8 折,这个品牌就是 8 折。')}
 
 
+      ${p.kind === 'window' ? sec('价格总览', priceMatrixHtml(ro), '不同时间段用不同价格:一列 = 一个价格(列头起名),一行 = 一个改价组,格子里是这一组在这个价格下怎么改(点格子去上面那一组改)。下面几行是这个价格生效时顺便做的事:加进 Collection、加 / 去掉标签、关联活动、倒计时 —— 换到别的价格时跟着换。每一段用哪个价格,在下面「什么时候生效」里选') : ''}
+
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期回到改价前)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
         ${p.campaign ? `<label class="row" style="margin-bottom:10px;font-size:13px"><input type="checkbox" data-f="followcamp" ${p.followCampaign ? 'checked' : ''} ${ro ? 'disabled' : ''}/> 跟随活动「${esc(p.campaign.name)}」的时间 <span class="muted">活动改时间,这个计划跟着一起改</span></label>` : ''}
@@ -612,7 +614,7 @@ function editorHtml() {
           ${p.kind === 'window' ? `<label class="pr-fld">结束(售价和划线价都回到改价前)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
         </div>` : schedMode() === 'multi' ? segsHtml() : weeklyHtml()}
         ${schedMode() !== 'one' ? timelineHtml(scheduleSegments()) : ''}
-        ${perPrice() ? '<p class="muted" style="margin-top:10px;font-size:13px">加进哪个 Collection、加什么标签、关联哪个活动、要不要倒计时,分段时<b>按价格设</b>:在上面「改价分组」的价格总览里。</p>' : ''}
+        ${perPrice() ? '<p class="muted" style="margin-top:10px;font-size:13px">加进哪个 Collection、加什么标签、关联哪个活动、要不要倒计时,分段时<b>按价格设</b>:在上面「价格总览」里。</p>' : ''}
         ${p.kind === 'window' && !perPrice() ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>带条件的也行(加进它的「单独加入的产品」,不动条件);结束拿掉 app 加的,本来就在 / 你们手动加的不动。Flash 当天那一组常用</em>
           ${sl.collection ? `<div class="row"><span class="tag ${S.goneCollections?.[sl.collection.id] ? 'tag--danger' : 'tag--accent'}">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>
             ${S.collState?.[sl.collection.id]?.via === 'shared' ? '<div class="note note--sm">这个 Collection 的条件和别的 Collection 共用:单独加产品会连带改到别的 Collection,所以 app 不加,产品照它的条件进出。</div>' : ''}
@@ -723,7 +725,7 @@ function priceMatrixHtml(ro) {
         <select class="sel sel--sm" data-f="vcdstyle" data-v="${v.id}" ${sro ? 'disabled' : ''}>${Object.entries(CD_STY).map(([k, x]) => `<option value="${k}" ${sty === k ? 'selected' : ''}>${x[0]}</option>`).join('')}</select></div>` : ''}`; };
   const setRow = (label, tip, cell) => `<tr class="pr-vmx__set"><th class="pr-vmx__g">${label}${tip ? `<span class="tipify">${tip}</span>` : ''}</th>${vs.map((v) => `<td class="${v.id === cv ? 'is-curcol' : ''}">${cell(v)}</td>`).join('')}</tr>`;
   return `<div class="pr-vmx">
-    <div class="pr-vmx__h"><b>价格总览</b><span class="tipify">同一批产品,不同时段用不同的价。<b>一列 = 一个价格</b>(列头就是名字,直接改),<b>一行 = 一个改价组</b>;格子里是这一组在这个价格下怎么改,<b>点格子</b>打开那一组去改。<br>下面几行是<b>这个价格生效时</b>顺便做的事:加进哪个 Collection、加 / 去掉什么标签、关联哪个活动、产品上要不要倒计时(倒数到这一段结束)。<br>每一段用哪个价格,在「什么时候生效」里选。</span>${add}</div>
+    <div class="pr-vmx__h"><span class="muted">${vs.length} 个价格 · 每一段用哪个,在下面「什么时候生效」里选</span>${add}</div>
     <div class="tblwrap"><table class="pr-vmx__t"><thead><tr><th class="pr-vmx__g">改价组</th>${vs.map((v) => `<th class="${v.id === cv ? 'is-cur' : ''}">
       <div class="pr-vmx__vh">${vDot(p, v.id)}${ro ? `<b>${esc(vName(p, v.id))}</b>` : `<input class="inp inp--sm ${vNamed(p, v.id) ? '' : 'is-unnamed'}" data-f="vname" data-v="${v.id}" value="${esc(v.name || '')}" placeholder="给这个价格起名,比如 周末价" maxlength="20"/>`}
         ${!ro && v.id !== 'A' ? `<button type="button" class="chip__x" data-a="vdel" data-v="${v.id}" title="删掉这个价格">✕</button>` : ''}</div>
@@ -755,10 +757,9 @@ function ruleHtml(ro) {
 }
 function groupsHtml(ro) {
   const gs = groupsOf(P()); const gi = Math.min(E.gi || 0, gs.length - 1);
-  const vbar = priceMatrixHtml(ro);
   const its = items(); const ex = new Set(P().excluded || []);
   const multi = gs.length > 1;
-  return `${vbar}<div class="pr-groups">${gs.map((g, i) => {
+  return `<div class="pr-groups">${gs.map((g, i) => {
     const open = i === gi;
     const mine = its.filter((it) => it.group === g.id);
     const todo = P().kind === 'window' ? (multiV() ? versionsOf(P()).map((v) => (E.vitems?.[v.id] || [])) : [mine]).flat().filter((it) => it.group === g.id && needsPrice(P(), it) && !ex.has(it.variantId)).length : 0;
@@ -775,7 +776,7 @@ function groupsHtml(ro) {
           <button type="button" class="btn btn-ghost btn-xs" data-a="gdel" data-i="${i}" title="删掉这一组">删除</button></span>`}
       </div>
       ${open ? `<div class="pr-group__b">
-        <label class="pr-fld pr-group__name">这一组的名字 <em>可不填;起个名字一眼看出这组是哪批产品,比如「Leaplight 清货」「Sunnylife 新品」${multiV() ? '。工作日 / 周末这种是「价格」,在上面价格总览的列头起名' : ''}</em>
+        <label class="pr-fld pr-group__name">这一组的名字 <em>可不填;起个名字一眼看出这组是哪批产品,比如「Leaplight 清货」「Sunnylife 新品」${multiV() ? '。工作日 / 周末这种是「价格」,在下面「价格总览」的列头起名' : ''}</em>
           <input class="inp" data-f="gname" value="${esc(g.name || '')}" maxlength="30" placeholder="${multi ? `第 ${i + 1} 组` : '改价规则'}" ${ro ? 'disabled' : ''}/></label>
         <div class="pr-group__lab">改哪些产品</div>${scopeHtml(ro)}
         <div class="pr-group__lab">改什么价${verTabsHtml()}</div>${ruleHtml(ro)}
@@ -986,7 +987,7 @@ function previewHtml(ro, gid, keep = null) {
   }).join('');
   if (!its.length) return '<p class="muted" style="margin-top:8px">没有符合筛选的产品。</p>';
   return `    <div class="tblwrap" style="margin-top:10px"><table class="pr-tbl"><thead><tr><th>产品</th><th>选项 / SKU</th><th class="ctr" title="Shopify 里 ${esc(STK.loc?.name || 'UK 仓')} 的 Available(可售数),不含别的仓">UK 可售</th><th class="num">现价</th>${cols ? cols.map((ver) => `<th class="num pr-vth ${ver === curV() ? 'is-cur' : ''}">${vDot(p, ver)}${esc(vName(p, ver))}</th>`).join('') : '<th class="num">新价</th>'}<th class="num">划线价${cols ? '<span class="tipify">划线价对每个价格都一样(都按原来的价算),改一次就行</span>' : ''}</th>${cols ? '' : '<th class="num">变化</th>'}<th class="ctr">检查</th><th class="num">${rowAct ? '操作' : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${cols && versionsOf(p).length > cols.length ? `<p class="muted" style="margin-top:6px">还有 ${versionsOf(p).length - cols.length} 个价格没并排显示(${versionsOf(p).filter((v) => !cols.includes(v.id)).map((v) => esc(vName(p, v.id))).join('、')}),在上面价格总览点那一列的格子切过去</p>` : ''}
+    ${cols && versionsOf(p).length > cols.length ? `<p class="muted" style="margin-top:6px">还有 ${versionsOf(p).length - cols.length} 个价格没并排显示(${versionsOf(p).filter((v) => !cols.includes(v.id)).map((v) => esc(vName(p, v.id))).join('、')}),在下面「价格总览」点那一列的格子切过去</p>` : ''}
     ${its.length > 20 && !needFill ? `<button class="btn btn-sm btn-ghost" data-a="showall" data-g="${gid}" style="margin-top:8px">${all ? '只看前 20 个' : `展开全部 ${its.length} 个选项`}</button>` : ''}`;
 }
 
@@ -1611,7 +1612,7 @@ document.addEventListener('click', async (ev) => {
       case 'gomulti': { // 一段时间 → 几段时间(价格总览出现),滚到「什么时候生效」
         document.querySelector('#section-price [data-a="schedmode"][data-v="multi"]')?.click();
         setTimeout(() => [...document.querySelectorAll('#section-price .pr-sec')].find((x) => x.querySelector('.pr-sec__h')?.textContent.trim().startsWith('什么时候'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-        toast('换成「几段时间」了:在下面排每一段、选用哪个价格;上面「改价分组」里出现了价格总览,点「＋ 加一个价格」'); break;
+        toast('换成「几段时间」了:在下面排每一段、选用哪个价格;上面「价格总览」点「＋ 加一个价格」'); break;
       }
       case 'pick': {
         if (!window.shopify?.resourcePicker) { toast('选择器只能在 Shopify 后台里用', false); return; }
