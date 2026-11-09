@@ -2252,3 +2252,21 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-price .pl-ver { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; }
 #section-price .pl-ver .pr-vdot { margin-right: 0; }
 #section-price .gantt__label .pr-dot { width: 8px; height: 8px; margin-right: 6px; vertical-align: 0; }
+
+/* ---- 系列:一段 = 一个计划,几个计划串成一个系列(2026-11-09 用户:每个时间段要独立设置)---- */
+#section-price .pl-ser { border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-2); margin-bottom: 12px; padding: 10px 12px 4px; }
+#section-price .pl-ser.is-shut { padding-bottom: 10px; }
+#section-price .pl-ser__h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; }
+#section-price .pl-ser__h .spacer { flex: 1; }
+#section-price .pl-ser__tg { border: 0; background: none; cursor: pointer; font-size: 13px; color: var(--text-2); padding: 0 2px; width: 18px; }
+#section-price .pl-ser__k { display: inline-block; font-size: 12px; font-weight: 600; color: #fff; background: var(--text-2); border-radius: 4px; padding: 0 6px; margin-right: 6px; line-height: 18px; }
+#section-price .pl-ser__n { font-size: 14px; }
+#section-price .pl-ser__tl { position: relative; height: 24px; margin: 10px 0 8px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+#section-price .pl-ser__seg { position: absolute; top: 0; bottom: 0; background: var(--accent); color: #fff; font-size: 12px; line-height: 24px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; border-right: 2px solid var(--surface-2); box-sizing: border-box; }
+#section-price .pl-ser__seg.is-ended { opacity: .45; }
+#section-price .pl-ser__now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); }
+#section-price .pl-ser__b > .plan { margin-bottom: 8px; }
+#section-price .pl-ser__more { font-size: 12px; margin: 0 0 8px; }
+#section-price .pl-segno { display: inline-block; font-size: 12px; font-weight: 600; color: var(--text-2); background: var(--surface-3); border-radius: 4px; padding: 0 6px; margin-right: 6px; line-height: 18px; vertical-align: 1px; }
+#section-price .gantt__label .pl-ser__k { margin-right: 6px; }
+#section-price .gantt__slot.is-ser { border-right: 2px solid var(--surface); box-sizing: border-box; }

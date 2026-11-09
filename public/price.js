@@ -155,6 +155,14 @@ const LV = { by: ['folder', 'campaign', 'brand'].includes(localStorage.getItem('
   chip: '__all', q: '', sel: new Set(), newFolder: false };
 const BY = [['folder', '我的分组'], ['campaign', '按活动'], ['brand', '按品牌']];
 const NONE = { folder: '未分组', campaign: '没关联活动', brand: '还没有产品' };
+// 系列(2026-11-09 用户:每个时间段要独立设置 → 一段 = 一个计划,用系列串起来)
+const seriesAll = () => [...new Set([...S.plans.map((p) => p.series), ...(S.series || []).map((x) => x.series)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
+// 系列里的全部段(服务器给的简况,包括已结束没读进来的),按开始时间排
+const seriesSegs = (name) => {
+  const m = new Map((S.series || []).filter((x) => x.series === name).map((x) => [x.id, x]));
+  for (const p of S.plans) if (p.series === name) { const sm = A.planSummary(p); m.set(p.id, { id: p.id, name: p.name, series: name, color: p.color, start: sm.start, end: sm.end, status: statusOf(p) }); }
+  return [...m.values()].sort((a, b) => a.start - b.start || (a.end ?? 0) - (b.end ?? 0));
+};
 const foldersAll = () => [...new Set([...S.plans.map((p) => p.folder), ...(S.folders || [])].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
 // 计划里的品牌,按选项数多到少
 function brandsOf(p) {
@@ -166,7 +174,7 @@ const keysOf = (p, by = LV.by) => (by === 'folder' ? [p.folder || ''] : by === '
 const qOf = () => LV.q.trim().toLowerCase();
 function searchMatch(p) {
   const q = qOf(); if (!q) return true;
-  return [p.name, p.folder, p.campaign?.name, ...brandsOf(p)].some((x) => String(x || '').toLowerCase().includes(q))
+  return [p.name, p.folder, p.series, p.campaign?.name, ...brandsOf(p)].some((x) => String(x || '').toLowerCase().includes(q))
     || p.slots.some((sl) => sl.items.some((i) => `${i.product || i.title} ${i.variant || ''} ${i.sku || ''}`.toLowerCase().includes(q)));
 }
 const chipMatch = (p) => LV.chip === '__all' || keysOf(p).includes(LV.chip);
@@ -200,11 +208,51 @@ function bulkHtml() {
   return `<div class="pl-bulk"><b>已选 ${n} 个计划</b>
     <span class="pl-bulk__g">移到分组 <input class="inp inp--sm" id="pl-folder" list="pl-folders" placeholder="新的或已有的分组名" maxlength="${A.FOLDER_MAX}"/><datalist id="pl-folders">${foldersAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist>
       <button type="button" class="btn btn-sm btn-primary" data-a="lmove">移过去</button><button type="button" class="linkbtn" data-a="lunfolder">移出分组</button></span>
+    <span class="pl-bulk__g">放进系列 <input class="inp inp--sm" id="pl-series" list="pl-serieses" placeholder="新的或已有的系列名" maxlength="${A.SERIES_MAX}"/><datalist id="pl-serieses">${seriesAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist>
+      <button type="button" class="btn btn-sm" data-a="lseries">放进去</button><button type="button" class="linkbtn" data-a="lunseries">移出系列</button></span>
     <span class="pl-bulk__g">关联活动 <select class="sel sel--sm" id="pl-camp"><option value="">不关联</option>${(cache.campaigns || []).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
       <button type="button" class="btn btn-sm" data-a="lcamp">关联</button></span>
     <button type="button" class="linkbtn" data-a="lnone">取消选择</button></div>`;
 }
 
+// 列表:同一个系列的计划折成一块(放在系列里最早出现的那个位置),其余照旧一行一个
+function listHtml(list, ovIdx) {
+  const out = []; const done = new Set();
+  for (const x of list) {
+    const ser = x.p.series;
+    if (!ser) { out.push(planRow(x.p, x.s, ovIdx.get(x.p.id))); continue; }
+    if (done.has(ser)) continue; done.add(ser);
+    out.push(seriesHtml(ser, list.filter((y) => y.p.series === ser), ovIdx));
+  }
+  return out.join('');
+}
+// 一个系列:标题(名字、几段、从哪天到哪天、各状态几段)+ 一条时间轴(每段一块,写段名)+ 下面每段一行(第 N 段)
+function seriesHtml(name, members, ovIdx) {
+  const segs = seriesSegs(name); const no = new Map(segs.map((x, i) => [x.id, i + 1]));
+  const t0 = Math.min(...segs.map((x) => x.start)); const t1 = Math.max(...segs.map((x) => x.end ?? x.start + DAY)); const span = Math.max(1, t1 - t0);
+  const shut = LV.serShut?.has(name);
+  const cnt = {}; for (const x of segs) cnt[x.status] = (cnt[x.status] || 0) + 1;
+  const stTags = Object.keys(cnt).sort((a, b) => ORDER[a] - ORDER[b]).map((k) => `<span class="tag ${STATUS_TAG[k]}">${core.STATUS_CN[k]} ${cnt[k]}</span>`).join('');
+  const last = [...segs].reverse().find((x) => x.end != null);
+  const n = now(); const nowIn = n > t0 && n < t1;
+  const pc = (ms) => ((ms - t0) / span) * 100;
+  return `<div class="pl-ser ${shut ? 'is-shut' : ''}">
+    <div class="pl-ser__h">
+      <button type="button" class="pl-ser__tg" data-a="sertoggle" data-s="${esc(name)}" title="${shut ? '展开' : '收起'}">${shut ? '▸' : '▾'}</button>
+      <span class="pl-ser__k">系列</span>
+      ${LV.serRen === name ? `<span class="pl-newf"><input class="inp inp--sm" id="pl-serren" data-s="${esc(name)}" value="${esc(name)}" maxlength="${A.SERIES_MAX}"/><span class="muted">回车保存</span><button type="button" class="linkbtn" data-a="serren0">取消</button></span>`
+        : `<b class="pl-ser__n">${esc(name)}</b><button type="button" class="linkbtn" data-a="serren" data-s="${esc(name)}">改名</button>`}
+      <span class="muted">${segs.length} 段 · ${fmtT(t0)} → ${fmtT(t1)}</span>${stTags}
+      <span class="spacer"></span>
+      ${last ? `<button type="button" class="btn btn-sm" data-a="qdupseg" data-id="${last.id}" title="复制最后一段(「${esc(last.name)}」),时间接在它后面;然后改这一段要变的">＋ 接下一段</button>` : ''}
+    </div>
+    <div class="pl-ser__tl">${segs.map((x) => `<span class="pl-ser__seg ${['ended', 'done'].includes(x.status) ? 'is-ended' : ''}" data-a="open" data-id="${x.id}" style="left:${pc(x.start)}%;width:${Math.max(0.8, pc(x.end ?? x.start + DAY) - pc(x.start))}%;${x.color ? `background:${esc(x.color)}` : ''}"
+        title="第 ${no.get(x.id)} 段 · ${esc(x.name)}\n${fmtT(x.start)}${x.end ? ' → ' + fmtT(x.end) : ' 起'} · ${core.STATUS_CN[x.status] || ''}">${esc(x.name)}</span>`).join('')}
+      ${nowIn ? `<i class="pl-ser__now" style="left:${pc(n)}%" title="现在"></i>` : ''}</div>
+    ${shut ? '' : `<div class="pl-ser__b">${members.sort((a, b) => (no.get(a.p.id) || 0) - (no.get(b.p.id) || 0)).map(({ p, s }) => planRow(p, s, ovIdx.get(p.id), no.get(p.id))).join('')}
+      ${members.length < segs.length ? `<p class="muted pl-ser__more">另有 ${segs.length - members.length} 段不在现在的筛选里(${segs.filter((x) => !members.some((m) => m.p.id === x.id)).map((x) => `第 ${no.get(x.id)} 段 ${esc(x.name)}`).join('、')}),点上面时间轴能打开</p>` : ''}</div>`}
+  </div>`;
+}
 function plansHtml() {
   const st = S.plans.map((p) => ({ p, s: statusOf(p) }));
   // 已结束的没读进来时,「已结束 / 全部」的数字用服务器给的
@@ -227,7 +275,7 @@ function plansHtml() {
   <div class="toolbar">
     <button class="btn btn-primary" data-a="new" data-kind="window">+ 限时改价</button>
     <button class="btn" data-a="new" data-kind="permanent">+ 永久调价</button>
-    <span class="tipify">Flash 每天一组:建好第一天,在计划里点「复制成下一天」。时间一律按英国时间(店铺时区),夏令时自动处理。</span>
+    <span class="tipify">一个活动分几段、每段设置不一样(预热 / 正式 / Flash 日…):建好第一段,点「接下一段」,每段一个计划、串成系列,时间自动接上。<br>Flash 每天一组:建好第一天,点「复制成下一天」。<br>时间一律按英国时间(店铺时区),夏令时自动处理。</span>
     <span class="spacer"></span>
   </div>
   <div class="pl-top"><div class="pr-tabs">${FILTERS.filter(([k]) => k !== 'pending' || showPending).map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
@@ -235,7 +283,7 @@ function plansHtml() {
   ${LV.q && !S.allPlans ? '<p class="muted pl-top__more">已结束的计划还没一起搜。<button type="button" class="linkbtn" data-a="filter" data-f="all">连已结束的一起搜</button></p>' : ''}
   ${groupBarHtml(base, list)}
   ${bulkHtml()}
-  ${loadingAll ? '<div class="pr-empty">正在读已结束的计划…</div>' : list.length ? list.map(({ p, s }) => planRow(p, s, ovIdx.get(p.id))).join('') : `<div class="pr-empty">${LV.q || LV.chip !== '__all' ? '没有符合的计划' : '这里还没有计划'}</div>`}`;
+  ${loadingAll ? '<div class="pr-empty">正在读已结束的计划…</div>' : list.length ? listHtml(list, ovIdx) : `<div class="pr-empty">${LV.q || LV.chip !== '__all' ? '没有符合的计划' : '这里还没有计划'}</div>`}`;
 }
 
 const leftTxt = (ms) => {
@@ -260,7 +308,7 @@ function planSay(p) {
   const how = gs.length > 1 ? `分 ${gs.length} 组改价(${gs.map((g, i) => `${esc(gName(g, i))} ${esc(ruleShort(g.rule))}`).join(' / ')})` : r ? r.say(gs[0].rule.value) : '按逐个产品设定的价格';
   return `把 <b>${n}</b> 个产品${p.kind === 'permanent' ? '永久' : '在活动期间'}:${how}`;
 }
-function planRow(p, s, ovs = []) {
+function planRow(p, s, ovs = [], segNo = null) {
   const sum = A.planSummary(p);
   const items = p.slots.flatMap((x) => x.items).filter((i) => i.price != null);
   const maxOff = items.reduce((m, i) => Math.max(m, core.discountPct(i.refPrice, i.price)), 0);
@@ -277,13 +325,13 @@ function planRow(p, s, ovs = []) {
     ] : []),
     ...(s === 'pending' && ap ? [btn('qapprove', '批准', 'btn-ok')] : []),
     btn('qdup', '复制'),
-    ...(p.kind === 'window' && sum.end ? [btn('qdupnext', '复制成下一天')] : []),
+    ...(p.kind === 'window' && sum.end ? [btn('qdupnext', '复制成下一天'), ...(segNo ? [] : [btn('qdupseg', '接下一段(串成系列)')])] : []), // 系列里的段:用系列标题上的「接下一段」
   ].join('');
   return `<div class="plan ${LV.sel.has(p.id) ? 'is-sel' : ''}">
     <div class="plan__bar ${layerCls(p)}" style="${p.color ? `background:${esc(p.color)}` : ''}"></div>
     <label class="plan__sel" title="选中后可以一起移到分组 / 关联活动"><input type="checkbox" data-a="lsel" data-id="${p.id}" ${LV.sel.has(p.id) ? 'checked' : ''}/></label>
     <div data-a="open" data-id="${p.id}" style="cursor:pointer">
-      <div class="plan__name">${esc(p.name || '未命名计划')}
+      <div class="plan__name">${segNo ? `<span class="pl-segno">第 ${segNo} 段</span>` : ''}${esc(p.name || '未命名计划')}
         <span class="tag ${STATUS_TAG[s]}">${core.STATUS_CN[s]}</span>
         <span class="tag ${p.kind === 'window' ? 'tag--' + layerCls(p) : ''}">${kindLabel(p)}</span>
         ${p.slots.length > 1 ? `<span class="tag" title="${esc(p.slots.map((x) => `${x.version ? vName(p, x.version) + ' · ' : ''}${fmtT(x.start)} → ${fmtT(x.end)}`).join('\n'))}">${p.schedule?.mode === 'weekly' ? '每周重复 · ' : ''}${p.slots.length} 段${versionsOf(p).length > 1 ? ` · ${versionsOf(p).length} 种价格` : ''}</span>` : ''}
@@ -292,6 +340,7 @@ function planRow(p, s, ovs = []) {
         ${ovs.length ? `<span class="tag tag--warn" title="${esc(ovs.map((o) => `「${o.name}」:${o.n} 个选项,重叠时用「${o.wins ? p.name : o.name}」的价`).join('\n'))}">⚠️ 和「${esc(ovs[0].name)}」${ovs.length > 1 ? `等 ${ovs.length} 个计划` : ''}改到同一批产品(${ovs.reduce((n, o) => n + o.n, 0)} 个选项)</span>` : ''}
         ${p.campaign ? `<span class="tag">活动:${esc(p.campaign.name)}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : ''}
         ${p.folder && LV.by !== 'folder' ? `<span class="tag">分组:${esc(p.folder)}</span>` : ''}
+        ${p.series && !segNo ? `<span class="tag">系列:${esc(p.series)}</span>` : ''}
         ${S.approvals ? `<span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}` : ''}
       </div>
       <div class="plan__say">${planSay(p)}</div>
@@ -320,18 +369,29 @@ function ganttHtml() {
   const pct = (ms) => `${((Math.min(Math.max(ms, t0), t1) - t0) / span) * 100}%`;
   const days = Array.from({ length: 14 }, (_, i) => dayAt(i));
   const nowLeft = pct(now());
+  // 一个系列一行(每段一块,写段名);不在系列里的计划一行一个
+  const lanes = []; const seen = new Set();
+  for (const p of rows) {
+    if (!p.series) { lanes.push({ p, plans: [p] }); continue; }
+    if (seen.has(p.series)) continue; seen.add(p.series);
+    lanes.push({ ser: p.series, plans: rows.filter((q) => q.series === p.series) });
+  }
+  const bars = (p, inSer) => p.slots.map((s, i) => {
+    const end = s.end ?? s.start + DAY / 3;
+    if (end <= t0 || s.start >= t1) return '';
+    const mv = s.version && versionsOf(p).length > 1; // 这一段用的是几种价格里的哪一种:条上写价格的名字(不写 A / B),停上去看每一组在这个价格下怎么改
+    const tip = [`${inSer ? `系列「${p.series}」· ` : ''}${p.name}${mv ? ` · ${vName(p, s.version)}` : p.slots.length > 1 ? ` · 第 ${i + 1} 段` : ''}`, `${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个选项`,
+      ...(mv || groupsOf(p).length > 1 ? groupsOf(p).map((g, gi) => `${groupsOf(p).length > 1 ? `${gName(g, gi)}:` : ''}${ruleSay(ruleAt(g, s.version))}`) : [])].join('\n');
+    const txt = p.kind === 'permanent' ? '永久' : mv ? `${inSer ? `${p.name} · ` : ''}${vName(p, s.version)}` : p.slots.length > 1 ? `${inSer ? `${p.name} · ` : ''}第 ${i + 1} 段` : p.name;
+    return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''} ${inSer ? 'is-ser' : ''}" style="${mv ? `background:${vColor(p, s.version)};` : p.color ? `background:${esc(p.color)};` : ''}left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
+      title="${esc(tip)}">${esc(txt)}</div>`;
+  }).join('');
   return `<div class="gantt"><div class="gantt__grid">
     <div></div><div class="gantt__days">${days.map((d, i) => `<span class="${i === 0 ? 'is-today' : ''}">${fmtD(d)}</span>`).join('')}</div>
-    ${rows.map((p) => `<div class="gantt__label" data-a="open" data-id="${p.id}" title="${esc(p.name)}">${versionsOf(p).length > 1 ? `<span class="pr-dot" style="background:${esc(p.color || '#888')}"></span>` : ''}${esc(p.name)}</div>
-      <div class="gantt__lane">${p.slots.map((s, i) => {
-        const end = s.end ?? s.start + DAY / 3;
-        if (end <= t0 || s.start >= t1) return '';
-        const mv = s.version && versionsOf(p).length > 1; // 这一段用的是几种价格里的哪一种:条上写价格的名字(不写 A / B),停上去看每一组在这个价格下怎么改
-        const tip = [`${p.name}${mv ? ` · ${vName(p, s.version)}` : p.slots.length > 1 ? ` · 第 ${i + 1} 段` : ''}`, `${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个选项`,
-          ...(mv || groupsOf(p).length > 1 ? groupsOf(p).map((g, gi) => `${groupsOf(p).length > 1 ? `${gName(g, gi)}:` : ''}${ruleSay(ruleAt(g, s.version))}`) : [])].join('\n');
-        return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''}" style="${mv ? `background:${vColor(p, s.version)};` : p.color ? `background:${esc(p.color)};` : ''}left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
-          title="${esc(tip)}">${p.kind === 'permanent' ? '永久' : mv ? esc(vName(p, s.version)) : p.slots.length > 1 ? `第 ${i + 1} 段` : esc(p.name)}</div>`;
-      }).join('')}<div class="gantt__now" style="left:${nowLeft}"></div></div>`).join('')}
+    ${lanes.map((ln) => (ln.ser
+      ? `<div class="gantt__label" title="系列「${esc(ln.ser)}」:${ln.plans.length} 段"><span class="pl-ser__k">系列</span>${esc(ln.ser)}</div>`
+      : `<div class="gantt__label" data-a="open" data-id="${ln.p.id}" title="${esc(ln.p.name)}">${versionsOf(ln.p).length > 1 ? `<span class="pr-dot" style="background:${esc(ln.p.color || '#888')}"></span>` : ''}${esc(ln.p.name)}</div>`)
+      + `<div class="gantt__lane">${ln.plans.map((p) => bars(p, !!ln.ser)).join('')}<div class="gantt__now" style="left:${nowLeft}"></div></div>`).join('')}
   </div></div>`;
 }
 
@@ -578,7 +638,10 @@ function editorHtml() {
         <input class="inp" data-f="name" value="${esc(p.name)}" placeholder="比如:Early Black Friday · 全场 85 折" ${ro ? 'disabled' : ''} style="flex:1;min-width:200px"/></div>
         <label class="pr-fld" style="margin-top:10px">分组 <em>自己起的分组,计划列表按它归类;随时能改,不影响改价${E.isNew ? '' : '(改了马上生效,不用点保存)'}</em>
           <input class="inp" data-f="folder" list="pr-folders" value="${esc(p.folder || '')}" placeholder="可不填,比如:Black Friday 2026 / 清货 / 日常调价" maxlength="${A.FOLDER_MAX}" ${E.showPending ? 'disabled' : ''} style="max-width:420px"/>
-          <datalist id="pr-folders">${foldersAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist></label>`, '只有后台看得到,顾客看不到')}
+          <datalist id="pr-folders">${foldersAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist></label>
+        <label class="pr-fld" style="margin-top:10px">系列 <em>同一个活动分几段、每段的产品 / 价格 / Collection / 标签 / 关联活动都不一样时,每段建一个计划,放进同一个系列(列表里折成一组、时间轴一行看全部段)。计划名就写这一段叫什么,比如 预热 / 正式 / Flash 日。前后两段连着时直接换价,不会先回到改价前${E.isNew ? '' : '。改了马上生效,不用点保存'}</em>
+          <input class="inp" data-f="series" list="pr-series" value="${esc(p.series || '')}" placeholder="可不填,比如:Black Friday 2026" maxlength="${A.SERIES_MAX}" ${E.showPending ? 'disabled' : ''} style="max-width:420px"/>
+          <datalist id="pr-series">${seriesAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist></label>`, '只有后台看得到,顾客看不到')}
 
       ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价。同一个产品出现在好几组时,以<b>排在下面的那组</b>为准 —— 比如第 1 组全场 9 折,第 2 组某个品牌 8 折,这个品牌就是 8 折。')}
 
@@ -631,8 +694,9 @@ const schedRO = () => E.showPending || (!E.isNew && (['ended', 'done'].includes(
 const verOpts = (cur, dis) => versionsOf(P()).map((v) => `<option value="${v.id}" ${cur === v.id ? 'selected' : ''} ${dis ? 'disabled' : ''}>${esc(vName(P(), v.id))}</option>`).join('');
 function schedModeHtml() {
   const m = schedMode(); const lock = schedRO() || started();
-  return `<div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['one', '一段时间'], ['multi', '几段时间'], ['weekly', '每周重复']].map(([k, l]) => `<button type="button" class="${m === k ? 'is-on' : ''}" data-a="schedmode" data-v="${k}" ${lock ? 'disabled' : ''}>${l}</button>`).join('')}</span>
-    <span class="tipify">一段时间 = 和以前一样。<br>几段时间 = 自己排每一段的开始、结束、用哪个价格(比如 11/24–11/28 价格 A、11/29–12/1 价格 B)。<br>每周重复 = 选每周哪几天、几点到几点用哪个价格,自动排出每一段。<br>两段之间空着的时间 <b>回到改价前</b>;两段连着就直接换价。价格 A / B 在上面「改价分组」里设。</span></div>`;
+  // 2026-11-09 用户:每段要独立设置 → 「几段时间」改用系列(每段一个计划);只有以前存成几段的计划还显示这个选项
+  return `<div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['one', '一段时间'], ...(m === 'multi' ? [['multi', '几段时间']] : []), ['weekly', '每周重复']].map(([k, l]) => `<button type="button" class="${m === k ? 'is-on' : ''}" data-a="schedmode" data-v="${k}" ${lock ? 'disabled' : ''}>${l}</button>`).join('')}</span>
+    <span class="tipify">一段时间 = 一个开始、一个结束。<br>每周重复 = 同一批产品,选每周哪几天、几点到几点用哪个价格(比如工作日一个价、周末一个价),自动排出每一段;两段之间空着的时间 <b>回到改价前</b>,连着就直接换价。价格在上面「改价分组」的价格总览里设。<br><b>每段的产品 / Collection / 标签 / 活动都不一样</b>:用底部「接下一段」,每段一个计划,串成系列。${m === 'multi' ? '<br>「几段时间」是以前的做法,这个计划照常执行;新的分段请用系列。' : ''}</span></div>`;
 }
 function segsHtml() {
   const ro = schedRO(); const segs = scheduleSegments();
@@ -1073,6 +1137,7 @@ function footHtml() {
   if (!E.isNew) b.push('<button class="btn btn-ghost" data-a="history">历史版本</button>');
   if (!E.isNew) b.push('<button class="btn btn-ghost" data-a="dup">复制成新计划</button>');
   if (!E.isNew && P().kind === 'window' && curSlot().end) b.push('<button class="btn btn-ghost" data-a="dupnext">复制成下一天</button>');
+  if (!E.isNew && P().kind === 'window' && A.planSummary(P()).end) b.push(`<button class="btn btn-ghost" data-a="dupseg" title="复制这个计划,时间接在它结束之后,放进同一个系列;然后改这一段要变的(产品、价格、Collection、标签…)">接下一段${P().series ? '' : '(串成系列)'}</button>`);
   if (!E.isNew && (!['running', 'paused'].includes(st)) && (o.state !== 'approved' || ap)) b.push('<button class="btn btn-ghost btn-danger" data-a="delete">删除</button>');
   if (E.isNew) b.push('<button class="btn btn-ghost" data-a="close">放弃</button>');
   return b.join('');
@@ -1300,7 +1365,7 @@ function values() {
     compare: p.groups?.[0]?.compare || cmpOf(p), campaign: p.campaign, note: p.note, slots: slotsOut(p),
     versions: versionsOf(p).length > 1 ? versionsOf(p) : null, schedule: p.kind === 'window' ? { mode: schedMode(p), ...(schedMode(p) === 'weekly' ? { weekly: p.schedule.weekly } : {}) } : null,
     groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: p.tagsAdd, tagsRemove: p.tagsRemove, followCampaign: !!p.followCampaign,
-    owner: p.owner || null, approver: p.approver || null, cc: p.cc || [], folder: p.folder || '' };
+    owner: p.owner || null, approver: p.approver || null, cc: p.cc || [], folder: p.folder || '', series: p.series || '' };
 }
 
 // 存的时段:一段时间 = 原来那一段;几段 / 每周重复 = 按段展开,每段带上它那个价格的全部条目(执行器照旧按时段改价)
@@ -1528,6 +1593,11 @@ document.addEventListener('click', async (ev) => {
         if (a === 'lmove' && !f) { toast('先填分组名', false); $('#pl-folder')?.focus(); return; }
         await withBusy(el, async () => { await act({ type: 'organize', ids: [...LV.sel], folder: f }); LV.sel.clear(); render(); }); break;
       }
+      case 'lseries': case 'lunseries': {
+        const f = a === 'lunseries' ? '' : A.cleanFolder($('#pl-series')?.value);
+        if (a === 'lseries' && !f) { toast('先填系列名', false); $('#pl-series')?.focus(); return; }
+        await withBusy(el, async () => { await act({ type: 'organize', ids: [...LV.sel], series: f }); LV.sel.clear(); render(); }); break;
+      }
       case 'lcamp': {
         const c = (cache.campaigns || []).find((x) => x.id === $('#pl-camp')?.value);
         await withBusy(el, async () => { await act({ type: 'organize', ids: [...LV.sel], campaign: c ? { id: c.id, name: c.name } : null }); LV.sel.clear(); render(); }); break;
@@ -1653,7 +1723,9 @@ document.addEventListener('click', async (ev) => {
         if (!E.plan.name.trim()) { toast('先填计划名称', false); $('[data-f=name]')?.focus(); return; }
         await withBusy(el, async () => {
           await ensureCalc(); render(); // 每组的产品都读好、按最新设置算好再存
+          const link = E.linkSrc;
           const r = await act({ type: 'save', mode, id: E.plan.id, isNew: E.isNew, values: values() });
+          if (link) { E.linkSrc = null; await api('POST', '/api/price/act', { action: { type: 'organize', ids: [link.id], series: link.series } }).catch(() => {}); await load(); }
           if (mode === 'draft') { E.isNew = false; E.dirty = false; await reopen(r.id); } else { E = null; renderChrome(); render(); }
         });
         break;
@@ -1665,21 +1737,34 @@ document.addEventListener('click', async (ev) => {
       case 'delete': if (!armed(el)) return; await withBusy(el, async () => { await act({ type: 'delete', id: E.orig.id }); E = null; renderChrome(); render(); }); break;
       case 'exclude': if (!armed(el, '再点一次:移出(回到改价前)')) return; await withBusy(el, async () => { await act({ type: 'exclude', id: E.orig.id, variantIds: (el.dataset.vs || el.dataset.v).split(',') }); await reopen(E.orig.id); }); break;
       case 'history': if (window.cgpPlanHistory) window.cgpPlanHistory(E.orig.id); break;
-      case 'dup': case 'dupnext': {
+      case 'dup': case 'dupnext': case 'dupseg': {
         const src = clone(P());
-        const shift = a === 'dupnext' ? DAY : 0;
+        let shift = a === 'dupnext' ? DAY : 0;
+        if (a === 'dupseg') { // 接下一段:整段往后挪一段那么长,开始 = 这一段结束(每周重复按整天挪)
+          const w = src.schedule?.mode === 'weekly' && src.schedule.weekly;
+          const sum = A.planSummary(src);
+          shift = w ? (Math.round((Date.parse(`${w.to}T12:00:00Z`) - Date.parse(`${w.from}T12:00:00Z`)) / DAY) + 1) * DAY : Math.max(DAY / 24, (sum.end || 0) - (sum.start || 0));
+        }
         const slots = src.slots.map((s) => ({ ...s, id: uid('s_'), start: s.start + shift, end: s.end == null ? null : s.end + shift }));
-        if (shift && src.schedule?.weekly) { const mv = (d) => new Date(Date.parse(`${d}T12:00:00Z`) + DAY).toISOString().slice(0, 10); src.schedule = { ...src.schedule, weekly: { ...src.schedule.weekly, from: mv(src.schedule.weekly.from), to: mv(src.schedule.weekly.to) } }; }
-        const name = a === 'dupnext' ? `${src.name.replace(/(第\s*\d+\s*天|D\d+)$/, '').trim()} ${fmtD(slots[0].start)}` : `${src.name}(副本)`;
-        openEditor({ ...src, id: uid('p_'), name, state: 'new', slots, excluded: [], applied: {}, pendingChange: null, paused: false, stopped: false }, true);
-        if (shift) toast('已复制成下一天,确认时间和产品后提交');
+        if (shift && src.schedule?.weekly) { const mv = (d) => new Date(Date.parse(`${d}T12:00:00Z`) + shift).toISOString().slice(0, 10); src.schedule = { ...src.schedule, weekly: { ...src.schedule.weekly, from: mv(src.schedule.weekly.from), to: mv(src.schedule.weekly.to) } }; }
+        const name = a === 'dupnext' ? `${src.name.replace(/(第\s*\d+\s*天|D\d+)$/, '').trim()} ${fmtD(slots[0].start)}` : a === 'dupseg' ? `${src.name}(下一段)` : `${src.name}(副本)`;
+        const series = a === 'dupseg' ? src.series || src.name : src.series;
+        const link = a === 'dupseg' && !src.series && E.orig ? { id: E.orig.id, series } : null; // 原来那个还没进系列:保存新的一段时一起放进去
+        if (a === 'dupseg') src.color = COLORS[(COLORS.indexOf(src.color) + 1) % COLORS.length]; // 下一段换个颜色,时间轴上分得开
+        openEditor({ ...src, id: uid('p_'), name, series, state: 'new', slots, excluded: [], applied: {}, pendingChange: null, paused: false, stopped: false }, true);
+        E.linkSrc = link;
+        if (a === 'dupseg') { toast(link ? `已接在后面,和「${src.name}」串成系列(系列名先用它的名字,下面「系列」框或列表里能改):改一下这一段的名字,和要变的产品 / 价格 / Collection / 标签` : `已接在后面,放进系列「${series}」:改一下这一段的名字,和要变的产品 / 价格 / Collection / 标签`); const n = $('[data-f=name]'); n?.focus(); n?.select(); }
+        else if (shift) toast('已复制成下一天,确认时间和产品后提交');
         break;
       }
       case 'qapprove': await withBusy(el, async () => { await act({ type: 'approve', id: el.dataset.id }); render(); }); break;
       case 'qpause': { const p = planById(el.dataset.id); await withBusy(el, async () => { await act({ type: p.paused ? 'resume' : 'pause', id: p.id }); render(); }); break; }
       case 'qstop': if (!armed(el, '再点一次:提前结束(回到改价前)')) return; await withBusy(el, async () => { await act({ type: 'stop', id: el.dataset.id }); render(); }); break;
-      case 'qdup': case 'qdupnext': { const p = planById(el.dataset.id); openEditor(p, false); loadCampaigns();
-        document.querySelector(`#section-price [data-a="${a === 'qdupnext' ? 'dupnext' : 'dup'}"]`)?.click(); break; }
+      case 'qdup': case 'qdupnext': case 'qdupseg': { const p = await planByIdAll(el.dataset.id); if (!p) return; openEditor(p, false); loadCampaigns();
+        document.querySelector(`#section-price [data-a="${{ qdupnext: 'dupnext', qdupseg: 'dupseg' }[a] || 'dup'}"]`)?.click(); break; }
+      case 'sertoggle': (LV.serShut ||= new Set()).has(el.dataset.s) ? LV.serShut.delete(el.dataset.s) : LV.serShut.add(el.dataset.s); render(); break;
+      case 'serren': LV.serRen = el.dataset.s; render(); document.querySelector('#pl-serren')?.focus(); break;
+      case 'serren0': LV.serRen = null; render(); break;
       case 'fixhold': await withBusy(el, async () => { await act({ type: 'resolve', variantId: el.dataset.v, choice: el.dataset.c }); render(); }); break;
       case 'collrelease': if (!armed(el, '再点一次:不再管(已经加进去的产品留在里面)')) return;
         await withBusy(el, async () => { await api('POST', '/api/price/coll-release', { id: el.dataset.id }); toast('好,app 不再管这个 Collection 了'); await load(); render(); }); break;
@@ -1722,6 +1807,13 @@ document.addEventListener('change', async (ev) => {
       const f = A.cleanFolder(el.value); E.plan.folder = f;
       if (E.isNew || !E.orig) { touch(); break; }
       try { await api('POST', '/api/price/act', { action: { type: 'organize', ids: [E.orig.id], folder: f } }); E.orig.folder = f; toast(f ? `已移到分组「${f}」` : '已移出分组'); load().catch(() => {}); }
+      catch (e) { toast(e.message, false); }
+      break;
+    }
+    case 'series': { // 和分组一样:已有的计划马上存
+      const f = A.cleanFolder(el.value); E.plan.series = f;
+      if (E.isNew || !E.orig) { touch(); break; }
+      try { await api('POST', '/api/price/act', { action: { type: 'organize', ids: [E.orig.id], series: f } }); E.orig.series = f; toast(f ? `已放进系列「${f}」` : '已移出系列'); load().catch(() => {}); }
       catch (e) { toast(e.message, false); }
       break;
     }
@@ -1812,6 +1904,15 @@ document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.targ
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && PH) { PH = null; drawPH(); } });
 // 「已排除」展开 / 收起:记住(重画后照样)。toggle 事件不冒泡,用捕获
 document.addEventListener('toggle', (ev) => { const d = ev.target; if (E && d.matches?.('details.pr-removed[data-rmg]')) (E.rmOpen ||= {})[d.dataset.rmg] = d.open; }, true);
+// 系列改名:回车保存(这个系列的每一段一起改,包括已结束的),Esc 取消
+document.addEventListener('keydown', async (ev) => {
+  if (ev.target.id !== 'pl-serren') return;
+  if (ev.key === 'Escape') { LV.serRen = null; render(); return; }
+  if (ev.key !== 'Enter') return; ev.preventDefault();
+  const from = ev.target.dataset.s; const to = A.cleanFolder(ev.target.value); if (!to) return;
+  if (to === from) { LV.serRen = null; render(); return; }
+  try { await act({ type: 'organize', seriesRename: { from, to } }); if (LV.serShut?.has(from)) { LV.serShut.delete(from); LV.serShut.add(to); } LV.serRen = null; render(); } catch (e) { toast(e.message, false); }
+});
 // 「＋ 新分组」:起名字回车 = 勾选的计划放进这个新分组
 document.addEventListener('keydown', async (ev) => {
   if (ev.target.id !== 'pl-newf' || ev.key !== 'Enter') return; ev.preventDefault();
@@ -1832,7 +1933,7 @@ async function loadCampaigns(rerender) {
 
 // 每 30 秒刷新一次状态(执行器在后台改价;只在看改价页、没在编辑时)
 const visible = () => document.getElementById('section-price')?.classList.contains('is-active');
-setInterval(async () => { if (!S || E || document.hidden || !visible()) return; try { await load(); if (tab !== 'ledger') render(); } catch { /* 忽略 */ } }, 30_000);
+setInterval(async () => { if (!S || E || LV.serRen || document.hidden || !visible()) return; try { await load(); if (tab !== 'ledger') render(); } catch { /* 忽略 */ } }, 30_000);
 
 // ================= 启动 =================
 // 点开「改价」时才加载(registry.js 的 showSection 是全局函数,包一层)

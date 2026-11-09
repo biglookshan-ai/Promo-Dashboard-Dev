@@ -13,13 +13,17 @@ export const canApprove = (a, plan) => !!a && (isAdminActor(a) || (!!plan?.appro
 
 // 计划里可编辑的字段
 export const EDIT_KEYS = ['name', 'kind', 'layer', 'priority', 'compare', 'campaign', 'note', 'slots', 'rule', 'approver', 'owner', 'cc',
-  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups', 'countdown', 'folder', 'versions', 'schedule'];
+  'color', 'scope', 'tagsAdd', 'tagsRemove', 'followCampaign', 'groups', 'countdown', 'folder', 'versions', 'schedule', 'series'];
 // 一个计划多段时间 + 多个价格(2026-11-03 改价第 3 期):versions = [{ id: 'A' | 'B' …, name }],每个时段 slot.version 指一个;
 // 时段里照旧带全部条目和价格(保存时由编辑器按版本展开),执行器不用改。schedule = 编辑器怎么排的(一段 / 几段 / 每周重复),只给编辑器用
 export const MAX_VERSIONS = 6;
 export const MAX_SLOTS = 60;
 // 自己起的分组名(2026-11-03 用户:计划多了要能分组;按活动 / 品牌 / 月份自动分的叫「智能分组」,在页面上算,不存)
 export const FOLDER_MAX = 40;
+// 系列(2026-11-09 用户:每个时间段的改价要有独立设置 —— 产品、Collection、标签、关联活动都可能不一样):
+// 一段 = 一个完整的计划,几个计划用同一个系列名串起来(列表里折成一组、时间轴一行)。和分组一样只是名字,执行器不看它;
+// 前后两段连着时执行器本来就是直接换价(不会先回到改价前)
+export const SERIES_MAX = 40;
 export const cleanFolder = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, FOLDER_MAX);
 const pick = (v) => Object.fromEntries(EDIT_KEYS.filter((k) => k in v).map((k) => [k, clone(v[k])]));
 
@@ -35,6 +39,7 @@ export function validate(p, settings = {}) {
   if (p.kind === 'window' && p.priority != null && !(Number.isInteger(Number(p.priority)) && Number(p.priority) >= 1 && Number(p.priority) <= 10)) return '优先级填 1–10 的整数(数字大的优先)';
   if (p.followCampaign && !p.campaign?.id) return '勾了「跟随活动时间」就要先选一个活动';
   if (String(p.folder ?? '').length > FOLDER_MAX) return `分组名最多 ${FOLDER_MAX} 个字`;
+  if (String(p.series ?? '').length > SERIES_MAX) return `系列名最多 ${SERIES_MAX} 个字`;
   if (p.countdown?.on) {
     if (p.kind !== 'window') return '只有限时改价能显示倒计时(永久调价没有结束时间)';
     if (String(p.countdown.label || '').length > 60) return '倒计时文字最多 60 个字';
@@ -274,6 +279,15 @@ export function applyAction(input, action, actor, now = Date.now()) {
     case 'organize': {
       // 整理:把几个计划一起移到某个分组 / 关联到某个活动。只改分组名和关联的活动,不碰价格、时间、产品 ——
       // 所以任何状态(进行中、已结束)都能改,也不走「已经开始的锁定」和审批
+      // 系列改名:这个系列的所有计划(包括已结束的)一起改
+      if (action.seriesRename) {
+        const from = cleanFolder(action.seriesRename.from); const to = cleanFolder(action.seriesRename.to);
+        if (!from || !to) fail('系列名不能为空');
+        const plans = doc.plans.filter((p) => p.series === from);
+        if (!plans.length) fail('找不到这个系列');
+        for (const p of plans) { p.series = to; addLog(doc, now, 'organize', p, `系列「${from}」改名为「${to}」`, actor); }
+        return { doc, effects, message: `系列改名为「${to}」(${plans.length} 段)` };
+      }
       const ids = [...new Set(action.ids || [])];
       if (!ids.length) fail('还没选计划');
       const plans = ids.map(find);
@@ -282,6 +296,11 @@ export function applyAction(input, action, actor, now = Date.now()) {
         const f = cleanFolder(action.folder);
         for (const p of plans) { if (f) p.folder = f; else delete p.folder; }
         parts.push(f ? `移到分组「${f}」` : '移出分组');
+      }
+      if (action.series !== undefined) {
+        const f = cleanFolder(action.series);
+        for (const p of plans) { if (f) p.series = f; else delete p.series; }
+        parts.push(f ? `放进系列「${f}」` : '移出系列');
       }
       if (action.campaign !== undefined) {
         const c = action.campaign?.id ? { id: String(action.campaign.id), name: String(action.campaign.name || '') } : null;

@@ -2,7 +2,7 @@
 import express from 'express';
 import { load, save, withLock, appendLog, readLedger } from './store.js';
 import { planStatus } from './price-core.js';
-import { applyAction, ActionError } from './price-actions.js';
+import { applyAction, ActionError, planSummary } from './price-actions.js';
 import { runOnce } from './executor.js';
 import { eventMessages, deliver } from './notifier.js';
 import * as catalog from './catalog.js';
@@ -58,6 +58,8 @@ export function priceRouter() {
       plans: all ? state.plans : state.plans.filter((p) => !ended(p)), allPlans: all,
       endedCount: state.plans.filter(ended).length, planNames: state.plans.map((p) => ({ id: p.id, name: p.name })),
       folders: [...new Set(state.plans.map((p) => p.folder).filter(Boolean))], // 我的分组的名字(已结束的计划没发过来,名字也要能选)
+      // 系列里每一段的简况(包括已结束的,列表里系列的时间轴 / 段数要算全)
+      series: state.plans.filter((p) => p.series).map((p) => { const sm = planSummary(p); return { id: p.id, name: p.name, series: p.series, color: p.color || '', start: sm.start, end: sm.end, status: planStatus(p, now) }; }),
       vault: Object.entries(state.vault).map(([id, v]) => ({ id, ...v })), collState: state.collState, goneCollections: state.goneCollections || {},
       log: state.log.slice(0, 300), engine: state.engine, ledgerCount: readLedger(req.ctx.shop).length,
       settings: { maxDiscountPct: state.settings.maxDiscountPct, sweepMinutes: state.settings.sweepMinutes, notify: state.settings.notify, ukLocation: state.settings.ukLocation || null },
@@ -76,7 +78,7 @@ export function priceRouter() {
         const V = { draft: '存草稿', submit: '提交审核', publish: '保存', approve: '批准', reject: '退回', pause: '暂停', resume: '继续', stop: '提前结束', delete: '删除', exclude: `移出 ${(action.variantIds || []).length} 个变体`, resolve: '处理暂停接管' };
         const verb = action.type === 'save' ? (action.isNew ? '新建' : V[action.mode] || '保存') : V[action.type] || action.type;
         req.audit = action.type === 'organize'
-          ? { mod: 'price', text: `整理改价计划:${message}(${(action.ids || []).map((x) => doc.plans.find((p) => p.id === x)?.name).filter(Boolean).slice(0, 5).map((n) => `「${n}」`).join('')}${(action.ids || []).length > 5 ? ` 等 ${action.ids.length} 个` : ''})` }
+          ? { mod: 'price', text: `整理改价计划:${message}${(action.ids || []).length ? `(${action.ids.map((x) => doc.plans.find((p) => p.id === x)?.name).filter(Boolean).slice(0, 5).map((n) => `「${n}」`).join('')}${action.ids.length > 5 ? ` 等 ${action.ids.length} 个` : ''})` : ''}` }
           : { mod: 'price', text: `${verb}${action.type === 'exclude' ? ':' : ''}改价计划${pl ? `「${pl.name}」` : ''}` };
       }
       const beforePlans = state.plans;

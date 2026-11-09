@@ -260,3 +260,17 @@ test('几种价格:「售价不变 / 要填价」按那一段用的价格判断(
   const g2 = [{ ...groups[0], rule: { mode: 'keep' }, vrules: { B: { mode: 'percent_off', value: '20' } } }];
   assert.match(validate({ ...v(it(null)), groups: g2, slots: [{ id: 'a1', start: 10 * H, end: 20 * H, version: 'A', items: [it(null, { compareAt: '130.00' })] }, { id: 'b1', start: 20 * H, end: 30 * H, version: 'B', items: [it(null)] }] }), /还没设活动价/);
 });
+
+test('系列:一段 = 一个计划,保存带系列名;整理时放进 / 移出系列;系列改名所有段一起改(包括已结束的)', () => {
+  let doc = run(empty(), { type: 'save', mode: 'publish', isNew: true, values: values({ id: 'a', name: '预热', series: 'Black Friday 2026' }) }, boss);
+  doc = run(doc, { type: 'save', mode: 'publish', isNew: true, values: values({ id: 'b', name: '正式' }) }, boss);
+  assert.equal(doc.plans.find((p) => p.id === 'a').series, 'Black Friday 2026');
+  doc = applyAction(doc, { type: 'organize', ids: ['b'], series: '  Black Friday 2026 ' }, ed, 50 * H).doc; // 已结束的也能放进去
+  assert.equal(doc.plans.find((p) => p.id === 'b').series, 'Black Friday 2026');
+  doc = applyAction(doc, { type: 'organize', seriesRename: { from: 'Black Friday 2026', to: 'BFCM 2026' } }, ed).doc;
+  assert.deepEqual(doc.plans.map((p) => p.series), ['BFCM 2026', 'BFCM 2026']);
+  assert.throws(() => applyAction(doc, { type: 'organize', seriesRename: { from: '没有这个', to: 'x' } }, ed), /找不到这个系列/);
+  doc = applyAction(doc, { type: 'organize', ids: ['a'], series: '' }, ed).doc;
+  assert.equal(doc.plans.find((p) => p.id === 'a').series, undefined);
+  assert.equal(validate({ ...values(), series: 'x'.repeat(41) }), '系列名最多 40 个字');
+});
