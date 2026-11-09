@@ -367,8 +367,10 @@ export function overlapIndex(plans, now = Date.now()) {
 export const CD_DAYS = [0, 1, 3, 7, 15];
 export const CD_STYLES = ['classic', 'pill', 'dark', 'minimal'];
 const CD_DAY = 86_400_000;
+// 倒计时按价格设(2026-11-09):时段上有自己的 countdown 就用它,没有(老计划)用计划的
+export const slotCountdown = (plan, slot) => (slot && slot.countdown !== undefined ? slot.countdown : plan.countdown) || null;
 export function cdValue(plan, slot) {
-  const c = plan.countdown || {};
+  const c = slotCountdown(plan, slot) || {};
   const days = CD_DAYS.includes(Number(c.days)) ? Number(c.days) : 0;
   return { e: Math.floor(slot.end / 1000), s: days ? Math.floor((slot.end - days * CD_DAY) / 1000) : 0,
     l: String(c.label || '').trim().slice(0, 60), st: CD_STYLES.includes(c.style) ? c.style : 'classic' };
@@ -380,9 +382,9 @@ export function planCountdowns(state, now) {
   for (const v of Object.values(state.vault || {})) {
     if (!v?.written || v.hold || !v.productId) continue;
     const plan = plans.get(v.written.planId);
-    if (!plan || plan.kind !== 'window' || !plan.countdown?.on || !isLive(plan)) continue;
+    if (!plan || plan.kind !== 'window' || !isLive(plan)) continue;
     const slot = (plan.slots || []).find((s) => s.id === v.written.slotId);
-    if (!slot?.end || slot.end <= now) continue;
+    if (!slot?.end || slot.end <= now || !slotCountdown(plan, slot)?.on) continue;
     const val = cdValue(plan, slot);
     const cur = want.get(v.productId);
     if (!cur || val.e < cur.e) want.set(v.productId, val);
@@ -476,10 +478,13 @@ export function planTags(state, now) {
   const unwant = new Map();
   const put = (m, pid, tags) => { if (!m.has(pid)) m.set(pid, new Set()); tags.forEach((t) => m.get(pid).add(t)); };
   for (const plan of state.plans) {
-    const add = (plan.tagsAdd || []).filter(Boolean), rm = (plan.tagsRemove || []).filter(Boolean);
-    if (!isLive(plan) || (!add.length && !rm.length)) continue;
+    if (!isLive(plan)) continue;
     const ex = new Set(plan.excluded || []);
     for (const slot of plan.slots || []) {
+      // 标签按价格设(2026-11-09):时段上有自己的 tagsAdd / tagsRemove 就用它,没有(老计划)用计划的
+      const add = ((slot.tagsAdd !== undefined ? slot.tagsAdd : plan.tagsAdd) || []).filter(Boolean);
+      const rm = ((slot.tagsRemove !== undefined ? slot.tagsRemove : plan.tagsRemove) || []).filter(Boolean);
+      if (!add.length && !rm.length) continue;
       // 永久调价:执行过就一直算数(它不恢复);限时:只在时段内
       if (plan.kind === 'window' ? !slotActive(slot, now) : slot.start == null || slot.start > now) continue;
       const pids = [...new Set(slot.items.filter((i) => !ex.has(i.variantId)).map((i) => i.productId))];

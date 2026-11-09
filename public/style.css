@@ -2253,32 +2253,6 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-price .pl-ver .pr-vdot { margin-right: 0; }
 #section-price .gantt__label .pr-dot { width: 8px; height: 8px; margin-right: 6px; vertical-align: 0; }
 
-/* ---- 系列:一段 = 一个计划,几个计划串成一个系列(2026-11-09 用户:每个时间段要独立设置)---- */
-#section-price .pl-ser { border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-2); margin-bottom: 12px; padding: 10px 12px 4px; }
-#section-price .pl-ser.is-shut { padding-bottom: 10px; }
-#section-price .pl-ser__h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; }
-#section-price .pl-ser__h .spacer { flex: 1; }
-#section-price .pl-ser__tg { border: 0; background: none; cursor: pointer; font-size: 13px; color: var(--text-2); padding: 0 2px; width: 18px; }
-#section-price .pl-ser__k { display: inline-block; font-size: 12px; font-weight: 600; color: #fff; background: var(--text-2); border-radius: 4px; padding: 0 6px; margin-right: 6px; line-height: 18px; }
-#section-price .pl-ser__n { font-size: 14px; }
-#section-price .pl-ser__tl { position: relative; height: 24px; margin: 10px 0 8px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
-#section-price .pl-ser__seg { position: absolute; top: 0; bottom: 0; background: var(--accent); color: #fff; font-size: 12px; line-height: 24px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; border-right: 2px solid var(--surface-2); box-sizing: border-box; }
-#section-price .pl-ser__seg.is-ended { opacity: .45; }
-#section-price .pl-ser__now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); }
-#section-price .pl-ser__b > .plan { margin-bottom: 8px; }
-#section-price .pl-ser__more { font-size: 12px; margin: 0 0 8px; }
-#section-price .pl-segno { display: inline-block; font-size: 12px; font-weight: 600; color: var(--text-2); background: var(--surface-3); border-radius: 4px; padding: 0 6px; margin-right: 6px; line-height: 18px; vertical-align: 1px; }
-#section-price .gantt__label .pl-ser__k { margin-right: 6px; }
-#section-price .gantt__slot.is-ser { border-right: 2px solid var(--surface); box-sizing: border-box; }
-/* 编辑器「什么时候生效」里的分段(系列)框 */
-#section-price .pr-serbox { margin-top: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-2); padding: 10px 12px; }
-#section-price .pr-serbox__h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; }
-#section-price .pr-serbox__h .spacer { flex: 1; }
-#section-price .pr-serbox__l { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-#section-price .pr-serbox__r { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; padding: 6px 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); cursor: pointer; }
-#section-price .pr-serbox__r:hover { border-color: var(--border-strong); }
-#section-price .pr-serbox__r.is-me { cursor: default; border-color: var(--accent); background: var(--accent-soft); }
-#section-price .pr-serbox__r .linkbtn { margin-left: auto; }
 
 /* ===== 通知中心(2026-11-09,public/notify.js)===== */
 #section-notify .nrs { padding-bottom: 6px; }
@@ -2309,3 +2283,14 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
   #section-notify .nr__to, #section-notify .nr__when { grid-column: 2 / -1; }
   #section-notify .ngrp-add { grid-template-columns: 1fr; }
 }
+
+/* 价格总览:每个价格自己的设置(加进 Collection / 标签 / 活动 / 倒计时,2026-11-09) */
+#section-price .pr-vmx__t tr.pr-vmx__set > th { font-weight: 500; font-size: 12px; color: var(--text-2); background: var(--surface-2); white-space: nowrap; }
+#section-price .pr-vmx__t tr.pr-vmx__set:first-of-type > *, #section-price .pr-vmx__t tr.pr-vmx__set > * { font-weight: 400; cursor: default; }
+#section-price .pr-vmx__t tr.pr-vmx__set td:hover { background: transparent; }
+#section-price .pr-vmx__t tr.pr-vmx__set td.is-curcol { background: #fafbff; }
+#section-price .pr-vmx__t tbody tr:not(.pr-vmx__set) + tr.pr-vmx__set > * { border-top: 2px solid var(--border-strong); }
+#section-price .pr-vmx__tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+#section-price .pr-vmx__tags .inp { width: 120px; }
+#section-price .pr-vmx__t .sel--sm, #section-price .pr-vmx__t .inp--sm { max-width: 100%; }
+#section-price .pl-ver__set { font-size: 12px; color: var(--text-3); }

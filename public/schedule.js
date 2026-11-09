@@ -1164,7 +1164,7 @@
     const mine = (k) => listOf(k).filter((x) => x.campaign === c.id);
     const content = HUB_KINDS.flatMap(([k]) => mine(k));
     const canPrice = MODE === 'live' && window.cgpCanSee && window.cgpCanSee('price');
-    const plans = (hubPrice.plans || []).filter((p) => p.campaign?.id === c.id);
+    const plans = (hubPrice.plans || []).filter((p) => p.campaign?.id === c.id || (p.campaigns || []).some((x) => x?.id === c.id)); // 几个价格各自关联活动时 campaigns 有好几个(2026-11-09)
     const add = (kind, label) => `<button type="button" class="btn btn-sm" data-new="${kind}" data-for="${c.id}">${I.plus}${label}</button>`;
     const needType = (flag, label) => `<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">${label}(要先补建内容类型)</button>`;
     const adds = add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页商品模块')
