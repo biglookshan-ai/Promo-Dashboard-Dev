@@ -61,9 +61,9 @@ export function validate(p, settings = {}) {
     for (const it of s.items) {
       if (seen.has(it.variantId)) return `${name}里有重复的变体:${it.title || it.variantId}`;
       seen.add(it.variantId);
-      if (it.price == null && p.kind === 'window' && ruleModeOf(p, it) !== 'keep') return `${name}「${it.title || it.variantId}」还没设活动价`;
+      if (it.price == null && p.kind === 'window' && ruleModeOf(p, it, s.version) !== 'keep') return `${name}「${it.title || it.variantId}」还没设活动价`;
       if (it.price == null && !['set', 'clear'].includes(cmpModeOf(p, it)) && !it.cmpManual) return `${name}「${it.title || it.variantId}」没有任何改动(售价和划线价都没变)`;
-      const err = itemWarnings(p, it, settings).find((w) => w.level === 'error');
+      const err = itemWarnings(p, it, { ...settings, version: s.version }).find((w) => w.level === 'error');
       if (err) return `${name}「${it.title || it.variantId}」:${err.text}`;
     }
   }

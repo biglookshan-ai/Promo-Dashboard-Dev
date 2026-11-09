@@ -246,3 +246,17 @@ test('一段时间的计划开始后也能改结束时间(以前页面说能改,
   doc = applyAction(doc, { type: 'save', mode: 'publish', id: 'p1', values: one(16 * H) }, boss, 15 * H).doc; // 提前到还没过的时间:可以
   assert.equal(doc.plans[0].slots[0].end, 16 * H);
 });
+
+test('几种价格:「售价不变 / 要填价」按那一段用的价格判断(价格 A 降价、价格 B 售价不变只调划线价)', () => {
+  const it = (price, extra = {}) => ({ ...item('v1', price), group: 'g1', ...extra });
+  const groups = [{ id: 'g1', scope: { mode: 'products', products: [] }, rule: { mode: 'percent_off', value: '10' }, vrules: { B: { mode: 'keep' } }, compare: 'set' }];
+  const v = (bItem) => ({ id: 'pk', name: '虚拟折扣周末', kind: 'window', groups, versions: [{ id: 'A', name: '平时价' }, { id: 'B', name: '周末价' }],
+    slots: [{ id: 'a1', start: 10 * H, end: 20 * H, version: 'A', items: [it('90.00')] }, { id: 'b1', start: 20 * H, end: 30 * H, version: 'B', items: [bItem] }] });
+  // 价格 B 是「售价不变」:没填新价、只调高划线价 → 可以
+  assert.equal(validate(v(it(null, { compareAt: '130.00' }))), '');
+  // 价格 B 售价和划线价都没变 → 报「都没变」,不是「还没设活动价」
+  assert.match(validate(v(it(null))), /没有任何改动|都没变/);
+  // 反过来:价格 A 售价不变、价格 B 降价 → 价格 B 没填价要报
+  const g2 = [{ ...groups[0], rule: { mode: 'keep' }, vrules: { B: { mode: 'percent_off', value: '20' } } }];
+  assert.match(validate({ ...v(it(null)), groups: g2, slots: [{ id: 'a1', start: 10 * H, end: 20 * H, version: 'A', items: [it(null, { compareAt: '130.00' })] }, { id: 'b1', start: 20 * H, end: 30 * H, version: 'B', items: [it(null)] }] }), /还没设活动价/);
+});

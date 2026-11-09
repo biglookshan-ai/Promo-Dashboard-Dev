@@ -2215,3 +2215,40 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-price .pr-tl__leg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 #section-price .pr-tl__leg i.is-gap { background: repeating-linear-gradient(45deg, #d5d8de, #d5d8de 3px, #f2f3f5 3px, #f2f3f5 6px); }
 #section-price .pr-ph__v { font-style: normal; font-size: 12px; color: var(--text-3); }
+
+/* ---- 价格起名 + 价格总览表 + 产品表并排价格(2026-11-09 用户:到处只写 A / B 看不懂)---- */
+#section-price .pr-vdot { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
+#section-price .pr-ver .pr-vdot { margin-right: 0; }
+#section-price .pr-ver--sm { padding: 2px 10px; font-size: 12px; }
+#section-price .pr-vtabs { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 10px; vertical-align: middle; font-weight: 400; }
+#section-price .pr-gv { white-space: nowrap; }
+#section-price .pr-vmx { margin-bottom: 12px; padding: 10px 12px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
+#section-price .pr-vmx__h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+#section-price .pr-vmx__h .pr-ver--add { margin-left: auto; }
+#section-price .pr-vmx__t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+#section-price .pr-vmx__t th, #section-price .pr-vmx__t td { padding: 8px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: left; vertical-align: top; }
+#section-price .pr-vmx__t tr > :last-child { border-right: 0; }
+#section-price .pr-vmx__t tbody tr:last-child > * { border-bottom: 0; }
+#section-price .pr-vmx__t thead th { background: var(--surface-2); font-weight: 500; min-width: 170px; }
+#section-price .pr-vmx__t thead th.is-cur { background: var(--accent-soft); }
+#section-price .pr-vmx__g { width: 32%; min-width: 180px; font-weight: 500; }
+#section-price .pr-vmx__gn { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+#section-price .pr-vmx__gn .pr-group__no { flex: none; }
+#section-price .pr-vmx__gs { font-size: 12px; color: var(--text-3); font-weight: 400; margin-top: 2px; }
+#section-price .pr-vmx__vh { display: flex; align-items: center; gap: 6px; }
+#section-price .pr-vmx__vh .inp { flex: 1; min-width: 0; font-weight: 600; }
+#section-price .pr-vmx__vh .inp.is-unnamed { border-style: dashed; border-color: #e0a300; font-weight: 400; }
+#section-price .pr-vmx__use { font-size: 12px; color: var(--text-3); margin-top: 4px; font-weight: 400; }
+#section-price .pr-vmx__t td { cursor: pointer; font-weight: 600; }
+#section-price .pr-vmx__t td:hover { background: var(--surface-3); }
+#section-price .pr-vmx__t td.is-cur { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+#section-price .pr-vmx__t tr.is-open > th { background: #fafbff; }
+#section-price .pr-vmx__t td .tag { margin-top: 4px; font-weight: 400; }
+#section-price .pr-tbl th.pr-vth { color: var(--text-2); font-weight: 600; }
+#section-price .pr-tbl th.pr-vth.is-cur { color: var(--text); }
+#section-price .pr-tbl td.is-cur { background: #fafbff; }
+#section-price .pr-vd { font-size: 12px; margin-top: 2px; min-height: 14px; }
+#section-price .pl-vers { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+#section-price .pl-ver { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; }
+#section-price .pl-ver .pr-vdot { margin-right: 0; }
+#section-price .gantt__label .pr-dot { width: 8px; height: 8px; margin-right: 6px; vertical-align: 0; }

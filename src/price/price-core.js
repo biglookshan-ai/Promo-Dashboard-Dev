@@ -26,7 +26,12 @@ export const cmpModeOf = (plan, item) => {
   return g?.compare || plan.compare || cmpDefaultOf(plan);
 };
 // 每组实际用的划线价方式(给「开始后不能改」比较用)
-export const ruleModeOf = (plan, item) => { const g = item?.group != null ? (plan.groups || []).find((x) => x.id === item.group) : null; return (g?.rule || plan.rule || {}).mode; };
+// ver = 这个条目属于哪个价格(几段时间 + 几种价格的计划,每段 slot.version);A / 没有 = 组的 rule,其余看 g.vrules[ver]
+export const ruleModeOf = (plan, item, ver) => {
+  const g = item?.group != null ? (plan.groups || []).find((x) => x.id === item.group) : null;
+  const r = ver && ver !== 'A' ? g?.vrules?.[ver] || g?.rule : g?.rule;
+  return (r || plan.rule || {}).mode;
+};
 export const groupCmpModes = (plan) => (plan.groups?.length ? plan.groups : [{}]).map((g) => g.compare || plan.compare || cmpDefaultOf(plan));
 
 export const toCents = (v) => {
@@ -283,11 +288,11 @@ export const keepsPrice = (item) => item.price == null || toCents(item.price) ==
 export const changesCompare = (plan, item) => {
   try { const t = targetFor(pair(item.refPrice, item.refCompareAt), plan, item); return (cmpCents(t.compareAt) || 0) !== (cmpCents(item.refCompareAt) || 0); } catch { return false; }
 };
-export function itemWarnings(plan, item, { maxDiscountPct = 60 } = {}) {
+export function itemWarnings(plan, item, { maxDiscountPct = 60, version } = {}) {
   const out = [];
   const ref = { price: item.refPrice, compareAt: item.refCompareAt };
   // 限时计划:售价不变、只改划线价(虚拟折扣)可以;但售价和划线价都没变就没意义
-  if (plan.kind === 'window' && keepsPrice(item) && toCents(ref.price) > 0 && (item.price != null || ruleModeOf(plan, item) === 'keep') && !changesCompare(plan, item)) {
+  if (plan.kind === 'window' && keepsPrice(item) && toCents(ref.price) > 0 && (item.price != null || ruleModeOf(plan, item, version) === 'keep') && !changesCompare(plan, item)) {
     out.push({ level: 'error', code: 'no-change', text: '售价和划线价都没变' });
   }
   if (item.price != null) {
