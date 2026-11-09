@@ -338,16 +338,33 @@ function planRow(p, s, ovs = []) {
 }
 
 // 接下来 14 天的时间轴(每个时段一条)
+// 时间轴(2026-11-09 用户:能往前 / 往后翻,按一周 / 两周 / 一个月 / 三个月放大缩小)
+const GSPANS = [[7, '一周'], [14, '两周'], [31, '一个月'], [92, '三个月']];
+const GV = { span: GSPANS.some(([n]) => String(n) === localStorage.getItem('cgp-pr-gspan')) ? Number(localStorage.getItem('cgp-pr-gspan')) : 14, off: 0 };
+const gStep = () => (GV.span <= 14 ? 7 : GV.span === 31 ? 14 : 31); // 往前 / 往后一次挪几天
+const ymd = (ms) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: TZ, year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short' }).formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return { m: Number(p.month), d: Number(p.day), wd: p.weekday }; };
+const WD_CN = { Mon: '一', Tue: '二', Wed: '三', Thu: '四', Fri: '五', Sat: '六', Sun: '日' };
 function ganttHtml() {
-  const t0 = dayAt(0); const t1 = t0 + 14 * DAY; const span = t1 - t0;
+  if (!S.plans.some((p) => !['draft', 'rejected'].includes(statusOf(p)))) return '';
+  const n = GV.span; const t0 = dayAt(GV.off); const t1 = dayAt(GV.off + n); const span = t1 - t0;
+  if (GV.off < 0 && !S.allPlans && !loadingAll && !GV.askedAll) { GV.askedAll = true; setTimeout(async () => { loadingAll = true; try { await load(true); } catch { /* 读不到就只看没结束的 */ } loadingAll = false; render(); }, 0); } // 往前翻:把已结束的计划也读进来
   const rows = S.plans.filter((p) => !['draft', 'rejected'].includes(statusOf(p)) && !p.stopped && p.slots.some((s) => (s.end ?? s.start + DAY) > t0 && s.start < t1))
     .sort((a, b) => A.planSummary(a).start - A.planSummary(b).start);
-  if (!rows.length) return '';
   const pct = (ms) => `${((Math.min(Math.max(ms, t0), t1) - t0) / span) * 100}%`;
-  const days = Array.from({ length: 14 }, (_, i) => dayAt(i));
-  const nowLeft = pct(now());
-  return `<div class="gantt"><div class="gantt__grid">
-    <div></div><div class="gantt__days">${days.map((d, i) => `<span class="${i === 0 ? 'is-today' : ''}">${fmtD(d)}</span>`).join('')}</div>
+  const days = Array.from({ length: n }, (_, i) => dayAt(GV.off + i));
+  const today = dayAt(0); const nowIn = now() >= t0 && now() < t1; const nowLeft = pct(now());
+  // 表头:两周以内每天写「11/9周一」;一个月写日期 + 星期两行;三个月只在周一写日期、每月 1 号写月份
+  const head = days.map((d) => { const x = ymd(d); const we = x.wd === 'Sat' || x.wd === 'Sun';
+    const cls = `${d === today ? 'is-today' : ''} ${we ? 'is-we' : ''} ${x.d === 1 ? 'is-m1' : ''}`;
+    if (n <= 14) return `<span class="${cls}">${fmtD(d)}</span>`;
+    if (n <= 31) return `<span class="${cls} is-2l">${x.d === 1 || d === days[0] ? `<b>${x.m}/${x.d}</b>` : x.d}<i>${WD_CN[x.wd] || ''}</i></span>`;
+    return `<span class="${cls} is-sparse">${x.d === 1 ? `<b>${x.m}月</b>` : x.wd === 'Mon' && x.d >= 3 && x.d <= 27 ? `${x.m}/${x.d}` : ''}</span>`; }).join(''); // 月初前后的周一不写,免得和「12月」叠在一起
+  const bar = `<div class="gantt__bar"><span class="pr-seg pr-seg--sm">${GSPANS.map(([k, l]) => `<button type="button" class="${n === k ? 'is-on' : ''}" data-a="gspan" data-v="${k}">${l}</button>`).join('')}</span>
+    <span class="gantt__nav"><button type="button" class="btn btn-sm btn-ghost" data-a="gnav" data-d="-1" title="往前 ${gStep()} 天">‹ 往前</button><button type="button" class="btn btn-sm ${GV.off ? '' : 'btn-ghost'}" data-a="gnav" data-d="0">今天</button><button type="button" class="btn btn-sm btn-ghost" data-a="gnav" data-d="1" title="往后 ${gStep()} 天">往后 ›</button></span>
+    <span class="muted">${fmtD(t0)} – ${fmtD(t1 - DAY)}${loadingAll ? ' · 正在读已结束的计划…' : ''}</span></div>`;
+  return `<div class="gantt">${bar}<div class="gantt__grid">
+    <div></div><div class="gantt__days" style="grid-template-columns:repeat(${n}, 1fr)">${head}</div>
+    ${rows.length ? '' : '<div></div><div class="gantt__empty muted">这段时间没有改价</div>'}
     ${rows.map((p) => `<div class="gantt__label" data-a="open" data-id="${p.id}" title="${esc(p.name)}">${versionsOf(p).length > 1 ? `<span class="pr-dot" style="background:${esc(p.color || '#888')}"></span>` : ''}${esc(p.name)}</div>
       <div class="gantt__lane">${p.slots.map((s, i) => {
         const end = s.end ?? s.start + DAY / 3;
@@ -357,7 +374,7 @@ function ganttHtml() {
           ...(mv || groupsOf(p).length > 1 ? groupsOf(p).map((g, gi) => `${groupsOf(p).length > 1 ? `${gName(g, gi)}:` : ''}${ruleSay(ruleAt(g, s.version))}`) : [])].join('\n');
         return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''}" style="${mv ? `background:${vColor(p, s.version)};` : p.color ? `background:${esc(p.color)};` : ''}left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
           title="${esc(tip)}">${p.kind === 'permanent' ? '永久' : mv ? esc(`${p.name}-${vName(p, s.version)}`) : p.slots.length > 1 ? esc(`${p.name}-第 ${i + 1} 段`) : esc(p.name)}</div>`; // 2026-11-09 用户:计划名在前,如「test2-黑五」
-      }).join('')}<div class="gantt__now" style="left:${nowLeft}"></div></div>`).join('')}
+      }).join('')}${nowIn ? `<div class="gantt__now" style="left:${nowLeft}"></div>` : ''}</div>`).join('')}
   </div></div>`;
 }
 
@@ -1682,6 +1699,8 @@ document.addEventListener('click', async (ev) => {
       case 'lsel': { const id = el.dataset.id; el.checked ? LV.sel.add(id) : LV.sel.delete(id); if (LV.sel.size) loadCampaigns(); render(); break; }
       case 'lselgrp': { const ids = el.dataset.ids.split(',').filter(Boolean); ids.forEach((id) => (el.checked ? LV.sel.add(id) : LV.sel.delete(id))); if (LV.sel.size) loadCampaigns(); render(); break; }
       case 'lnone': LV.sel.clear(); render(); break;
+      case 'gspan': GV.span = Number(el.dataset.v) || 14; localStorage.setItem('cgp-pr-gspan', String(GV.span)); render(); break;
+      case 'gnav': { const d = Number(el.dataset.d); GV.off = d ? GV.off + d * gStep() : 0; render(); break; }
       case 'lsortdir': LV.sortDir = LV.sortDir === 'desc' ? 'asc' : 'desc'; localStorage.setItem('cgp-pr-sortdir', LV.sortDir); render(); break;
       case 'lby': LV.by = el.dataset.v; LV.chip = '__all'; LV.newFolder = false; localStorage.setItem('cgp-pr-by2', LV.by); render(); break;
       case 'lchip': LV.chip = el.dataset.k; render(); break;

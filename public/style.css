@@ -2306,3 +2306,13 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 /* 改价计划列表排序(2026-11-09) */
 #section-price .pl-sort { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
 #section-price .pl-sort + .pl-top__q { margin-left: 0; }
+/* 时间轴:翻页 + 缩放(2026-11-09) */
+#section-price .gantt__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+#section-price .gantt__nav { display: inline-flex; gap: 4px; }
+#section-price .gantt__days span.is-we { color: #a3a6ae; }
+#section-price .gantt__days span.is-2l { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
+#section-price .gantt__days span.is-2l i { font-style: normal; font-size: 11px; }
+#section-price .gantt__days span.is-sparse { text-align: left; white-space: nowrap; overflow: visible; }
+#section-price .gantt__days span.is-m1 { box-shadow: inset 1px 0 0 var(--border-strong); }
+#section-price .gantt__days span.is-today { color: var(--accent); font-weight: 600; }
+#section-price .gantt__empty { padding: 12px 0; font-size: 13px; }
