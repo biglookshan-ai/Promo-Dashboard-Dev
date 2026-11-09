@@ -7,7 +7,7 @@
 (function () {
   const KEY = 'cgp-app-session';
   // 左边导航 → 页面权限(2026-10-28 拆细:Collection 排序 / 促销链接 / 产品页推广 / 历史记录各自一项;「操作记录」登录的人都能看 = '*')
-  const SECTION_PAGE = { overview: 'overview', mywork: 'overview', campaigns: 'campaigns', banners: 'banners', topbar: 'topbar', pmodules: 'pmodules', pins: 'pins', salelinks: 'salelinks', callouts: 'callouts', reviews: 'reviews', history: 'history', audit: '*', price: 'price', settings: 'settings', metafields: 'tools' };
+  const SECTION_PAGE = { overview: 'overview', mywork: 'overview', campaigns: 'campaigns', banners: 'banners', topbar: 'topbar', pmodules: 'pmodules', pins: 'pins', salelinks: 'salelinks', callouts: 'callouts', reviews: 'reviews', history: 'history', audit: '*', price: 'price', notify: 'settings', settings: 'settings', metafields: 'tools' };
   const embedded = () => !!(window.shopify && window.shopify.idToken);
 
   window.cgpHeaders = async function () {

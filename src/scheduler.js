@@ -9,7 +9,9 @@ import { titleOf } from './schedule-actions.js';
 import { setPublishStatus as realSetStatus } from './metaobjects.js';
 import { getToken } from './token-store.js';
 import { withLock, syncItem } from './sync.js';
-import { schedulerMessages, digestMessages, deliver, schedulerDMs, deliverDMs } from './notifier.js';
+import { schedulerEvents, digestEvents, relatedOf, londonDate } from './notifier.js';
+import { dispatch, flushDigest } from './notify-center.js';
+import { findItem } from './schedule-actions.js';
 import { alignCollections } from './collection-order.js';
 import { syncAllJoint, syncNotes } from './joint-sync.js';
 import { historyRecorder } from './col-history.js';
@@ -62,6 +64,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     state.scheduler = { lastRun: now, lastError: failures[0]?.message || null, lastChanges: changes.length };
     if (token) await dropPinPromo({ shop, token }, state, { now, gql });
 
+    const extra = []; // Collection 排序 / 联合推广出的问题,和下面的通知一起交给通知中心
     // 合集排序:把手动合集真的对齐到「这一刻该有的顺序」(自动归类的合集跳过,由主题前台排)
     let col = { applied: [], restored: [], holds: [], failures: [], skipped: [] };
     if (token && collections) {
@@ -70,13 +73,19 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
       catch (e) { col.failures.push({ message: String(e.message || e) }); }
       record.flush();
       logColReport(state, col, '定时器', now);
+      extra.push(...pinEvents(state, col, now));
     }
 
     // 联合推广:每小时把兼容产品同步进合集一次(新上架的符合条件的产品自动进名单)
     if (token) {
       try {
         for (const r of await syncAllJoint({ shop, token }, state, { gql, now })) {
-          for (const x of syncNotes(r)) appendLog(state, { at: now, action: x.failed ? 'failure' : 'edit', kind: 'callout', title: r.name, note: x.note, by: '定时器' });
+          for (const x of syncNotes(r)) {
+            appendLog(state, { at: now, action: x.failed ? 'failure' : 'edit', kind: 'callout', title: r.name, note: x.note, by: '定时器' });
+            const it = x.failed && findItem(state, r.id);
+            if (x.failed) extra.push({ ev: 'joint.failure', key: `joint-fail:${r.id}:${londonDate(now)}:${x.note}`, page: 'callouts', related: it ? relatedOf(state, it) : [],
+              card: { title: '⚠️ 联合推广同步 Collection 失败', color: 'red', lines: [`**${r.name || '联合推广'}**`, x.note, '下一个小时会自动再试;一直失败请打开这条推广检查'] } });
+          }
         }
       } catch (e) { appendLog(state, { at: now, action: 'failure', kind: 'callout', title: '联合推广', note: String(e.message || e), by: '定时器' }); }
     }
@@ -90,13 +99,27 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
       if (tb.error && tb.error !== prevErr) appendLog(state, { at: now, action: 'failure', kind: 'banner', title: '主题编辑器里的备用 Banner', note: tb.error, by: '定时器' });
     }
 
+    // 通知:发给谁 / 发群还是私信 / 马上还是合进每天 10:00 的汇总,由通知中心按规则定
     const opts = { appUrl: state.appUrl || '', now };
-    const msgs = [...schedulerMessages(state, { changes, failures }, opts), ...digestMessages(state, opts)];
-    await deliver(state, msgs, { send, now });
-    await deliverDMs(state, schedulerDMs(state, { changes }, opts), { send: sendDm, now }); // 私信:负责人 / 审批人
+    const msgs = [...schedulerEvents(state, { changes, failures }, opts), ...digestEvents(state, opts), ...extra.map((m) => ({ ...m, card: { button: { text: '打开网站更新中心', url: opts.appUrl }, ...m.card } }))];
+    await dispatch(shop, msgs, { sched: state, now, sendGroup: send, sendDm });
+    await flushDigest(shop, { sched: state, now, appUrl: opts.appUrl, sendGroup: send, sendDm });
     replace(shop, state);
     return { changes, failures, collections: col };
   });
+}
+
+// Collection 排序出的问题 → 通知(相关的人 = 管这个 Collection 的置顶排序是谁建 / 改的)
+const cid = (x) => String(x?.id ?? x ?? '').split('/').pop();
+export function pinEvents(state, col, now = Date.now()) {
+  const out = [];
+  const pinsOf = (c) => (state.pins || []).filter((p) => cid(p.collection) === cid(c));
+  const rel = (c) => [...new Set(pinsOf(c).flatMap((p) => relatedOf(state, p)))];
+  for (const h of col.holds || []) if (h.fresh) out.push({ ev: 'pins.hold', page: 'pins', related: rel(h.collection),
+    card: { title: '✋ 有人在后台手动改了 Collection 顺序', color: 'orange', lines: [`Collection「${h.title || ''}」${h.pin ? `(置顶排序「${h.pin}」)` : ''}`, 'app 已暂停接管,不会覆盖别人的改动', '请在「Collection 排序」里选「按本次排序」或「保留后台排序」'] } });
+  for (const f of col.failures || []) out.push({ ev: 'pins.failure', key: `pin-fail:${cid(f.collection)}:${londonDate(now)}:${f.message}`, page: 'pins', related: f.collection ? rel(f.collection) : [],
+    card: { title: '⚠️ Collection 排序失败', color: 'red', lines: [f.message, '下一分钟会自动重试;同一个原因一天只报一次'] } });
+  return out;
 }
 
 // 2026-10-29 用户:置顶排序的「产品卡上的促销标签」(倒计时 / 徽章)整个去掉。以前设过的:清掉、店里的条目重写一次(写的是空),

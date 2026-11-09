@@ -1520,13 +1520,12 @@ function drawPH() {
 }
 
 // ================= 改价设置 =================
-const NOTIFY_CN = { submit: '有人提交审核(私信审批人)', decision: '批准 / 退回 / 暂停 / 提前结束(私信相关的人)', start: '改价生效、Collection 变化', end: '回到改价前、永久调价完成', hold: '产品暂停接管(有人手动改价)', failure: '改价失败', unapproved: '快开始了还没批准' };
 function settingsHtml() {
   const s = S.settings; const ap = isAdmin();
   return `
-  <div class="pr-card"><div class="pr-card__t">通知 <span class="muted">${S.approvals ? '改价通知只用飞书私信发给相关的人(负责人 / 审批人 / 提交人 / 抄送),不发群' : '改价通知只用飞书私信发,不发群'}</span></div>
-    ${S.approvals ? '' : `<p class="muted">现在没开审批(每个人保存直接生效),所以没有提交 / 批准的通知。${S.team ? '下面这些私信发给管理员(计划没指定负责人时)。' : '飞书登录没开,私信不会发。'}谁在什么时候改了什么,看左边「操作记录」。</p>`}
-    ${Object.entries(NOTIFY_CN).filter(([k]) => S.approvals || !['submit', 'unapproved'].includes(k)).map(([k, l]) => [k, !S.approvals && k === 'decision' ? '暂停 / 提前结束(私信相关的人)' : l]).map(([k, l]) => `<label class="row" style="font-size:13px;margin:4px 0"><input type="checkbox" data-a="notify" data-k="${k}" ${s.notify[k] ? 'checked' : ''} ${ap ? '' : 'disabled'}/> ${l}</label>`).join('')}</div>
+  <div class="pr-card"><div class="pr-card__t">通知</div>
+    <p class="muted">改价的通知发给谁(相关的人 / 同部门 / 管理员 / 飞书群)、马上发还是每天 10:00 汇总,都在「通知中心」里设(2026-11-09 起,原来这里的开关已经带过去了)。</p>
+    ${ap ? '<div class="row" style="margin-top:8px"><button class="btn btn-sm" type="button" data-a="opennotify">打开通知中心</button></div>' : ''}</div>
   <div class="pr-card"><div class="pr-card__t">安全</div>
     <div class="grid2"><label class="pr-fld">降幅上限 % <em>超过的在预览里标黄提醒</em><input class="inp" type="number" id="maxoff" value="${s.maxDiscountPct}" ${ap ? '' : 'disabled'}/></label>
       <label class="pr-fld">巡检间隔(分钟)<em>多久核对一次「正在活动价上的产品有没有被人手动改过」</em><input class="inp" type="number" id="sweep" value="${s.sweepMinutes}" ${ap ? '' : 'disabled'}/></label></div>
@@ -1823,6 +1822,7 @@ document.addEventListener('click', async (ev) => {
       case 'dlvault': await withBusy(el, () => download('/api/price/export/vault.csv', `还原表格-${toInput(now()).slice(0, 10)}.csv`)); break;
       case 'dlledger': await withBusy(el, () => download(`/api/price/export/ledger.csv?plan=${encodeURIComponent(ledgerQ.plan)}`, `价格账本-${toInput(now()).slice(0, 10)}.csv`)); break;
       case 'lpage': ledgerQ.offset = Math.max(0, ledgerQ.offset + Number(el.dataset.d) * 100); loadLedger(); break;
+      case 'opennotify': window.cgpOpenNotify?.(); break;
       case 'savesafe': await withBusy(el, async () => { await api('PUT', '/api/price/settings', { maxDiscountPct: $('#maxoff').value, sweepMinutes: $('#sweep').value }); toast('已保存'); await load(); render(); }); break;
       default: break;
     }

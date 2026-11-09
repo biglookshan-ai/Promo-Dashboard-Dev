@@ -47,6 +47,16 @@
 - **只有已批准的内容能被定时器上线**;审核人自己的改动自动批准。
 - **上下线只靠切 metaobject 的 publishable 状态**(DRAFT ↔ ACTIVE)。Liquid 遍历 `.values` 只返回 ACTIVE,主题里**不要写日期判断来决定显示与否**。开了 publishable 后新建条目默认是 DRAFT。
 - 飞书通知用**群机器人 webhook**(lark-ops 是本地个人 token 工具,Railway 用不了)。webhook 地址不进代码仓库。
+- **通知中心**(2026-11-09 用户:要能规定哪些通知、发给谁、怎么发;`src/notify-center.js` + `src/notify-api.js` + 页面 `public/notify.js`,导航「通知中心」只给管理员):
+  各模块只说「发生了什么、和谁有关」—— `{ ev, key?, card, cards?(每人专属卡片), related, approvers, actor, page? }`(`src/notifier.js` 网站内容、`src/price/notifier.js` 改价、`scheduler.js` 的 `pinEvents` + 联合推广失败);
+  **发给谁全由规则定**(`state.notifyCenter = { groups, rules: { 事件: { on, to: { related, dept, admins, page, approver, roles, people, groups }, when: now|digest } } }`),⛔ 别再在模块里写死收件人。
+  用户定的:管理员定规则 + 每个人在「我的账号 → 我的通知」关掉自己不想收的(`members[].notifyMute`,**只有日常通知能关**,出问题 / 审批的关不掉);
+  默认 日常 = 相关的人 + 管理员(「管理员看全部」)、出问题 = 相关的人 + **同部门**(和相关的人同一个非管理员角色、能看这类页面)+ 管理员;改价能选发群或发给不同的人。
+  还没保存过规则时按老开关(设置 → 飞书通知 / 改价设置 → 通知,`settings.notify`)推默认,原来的群 webhook 变成群「飞书群(原来设置的)」照旧收网站内容的通知,改价默认不进群;第一次改规则时整套存下来。
+  出问题却谁都收不到 → 兜底给管理员;`skipActor` 的事件(暂停 / 继续 / 提前结束、批准退回)不发给点按钮的人自己。日常通知能选「每天 10:00 汇总」(`flushDigest`,定时器每分钟调,当天只发一次)。
+  发送记录 / 汇总队列 / 去重放 `DATA_DIR/notify/<店>.log.jsonl` / `.box.json`(和排期数据分开放;第一次用时把排期的 `notified` 接过来,免得当天汇总重发)。没有店铺名(测试)时不写盘。
+  新加的两种(以前只进操作记录):Collection 排序有人在后台手改暂停接管(`pins.hold`)/ 排序失败(`pins.failure`,同一原因一天一次)、联合推广同步失败(`joint.failure`,同一条一天一次)。
+  新加通知:在 `EVENTS` 里登记(mod / level / name / desc / page),模块里产生 `{ ev, related … }` 交给 `dispatch`;别再新写发送逻辑。
 - 店铺**不是 Shopify Plus**(主题仓库 CLAUDE.md 误写 Plus)。
 - **只有改价模块能写产品数据,且只写两样**:变体的 `price` / `compareAtPrice`,以及改价时段指定的**手动合集**成员(v3 起,用户 10/10 决定并入改价)。活动圈定产品仍 = 活动自身存的合集 + 标签 + 指定产品;别给产品写 metafield / 打标签。改价的安全规则(原价保险库、写前意图、读回核对、手动改价暂停接管)照搬 `../price-scheduler-app/AGENTS.md` 铁律。
 - **Banner 是竖图卡片 430×600**(手机 320×450),后台预览一律按主题真实尺寸 / 字号 / 角标颜色画(`scripts/build-demo-seed.mjs` 从主题设置读出,别写死横图比例)。
@@ -123,7 +133,7 @@
   **测试模式**(`state.testMode`,`src/members.js` 的 `setTestMode` / `testModeOn`):临时免登录,方便自己试。四道闸别去掉 ——
   ① 只在带 Shopify 后台凭证时生效(直接开 app 网址的人照样要登录);② 只有 `LARK_ADMIN_IDS` 名单里的人、真的飞书登录后才能打开;
   ③ 到点自动失效(默认 2 小时,最长 8);④ 测试身份只能关、不能开 / 续,也不能改成员和角色。开着时顶部常驻红条 + 设置页提示,开关都记操作日志。本地测:`node scripts/live-harness.mjs --fresh --lark`(假飞书,可选测试管理员 / 员工 / 设计)。
-- **改价模块(v3 3.2,从 `../price-scheduler-app` 搬入)**:`src/price/`(`price-core.js` 规则 + `price-actions.js` 动作和权限 —— 纯函数,页面经 `/lib/price-*.js` 共用;`executor.js` 每分钟对齐价格;`shop-io.js` 唯一写价格 / 合集的地方;`catalog.js` 选产品;`notifier.js` **只私信相关的人、不发群**;`api.js` 挂 `/api/price`,server.js 用 `needMember('price')` 限定定价角色 + 管理员)。数据在 `DATA_DIR/price/`,和排期分开。
+- **改价模块(v3 3.2,从 `../price-scheduler-app` 搬入)**:`src/price/`(`price-core.js` 规则 + `price-actions.js` 动作和权限 —— 纯函数,页面经 `/lib/price-*.js` 共用;`executor.js` 每分钟对齐价格;`shop-io.js` 唯一写价格 / 合集的地方;`catalog.js` 选产品;`notifier.js` 产生改价通知(发给谁 2026-11-09 起由通知中心定,以前写死「只私信、不发群」);`api.js` 挂 `/api/price`,server.js 用 `needMember('price')` 限定定价角色 + 管理员)。数据在 `DATA_DIR/price/`,和排期分开。
   每个计划可指定审批人(`approver`)/ 负责人(`owner`)/ 抄送(`cc`),只能选能看改价页的成员;没指定审批人 = 管理员审批;审批人自己提交直接生效。
   **界面按原来那个 Simple Product Price Scheduler 的做法**(2026-10-10 用户给了截图):一个计划 = 一条规则 + 一个时间段(没有多时段 / 每日日程,Flash 每天用「复制成下一天」);
   表单从上往下填(名称 → 改什么价 → 改哪些产品 → 什么时候 → 产品标签 → 负责人审批 → 划线价 → 试算预览),右边常驻一段大白话摘要;逐个变体的价格收在「试算预览」里。

@@ -16,6 +16,7 @@ import { startScheduler } from './scheduler.js';
 import { scheduleRouter, warmCaches } from './schedule-api.js';
 import { priceRouter } from './price/api.js';
 import { startExecutor } from './price/executor.js';
+import { notifyRouter } from './notify-api.js';
 import { auditTrail, readAudit, MOD_CN } from './audit.js';
 import { load as loadScheduleState } from './schedule-store.js';
 import { teamEnabled } from './lark-login.js';
@@ -54,7 +55,7 @@ app.use((req, res, next) => {
 // 每次部署给页面资源加版本号,免得浏览器还用旧缓存(Railway 注入提交号;本地用启动时间)
 const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || String(Date.now());
 const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8')
-  .replace(/(href|src)="(style\.css|auth\.js|app\.js|tips\.js|registry\.js|schedule\.js|price\.js)"/g, `$1="$2?v=${BUILD}"`);
+  .replace(/(href|src)="(style\.css|auth\.js|app\.js|tips\.js|registry\.js|schedule\.js|notify\.js|price\.js)"/g, `$1="$2?v=${BUILD}"`);
 function sendIndex(req, res) {
   res.set('Cache-Control', 'no-store');
   res.set('Content-Type', 'text/html').send(indexHtml.replaceAll('%%API_KEY%%', API_KEY));
@@ -172,6 +173,7 @@ api.post('/reconnect', wrap(async (req) => { clearToken(req.ctx.shop); return { 
 api.use('/schedule', needMember(), scheduleRouter());
 // 改价:只有能看「改价」页面的人(定价角色 + 管理员)
 api.use('/price', needMember('price'), priceRouter());
+api.use('/notify', needMember(), notifyRouter()); // 通知中心(规则 / 群 / 记录给管理员;「我的通知」每个人)
 
 app.use('/api', api);
 

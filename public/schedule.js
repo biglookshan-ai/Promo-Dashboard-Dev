@@ -2954,8 +2954,9 @@
       ${me.admin ? `<p class="muted">你的飞书 ID:<code>${esc(me.member?.id || '')}</code>。${me.adminPinned
         ? '<span class="tag tag--ok">已锁定</span> Railway 里设了管理员名单(LARK_ADMIN_IDS),只有名单里的人能自动成为管理员。'
         : '建议把它填进 Railway 变量 <code>LARK_ADMIN_IDS</code>(多个用逗号隔开):以后只有名单里的人能成为管理员,就算数据丢失也不会被别人抢先;你被误停用时重新登录也能找回管理员。'}</p>` : ''}</section>`;
-    if (!me.admin) return `<div class="stgrid">${mine}</div>`;
-    return `<div class="stgrid">${mine}
+    const myNt = '<section class="panel" id="my-notify"></section>'; // 我的通知(public/notify.js 画)
+    if (!me.admin) return `<div class="stgrid">${mine}${myNt}</div>`;
+    return `<div class="stgrid">${mine}${myNt}
       <section class="panel"><div class="panel__h"><h3>怎么加同事</h3></div>
         <p class="muted">两种方式:① <b>先预设</b> —— 在下面「预先添加同事」里填他的名字、勾好角色,他第一次用飞书登录时名字对上就<b>自动开通</b>;
         ② <b>先登录</b> —— 让他在 Shopify 后台打开这个 app(或直接打开 app 网址)用飞书登录一次,他会出现在成员表的「待分配」里,给他勾上角色就能用了。
@@ -2965,6 +2966,7 @@
   }
   async function bindLarkPanels() {
     $('#st-logout')?.addEventListener('click', () => window.cgpLogout());
+    window.cgpMyNotify?.($('#my-notify'));
     $$('#st-root [data-tm]').forEach((b) => b.addEventListener('click', async () => {
       const on = b.dataset.tm === 'on';
       if (on && !b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '再点一次确认打开'; setTimeout(() => { if (b.dataset.sure) { delete b.dataset.sure; b.textContent = '打开测试模式'; } }, 4000); return; }
@@ -3176,9 +3178,6 @@
     }
     const teamOn = team(); // 多人协作关着:不显示成员与角色
     const apprOn = approvalsOn(); // 没开审批:不显示默认审批人、只跟审批 / 分工有关的通知
-    const tg = (k, label, hint) => `<label class="tgl"><input type="checkbox" data-notify="${k}" ${N[k] ? 'checked' : ''} ${live && !isApprover() ? 'disabled' : ''}/><span class="tgl__ui"></span><span><b>${label}</b><span class="muted">${hint}</span></span></label>`;
-    const hookVal = live ? '' : esc(S.settings.larkWebhook || '');
-    const hookPh = live && S.settings.larkWebhookSet ? `已设置(结尾 ${esc(S.settings.larkWebhookTail)}),要换就粘贴新地址` : 'https://open.larksuite.com/open-apis/bot/v2/hook/…';
     $('#st-root').innerHTML = `
       ${pageHead('设置', teamOn ? `店铺连接、成员与${apprOn ? '审核' : '角色'}、飞书通知、定时器、清理和操作日志` : '店铺连接、飞书通知、定时器、清理测试内容和操作日志')}
       <section class="panel conn" id="st-conn"><div class="panel__h"><h3>店铺连接(正式数据)</h3></div><p class="muted">检查中…</p></section>
@@ -3206,24 +3205,9 @@
             <select class="sel sel--sm" data-defappr="${k}" ${live && !isApprover() ? 'disabled' : ''}><option value="">管理员审批</option>${peopleFor(k).map((u) => `<option value="${esc(u.id)}" ${appr()[k] === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></label>`).join('')}
         </section>` : ''}
         <section class="panel">
-          <div class="panel__h"><h3>飞书通知</h3>${live ? (S.settings.larkWebhookSet ? '<span class="tag tag--ok">已连接</span>' : '<span class="tag tag--warn">未设置</span>') : ''}</div>
-          <p class="muted">在飞书群里:设置 → 群机器人 → 添加机器人 → 自定义机器人,复制它的 webhook 地址粘贴到这里。建议同时开「签名校验」,把密钥也填上。</p>
-          <label class="fld"><span>群机器人 Webhook 地址</span>
-            <input class="inp" id="st-hook" placeholder="${hookPh}" value="${hookVal}" ${live && !isApprover() ? 'disabled' : ''}/></label>
-          <label class="fld"><span>签名校验密钥(可选)</span>
-            <input class="inp" id="st-secret" type="password" placeholder="${live && S.settings.larkSecretSet ? '已设置,要换就粘贴新的' : '没开签名校验就留空'}" ${live && !isApprover() ? 'disabled' : ''}/></label>
-          ${live && isApprover() ? '<button class="btn btn-sm" id="st-hook-save" type="button">保存飞书设置</button>' : ''}
-          <div class="tgls">
-            ${apprOn ? tg('submit', '有人提交审核', '私信这条内容的审批人;群里也发') : ''}
-            ${apprOn ? tg('decision', '批准 / 退回', '私信提交人、负责人和抄送的人,附退回意见') : ''}
-            ${tg('dayBefore', '上线前一天提醒', apprOn ? '每天 10:00 汇总明天要上线的,没批准的会标出来' : '每天 10:00 汇总明天要上线的')}
-            ${tg('endingSoon', `下架前 ${ENDING_DAYS} 天提醒`, '每天 10:00 汇总快到期的 Banner / 公告 / 活动,方便决定延长还是准备替换')}
-            ${tg('upDown', '上线 / 下线', apprOn ? '定时器每次自动切换都通知;负责人和抄送的人收到私信' : '定时器每次自动切换都通知')}
-            ${apprOn ? tg('unapproved', '到点还没批准', '快到上线时间还没批时私信审批人') : ''}
-            ${apprOn ? tg('due', '截止提醒', '截止前一天、过了截止还没提交,私信负责人(过期也告诉审批人)') : ''}
-            ${tg('failure', '定时切换失败', '附错误原因;同一小时只报一次')}
-          </div>
-          <button class="btn btn-sm" id="st-test" type="button" ${live && !isApprover() ? 'disabled' : ''}>发送测试消息</button>
+          <div class="panel__h"><h3>飞书通知</h3></div>
+          <p class="muted">哪些通知要发、发给谁、私信还是发群,都在「通知中心」里设(原来的群和开关已经带过去了)。</p>
+          <button class="btn btn-sm" type="button" data-open-notify>打开通知中心</button>
         </section>
         <section class="panel">
           <div class="panel__h"><h3>定时器</h3><span class="stb stb--live"><span class="dot"></span>运行中</span></div>
@@ -3257,15 +3241,16 @@
         if (!Object.keys(body).length) return toast('没有要保存的改动', false);
         post('/api/schedule/settings', body, '飞书设置已保存,可以点「发送测试消息」试一下');
       });
-      $('#st-test').addEventListener('click', () => post('/api/schedule/lark-test', {}, '测试消息已发到飞书群'));
+      $('#st-test')?.addEventListener('click', () => post('/api/schedule/lark-test', {}, '测试消息已发到飞书群'));
     } else {
       $('#st-me')?.addEventListener('change', (e) => { S.me = e.target.value; ord.banner = null; ord.topbar = null; save(); renderAll(); toast(`现在的身份:${me().name} · ${isApprover() ? '审核人' : '编辑'}`); });
       $$('[data-role]').forEach((el) => el.addEventListener('change', () => { S.staff.find((u) => u.id === el.dataset.role).role = el.value; save(); renderAll(); }));
       $$('[data-notify]').forEach((c) => c.addEventListener('change', () => { N[c.dataset.notify] = c.checked; save(); }));
       $$('[data-defappr]').forEach((el) => el.addEventListener('change', () => { appr()[el.dataset.defappr] = el.value || null; save(); renderAll(); toast('默认审批人已保存(演示)'); }));
-      $('#st-hook').addEventListener('change', (e) => { S.settings.larkWebhook = e.target.value.trim(); save(); toast('已保存 Webhook 地址(演示)'); });
-      $('#st-test').addEventListener('click', () => toast('演示模式:不会真的发送。正式版会往飞书群发一条测试消息。'));
+      $('#st-hook')?.addEventListener('change', (e) => { S.settings.larkWebhook = e.target.value.trim(); save(); toast('已保存 Webhook 地址(演示)'); });
+      $('#st-test')?.addEventListener('click', () => toast('演示模式:不会真的发送。正式版会往飞书群发一条测试消息。'));
     }
+    $('#st-root [data-open-notify]')?.addEventListener('click', () => window.cgpOpenNotify?.());
     renderConn();
   }
 

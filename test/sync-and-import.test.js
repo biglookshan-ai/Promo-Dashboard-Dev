@@ -12,7 +12,7 @@ const { fieldsFor, handleFor } = await import('../src/metaobjects.js');
 const { buildImport } = await import('../src/theme-import.js');
 const { findSlider, findTopbar, siteStyle, normalizeLink } = await import('../src/theme-content.js');
 const { larkSign, isLarkWebhook } = await import('../src/lark.js');
-const { digestMessages } = await import('../src/notifier.js');
+const { digestEvents } = await import('../src/notifier.js');
 
 const T = Date.UTC(2026, 9, 1, 12), H = 3600_000, D = 24 * H;
 function fakeShopify() {
@@ -126,9 +126,9 @@ test('每日汇总:10 点前不发;明天上线的 + 3 天内下架的', () => {
     { id: 'c', kind: 'banner', state: 'pending', title: 'NotApproved', start: T + D, end: null },
   ] });
   const at9 = Date.UTC(2026, 9, 1, 8); // 英国夏令时 09:00
-  assert.equal(digestMessages(s, { now: at9 }).length, 0);
+  assert.equal(digestEvents(s, { now: at9 }).length, 0);
   const at10 = Date.UTC(2026, 9, 1, 9, 5);
-  const m = digestMessages(s, { now: at10 });
+  const m = digestEvents(s, { now: at10 });
   assert.equal(m.length, 2);
   assert.match(m[0].card.lines.join('\n'), /NotApproved.*还没批准/);
   assert.match(m[1].card.title, /3 天内下架/);

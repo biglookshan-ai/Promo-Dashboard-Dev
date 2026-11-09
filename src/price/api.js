@@ -4,7 +4,8 @@ import { load, save, withLock, appendLog, readLedger } from './store.js';
 import { planStatus } from './price-core.js';
 import { applyAction, ActionError, planSummary } from './price-actions.js';
 import { runOnce } from './executor.js';
-import { eventMessages, deliver } from './notifier.js';
+import { eventMessages } from './notifier.js';
+import { dispatch } from '../notify-center.js';
 import * as catalog from './catalog.js';
 import { load as loadSchedule } from '../schedule-store.js';
 import { actorOf, isAdmin, canSee, approvalsOn } from '../members.js';
@@ -90,10 +91,10 @@ export function priceRouter() {
         recordPlanAction(shop, beforePlans, doc.plans, [action.id, id], { action: action.historyNote ? '回滚' : (action.type === 'save' ? ACT[action.mode] : ACT[action.type]) || action.type, by: actor.name, note: action.historyNote || '' });
       } catch (e) { console.error('[plan-history]', e.message); }
       const members = loadSchedule(shop).members || [];
-      const msgs = effects.filter((e) => e.type === 'notify').flatMap((e) => eventMessages(state, e, { appUrl: state.appUrl, members }));
+      const msgs = effects.filter((e) => e.type === 'notify').flatMap((e) => eventMessages(state, e, { appUrl: state.appUrl, members, actor: actor.id }));
       return { state, effects, message, id, msgs };
     });
-    if (out.msgs.length) deliver(out.state, out.msgs).catch((e) => console.error('[lark-dm]', e.message));
+    if (out.msgs.length) dispatch(shop, out.msgs, { sched: loadSchedule(shop), priceNotify: out.state.settings.notify }).catch((e) => console.error('[notify]', e.message)); // 通知中心按规则发
     if (out.effects.some((e) => e.type === 'run')) runOnce(shop, { token: req.ctx.token }).catch((e) => console.error('[executor]', e));
     return { ok: true, message: out.message, id: out.id };
   }));

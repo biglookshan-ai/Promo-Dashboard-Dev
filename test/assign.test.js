@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyAction, canApprove, effApprover } from '../src/schedule-actions.js';
-import { dmMessages, schedulerDMs, peopleOf } from '../src/notifier.js';
+import { actionEvents, schedulerEvents, relatedOf } from '../src/notifier.js';
+import { centerOf, recipients } from '../src/notify-center.js';
 import { DEFAULT_NOTIFY } from '../src/schedule-store.js';
 
 const T = Date.UTC(2026, 9, 1, 12), H = 3600000, D = 86400000;
@@ -78,32 +79,38 @@ test('负责人可以删自己负责的草稿', () => {
   assert.throws(() => applyAction(d, { type: 'delete', id: 'b1' }, design, T), /只能删除/);
 });
 
+// 2026-11-09 起发给谁由通知中心按规则定;默认规则下和以前一样(另加:日常通知管理员也收,用户定的「管理员看全部」)
+const to = (d, msg) => recipients(d, centerOf(d), msg)?.people.sort() || [];
 test('私信:提交 → 审批人;批准 → 提交人 + 负责人 + 抄送(不发给批的人自己)', () => {
   const r = save(doc(), ops, { approver: 'm-lead', owner: 'm-ops', cc: ['m-des'] });
   const sub = r.effects.find((e) => e.event === 'submit');
-  const m1 = dmMessages(r.doc, sub, { appUrl: 'u', now: T });
-  assert.deepEqual(m1[0].to, ['m-lead']);
+  const m1 = actionEvents(r.doc, sub, { appUrl: 'u', now: T });
+  assert.equal(m1[0].ev, 'content.submit');
+  assert.deepEqual(to(r.doc, m1[0]), ['m-lead']);
   const r2 = applyAction(r.doc, { type: 'approve', id: 'b-new' }, lead, T);
-  const m2 = dmMessages(r2.doc, r2.effects.find((e) => e.event === 'decision'), { appUrl: 'u', now: T });
-  assert.deepEqual(m2[0].to.sort(), ['m-des', 'm-ops']);
+  const m2 = actionEvents(r2.doc, r2.effects.find((e) => e.event === 'decision'), { appUrl: 'u', now: T });
+  assert.deepEqual(to(r2.doc, m2[0]), ['m-des', 'm-ops']);
   // 没指定审批人 → 发给管理员
   const r3 = save(doc(), ops, {});
-  assert.deepEqual(dmMessages(r3.doc, r3.effects.find((e) => e.event === 'submit'), { now: T })[0].to, ['m-admin']);
-  // 关掉「提交审核」通知就不发
+  assert.deepEqual(to(r3.doc, actionEvents(r3.doc, r3.effects.find((e) => e.event === 'submit'), { now: T })[0]), ['m-admin']);
+  // 关掉「提交审核」通知(老开关,还没保存过通知中心的规则)就不发
   const off = { ...r.doc, settings: { ...r.doc.settings, notify: { ...DEFAULT_NOTIFY, submit: false } } };
-  assert.equal(dmMessages(off, sub, { now: T }).length, 0);
+  assert.equal(recipients(off, centerOf(off), m1[0]), null);
 });
 
-test('私信:上下线发给负责人和抄送;截止提醒发给负责人', () => {
+test('私信:上下线发给负责人和抄送(各自一张只列自己的)+ 管理员看全部;截止提醒发给负责人', () => {
   const d = doc({ banners: [banner({ owner: 'm-ops', cc: ['m-des'] }), banner({ id: 'b2', state: 'draft', owner: 'm-ops', due: T + 5 * H, title: '黑五' }), banner({ id: 'b3', state: 'rejected', by: 'm-des', due: T - H, title: '过期' })] });
-  const out = schedulerDMs(d, { changes: [{ id: 'b1', kind: 'banner', title: 'A', to: 'ACTIVE' }] }, { now: T });
-  const up = out.filter((m) => !m.key);
-  assert.deepEqual(up.map((m) => m.to[0]).sort(), ['m-des', 'm-ops']);
+  const out = schedulerEvents(d, { changes: [{ id: 'b1', kind: 'banner', title: 'A', to: 'ACTIVE' }] }, { now: T });
+  const up = out.find((m) => m.ev === 'content.updown');
+  assert.deepEqual(up.related.sort(), ['m-des', 'm-ops']);
+  assert.deepEqual(to(d, up), ['m-admin', 'm-des', 'm-ops']);
+  assert.match(up.cards['m-ops'].title, /你相关的内容自动上线了/);
+  assert.equal(up.cards['m-admin'], undefined, '管理员收的是全部的汇总卡片');
   const soon = out.find((m) => m.key?.startsWith('due-soon:b2'));
-  assert.deepEqual(soon.to, ['m-ops']);
+  assert.deepEqual(to(d, soon), ['m-ops']);
   const over = out.find((m) => m.key?.startsWith('due-over:b3'));
-  assert.deepEqual(over.to.sort(), ['m-admin', 'm-des'], '没负责人就提醒建的人,过了截止也告诉审批人');
-  assert.deepEqual(peopleOf(d, { owner: 'gone', cc: ['m-ops'] }), ['m-ops'], '停用 / 不存在的成员不发');
+  assert.deepEqual(to(d, over), ['m-admin', 'm-des'], '没负责人就提醒建的人,过了截止也告诉审批人');
+  assert.deepEqual(relatedOf(d, { owner: 'gone', cc: ['m-ops'] }), ['m-ops'], '停用 / 不存在的成员不发');
 });
 
 test('动作的副作用:群消息照发,另外私信给审批人(接到 runEffects)', async () => {
@@ -113,5 +120,5 @@ test('动作的副作用:群消息照发,另外私信给审批人(接到 runEffe
   const out = await runEffects({}, r.doc, r.effects, { appUrl: 'u', now: T, send: async (_, card) => { group.push(card.title); }, sendDm: async (to, card) => { dms.push({ to, title: card.title }); return []; } });
   assert.deepEqual(out.errors, []);
   assert.equal(group.length, 1);
-  assert.deepEqual(dms, [{ to: ['m-lead'], title: '📝 有内容等你审批' }]);
+  assert.deepEqual(dms, [{ to: ['m-lead'], title: '📝 有新内容等审批' }]);
 });

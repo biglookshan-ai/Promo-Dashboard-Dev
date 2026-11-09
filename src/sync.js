@@ -6,7 +6,8 @@ import { findItem, LIST, titleOf } from './schedule-actions.js';
 import { upsertItem, upsertTab, setPosition, removeEntry, TYPE_OF } from './metaobjects.js';
 import { createImageFromUrl } from './files.js';
 import { graphql } from './shopify.js';
-import { eventMessages, deliver, dmMessages, deliverDMs } from './notifier.js';
+import { actionEvents } from './notifier.js';
+import { dispatch } from './notify-center.js';
 
 const locks = new Map();
 export function withLock(shop, fn) {
@@ -77,10 +78,10 @@ export async function runEffects(ctx, state, effects, { gql = graphql, now = Dat
     try { await removeEntry(ctx, e.shopifyId, gql); }
     catch (err) { errors.push(`删除 Shopify 条目失败:${err.message}`); }
   }
+  // 通知:发给谁 / 发群还是私信由通知中心按规则定
   const notes = effects.filter((x) => x.type === 'notify');
-  const lark = await deliver(state, notes.flatMap((x) => eventMessages(state, x, { appUrl, now })), { send, now });
-  const dm = await deliverDMs(state, notes.flatMap((x) => dmMessages(state, x, { appUrl, now })), { send: sendDm, now }); // 私信给具体的人
-  return { errors, larkErrors: [...lark.errors, ...dm.errors] };
+  const sent = await dispatch(ctx.shop, notes.flatMap((x) => actionEvents(state, x, { appUrl, now })), { sched: state, now, sendGroup: send, sendDm });
+  return { errors, larkErrors: sent.errors };
 }
 
 // 一个完整的「动作」:锁 → 读 → 改 → 先存(本地立即生效)→ 写 Shopify → 再存(记下 Shopify id / 错误)

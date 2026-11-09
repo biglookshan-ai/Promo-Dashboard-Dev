@@ -2279,3 +2279,33 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-price .pr-serbox__r:hover { border-color: var(--border-strong); }
 #section-price .pr-serbox__r.is-me { cursor: default; border-color: var(--accent); background: var(--accent-soft); }
 #section-price .pr-serbox__r .linkbtn { margin-left: auto; }
+
+/* ===== 通知中心(2026-11-09,public/notify.js)===== */
+#section-notify .nrs { padding-bottom: 6px; }
+#section-notify .nr { display: grid; grid-template-columns: 44px minmax(180px, 1.1fr) minmax(0, 2fr) 140px; gap: 6px 12px; align-items: center; padding: 10px 4px; border-top: 1px solid var(--border); }
+#section-notify .nr--head { border-top: 0; padding: 0 4px 6px; font-size: 12px; color: var(--text-3); }
+#section-notify .nr.is-off .nr__name b, #section-notify .nr.is-off .nr__to { opacity: .45; }
+#section-notify .nr__name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: 13px; }
+#section-notify .nr__to { display: flex; flex-wrap: wrap; gap: 6px; }
+#section-notify .nr__sum { grid-column: 2 / -1; font-size: 12px; color: var(--text-3); }
+#section-notify .nchip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; list-style: none; }
+#section-notify .nchip.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+#section-notify .ndd { position: relative; }
+#section-notify .ndd > summary::-webkit-details-marker { display: none; }
+#section-notify .ndd__pop { position: absolute; z-index: 20; top: 30px; left: 0; min-width: 190px; max-height: 260px; overflow: auto; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, .12); display: flex; flex-direction: column; gap: 4px; }
+#section-notify .ndd__pop .chk { display: flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+#section-notify .ngrp { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 10px 0; border-top: 1px solid var(--border); font-size: 13px; }
+#section-notify .ngrp__act { margin-left: auto; display: flex; gap: 6px; }
+#section-notify .ngrp-add { display: grid; grid-template-columns: 160px minmax(0, 1fr) 200px auto; gap: 8px; margin-top: 12px; }
+#section-notify .nlog td { vertical-align: top; font-size: 13px; }
+#section-notify .nlog__ok { color: var(--ok); font-weight: 700; }
+#section-notify .nlog__err { color: var(--danger); }
+#section-notify .panel__h .seg { margin-left: auto; }
+#my-notify .mynt__h { font-size: 12px; color: var(--text-3); margin: 10px 0 2px; }
+#my-notify .mynt__r { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; }
+#my-notify .mynt__w { font-style: normal; color: var(--text-3); font-size: 12px; margin-left: 6px; }
+@media (max-width: 900px) {
+  #section-notify .nr { grid-template-columns: 44px minmax(0, 1fr); }
+  #section-notify .nr__to, #section-notify .nr__when { grid-column: 2 / -1; }
+  #section-notify .ngrp-add { grid-template-columns: 1fr; }
+}

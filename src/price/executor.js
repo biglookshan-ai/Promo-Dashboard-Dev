@@ -11,7 +11,8 @@ import { load, save, withLock, appendLedger, appendLog, listShops } from './stor
 import { planWork, decide, commit, holdVariant, sweep, setIntent, clearIntent, recoverIntents, planCollections, planTags, planCountdowns, syncCampaignTimes, finishPlans, samePair, pair } from './price-core.js';
 import { realIO } from './shop-io.js';
 import { getToken } from '../token-store.js';
-import { reportMessages, deliver as realDeliver } from './notifier.js';
+import { reportMessages } from './notifier.js';
+import { dispatch } from '../notify-center.js';
 import { load as loadSchedule } from '../schedule-store.js';
 
 export const INTERVAL_MS = 60_000;
@@ -23,7 +24,8 @@ async function pool(items, n, fn) {
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) await fn(items[i++]); }));
 }
 
-export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = realIO, deliver = realDeliver } = {}) {
+// deliver(state, msgs):发通知(默认交给通知中心按规则发;测试可以换掉)
+export function runOnce(shop, { now = Date.now(), token = getToken(shop), io = realIO, deliver = (st, msgs) => dispatch(shop, msgs, { sched: loadSchedule(shop), priceNotify: st.settings.notify, now }) } = {}) {
   return withLock(shop, async () => {
     const state = load(shop);
     const ctx = { shop, token };
