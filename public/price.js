@@ -775,7 +775,7 @@ function priceMatrixHtml(ro) {
   };
   const setRow = (label, tip, cell) => `<tr class="pr-vmx__set"><th class="pr-vmx__g">${label}${tip ? `<span class="tipify">${tip}</span>` : ''}</th>${vs.map((v) => `<td class="${v.id === cv ? 'is-curcol' : ''}">${cell(v)}</td>`).join('')}</tr>`;
   return `<div class="pr-vmx">
-    <div class="pr-vmx__h"><span class="muted">${sc ? (segs.length > 1 ? `${segs.length} 个时间段 · ${fmtT(Math.min(...segs.map((x) => x.start ?? Infinity)))} → ${segs.some((x) => x.end) ? fmtT(Math.max(...segs.map((x) => x.end || 0))) : '?'}` : '一个时间段;不同时间段用不同的折扣 / 设置就「＋ 加一段」')
+    <div class="pr-vmx__h"><span class="muted">${sc ? (segs.length > 1 ? `${segs.length} 个时间段 · ${fmtT(Math.min(...segs.map((x) => x.start ?? Infinity)))} → ${segs.some((x) => x.end) ? fmtT(Math.max(...segs.map((x) => x.end || 0))) : '?'}` : '一个时间段;不同时间段用不同的折扣 / 设置就「＋ 加一段」') + ' · <b>最后一段结束后,售价和划线价都回到改价前</b>(原来打折的照旧打折,原来没打折的回到没打折)'
       : `${vs.length} 个价格 · 每周哪几天用哪个,在下面「什么时候生效」里排`}</span>${add}</div>
     <div class="tblwrap"><table class="pr-vmx__t"><thead><tr><th class="pr-vmx__g">分组 ↓ · ${sc ? '时间段' : '价格'} →</th>${vs.map((v) => `<th class="${v.id === cv ? 'is-cur' : ''}">${colHead(v)}</th>`).join('')}</tr></thead>
       <tbody>${gs.map((g, i) => `<tr class="${i === gi ? 'is-open' : ''}"><th class="pr-vmx__g"><div class="pr-vmx__gn"><span class="pr-group__no">${i + 1}</span>${esc(gName(g, i, gs.length > 1))}</div><div class="pr-vmx__gs">${esc(scopeSayFull(g.scope))}</div></th>
