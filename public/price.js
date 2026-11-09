@@ -542,7 +542,8 @@ const started = () => !E.isNew && E.orig?.state === 'approved' && E.orig.slots.s
 const scopeKey = (p) => JSON.stringify([p.groups || [{ scope: p.scope, rule: p.rule }], p.compare, (p.versions || []).map((v) => v.id)]);
 const groupsOf = (p) => (p.groups?.length ? p.groups : [{ id: 'g0', scope: p.scope, rule: p.rule }]);
 // 组名(2026-11-03 用户:只有第 1、2、3 组看不出是什么)—— 没起名字就叫「第 N 组」
-const gName = (g, i, multi = true) => g?.name || (multi ? `第 ${i + 1} 组` : '改价规则');
+// 2026-11-09 用户:默认叫「分组 1 / 分组 2」(一组 = 一批产品;以前只有一组时叫「改价规则」,容易误会)
+const gName = (g, i) => g?.name || `分组 ${i + 1}`;
 const G = () => groupsOf(P())[Math.min(E.gi || 0, groupsOf(P()).length - 1)];   // 正在看的那一组
 const EG = () => E.plan.groups[Math.min(E.gi || 0, E.plan.groups.length - 1)]; // 正在改的那一组
 // 短说法(总览表格子、列表、时间轴用):降 15% / 减 £20 / 逐个填价…
@@ -633,8 +634,8 @@ function editorHtml() {
 
 
       ${p.kind === 'window' ? sec(segCols() ? '改价时间段' : '价格(每周重复)', priceMatrixHtml(ro), segCols()
-        ? '一列 = 一个时间段(列头填名字和开始 / 结束),一行 = 一个改价组,格子里是这一组在这一段怎么改(点格子去上面那一组改)。下面几行是这一段顺便做的事:加进 Collection、加 / 去掉标签、关联活动、倒计时。前后两段连着时直接换价;中间空着的时间回到改价前'
-        : '每周重复:一列 = 一个价格,一行 = 一个改价组;每周哪几天用哪个价格在下面「什么时候生效」里排。下面几行是这个价格生效时顺便做的事') : ''}
+        ? '一列 = 一个时间段(列头填名字和开始 / 结束),一行 = 一个分组(一批产品),格子里是这一组在这一段怎么改(点格子去上面那一组改)。下面几行是这一段顺便做的事:加进 Collection、加 / 去掉标签、关联活动、倒计时。前后两段连着时直接换价;中间空着的时间回到改价前'
+        : '每周重复:一列 = 一个价格,一行 = 一个分组(一批产品);每周哪几天用哪个价格在下面「什么时候生效」里排。下面几行是这个价格生效时顺便做的事') : ''}
 
       ${sec(p.kind === 'permanent' ? '什么时候执行' : '什么时候生效', `
         <div class="row" style="margin-bottom:10px"><span class="pr-seg">${[['window', '限时(到期回到改价前)'], ['permanent', '永久(到点改,不恢复)']].map(([k, l]) => `<button type="button" class="${p.kind === k ? 'is-on' : ''}" data-a="kind" data-v="${k}" ${ro || started() ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>
@@ -776,7 +777,7 @@ function priceMatrixHtml(ro) {
   return `<div class="pr-vmx">
     <div class="pr-vmx__h"><span class="muted">${sc ? (segs.length > 1 ? `${segs.length} 个时间段 · ${fmtT(Math.min(...segs.map((x) => x.start ?? Infinity)))} → ${segs.some((x) => x.end) ? fmtT(Math.max(...segs.map((x) => x.end || 0))) : '?'}` : '一个时间段;不同时间段用不同的折扣 / 设置就「＋ 加一段」')
       : `${vs.length} 个价格 · 每周哪几天用哪个,在下面「什么时候生效」里排`}</span>${add}</div>
-    <div class="tblwrap"><table class="pr-vmx__t"><thead><tr><th class="pr-vmx__g">改价组 ↓ · ${sc ? '时间段' : '价格'} →</th>${vs.map((v) => `<th class="${v.id === cv ? 'is-cur' : ''}">${colHead(v)}</th>`).join('')}</tr></thead>
+    <div class="tblwrap"><table class="pr-vmx__t"><thead><tr><th class="pr-vmx__g">分组 ↓ · ${sc ? '时间段' : '价格'} →</th>${vs.map((v) => `<th class="${v.id === cv ? 'is-cur' : ''}">${colHead(v)}</th>`).join('')}</tr></thead>
       <tbody>${gs.map((g, i) => `<tr class="${i === gi ? 'is-open' : ''}"><th class="pr-vmx__g"><div class="pr-vmx__gn"><span class="pr-group__no">${i + 1}</span>${esc(gName(g, i, gs.length > 1))}</div><div class="pr-vmx__gs">${esc(scopeSayFull(g.scope))}</div></th>
         ${vs.map((v) => { const n = todoOf(g, v.id); return `<td class="pr-vmx__c ${i === gi && v.id === cv ? 'is-cur' : ''}" data-a="vcell" data-i="${i}" data-v="${v.id}" title="改「${esc(gName(g, i, gs.length > 1))}」在「${esc(vName(p, v.id))}」下的价">${esc(ruleShort(ruleAt(g, v.id)))}${n ? `<div><span class="tag tag--warn">${n} 个没填价</span></div>` : ''}</td>`; }).join('')}</tr>`).join('')}
       ${setRow('加进 Collection', '这个价格生效期间把这批产品加进这个 Collection(带条件的也行,加进它的「单独加入的产品」,不动条件);换到别的价格或结束时拿掉 app 加的,本来就在的不动。Flash 那一段常用', collCell)}
@@ -824,7 +825,7 @@ function groupsHtml(ro) {
       </div>
       ${open ? `<div class="pr-group__b">
         <label class="pr-fld pr-group__name">这一组的名字 <em>可不填;起个名字一眼看出这组是哪批产品,比如「Leaplight 清货」「Sunnylife 新品」${multiV() ? '。工作日 / 周末这种是「价格」,在下面「价格总览」的列头起名' : ''}</em>
-          <input class="inp" data-f="gname" value="${esc(g.name || '')}" maxlength="30" placeholder="${multi ? `第 ${i + 1} 组` : '改价规则'}" ${ro ? 'disabled' : ''}/></label>
+          <input class="inp" data-f="gname" value="${esc(g.name || '')}" maxlength="30" placeholder="分组 ${i + 1}" ${ro ? 'disabled' : ''}/></label>
         <div class="pr-group__lab">改哪些产品</div>${scopeHtml(ro)}
         <div class="pr-group__lab">改什么价${verTabsHtml()}</div>${ruleHtml(ro)}
         <div class="pr-group__lab">划线价 <span class="muted">这一组改价期间前台显示的划线价;限时计划结束时售价和划线价一起恢复原样</span></div>${cmpHtml(ro, g)}
