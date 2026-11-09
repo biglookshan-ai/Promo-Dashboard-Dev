@@ -152,10 +152,11 @@ const ORDER = { running: 0, paused: 1, scheduled: 2, pending: 3, rejected: 4, dr
 // ---- 分组(2026-11-03 用户:计划几十上百个时好找;同一天改成「一排分组标签」—— 原来「分组方式 + 三个筛选下拉」叠在一起太绕)----
 // 列表上面一排标签就是分组(带数量),点一个只看它;左边小开关切换「我的分组 / 按活动 / 按品牌」。
 // 「我的分组」= 计划上自己起的分组名(plan.folder);按活动 / 品牌是自动分的(页面上算,不存)
-// 2026-11-09 用户:计划上的「分组」和改价组重名分不清 → 整个去掉,列表只按活动 / 品牌自动分 + 搜索(以前存的 folder 留在数据里,不再显示)
-const LV = { by: ['campaign', 'brand'].includes(localStorage.getItem('cgp-pr-by2')) ? localStorage.getItem('cgp-pr-by2') : 'campaign',
+// 2026-11-09:一度去掉过(误会了用户的意思),同一天用户要回来 —— 数据一直在(plan.folder 没删过),列表照旧「我的分组 | 按活动 | 按品牌」。
+// 编辑页里叫「列表分组」,免得和改价分组(分组 1 / 分组 2,一批产品)混
+const LV = { by: ['folder', 'campaign', 'brand'].includes(localStorage.getItem('cgp-pr-by2')) ? localStorage.getItem('cgp-pr-by2') : 'folder',
   chip: '__all', q: '', sel: new Set(), newFolder: false };
-const BY = [['campaign', '按活动'], ['brand', '按品牌']];
+const BY = [['folder', '我的分组'], ['campaign', '按活动'], ['brand', '按品牌']];
 // 列表排序(2026-11-09 用户):创建时间(默认,最后建的在最上面)/ 编辑时间 / 改价开始时间 / 改价结束时间;旁边按钮反过来
 const SORTS = [['created', '按创建时间'], ['edited', '按编辑时间'], ['start', '按改价开始时间'], ['end', '按改价结束时间']];
 LV.sort = SORTS.some(([k]) => k === localStorage.getItem('cgp-pr-sort')) ? localStorage.getItem('cgp-pr-sort') : 'created';
@@ -176,11 +177,11 @@ function brandsOf(p) {
 // 这个计划属于哪几个标签('' = 未分组 / 没关联活动 / 没有产品);一个计划可以有几个品牌,几个品牌标签里都算它
 // 计划关联的活动(几个价格各自关联时有好几个)
 const campaignsOf = (p) => { const m = new Map(); for (const c of [...(p.campaigns || []), p.campaign]) if (c?.id) m.set(c.id, c); return [...m.values()]; };
-const keysOf = (p, by = LV.by) => (by === 'campaign' ? (campaignsOf(p).length ? campaignsOf(p).map((c) => c.id) : ['']) : brandsOf(p).length ? brandsOf(p) : ['']);
+const keysOf = (p, by = LV.by) => (by === 'folder' ? [p.folder || ''] : by === 'campaign' ? (campaignsOf(p).length ? campaignsOf(p).map((c) => c.id) : ['']) : brandsOf(p).length ? brandsOf(p) : ['']);
 const qOf = () => LV.q.trim().toLowerCase();
 function searchMatch(p) {
   const q = qOf(); if (!q) return true;
-  return [p.name, ...campaignsOf(p).map((c) => c.name), ...brandsOf(p)].some((x) => String(x || '').toLowerCase().includes(q))
+  return [p.name, p.folder, ...campaignsOf(p).map((c) => c.name), ...brandsOf(p)].some((x) => String(x || '').toLowerCase().includes(q))
     || p.slots.some((sl) => sl.items.some((i) => `${i.product || i.title} ${i.variant || ''} ${i.sku || ''}`.toLowerCase().includes(q)));
 }
 const chipMatch = (p) => LV.chip === '__all' || keysOf(p).includes(LV.chip);
@@ -194,6 +195,7 @@ function hitOf(p) {
 function groupBarHtml(base, shown) {
   const by = LV.by; const counts = new Map();
   for (const { p } of base) for (const k of keysOf(p)) counts.set(k, (counts.get(k) || 0) + 1);
+  if (by === 'folder') for (const f of foldersAll()) if (!counts.has(f)) counts.set(f, 0); // 我的分组:这个状态下没有计划的也列出来(数字 0)
   if (LV.chip !== '__all' && !counts.has(LV.chip)) counts.set(LV.chip, 0);
   const camps = new Map(S.plans.flatMap((p) => campaignsOf(p)).map((c) => [c.id, c.name]));
   const label = (k) => (!k ? NONE[by] : by === 'campaign' ? camps.get(k) || '活动' : k);
@@ -202,13 +204,17 @@ function groupBarHtml(base, shown) {
   const ids = shown.map((x) => x.p.id); const allSel = ids.length && ids.every((id) => LV.sel.has(id));
   return `<div class="pl-bar">
     <span class="pr-seg pr-seg--sm pl-bar__by">${BY.map(([k, l]) => `<button type="button" class="${by === k ? 'is-on' : ''}" data-a="lby" data-v="${k}">${l}</button>`).join('')}</span>
-    <div class="pl-chips">${chip('__all', '全部', base.length)}${keys.map((k) => chip(k, label(k), counts.get(k))).join('')}</div>
+    <div class="pl-chips">${chip('__all', '全部', base.length)}${keys.map((k) => chip(k, label(k), counts.get(k))).join('')}
+      ${by === 'folder' ? (LV.newFolder ? `<span class="pl-newf"><input class="inp inp--sm" id="pl-newf" maxlength="${A.FOLDER_MAX}" placeholder="新分组的名字,回车"/><button type="button" class="linkbtn" data-a="lnewf0">取消</button></span>`
+        : '<button type="button" class="pl-chip pl-chip--add" data-a="lnewf" title="先勾选下面的计划,再点这里起名字,勾选的就放进新分组">＋ 新分组</button>') : ''}</div>
     ${ids.length ? `<label class="pl-bar__all"><input type="checkbox" data-a="lselgrp" data-ids="${ids.join(',')}" ${allSel ? 'checked' : ''}/>全选这 ${ids.length} 个</label>` : ''}
   </div>`;
 }
 function bulkHtml() {
   const n = LV.sel.size; if (!n) return '';
   return `<div class="pl-bulk"><b>已选 ${n} 个计划</b>
+    <span class="pl-bulk__g">移到分组 <input class="inp inp--sm" id="pl-folder" list="pl-folders" placeholder="新的或已有的分组名" maxlength="${A.FOLDER_MAX}"/><datalist id="pl-folders">${foldersAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist>
+      <button type="button" class="btn btn-sm btn-primary" data-a="lmove">移过去</button><button type="button" class="linkbtn" data-a="lunfolder">移出分组</button></span>
     <span class="pl-bulk__g">关联活动 <select class="sel sel--sm" id="pl-camp"><option value="">不关联</option>${(cache.campaigns || []).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
       <button type="button" class="btn btn-sm" data-a="lcamp">关联</button></span>
     <button type="button" class="linkbtn" data-a="lnone">取消选择</button></div>`;
@@ -310,6 +316,7 @@ function planRow(p, s, ovs = []) {
         ${p.pendingChange ? '<span class="tag tag--warn">有修改待审核</span>' : ''}
         ${holds ? `<span class="tag tag--danger">${holds} 个暂停接管</span>` : ''}
         ${ovs.length ? `<span class="tag tag--warn" title="${esc(ovs.map((o) => `「${o.name}」:${o.n} 个选项,重叠时用「${o.wins ? p.name : o.name}」的价`).join('\n'))}">⚠️ 和「${esc(ovs[0].name)}」${ovs.length > 1 ? `等 ${ovs.length} 个计划` : ''}改到同一批产品(${ovs.reduce((n, o) => n + o.n, 0)} 个选项)</span>` : ''}
+        ${p.folder && LV.by !== 'folder' ? `<span class="tag">分组:${esc(p.folder)}</span>` : ''}
         ${campaignsOf(p).length ? `<span class="tag">活动:${campaignsOf(p).map((c) => esc(c.name)).join('、')}${p.followCampaign ? ' · 跟随时间' : ''}</span>` : ''}
         ${S.approvals ? `<span class="tag">审批:${p.approver ? esc(nameOf(p.approver)) : '管理员'}</span>${p.owner ? `<span class="tag">负责:${esc(nameOf(p.owner))}</span>` : ''}` : ''}
       </div>
@@ -640,7 +647,10 @@ function editorHtml() {
     <div class="pr-main">
       ${sec('名称', `<div class="row">
         <span class="pr-colors">${COLORS.map((c) => `<button type="button" class="pr-color ${p.color === c ? 'is-on' : ''}" style="background:${c}" data-a="color" data-v="${c}" ${ro ? 'disabled' : ''}></button>`).join('')}</span>
-        <input class="inp" data-f="name" value="${esc(p.name)}" placeholder="比如:Early Black Friday · 全场 85 折" ${ro ? 'disabled' : ''} style="flex:1;min-width:200px"/></div>`, '只有后台看得到,顾客看不到')}
+        <input class="inp" data-f="name" value="${esc(p.name)}" placeholder="比如:Early Black Friday · 全场 85 折" ${ro ? 'disabled' : ''} style="flex:1;min-width:200px"/></div>
+        <label class="pr-fld" style="margin-top:10px">列表分组 <em>计划列表里「我的分组」按它归类(和下面的改价分组无关);随时能改,不影响改价${E.isNew ? '' : '(改了马上生效,不用点保存)'}</em>
+          <input class="inp" data-f="folder" list="pr-folders" value="${esc(p.folder || '')}" placeholder="可不填,比如:Black Friday 2026 / 清货 / 日常调价" maxlength="${A.FOLDER_MAX}" ${E.showPending ? 'disabled' : ''} style="max-width:420px"/>
+          <datalist id="pr-folders">${foldersAll().map((f) => `<option value="${esc(f)}">`).join('')}</datalist></label>`, '只有后台看得到,顾客看不到')}
 
       ${sec('改价分组', groupsHtml(ro), '一组 = 选一批产品 + 定一个改价规则;可以分几组,比如 Collection A 打 85 折、品牌 B 打 7 折、几个产品逐个填价。同一个产品出现在好几组时,以<b>排在下面的那组</b>为准 —— 比如第 1 组全场 9 折,第 2 组某个品牌 8 折,这个品牌就是 8 折。')}
 
