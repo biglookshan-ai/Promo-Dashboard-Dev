@@ -428,7 +428,7 @@ function openEditor(plan, isNew) {
   for (const g of p.groups) g.compare ||= p.compare || cmpDefault(p); // 老计划:各组用计划的划线价方式
   for (const sl of p.slots) for (const it of sl.items || []) it.group ??= p.groups[0].id; // 老计划的变体没记分组 = 第 1 组
   if (p.kind === 'window') p.schedule = { mode: p.schedule?.mode || (p.slots.length > 1 ? 'multi' : 'one'), ...(p.schedule?.weekly ? { weekly: p.schedule.weekly } : {}) };
-  if (p.kind === 'window' && p.schedule.mode !== 'one') ensureVersions(p); // 几段时间 / 每周重复:每个价格带齐自己的设置
+  if (p.kind === 'window') ensureVersions(p); // 限时改价:不管分不分段,都按价格设(价格总览里第一个价格就是原来计划上那一份设置)
   const vitems = {}; // 每个价格的条目:取用这个价格的第一段
   for (const v of versionsOf(p)) { const sl = p.slots.find((x) => (x.version || 'A') === v.id); vitems[v.id] = tagVer(sl ? sl.items : v.id === 'A' ? p.slots[0].items : [], v.id); }
   E = { plan: p, orig: isNew ? null : plan, isNew, panel: null, dirty: isNew, showPending: false, showAll: false, busy: false, gi: 0,
@@ -452,7 +452,8 @@ const vDot = (p, id) => `<i class="pr-vdot" style="background:${vColor(p, id)}">
 // ---- 每个价格自己的设置(2026-11-09 用户:加进 Collection / 产品标签 / 关联活动 / 倒计时都按价格设)----
 // 几段时间 / 每周重复时存在 versions[] 上(coll / tagsAdd / tagsRemove / campaign / countdown),保存时展开到用这个价格的每一段;
 // 一段时间时还是计划上那一份(和以前一样)
-const perPrice = (p = P()) => p.kind === 'window' && schedMode(p) !== 'one';
+// 2026-11-09 用户:没分段和分了段的界面要一样 → 限时改价一律按价格设(一段时间 = 只有价格 A 一段);永久调价还是计划上那一份
+const perPrice = (p = P()) => p.kind === 'window';
 const cdBlank = () => ({ on: false, label: '', days: 0, style: 'classic' });
 const planSet = (p) => ({ coll: p.slots[0]?.collection || null, tagsAdd: [...(p.tagsAdd || [])], tagsRemove: [...(p.tagsRemove || [])], campaign: p.campaign || null, countdown: clone(p.countdown || cdBlank()) });
 // 确保计划有 versions,而且每个价格都带齐设置(老计划:从计划上那一份 / 这个价格那一段的 Collection 补)
@@ -614,7 +615,7 @@ function editorHtml() {
           ${p.kind === 'window' ? `<label class="pr-fld">结束(售价和划线价都回到改价前)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
         </div>` : schedMode() === 'multi' ? segsHtml() : weeklyHtml()}
         ${schedMode() !== 'one' ? timelineHtml(scheduleSegments()) : ''}
-        ${perPrice() ? '<p class="muted" style="margin-top:10px;font-size:13px">加进哪个 Collection、加什么标签、关联哪个活动、要不要倒计时,分段时<b>按价格设</b>:在上面「价格总览」里。</p>' : ''}
+        ${perPrice() ? '<p class="muted" style="margin-top:10px;font-size:13px">加进哪个 Collection、加什么标签、关联哪个活动、要不要倒计时,都在上面「价格总览」里按价格设。</p>' : ''}
         ${p.kind === 'window' && !perPrice() ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>带条件的也行(加进它的「单独加入的产品」,不动条件);结束拿掉 app 加的,本来就在 / 你们手动加的不动。Flash 当天那一组常用</em>
           ${sl.collection ? `<div class="row"><span class="tag ${S.goneCollections?.[sl.collection.id] ? 'tag--danger' : 'tag--accent'}">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>
             ${S.collState?.[sl.collection.id]?.via === 'shared' ? '<div class="note note--sm">这个 Collection 的条件和别的 Collection 共用:单独加产品会连带改到别的 Collection,所以 app 不加,产品照它的条件进出。</div>' : ''}
@@ -648,7 +649,7 @@ function editorHtml() {
 }
 
 // ---- 时间安排(一段 / 几段 / 每周重复)和价格版本的界面 ----
-const multiV = () => schedMode() !== 'one' && versionsOf(P()).length > 1;
+const multiV = () => P().kind === 'window' && versionsOf(P()).length > 1;
 // 时间安排还能不能改:看别人提交的修改、已结束、永久调价执行了 → 不能;已经开始的计划还能改「以后的段」和进行中那段的结束时间
 const schedRO = () => E.showPending || (!E.isNew && (['ended', 'done'].includes(statusOf(E.orig)) || (E.orig.kind === 'permanent' && Object.keys(E.orig.applied || {}).length) || E.orig.stopped));
 const verOpts = (cur, dis) => versionsOf(P()).map((v) => `<option value="${v.id}" ${cur === v.id ? 'selected' : ''} ${dis ? 'disabled' : ''}>${esc(vName(P(), v.id))}</option>`).join('');
@@ -700,14 +701,9 @@ function timelineHtml(segs) {
 function priceMatrixHtml(ro) {
   const p = P();
   if (p.kind !== 'window') return '';
-  // 一段时间:只有一个价。给个入口,免得找不到「不同时段不同价格」(2026-11-09 用户)
-  if (schedMode() === 'one') {
-    return p.followCampaign ? '' : `<div class="pr-vers"><span class="pr-vers__l">价格</span><span class="muted">整段时间一个价</span>
-      ${ro || started() ? '' : '<button type="button" class="pr-ver pr-ver--add" data-a="gomulti">＋ 不同时间段用不同价格</button>'}
-      <span class="tipify">比如 11/24–11/27 一个价、11/28 Flash 一个价、周末另一个价:点这里,下面「什么时候生效」换成「几段时间」,这里会出现价格总览 —— 每个价格一列,起名字、设每一组的折扣、加进哪个 Collection、加什么标签、关联哪个活动、要不要倒计时。</span></div>`;
-  }
+  if (p === E.plan) ensureVersions(p); // 一段时间也一样:价格 A 一列(2026-11-09 用户:两种界面统一)
   const vs = versionsOf(p); const cv = curV(); const gs = groupsOf(p); const gi = Math.min(E.gi || 0, gs.length - 1);
-  const add = ro || vs.length >= A.MAX_VERSIONS ? '' : '<button type="button" class="pr-ver pr-ver--add" data-a="vadd">＋ 加一个价格</button>';
+  const add = ro || started() || p.followCampaign || vs.length >= A.MAX_VERSIONS ? '' : '<button type="button" class="pr-ver pr-ver--add" data-a="vadd" title="不同时间段用不同的价格:加一列,自动换成「几段时间」并接一段用它">＋ 加一个价格</button>';
   const segs = scheduleSegments(p); const used = (id) => segs.filter((x) => x.version === id).length;
   const ex = new Set(p.excluded || []);
   const todoOf = (g, v) => (E.vitems?.[v] || []).filter((it) => it.group === g.id && needsPrice(p, it) && !ex.has(it.variantId)).length;
@@ -725,7 +721,7 @@ function priceMatrixHtml(ro) {
         <select class="sel sel--sm" data-f="vcdstyle" data-v="${v.id}" ${sro ? 'disabled' : ''}>${Object.entries(CD_STY).map(([k, x]) => `<option value="${k}" ${sty === k ? 'selected' : ''}>${x[0]}</option>`).join('')}</select></div>` : ''}`; };
   const setRow = (label, tip, cell) => `<tr class="pr-vmx__set"><th class="pr-vmx__g">${label}${tip ? `<span class="tipify">${tip}</span>` : ''}</th>${vs.map((v) => `<td class="${v.id === cv ? 'is-curcol' : ''}">${cell(v)}</td>`).join('')}</tr>`;
   return `<div class="pr-vmx">
-    <div class="pr-vmx__h"><span class="muted">${vs.length} 个价格 · 每一段用哪个,在下面「什么时候生效」里选</span>${add}</div>
+    <div class="pr-vmx__h"><span class="muted">${vs.length > 1 ? `${vs.length} 个价格 · 每一段用哪个,在下面「什么时候生效」里选` : '整段时间一个价;不同时间段用不同价格就「＋ 加一个价格」'}</span>${add}</div>
     <div class="tblwrap"><table class="pr-vmx__t"><thead><tr><th class="pr-vmx__g">改价组</th>${vs.map((v) => `<th class="${v.id === cv ? 'is-cur' : ''}">
       <div class="pr-vmx__vh">${vDot(p, v.id)}${ro ? `<b>${esc(vName(p, v.id))}</b>` : `<input class="inp inp--sm ${vNamed(p, v.id) ? '' : 'is-unnamed'}" data-f="vname" data-v="${v.id}" value="${esc(v.name || '')}" placeholder="给这个价格起名,比如 周末价" maxlength="20"/>`}
         ${!ro && v.id !== 'A' ? `<button type="button" class="chip__x" data-a="vdel" data-v="${v.id}" title="删掉这个价格">✕</button>` : ''}</div>
@@ -1342,21 +1338,28 @@ async function withBusy(btn, fn) {
 const cdOut = (c) => ({ on: !!c?.on, label: String(c?.label || '').trim(), days: Number(c?.days) || 0, style: c?.style || 'classic' });
 function values() {
   const p = E.plan; const pp = perPrice(p); if (pp) ensureVersions(p);
-  const camps = pp ? [...new Map(p.versions.filter((v) => v.campaign?.id).map((v) => [v.campaign.id, v.campaign])).values()] : p.campaign ? [p.campaign] : [];
+  const outSlots = slotsOut(p);
+  // 关联活动 = 用到的价格各自关联的活动(没用到的价格不算)
+  const camps = pp ? [...new Map(outSlots.filter((x) => x.campaign?.id).map((x) => [x.campaign.id, x.campaign])).values()] : p.campaign ? [p.campaign] : [];
   return { id: p.id, name: p.name.trim(), color: p.color, kind: p.kind, layer: p.kind === 'window' ? p.layer || null : null,
     priority: p.kind === 'window' ? core.prioOf(p) : null,
     // 分段时计划上那一份(倒计时 / 标签)不用了,每段自己带;关联活动 = 各价格的活动(第一个兼当 campaign)
     countdown: p.kind === 'window' ? (pp ? cdBlank() : cdOut(p.countdown)) : null,
-    compare: p.groups?.[0]?.compare || cmpOf(p), campaign: pp ? camps[0] || null : p.campaign, campaigns: camps, note: p.note, slots: slotsOut(p),
+    compare: p.groups?.[0]?.compare || cmpOf(p), campaign: pp ? camps[0] || null : p.campaign, campaigns: camps, note: p.note, slots: outSlots,
     versions: pp ? p.versions.map((v) => ({ id: v.id, name: v.name || '', coll: v.coll || null, tagsAdd: v.tagsAdd || [], tagsRemove: v.tagsRemove || [], campaign: v.campaign || null, countdown: cdOut(v.countdown) })) : null, schedule: p.kind === 'window' ? { mode: schedMode(p), ...(schedMode(p) === 'weekly' ? { weekly: p.schedule.weekly } : {}) } : null,
-    groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: pp ? [] : p.tagsAdd, tagsRemove: pp ? [] : p.tagsRemove, followCampaign: !pp && !!p.followCampaign,
+    groups: p.groups, rule: p.groups[0].rule, scope: p.groups[0].scope, tagsAdd: pp ? [] : p.tagsAdd, tagsRemove: pp ? [] : p.tagsRemove, followCampaign: (!pp || schedMode(p) === 'one') && !!p.followCampaign && !!camps[0],
     owner: p.owner || null, approver: p.approver || null, cc: p.cc || [], folder: p.folder || '' };
 }
 
 // 存的时段:一段时间 = 原来那一段;几段 / 每周重复 = 按段展开,每段带上它那个价格的全部条目(执行器照旧按时段改价)
 function slotsOut(p) {
-  if (schedMode(p) === 'one') { const { tagsAdd, tagsRemove, countdown, campaign, version, ...s0 } = p.slots[0]; void tagsAdd, tagsRemove, countdown, campaign, version; // 一段时间:用计划上那一份设置,段上别带分段时的
-    return [{ ...s0, items: E.vitems?.A || p.slots[0].items }]; }
+  if (schedMode(p) === 'one') {
+    const { tagsAdd, tagsRemove, countdown, campaign, ...s0 } = p.slots[0]; void tagsAdd, tagsRemove, countdown, campaign;
+    const base = { ...s0, items: E.vitems?.A || p.slots[0].items };
+    if (!perPrice(p)) return [base]; // 永久调价:用计划上那一份
+    ensureVersions(p); const a = verOf('A', p) || {}; // 限时一段时间:带上价格 A 的设置(版本号不动,免得已开始的计划被当成改了时段)
+    return [{ ...base, collection: a.coll || null, tagsAdd: [...(a.tagsAdd || [])], tagsRemove: [...(a.tagsRemove || [])], campaign: a.campaign || null, countdown: cdOut(a.countdown) }];
+  }
   // 每一段带上它那个价格的设置(Collection / 标签 / 活动 / 倒计时),执行器按段读
   ensureVersions(p);
   return scheduleSegments(p).map((sg) => { const v = verOf(sg.version, p) || {};
@@ -1549,11 +1552,18 @@ document.addEventListener('click', async (ev) => {
         const p = E.plan; const vs = versionsOf(p); if (vs.length >= A.MAX_VERSIONS) return;
         const id = 'ABCDEFGH'.split('').find((x) => !vs.some((v) => v.id === x));
         ensureVersions(p); const src = verOf(curV()) || verOf('A');
-        p.versions = [...p.versions, { id, name: '', coll: src?.coll || null, tagsAdd: [...(src?.tagsAdd || [])], tagsRemove: [...(src?.tagsRemove || [])], campaign: src?.campaign || null, countdown: clone(src?.countdown || cdBlank()) }];
-        for (const g of p.groups) (g.vrules ||= {})[id] = clone(ruleOf(g, curV())); // 照着正在看的价格起步(折扣和设置都照抄)
+        void src;
+        p.versions = [...p.versions, { id, name: '', coll: null, tagsAdd: [], tagsRemove: [], campaign: null, countdown: cdBlank() }]; // 新价格的设置从空的开始(用户:加一个价格 = 多一份它自己的设置)
+        for (const g of p.groups) (g.vrules ||= {})[id] = clone(ruleOf(g, curV())); // 折扣照着正在看的价格起步
+        let moved = '';
+        if (schedMode(p) === 'one') { // 一段时间 → 几段时间:原来那段用价格 A,后面接一段用新价格(一天,自己改)
+          const s0 = p.slots[0]; const st = s0.end ?? s0.start + 7 * DAY;
+          E.segs = [{ id: s0.id, start: s0.start, end: st, version: 'A' }, { id: uid('s_'), start: st, end: st + DAY, version: id }];
+          p.schedule.mode = 'multi'; moved = ',「什么时候生效」换成了「几段时间」并接了一段用它(时间自己改)';
+        }
         const from = vName(p, curV()); E.ver = id; ruleChanged();
         document.querySelector(`#section-price [data-f="vname"][data-v="${id}"]`)?.focus(); // 加完马上起名
-        toast(`加了一个价格(先照着「${from}」的折扣):在列头给它起个名字,改一下各组的折扣,再在「什么时候生效」里给某几段选它`); break;
+        toast(`加了一个价格(折扣先照着「${from}」)${moved}:在列头给它起名字,改各组的折扣和这一列的设置`); break;
       }
       case 'vdel': {
         const p = E.plan; const id = el.dataset.v || curV(); if (id === 'A') return;
@@ -1813,7 +1823,9 @@ document.addEventListener('change', async (ev) => {
     case 'cddays': E.plan.countdown.days = Number(el.value) || 0; touch(); render(); break;
     case 'cdstyle': E.plan.countdown.style = el.value; touch(); render(); break;
     // 价格总览里每个价格自己的设置
-    case 'vcamp': { const v = verOf(el.dataset.v); const c = (cache.campaigns || []).find((x) => x.id === el.value); if (v) v.campaign = c ? { id: c.id, name: c.name } : null; touch(); render(); break; }
+    case 'vcamp': { const v = verOf(el.dataset.v); const c = (cache.campaigns || []).find((x) => x.id === el.value); if (v) v.campaign = c ? { id: c.id, name: c.name } : null;
+      if (v?.id === 'A') { E.plan.campaign = v.campaign; if (!c) E.plan.followCampaign = false; else if (E.plan.followCampaign) applyCampaignTime(); } // 「跟随活动时间」看价格 A 的活动
+      touch(); render(); break; }
     case 'vcdon': case 'vcdlabel': case 'vcddays': case 'vcdstyle': { const v = verOf(el.dataset.v); if (!v) return; const c = (v.countdown ||= cdBlank());
       if (f === 'vcdon') c.on = el.checked; else if (f === 'vcdlabel') c.label = el.value.slice(0, 60); else if (f === 'vcddays') c.days = Number(el.value) || 0; else c.style = el.value;
       touch(); render(); break; }
