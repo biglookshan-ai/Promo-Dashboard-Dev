@@ -771,11 +771,12 @@ function priceMatrixHtml(ro) {
       <div class="pr-vmx__time"><label>开始<input class="inp inp--sm" type="datetime-local" ${fS} value="${toInput(sg.start)}" ${startDis ? 'disabled' : ''}/></label>
         <label>结束<input class="inp inp--sm" type="datetime-local" ${fE} value="${toInput(sg.end)}" ${endDis ? 'disabled' : ''}/></label>
         ${one && !startDis ? `<button type="button" class="linkbtn" data-a="startnow" style="text-align:left">开始设成现在</button>` : ''}
+        ${i === segs.length - 1 ? '<span class="pr-vmx__back">↩ 结束后售价和划线价回到改价前</span>' : segs[i + 1] && sg.end != null && segs[i + 1].start > sg.end ? '<span class="pr-vmx__back">↩ 到下一段开始前先回到改价前</span>' : ''}
         ${!one && live ? '<span class="tag tag--ok">进行中</span>' : !one && st ? '<span class="muted">已过</span>' : ''}${p.followCampaign ? '<span class="muted">跟着活动走</span>' : ''}</div>`;
   };
   const setRow = (label, tip, cell) => `<tr class="pr-vmx__set"><th class="pr-vmx__g">${label}${tip ? `<span class="tipify">${tip}</span>` : ''}</th>${vs.map((v) => `<td class="${v.id === cv ? 'is-curcol' : ''}">${cell(v)}</td>`).join('')}</tr>`;
   return `<div class="pr-vmx">
-    <div class="pr-vmx__h"><span class="muted">${sc ? (segs.length > 1 ? `${segs.length} 个时间段 · ${fmtT(Math.min(...segs.map((x) => x.start ?? Infinity)))} → ${segs.some((x) => x.end) ? fmtT(Math.max(...segs.map((x) => x.end || 0))) : '?'}` : '一个时间段;不同时间段用不同的折扣 / 设置就「＋ 加一段」') + ' · <b>最后一段结束后,售价和划线价都回到改价前</b>(原来打折的照旧打折,原来没打折的回到没打折)'
+    <div class="pr-vmx__h"><span class="muted">${sc ? (segs.length > 1 ? `${segs.length} 个时间段 · ${fmtT(Math.min(...segs.map((x) => x.start ?? Infinity)))} → ${segs.some((x) => x.end) ? fmtT(Math.max(...segs.map((x) => x.end || 0))) : '?'}` : '一个时间段;不同时间段用不同的折扣 / 设置就「＋ 加一段」')
       : `${vs.length} 个价格 · 每周哪几天用哪个,在下面「什么时候生效」里排`}</span>${add}</div>
     <div class="tblwrap"><table class="pr-vmx__t"><thead><tr><th class="pr-vmx__g">分组 ↓ · ${sc ? '时间段' : '价格'} →</th>${vs.map((v) => `<th class="${v.id === cv ? 'is-cur' : ''}">${colHead(v)}</th>`).join('')}</tr></thead>
       <tbody>${gs.map((g, i) => `<tr class="${i === gi ? 'is-open' : ''}"><th class="pr-vmx__g"><div class="pr-vmx__gn"><span class="pr-group__no">${i + 1}</span>${esc(gName(g, i, gs.length > 1))}</div><div class="pr-vmx__gs">${esc(scopeSayFull(g.scope))}</div></th>
