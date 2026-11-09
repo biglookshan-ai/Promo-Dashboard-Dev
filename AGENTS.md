@@ -106,6 +106,15 @@
   **左边导航默认收起成图标**(`cgp-nav-mini2`,换了 key,以前存的「展开」不算),鼠标停在图标上马上弹出名字(CSS `data-label`);内容区最宽放到 1480。
   改价编辑页窗口 ≤ 1420 宽时,右边摘要 / 检查挪到上面并排,编辑区用满整行(表格不被挤掉);表格「检查」列只放红 / 黄「!」图标,停上去看原因。
 
+- **每个页面 / 每条内容都有自己的网址**(2026-11-09 用户:整个 app 只有一个链接,每次都要打开后逐个点):`public/nav.js` 管网址 ↔ 页面。
+  网址:`/`(概览)、`/<页面>`(和导航的 `data-section` 一样)、`/<内容页>/<内容 id>`(打开编辑)、`/campaigns/<活动 id>[/web|/price|/lark|/edit]`、`/pins/collections`、`/pins/collection/<Collection id>`、`/price[/<计划 id>|/vault|/ledger|/settings]`、`/notify[/groups|/log]`、`/settings[/members|/roles|/conn|/my-notify]`。
+  后台网址 = `admin.shopify.com/store/<店>/apps/<app>` + 上面的网址;Shopify 会把后面那段带进 iframe,app 里 `history.pushState` 换网址 Shopify 也会同步到后台地址栏。
+  **iframe 网址上 Shopify 带来的参数(shop / host / id_token…)要原样留着**(app 有好几处整页刷新)。现在界面对应哪个网址由 `schedule.js` 的 `cgpNav.pathOf` 算(改价 / 通知中心各自给 `cgpPricePath` / `cgpNotifyPath`),打开网址由 `cgpNav.open` 做(点对应的导航 → 再打开那一条;找不到 / 没权限 → 提示并停在列表)。
+  **界面变了要调 `window.cgpNav?.sync()`**(showSection、打开 / 关掉抽屉、活动页、改价 `render()`、通知中心 `draw()` 已经调了;新加的分页 / 抽屉记得加)。改价编辑有没保存的改动时后退键不离开。
+  页面资源一律用「/」开头的地址(server.js 改写 index.html;别再写相对地址,`/price/xxx` 下会变成 `/price/style.css`)。服务器:不带扩展名的地址都回首页,带扩展名找不到的照常 404。
+  飞书通知的按钮直接打开那一条(`src/app-links.js`:`appLink` / `itemPath` / `planPath`;一张卡片好几条就打开列表 / 概览)。编辑器、活动页、改价计划、Collection 默认设置都有「复制链接」(复制后台网址)。
+  直接开网页(不在后台)用飞书登录:登录前在哪一页记在 sessionStorage `cgp-back`,登录完回到那一页。
+
 ### 关键
 
 - **规则只有一份**:`src/schedule-core.js`(上下线判断)+ `src/schedule-actions.js`(存草稿 / 提交 / 发布 / 批准 / 退回 / 暂停 / 删除 / 排序,含权限检查)是纯函数,**服务器和浏览器共用**(服务器以 `/lib/*.js` 只放行这两个文件给页面 import)。演示模式在浏览器里跑它,正式模式由服务器跑。**别在 `public/schedule.js` 里再写一套规则。**

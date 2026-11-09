@@ -118,6 +118,7 @@ function headHtml() {
 
 function render() {
   const root = $('#pr-root');
+  window.cgpNav?.sync(); // 地址栏:/price、/price/vault、/price/<计划 id>…(public/nav.js)
   if (E) {
     // 重画会换掉整个编辑器:记下正在输入的框,画完放回去(改折扣、搜产品时边打字边刷新)
     // 表格里每个款式都有自己的框:按 data-v 精确找回;还没按回车的内容也原样放回(后台读完产品 / 款式图时会重画,别把正在打的字弄丢)
@@ -619,6 +620,7 @@ function editorHtml() {
     <b>${E.isNew ? `新建${p.kind === 'permanent' ? '永久调价' : '限时改价'}` : esc(p.name || '改价计划')}</b>
     ${st ? `<span class="tag ${STATUS_TAG[st]}">${core.STATUS_CN[st]}</span>` : '<span class="tag">新计划</span>'}
     ${E.dirty && !ro ? '<span class="tag tag--warn">有未保存的改动</span>' : ''}
+    ${!E.isNew ? '<button class="btn btn-sm btn-ghost" data-a="copylink" title="复制这个改价计划的链接,同事点开直接打开这个计划" style="margin-left:auto">🔗 复制链接</button>' : ''}
   </div>
   ${bannersHtml()}
   <div class="pr-grid">
@@ -1837,6 +1839,7 @@ document.addEventListener('click', async (ev) => {
       case 'dlledger': await withBusy(el, () => download(`/api/price/export/ledger.csv?plan=${encodeURIComponent(ledgerQ.plan)}`, `价格账本-${toInput(now()).slice(0, 10)}.csv`)); break;
       case 'lpage': ledgerQ.offset = Math.max(0, ledgerQ.offset + Number(el.dataset.d) * 100); loadLedger(); break;
       case 'opennotify': window.cgpOpenNotify?.(); break;
+      case 'copylink': window.cgpNav?.copy(null, '这个改价计划的链接'); break;
       case 'savesafe': await withBusy(el, async () => { await api('PUT', '/api/price/settings', { maxDiscountPct: $('#maxoff').value, sweepMinutes: $('#sweep').value }); toast('已保存'); await load(); render(); }); break;
       default: break;
     }
@@ -2008,6 +2011,22 @@ window.cgpPriceCopy = async (vals, when) => {
 window.cgpPriceRefresh = async () => { await load(); render(); };
 window.cgpPriceOpen = async (id) => { await start(); const p = await planByIdAll(id); if (p) { openEditor(p, false); loadCampaigns(); } };
 window.cgpPriceNew = async (campaign) => { await start(); const p = newPlan('window', false); p.campaign = campaign; p.name = campaign.name; openEditor(p, true); loadCampaigns(); };
+// 网址(public/nav.js):改价页现在看哪一块;null = 新建还没保存的计划(没有 id,不改网址)
+window.cgpPricePath = () => (E ? (E.isNew || !E.orig?.id ? null : `/${encodeURIComponent(E.orig.id)}`) : tab === 'plans' ? '' : `/${tab}`);
+// 打开网址:/price/vault 这类是分页,别的当计划 id
+window.cgpPriceRoute = async (sub) => {
+  if (!S) { await start(); if (!S) return; } // 读不到(start 已经把原因显示出来了)
+  const isTab = SUBTABS.some(([k]) => k === sub);
+  const planId = sub && !isTab ? sub : null;
+  if (E && E.orig?.id && E.orig.id === planId) return;
+  if (E && E.dirty) { toast('这个计划有还没保存的改动:先保存,或点「← 返回」放弃', false); return; } // 后退键别把改了一半的计划丢掉
+  if (planId) {
+    const p = await planByIdAll(planId);
+    if (p) { openEditor(p, false); loadCampaigns(); return; }
+    toast('找不到这个改价计划(可能已经删掉了)', false);
+  }
+  E = null; tab = isTab ? sub : 'plans'; renderChrome(); render();
+};
 const show0 = window.showSection;
 window.showSection = (name) => { show0(name); if (name === 'price') start(); };
 await window.CGP_AUTH;

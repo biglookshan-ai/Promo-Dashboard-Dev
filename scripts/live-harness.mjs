@@ -403,7 +403,8 @@ http.createServer((req, res) => {
   const { 'accept-encoding': _ae, ...fwd } = req.headers;
   const opts = { hostname: 'localhost', port: P.app, path: req.url, method: req.method, headers: { ...fwd, host: `localhost:${P.app}` } };
   const up = http.request(opts, (r) => {
-    if ((u.pathname === '/' || u.pathname === '/index.html') && req.method === 'GET') {
+    // app 的每个页面都有自己的网址(/price/xxx 等,2026-11-09):凡是返回网页的都换掉 App Bridge
+    if (req.method === 'GET' && String(r.headers['content-type'] || '').includes('text/html')) {
       let html = ''; r.on('data', (c) => { html += c; }); r.on('end', () => {
         html = html.replace(/<script src="https:\/\/cdn\.shopify\.com\/shopifycloud\/app-bridge\.js"[^>]*><\/script>/, fakeBridge(u.searchParams.get('user') || '1001'))
           .replace(/<ui-nav-menu>[\s\S]*?<\/ui-nav-menu>/, '');

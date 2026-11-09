@@ -89,6 +89,7 @@
   }
   function draw() {
     const root = $('#nt-root'); if (!root || !V) return;
+    window.cgpNav?.sync(); // 地址栏:/notify、/notify/groups、/notify/log
     const open = $$('#nt-root details.ndd[open]').map((d) => `${d.closest('.nr')?.dataset.ev}:${d.dataset.dd}`);
     root.innerHTML = `<div class="phead"><div><h2>通知中心</h2><p class="muted">定哪些通知要发、发给谁、私信还是发群;每个人还能在「我的账号」里关掉自己不想收的日常通知</p></div></div>
       ${V.saved ? '' : '<div class="note note--sm">现在用的是默认规则(按原来的开关和群推出来的),改任何一条就保存成你的规则。</div>'}
@@ -156,6 +157,9 @@
   });
   document.querySelector('#modnav [data-section="notify"]')?.addEventListener('click', () => load());
   window.cgpOpenNotify = () => { window.showSection('notify'); load(); };
+  // 网址(public/nav.js):通知中心现在看哪一页
+  window.cgpNotifyPath = () => (tab === 'rules' ? '' : `/${tab}`);
+  window.cgpNotifyRoute = (sub) => { tab = ['groups', 'log'].includes(sub) ? sub : 'rules'; if (V) draw(); }; // 导航点开时已经在读,读完按这一页画
 
   // ---------- 我的通知(设置 → 我的账号)----------
   let MY = null;

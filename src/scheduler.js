@@ -11,6 +11,7 @@ import { getToken } from './token-store.js';
 import { withLock, syncItem } from './sync.js';
 import { schedulerEvents, digestEvents, relatedOf, londonDate } from './notifier.js';
 import { dispatch, flushDigest } from './notify-center.js';
+import { appLink, itemPath, oneOr } from './app-links.js';
 import { findItem } from './schedule-actions.js';
 import { alignCollections } from './collection-order.js';
 import { syncAllJoint, syncNotes } from './joint-sync.js';
@@ -83,7 +84,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
           for (const x of syncNotes(r)) {
             appendLog(state, { at: now, action: x.failed ? 'failure' : 'edit', kind: 'callout', title: r.name, note: x.note, by: '定时器' });
             const it = x.failed && findItem(state, r.id);
-            if (x.failed) extra.push({ ev: 'joint.failure', key: `joint-fail:${r.id}:${londonDate(now)}:${x.note}`, page: 'callouts', related: it ? relatedOf(state, it) : [],
+            if (x.failed) extra.push({ ev: 'joint.failure', key: `joint-fail:${r.id}:${londonDate(now)}:${x.note}`, page: 'callouts', path: it ? itemPath(it) : '/callouts', related: it ? relatedOf(state, it) : [],
               card: { title: '⚠️ 联合推广同步 Collection 失败', color: 'red', lines: [`**${r.name || '联合推广'}**`, x.note, '下一个小时会自动再试;一直失败请打开这条推广检查'] } });
           }
         }
@@ -101,7 +102,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
 
     // 通知:发给谁 / 发群还是私信 / 马上还是合进每天 10:00 的汇总,由通知中心按规则定
     const opts = { appUrl: state.appUrl || '', now };
-    const msgs = [...schedulerEvents(state, { changes, failures }, opts), ...digestEvents(state, opts), ...extra.map((m) => ({ ...m, card: { button: { text: '打开网站更新中心', url: opts.appUrl }, ...m.card } }))];
+    const msgs = [...schedulerEvents(state, { changes, failures }, opts), ...digestEvents(state, opts), ...extra.map((m) => ({ ...m, card: { button: { text: m.path && m.path !== '/' ? '打开看看' : '打开网站更新中心', url: appLink(opts.appUrl, m.path) }, ...m.card } }))];
     await dispatch(shop, msgs, { sched: state, now, sendGroup: send, sendDm });
     await flushDigest(shop, { sched: state, now, appUrl: opts.appUrl, sendGroup: send, sendDm });
     replace(shop, state);
@@ -115,9 +116,11 @@ export function pinEvents(state, col, now = Date.now()) {
   const out = [];
   const pinsOf = (c) => (state.pins || []).filter((p) => cid(p.collection) === cid(c));
   const rel = (c) => [...new Set(pinsOf(c).flatMap((p) => relatedOf(state, p)))];
-  for (const h of col.holds || []) if (h.fresh) out.push({ ev: 'pins.hold', page: 'pins', related: rel(h.collection),
+  // 按钮:这个 Collection 只有一份置顶排序就打开它,否则打开 Collection 排序页
+  const pathOf = (c) => oneOr(pinsOf(c).map(itemPath), '/pins');
+  for (const h of col.holds || []) if (h.fresh) out.push({ ev: 'pins.hold', page: 'pins', path: pathOf(h.collection), related: rel(h.collection),
     card: { title: '✋ 有人在后台手动改了 Collection 顺序', color: 'orange', lines: [`Collection「${h.title || ''}」${h.pin ? `(置顶排序「${h.pin}」)` : ''}`, 'app 已暂停接管,不会覆盖别人的改动', '请在「Collection 排序」里选「按本次排序」或「保留后台排序」'] } });
-  for (const f of col.failures || []) out.push({ ev: 'pins.failure', key: `pin-fail:${cid(f.collection)}:${londonDate(now)}:${f.message}`, page: 'pins', related: f.collection ? rel(f.collection) : [],
+  for (const f of col.failures || []) out.push({ ev: 'pins.failure', key: `pin-fail:${cid(f.collection)}:${londonDate(now)}:${f.message}`, page: 'pins', path: f.collection ? pathOf(f.collection) : '/pins', related: f.collection ? rel(f.collection) : [],
     card: { title: '⚠️ Collection 排序失败', color: 'red', lines: [f.message, '下一分钟会自动重试;同一个原因一天只报一次'] } });
   return out;
 }

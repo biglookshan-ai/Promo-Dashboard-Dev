@@ -55,7 +55,8 @@ app.use((req, res, next) => {
 // 每次部署给页面资源加版本号,免得浏览器还用旧缓存(Railway 注入提交号;本地用启动时间)
 const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || String(Date.now());
 const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8')
-  .replace(/(href|src)="(style\.css|auth\.js|app\.js|tips\.js|registry\.js|schedule\.js|notify\.js|price\.js)"/g, `$1="$2?v=${BUILD}"`);
+  // 用「/」开头的地址:app 里每个页面都有自己的网址(/price/xxx),相对地址会变成 /price/style.css(2026-11-09)
+  .replace(/(href|src)="(style\.css|auth\.js|nav\.js|app\.js|tips\.js|registry\.js|schedule\.js|notify\.js|price\.js)"/g, `$1="/$2?v=${BUILD}"`);
 function sendIndex(req, res) {
   res.set('Cache-Control', 'no-store');
   res.set('Content-Type', 'text/html').send(indexHtml.replaceAll('%%API_KEY%%', API_KEY));
@@ -177,8 +178,9 @@ api.use('/notify', needMember(), notifyRouter()); // 通知中心(规则 / 群 /
 
 app.use('/api', api);
 
-// SPA fallback for App Bridge nav links.
-app.get(/^\/(?!api(?:\/|$)).*/, sendIndex);
+// 每个页面的网址(/banners/xxx、/price/xxx…,见 public/nav.js)都返回同一个页面,由页面自己打开对应的地方。
+// 带扩展名的(找不到的 .js / .css / 图片)照常 404,别把网页当脚本返回
+app.get(/^\/(?!api(?:\/|$))(?!.*\.[a-z0-9]+$).*/i, sendIndex);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`promo-manager (embedded) on :${PORT}`));

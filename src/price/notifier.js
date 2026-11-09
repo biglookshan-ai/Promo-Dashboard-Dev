@@ -4,6 +4,7 @@
 // 去重:state.notified(同一个失败一小时只报一次,同一计划的「还没批准」只报一次)。
 import { prioOf, PRIO_MAX, planStatus } from './price-core.js';
 import { planSummary } from './price-actions.js';
+import { appLink, planPath, oneOr } from '../app-links.js';
 
 const TZ = 'Europe/London';
 const HOUR = 3600_000;
@@ -29,9 +30,9 @@ export function approversOf(p, members) {
 
 // 动作(提交 / 批准退回 / 暂停继续提前结束);actor = 点按钮的人
 export function eventMessages(state, effect, { appUrl, members = [], actor = null } = {}) {
-  const btn = { text: '打开改价', url: appUrl };
   const p = state.plans.find((x) => x.id === effect.id);
   if (!p) return [];
+  const btn = { text: '打开这个计划', url: appLink(appUrl, planPath(p.id)) }; // 直接打开这个改价计划
   const base = { related: relatedOf(p, members), approvers: approversOf(p, members), actor };
   if (effect.event === 'submit') {
     return [{ ...base, ev: 'price.submit', card: { title: effect.change ? '📝 改价计划有修改等你审批' : '📝 有改价计划等你审批', color: 'orange', button: btn,
@@ -57,7 +58,9 @@ const HOLD_CN = { manual: '有人手动改过价', 'not-lower': '原价已不比
 
 // 执行器一轮之后
 export function reportMessages(state, rep, { appUrl, now = Date.now(), members = [] } = {}) {
-  const out = []; const btn = { text: '打开改价', url: appUrl };
+  const out = [];
+  // 按钮:只关系到一个计划就打开那个计划,否则打开改价页
+  const btnTo = (ids) => { const p = oneOr((ids || []).map((id) => (id && id !== '-' ? planPath(id) : null)), '/price'); return { text: p === '/price' ? '打开改价' : '打开这个计划', url: appLink(appUrl, p) }; };
   const planOf = (id) => state.plans.find((x) => x.id === id);
   const rel = (id) => relatedOf(planOf(id), members);
   const byPlan = new Map();
@@ -68,48 +71,48 @@ export function reportMessages(state, rep, { appUrl, now = Date.now(), members =
   }
   for (const g of byPlan.values()) {
     const restoring = g.ops.restore && Object.keys(g.ops).length === 1;
-    out.push({ ev: restoring ? 'price.restored' : 'price.live', related: rel(g.planId), card: { title: restoring ? '🔙 改价已恢复' : '💷 改价已生效', color: restoring ? 'grey' : 'green', button: btn,
+    out.push({ ev: restoring ? 'price.restored' : 'price.live', related: rel(g.planId), card: { title: restoring ? '🔙 改价已恢复' : '💷 改价已生效', color: restoring ? 'grey' : 'green', button: btnTo([g.planId]),
       lines: [`**${g.plan || '改价计划'}**`, Object.entries(g.ops).map(([op, c]) => `${OP_CN[op] || op} ${c} 个变体`).join(' · '), '全部已读回核对 ✓'] } });
   }
   // Collection 加入 / 移出:相关的人 = 设了加进这个 Collection 的计划的人
   const collPlans = (cid) => state.plans.filter((p) => (p.slots || []).some((s) => s.collection?.id === cid));
   for (const c of rep.collections) {
     out.push({ ev: 'price.collection', related: [...new Set(collPlans(c.collectionId).flatMap((p) => relatedOf(p, members)))],
-      card: { title: '🗂 Collection 已更新', color: 'blue', button: btn, lines: [`Collection「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`] } });
+      card: { title: '🗂 Collection 已更新', color: 'blue', button: btnTo(collPlans(c.collectionId).map((p) => p.id)), lines: [`Collection「${c.title}」:加入 ${c.added} 个、移出 ${c.removed} 个产品`] } });
   }
   if (rep.holds.length) {
     const groups = new Map();
     for (const h of rep.holds) { const k = h.planId || '-'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(h); }
     for (const [pid, hs] of groups) {
-      out.push({ ev: 'price.hold', related: pid === '-' ? [] : rel(pid), card: { title: '⚠️ 有产品暂停接管,等你处理', color: 'red', button: btn,
+      out.push({ ev: 'price.hold', related: pid === '-' ? [] : rel(pid), card: { title: '⚠️ 有产品暂停接管,等你处理', color: 'red', button: { text: '去受管产品处理', url: appLink(appUrl, '/price/vault') },
         lines: [...hs.slice(0, 10).map((h) => `· ${h.title || h.variantId}(${h.plan || '—'}):${HOLD_CN[h.reason] || h.reason}${h.seen ? `,店里现价 £${h.seen.price}` : ''}`),
           hs.length > 10 ? `……共 ${hs.length} 个` : '', '这些产品 app 不会再动,请在「改价 → 受管产品」里选择处理方式'] } });
     }
   }
   // Collection 在店里被删了:只通知这一次(执行器之后不再管它,不会再报失败)
   for (const c of rep.goneCollections || []) {
-    out.push({ ev: 'price.gone', related: [...new Set(c.plans.flatMap((p) => rel(p.id)))], card: { title: '🗂 Collection 已被删除', color: 'orange', button: btn,
+    out.push({ ev: 'price.gone', related: [...new Set(c.plans.flatMap((p) => rel(p.id)))], card: { title: '🗂 Collection 已被删除', color: 'orange', button: btnTo(c.plans.map((p) => p.id)),
       lines: [`Collection「${c.title || '—'}」在店里已经不存在了(被删除了)。`,
         c.plans.length ? `改价计划 ${c.plans.map((p) => `「${p.name}」`).join('')} 设了生效期间把产品加进它。` : '',
         '**价格照常改**,只是不再往这个 Collection 里加 / 移出产品,也不会再报错。',
         '要把产品加进别的 Collection,请在「改价」里打开计划处理。'].filter(Boolean) } });
   }
   if (rep.recovered.length) out.push({ ev: 'price.recovered', related: [...new Set(rep.recovered.flatMap((r) => rel(r.planId)))],
-    card: { title: 'ℹ️ 上次改价中途中断,已核对补记', color: 'blue', button: btn, lines: [`${rep.recovered.length} 个变体确认已生效,原价记录无误`] } });
+    card: { title: 'ℹ️ 上次改价中途中断,已核对补记', color: 'blue', button: btnTo(rep.recovered.map((r) => r.planId)), lines: [`${rep.recovered.length} 个变体确认已生效,原价记录无误`] } });
   const fresh = rep.failures.filter((f) => {
     const k = `fail:${f.variantId || f.collection || ''}:${f.message}`;
     if (state.notified[k] && now - state.notified[k] < HOUR) return false;
     state.notified[k] = now; return true;
   });
   if (fresh.length) {
-    out.push({ ev: 'price.failure', related: [...new Set(fresh.flatMap((f) => rel(f.planId)))], card: { title: '❌ 改价失败', color: 'red', button: btn,
+    out.push({ ev: 'price.failure', related: [...new Set(fresh.flatMap((f) => rel(f.planId)))], card: { title: '❌ 改价失败', color: 'red', button: btnTo(fresh.map((f) => f.planId)),
       lines: [...fresh.slice(0, 8).map((f) => `· ${f.title || f.collection || ''}${f.title || f.collection ? ':' : ''}${f.message}`), fresh.length > 8 ? `……共 ${fresh.length} 条` : '', '执行器下一分钟自动重试'] } });
   }
   for (const m of rep.moved || []) {
-    out.push({ ev: 'price.moved', related: rel(m.planId), card: { title: '🕑 改价时间跟着活动改了', color: 'blue', button: btn,
+    out.push({ ev: 'price.moved', related: rel(m.planId), card: { title: '🕑 改价时间跟着活动改了', color: 'blue', button: btnTo([m.planId]),
       lines: [`**${m.plan}**`, `活动「${m.campaign}」改了时间,这个计划跟着改成:`, `${fmt(m.to.start)}${m.to.end ? ` → ${fmt(m.to.end)}` : ' 起'}`] } });
   }
-  for (const f of rep.finished) out.push({ ev: 'price.restored', related: rel(f.planId), card: { title: '✅ 永久调价已全部完成', color: 'green', button: btn, lines: [`**${f.plan}**`] } });
+  for (const f of rep.finished) out.push({ ev: 'price.restored', related: rel(f.planId), card: { title: '✅ 永久调价已全部完成', color: 'green', button: btnTo([f.planId]), lines: [`**${f.plan}**`] } });
   for (const p of state.plans) {
     if (p.state !== 'pending' && !p.pendingChange) continue;
     const start = planSummary(p).start;
@@ -117,7 +120,7 @@ export function reportMessages(state, rep, { appUrl, now = Date.now(), members =
     if (start - now > 2 * HOUR || start < now - HOUR || state.notified[k]) continue;
     state.notified[k] = now;
     out.push({ ev: 'price.unapproved', related: relatedOf(p, members), approvers: approversOf(p, members),
-      card: { title: '⏰ 改价计划快开始了,还没批准', color: 'orange', button: btn, lines: [planLine(p), `开始时间:${fmt(start)}`, '不批准就不会改价'] } });
+      card: { title: '⏰ 改价计划快开始了,还没批准', color: 'orange', button: btnTo([p.id]), lines: [planLine(p), `开始时间:${fmt(start)}`, '不批准就不会改价'] } });
   }
   for (const [k, t] of Object.entries(state.notified)) if (now - t > 7 * 24 * HOUR) delete state.notified[k];
   return out;

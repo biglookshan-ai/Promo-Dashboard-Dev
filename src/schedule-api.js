@@ -161,7 +161,7 @@ export function scheduleRouter() {
     const [setup, info, theme] = await Promise.all([
       ...['setup', 'shop', 'theme'].map((n) => swr(shop, n, SLOW[n][0], () => SLOW[n][1](req.ctx), SLOW[n][2])),
     ]);
-    return clientView(state, { me: actorFor(state, req.ctx.user).id, setup, store: { handle: info.handle, domain: info.domain, name: info.name }, site: theme?.style || null, themePin: theme ? !!theme.pinReady : null });
+    return clientView(state, { me: actorFor(state, req.ctx.user).id, setup, store: { handle: info.handle, domain: info.domain, name: info.name, appUrl: info.appUrl || '' }, site: theme?.style || null, themePin: theme ? !!theme.pinReady : null });
   }
 
   // ---- 读 ----

@@ -35,7 +35,9 @@
       ${msg ? `<p class="authgate__err">${esc(msg)}</p>` : ''}
       <button class="btn btn-primary" id="lark-login" type="button">用飞书登录</button>
       <p class="authgate__hint" id="lark-hint"></p>`);
-    g.querySelector('#lark-login').addEventListener('click', () => (embedded() ? popupLogin(g) : location.assign('/auth/lark/start')));
+    // 直接开网页:整页跳去飞书,先记下现在这一页(网址带着页面,见 nav.js),登录完回来
+    const go = () => { try { sessionStorage.setItem('cgp-back', location.pathname); } catch { /* 无痕模式 */ } location.assign('/auth/lark/start'); };
+    g.querySelector('#lark-login').addEventListener('click', () => (embedded() ? popupLogin(g) : go()));
   }
 
   // 后台(iframe)里:先同步开一个空弹窗(避免被拦截),拿到授权地址再跳过去;然后轮询服务器拿登录结果

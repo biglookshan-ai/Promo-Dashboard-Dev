@@ -77,7 +77,8 @@ export function publicAuthRouter() {
       }
       res.setHeader('Set-Cookie', `${COOKIE}=; Path=/auth/lark; Max-Age=0`);
       return res.send(page('登录成功', `<h2>✅ 已登录:${esc(member.name)}</h2><p>正在打开网站更新中心…</p>`,
-        `localStorage.setItem(${JSON.stringify(SESSION_KEY)},${JSON.stringify(session)});location.replace('/');`));
+        // 登录前在看哪一页(public/auth.js 记在 sessionStorage),登录完回到那一页;只认本站「/」开头的地址
+        `localStorage.setItem(${JSON.stringify(SESSION_KEY)},${JSON.stringify(session)});var b='/';try{b=sessionStorage.getItem('cgp-back')||'/';sessionStorage.removeItem('cgp-back')}catch(e){}if(!/^\\/(?!\\/)[^\\\\]*$/.test(b))b='/';location.replace(b);`));
     } catch (e) {
       console.error('[lark-login]', e.message);
       return res.send(page('登录失败', `<h2>登录失败</h2><p>${esc(e.message)}</p><p>回到网站更新中心再试一次;一直不行请把这句话发给管理员。</p>`));

@@ -80,6 +80,7 @@ function showSection(name) {
   if (name === 'promo') window.loadPromoOnce();
   if (name !== 'detail') lastModule = name;
   window.scrollTo(0, 0);
+  window.cgpNav?.sync(); // 地址栏跟着换(public/nav.js)
 }
 $$('#modnav .modnav__item, #toolnav .toolnav__item').forEach((btn) => {
   btn.addEventListener('click', () => showSection(btn.dataset.section));

@@ -80,7 +80,7 @@
     };
   }
   let seedCache = null;
-  const getSeed = async () => (seedCache ||= await fetch('demo-seed.json', { cache: 'no-store' }).then((r) => r.json()));
+  const getSeed = async () => (seedCache ||= await fetch('/demo-seed.json', { cache: 'no-store' }).then((r) => r.json()));
   // 服务器给的数据补齐成页面要的样子(主题样式读不到时用演示里的默认值)
   async function normalizeLive(v) {
     const seed = v.site ? null : await getSeed();
@@ -266,6 +266,7 @@
     clock: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     plus: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     copy: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+    link: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
     grip: '<svg class="ico" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
     up: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
     down: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
@@ -1212,6 +1213,7 @@
       <div class="hubhead">
         <div><h2>${esc(c.name)} ${badge(c)}</h2>${endingTag(c)}${syncTag(c)}
           ${parentC(c) ? `<div class="hubparent">子活动 · 属于主活动 <button type="button" class="linkbtn" data-hub="${parentC(c).id}">${esc(parentC(c).name)} ›</button><span class="muted">徽章自动比主活动优先</span></div>` : ''}</div>
+        <button class="btn btn-sm btn-ghost" type="button" data-hublink title="复制这个活动页的链接,同事点开直接到这里">${I.link}复制链接</button>
       </div>
       ${prog}
       ${subTabsHtml('hubtab', hubTab, [['ov', '概览'], ['web', '网站内容', content.length], ['price', '改价', canPrice ? plans.length : null], ['lark', '飞书任务', links.length]])}
@@ -2047,18 +2049,19 @@
   }
   function openColSort(id) {
     const c = (csRows || []).find((x) => x.id === String(id)); if (!c) return;
-    hidePop();
+    hidePop(); drawerPath = `/pins/collection/${encodeURIComponent(c.id)}`;
     $('#drawer').innerHTML = `<div class="drawer__h"><div><span class="kchip">Collection 排序</span> <b>${esc(c.title)} · Collection 默认设置</b></div>
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button></div>
       <div class="drawer__b drawer__b--cs"><div>
         ${edSec(1, '怎么排', '顾客没选别的 Sort by 时,Collection 页默认的顺序', `<div id="cs-panel"></div>
-          <div class="cs-links">${MODE === 'live' && c.handle ? linkPair('collections', c) : ''}<span class="muted">Shopify 后台的排序方式:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}</span></div>`)}
+          <div class="cs-links">${MODE === 'live' && c.handle ? linkPair('collections', c) : ''}<button class="btn btn-sm btn-ghost" type="button" data-cslink>${I.link}复制链接</button><span class="muted">Shopify 后台的排序方式:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}</span></div>`)}
         ${edSec(2, '照另一个 Collection 的顺序排', '一次性把这个 Collection 的产品顺序排成和另一个一样(平时怎么排也照它)', '<div id="cs-copy"></div>')}
       </div></div>
       <div class="drawer__f"><span class="muted">保存后马上生效,前台 Collection 页刷新就能看到</span>
         <div class="drawer__acts"><button class="btn" data-act="close" type="button">取消</button><button class="btn btn-primary" id="cs-save" type="button">保存</button></div></div>`;
     $('#drawer').hidden = false; $('#drawer-mask').hidden = false; document.body.classList.add('no-scroll');
-    $('#drawer').onclick = (e) => { if (e.target.closest('[data-act="close"]')) closeDrawer(); };
+    $('#drawer').onclick = (e) => { if (e.target.closest('[data-act="close"]')) closeDrawer(); if (e.target.closest('[data-cslink]')) window.cgpNav?.copy(drawerPath, '这个 Collection 排序设置的链接'); };
+    window.cgpNav?.sync();
     csPanel($('#cs-panel'), c, { saveBtn: $('#cs-save'), onSaved: async () => {
       closeDrawer();
       if (MODE === 'live') { await load(); renderAll(); } else renderPins();
@@ -2166,6 +2169,7 @@
     });
   }
   function renderPins() {
+    window.cgpNav?.sync();
     if (pnView === 'defsort') return renderColSorts();
     const need = MODE === 'live' && S.setup && S.setup.pinReady === false;
     const T = pnAt ?? now();
@@ -2318,6 +2322,7 @@
     box.querySelectorAll('[data-qsty]').forEach((b) => b.addEventListener('click', () => { if (!b.classList.contains('is-active')) save({ countdownStyle: b.dataset.qsty }, `样式改成「${CD_STY[b.dataset.qsty].name}」`); }));
   }
   function renderCampaigns() {
+    window.cgpNav?.sync();
     const hubC = cpHub && camp(cpHub);
     if (hubC) { $('#cp-root').innerHTML = hubHtml(hubC); $$('#cp-root [data-hubtab]').forEach((b) => b.addEventListener('click', () => { hubTab = b.dataset.hubtab; renderCampaigns(); })); if (hubTab === 'ov') wireQuick(hubC); if (!hubPrice.at || now() - hubPrice.at > 30000) loadHubPrice(); return; }
     cpHub = null;
@@ -4284,6 +4289,7 @@
     hidePop();
     const isNew = !id; const it = id ? byId(id) : (preset?.dup || newItem(kind, preset));
     if (!it) return;
+    drawerPath = isNew ? null : itemPath(it); // 地址栏换成这条内容的网址(新建的还没有 id,不换)
     // 编辑看到的是「自己待审核的修改」,没有就看线上版本
     // preset.override:从别处带入的改动(比如把设计稿套用到 Banner),保存时照常走审核
     const base = { ...it, ...(it.pendingChange && !canAppr(it) ? it.pendingChange : {}), ...(id && preset?.override ? preset.override : {}) };
@@ -4348,7 +4354,8 @@
         <div>${kindChip(kind)} <b>${isNew ? `新建${/^[A-Za-z]/.test(KIND[kind]) ? ' ' : ''}${KIND[kind]}` : esc(titleOf(it))}</b> ${isNew ? '' : badge(it)}
           ${!isNew && MODE === 'live' ? `<button class="btn btn-sm btn-ghost" type="button" data-act="history" ${kind === 'pin' ? 'title="这份置顶排序每次保存的版本"' : ''}>${I.clock}历史版本</button>` : ''}
           ${kind === 'pin' ? '<span id="wx-hist"></span>' : ''}
-          ${!isNew ? `<button class="btn btn-sm btn-ghost" type="button" data-act="dup" title="复制成一条新的(连同你还没保存的修改),原来这条不变">${I.copy}复制一份</button>` : ''}</div>
+          ${!isNew ? `<button class="btn btn-sm btn-ghost" type="button" data-act="dup" title="复制成一条新的(连同你还没保存的修改),原来这条不变">${I.copy}复制一份</button>` : ''}
+          ${!isNew ? `<button class="btn btn-sm btn-ghost" type="button" data-act="copylink" title="复制这条内容的链接,同事点开直接打开这条">${I.link}复制链接</button>` : ''}</div>
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button>
       </div>
       <div class="drawer__b drawer__b--${kind}">
@@ -4361,6 +4368,7 @@
       </div>`;
     $('#drawer').hidden = false; $('#drawer-mask').hidden = false;
     document.body.classList.add('no-scroll');
+    window.cgpNav?.sync();
 
     const refreshPv = () => {
       const v = readForm(base);
@@ -4960,6 +4968,7 @@
         const c = wx.collection; closeDrawer(); openColHistory(numId(c.id), c.title); return;
       }
       if (kindOfAct === 'dup') return dupItem({ ...readForm(base), kind: it.kind, isDefault: !!it.isDefault });
+      if (kindOfAct === 'copylink') return window.cgpNav?.copy(itemPath(it), '这条内容的链接');
       if (kindOfAct === 'delete' && !a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '再点一次确认删除'; a.classList.add('btn-danger'); return; }
       if (kindOfAct === 'end' && !a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '再点一次确认结束'; return; }
       runDrawerAction(kindOfAct, a);
@@ -5074,14 +5083,75 @@
   }
   function closeDrawer() {
     clearInterval(pvTimer); ed = null; edTabs = null; wx = null; hidePop();
+    const was = !$('#drawer').hidden;
     $('#drawer').hidden = true; $('#drawer-mask').hidden = true; $('#drawer').innerHTML = '';
     document.body.classList.remove('no-scroll');
+    drawerPath = null; if (was) window.cgpNav?.sync();
+  }
+
+  // ================= 网址 ↔ 页面(public/nav.js)=================
+  // 2026-11-09 用户:app 只有一个网址,每次都要打开后逐个点。现在每个页面 / 每条内容 / 每个活动都有自己的网址。
+  const SEC_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', callout: 'callouts', pin: 'pins', salelink: 'salelinks', campaign: 'campaigns' };
+  const HUB_TABS = ['web', 'price', 'lark'];
+  const SET_PANELS = { members: '#st-members', roles: '#st-roles', conn: '#st-conn', 'my-notify': '#my-notify' };
+  let drawerPath = null; // 抽屉开着时它的网址(内容编辑 / Collection 排序设置)
+  const itemPath = (it) => (it.kind === 'campaign' ? `/campaigns/${encodeURIComponent(it.id)}/edit` : `/${SEC_OF[it.kind] || 'overview'}/${encodeURIComponent(it.id)}`);
+  const activeSec = () => ($('.section.is-active')?.id || '').replace(/^section-/, '') || 'overview';
+  if (window.cgpNav) {
+    window.cgpNav.pathOf = () => {
+      const sec = activeSec();
+      if (drawerPath && !$('#drawer').hidden) return drawerPath;
+      if (sec === 'detail') return null; // 工具里某个字段的详情:不单独记
+      if (sec === 'overview') return '/';
+      if (sec === 'campaigns' && cpHub) return `/campaigns/${encodeURIComponent(cpHub)}${HUB_TABS.includes(hubTab) ? `/${hubTab}` : ''}`;
+      if (sec === 'pins' && pnView === 'defsort') return '/pins/collections';
+      if (sec === 'price') { const p = window.cgpPricePath ? window.cgpPricePath() : ''; return p == null ? null : `/price${p}`; }
+      if (sec === 'notify') return `/notify${window.cgpNotifyPath?.() || ''}`;
+      return `/${sec}`;
+    };
+    // 打开一个网址:点左边对应的导航(各页面「点开时才读」的都会照常触发),再打开具体那一条
+    window.cgpNav.open = async (path) => {
+      const [sec = 'overview', a, b] = path.split('/').filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
+      const nav = $(`#modnav [data-section="${sec}"]`) || ($(`#toolnav [data-section="${sec}"]`) && $('#modnav [data-group]'));
+      if (!nav || sec === 'detail') { toast('这个链接打不开(页面地址不对),已回到首页', false); closeDrawer(); showSection('overview'); return; }
+      if (nav.hidden) { toast('你没有这个页面的权限,请找管理员开通', false); return; }
+      if (!$('#drawer').hidden) closeDrawer();
+      const miss = (what) => toast(`找不到这个${what}(可能已经删掉了)`, false);
+      if (sec === 'campaigns') {
+        cpHub = null;
+        if (a && !camp(a)) { miss('活动'); showSection('campaigns'); renderCampaigns(); return; }
+        if (!a) { showSection('campaigns'); renderCampaigns(); return; }
+        openHub(a);
+        if (HUB_TABS.includes(b)) { hubTab = b; renderCampaigns(); }
+        if (b === 'edit') openEditor('campaign', a);
+        return;
+      }
+      if (sec === 'pins') {
+        const want = a === 'collections' || a === 'collection' ? 'defsort' : 'pins';
+        if (pnView !== want) { pnView = want; renderPins(); }
+        nav.click();
+        if (want === 'defsort' && !csRows) await loadColSorts();
+        if (a === 'collection' && b) { if ((csRows || []).some((x) => x.id === String(b))) openColSort(b); else if (csRows) miss(' Collection'); }
+        else if (a && want === 'pins') { const it = byId(a); if (it?.kind === 'pin') openEditor('pin', a); else miss('置顶排序'); }
+        return;
+      }
+      if (sec === 'price') { nav.click(); const r = await window.cgpNav.when('cgpPriceRoute'); await r?.(a || ''); return; }
+      if (sec === 'notify') { nav.click(); window.cgpNotifyRoute?.(a || ''); return; }
+      if (sec === 'metaobjects' || sec === 'promo' || sec === 'metafields') { showSection(sec); return; }
+      nav.click();
+      if (sec === 'settings' && SET_PANELS[a]) { setTimeout(() => $(SET_PANELS[a])?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300); return; }
+      if (a && Object.values(SEC_OF).includes(sec)) {
+        const it = byId(a);
+        if (it && SEC_OF[it.kind] === sec) openEditor(it.kind, it.id); else miss('内容');
+      }
+    };
   }
 
   // ================= 全局 =================
   function renderAll() {
     ST.waiting = approvalsOn() ? '等活动批准' : '活动是草稿'; // 没开审批:「等活动批准」其实就是活动还是草稿
     applySiteStyle(); hidePop();
+    window.CGP_APP_URL = S.store?.appUrl || window.CGP_APP_URL || ''; // Shopify 后台里这个 app 的地址(复制链接用)
     renderOverview(); renderBanners(); renderTopbar(); renderPmodules(); renderPins(); renderSaleLinks(); renderCallouts(); renderCampaigns(); renderReviews(); renderSettings(); renderMyWork();
     if (isActive('history')) renderHistory();
     const n = pendingCount(); const b = $('#n-rv'); b.hidden = !n; b.textContent = n;
@@ -5109,6 +5179,7 @@
     if (hd && hd.closest('.section')) { hubDay = hd.dataset.hday === 'now' ? null : +hd.dataset.hday + 12 * HOUR; renderCampaigns(); return; }
     const hb = e.target.closest('[data-hub]');
     if (hb) { openHub(hb.dataset.hub); return; }
+    if (e.target.closest('[data-hublink]')) { window.cgpNav?.copy(null, '活动页的链接'); return; }
     if (e.target.closest('[data-hubback]')) { cpHub = null; renderCampaigns(); return; }
     const pr = e.target.closest('[data-price]');
     if (pr && window.cgpPriceOpen) { showSection('price'); window.cgpPriceOpen(pr.dataset.price); return; }
@@ -5192,6 +5263,7 @@
       if (MODE === 'demo') await load();
       renderModeBar(); renderAll();
       loadMwPrice(); // 「我的工作」的数字也算上等你批的改价计划
+      window.cgpNav?.ready(); // 打开时网址带着页面(/price/xxx 等):现在打开那一页
     } catch (e) {
       $('#ov-root').innerHTML = `<p class="muted">加载失败:${esc(e.message)}</p>`; console.error(e);
     }
