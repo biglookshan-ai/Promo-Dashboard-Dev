@@ -2270,3 +2270,12 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-price .pl-segno { display: inline-block; font-size: 12px; font-weight: 600; color: var(--text-2); background: var(--surface-3); border-radius: 4px; padding: 0 6px; margin-right: 6px; line-height: 18px; vertical-align: 1px; }
 #section-price .gantt__label .pl-ser__k { margin-right: 6px; }
 #section-price .gantt__slot.is-ser { border-right: 2px solid var(--surface); box-sizing: border-box; }
+/* 编辑器「什么时候生效」里的分段(系列)框 */
+#section-price .pr-serbox { margin-top: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-2); padding: 10px 12px; }
+#section-price .pr-serbox__h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; }
+#section-price .pr-serbox__h .spacer { flex: 1; }
+#section-price .pr-serbox__l { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+#section-price .pr-serbox__r { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; padding: 6px 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); cursor: pointer; }
+#section-price .pr-serbox__r:hover { border-color: var(--border-strong); }
+#section-price .pr-serbox__r.is-me { cursor: default; border-color: var(--accent); background: var(--accent-soft); }
+#section-price .pr-serbox__r .linkbtn { margin-left: auto; }

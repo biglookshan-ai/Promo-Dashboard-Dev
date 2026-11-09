@@ -655,6 +655,7 @@ function editorHtml() {
           ${p.kind === 'window' ? `<label class="pr-fld">结束(售价和划线价都回到改价前)<input class="inp" type="datetime-local" data-f="end" value="${toInput(sl.end)}" ${E.showPending || p.followCampaign || (!E.isNew && ['ended', 'done'].includes(statusOf(E.orig))) ? 'disabled' : ''}/><em>${p.followCampaign ? '跟着活动走' : '已经开始的计划也能改结束时间'}</em></label>` : ''}
         </div>` : schedMode() === 'multi' ? segsHtml() : weeklyHtml()}
         ${schedMode() !== 'one' ? timelineHtml(scheduleSegments()) : ''}
+        ${p.kind === 'window' ? segPanelHtml() : ''}
         ${p.kind === 'window' ? `<div class="pr-fld" style="margin-top:10px">这个时段内把产品加进 Collection <em>带条件的也行(加进它的「单独加入的产品」,不动条件);结束拿掉 app 加的,本来就在 / 你们手动加的不动。Flash 当天那一组常用</em>
           ${sl.collection ? `<div class="row"><span class="tag ${S.goneCollections?.[sl.collection.id] ? 'tag--danger' : 'tag--accent'}">${esc(sl.collection.title)}</span>${ro ? '' : '<button class="linkbtn" data-a="unsetcoll">不加了</button>'}</div>
             ${S.collState?.[sl.collection.id]?.via === 'shared' ? '<div class="note note--sm">这个 Collection 的条件和别的 Collection 共用:单独加产品会连带改到别的 Collection,所以 app 不加,产品照它的条件进出。</div>' : ''}
@@ -687,6 +688,30 @@ function editorHtml() {
   <div class="footbar">${footHtml()}</div>`;
 }
 
+// ---- 分段(系列)—— 2026-11-09 用户在新建页找不到「不同时间段不同价格」:放在「什么时候生效」里一眼能看到 ----
+// 每段 = 一个完整的计划(产品、价格、Collection、标签、活动都能不一样),同一系列的段列在这里,下面「接下一段」
+function segPanelHtml() {
+  const p = P(); const segs = p.series ? seriesSegs(p.series) : [];
+  if (E.linkSrc && !segs.some((x) => x.id === E.linkSrc.id)) { const q = planById(E.linkSrc.id); if (q) { const sm = A.planSummary(q); segs.push({ id: q.id, name: q.name, start: sm.start, end: sm.end, status: statusOf(q) }); } } // 接下一段:原来那个保存时才放进系列,这里先列出来
+  const meId = E.orig?.id || p.id;
+  const rows = segs.length ? segs : [{ id: meId, name: p.name || '(这一段)', start: A.planSummary(p).start, end: A.planSummary(p).end, status: E.isNew ? 'new' : statusOf(E.orig) }];
+  if (!rows.some((x) => x.id === meId)) rows.push({ id: meId, name: p.name || '(这一段)', start: A.planSummary(p).start, end: A.planSummary(p).end, status: 'new' });
+  rows.sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+  const canNext = !E.showPending && A.planSummary(p).end;
+  const btn = !canNext ? '' : E.isNew || E.dirty
+    ? `<button type="button" class="btn btn-sm btn-primary" data-a="savenext">${E.isNew ? '保存这一段,接下一段' : '保存修改,接下一段'}</button>`
+    : (() => { const last = [...rows].reverse().find((x) => x.end != null); // 接在整个系列最后一段后面(不是这一段后面,免得和后面的段重叠)
+      return last && last.id !== meId ? `<button type="button" class="btn btn-sm btn-primary" data-a="qdupseg" data-id="${last.id}" title="复制最后一段「${esc(last.name)}」,接在它后面">＋ 接下一段</button>` : '<button type="button" class="btn btn-sm btn-primary" data-a="dupseg">＋ 接下一段</button>'; })();
+  return `<div class="pr-serbox">
+    <div class="pr-serbox__h"><b>分段</b>${p.series ? `<span class="muted">系列「${esc(p.series)}」· ${rows.length} 段</span>` : '<span class="muted">现在只有这一段</span>'}
+      <span class="tipify">不同时间段用不同的价格、产品、Collection、标签、关联活动:<b>每段建一个计划</b>,用「接下一段」接上(复制这一段、时间接在它结束之后、放进同一个系列),再改那一段要变的。<br>前后两段连着时直接换价,不会先回到改价前。<br>只是同一批产品按星期几换价(工作日 / 周末),用上面的「每周重复」更省事。</span>
+      <span class="spacer"></span>${btn}</div>
+    <div class="pr-serbox__l">${rows.map((x, i) => { const me = x.id === meId;
+      return `<div class="pr-serbox__r ${me ? 'is-me' : ''}" ${me ? '' : `data-a="segopen" data-id="${x.id}"`}><span class="pl-segno">第 ${i + 1} 段</span><b>${esc(me ? p.name || '(这一段)' : x.name)}</b>
+        <span class="muted">${x.start != null ? fmtT(x.start) : '(还没设开始)'}${x.end ? ` → ${fmtT(x.end)}` : ''}</span>
+        ${me ? '<span class="tag tag--accent">正在编辑</span>' : `<span class="tag ${STATUS_TAG[x.status] || ''}">${core.STATUS_CN[x.status] || ''}</span><span class="linkbtn">打开</span>`}</div>`; }).join('')}</div>
+  </div>`;
+}
 // ---- 时间安排(一段 / 几段 / 每周重复)和价格版本的界面 ----
 const multiV = () => schedMode() !== 'one' && versionsOf(P()).length > 1;
 // 时间安排还能不能改:看别人提交的修改、已结束、永久调价执行了 → 不能;已经开始的计划还能改「以后的段」和进行中那段的结束时间
@@ -1718,6 +1743,27 @@ document.addEventListener('click', async (ev) => {
       case 'loadall': await withBusy(el, () => loadGroup(EG(), { force: true })); break;
       case 'startnow': curSlot().start = now() + 60_000; touch(); render(); break;
       case 'togglepending': E.showPending = !E.showPending; render(); break;
+      case 'segopen': { // 分段列表里打开别的段:有没保存的改动先提醒
+        if (E.dirty && !armed(el, '有未保存的改动,再点一次离开')) return;
+        const q = await planByIdAll(el.dataset.id); if (q) { openEditor(q, false); loadCampaigns(); } break;
+      }
+      case 'savenext': { // 新建 / 改过的:先保存(和「保存并排期」一样),再接下一段
+        if (!E.plan.name.trim()) { toast('先给这一段起个名字(比如 预热)', false); $('[data-f=name]')?.focus(); return; }
+        await withBusy(el, async () => {
+          await ensureCalc(); render();
+          const link = E.linkSrc;
+          if (!E.plan.series) E.plan.series = A.cleanFolder(E.plan.name); // 还没进系列:这一段先用自己的名字当系列名(列表里能改名),下一段就能一起列出来
+          const r = await act({ type: 'save', mode: 'publish', id: E.plan.id, isNew: E.isNew, values: values() });
+          if (link) await api('POST', '/api/price/act', { action: { type: 'organize', ids: [link.id], series: link.series } }).catch(() => {});
+          await load();
+          const saved = await planByIdAll(r.id || E.plan.id); if (!saved) return;
+          const segs = saved.series ? seriesSegs(saved.series) : []; const last = [...segs].reverse().find((x) => x.end != null);
+          const q = last && last.id !== saved.id ? (await planByIdAll(last.id)) || saved : saved; // 接在系列最后一段后面
+          openEditor(q, false); loadCampaigns();
+          document.querySelector('#section-price [data-a="dupseg"]')?.click();
+        });
+        break;
+      }
       case 'save': {
         const mode = el.dataset.m;
         if (!E.plan.name.trim()) { toast('先填计划名称', false); $('[data-f=name]')?.focus(); return; }
@@ -1802,7 +1848,7 @@ document.addEventListener('change', async (ev) => {
   const s = curSlot();
   const norm = (v) => { const t = String(v).trim().replace(/^£/, ''); if (!t) return null; const n = Number(t); return Number.isFinite(n) ? n.toFixed(2) : undefined; };
   switch (f) {
-    case 'name': E.plan.name = el.value; touch(); break;
+    case 'name': E.plan.name = el.value; touch(); if (document.querySelector('#section-price .pr-serbox')) render(); break; // 分段框里写着这一段的名字
     case 'folder': { // 分组随时能改、不影响改价:已有的计划马上存(不用点保存,也不会把编辑中的其他改动带上)
       const f = A.cleanFolder(el.value); E.plan.folder = f;
       if (E.isNew || !E.orig) { touch(); break; }
