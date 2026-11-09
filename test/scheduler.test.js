@@ -103,7 +103,7 @@ test('飞书:自动上下线发一条汇总消息;没填 webhook 不发', async 
   const cards = [];
   await runOnce(SHOP, { themeBanners: null, now: T + 1, token: 'x', setStatus: async () => {}, send: async (cfg, card) => { cards.push(card); } });
   assert.equal(cards.length, 1);
-  assert.match(cards[0].title, /自动上下线 1 条/);
+  assert.match(cards[0].title, /Banner已上线 · New Lens/); // 2026-11-09 消息中心 v2:每类通知单独设,一条一张(同一轮几条合成一张)
   store.update(SHOP, (s) => { s.settings.larkWebhook = ''; s.banners[0].syncedStatus = 'DRAFT'; });
   const cards2 = [];
   await runOnce(SHOP, { themeBanners: null, now: T + 2, token: 'x', setStatus: async () => {}, send: async (c, card) => cards2.push(card) });
@@ -117,7 +117,7 @@ test('飞书:到点还没批准的提醒只发一次', async () => {
   const send = async (c, card) => cards.push(card);
   await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: async () => {}, send });
   await runOnce(SHOP, { themeBanners: null, now: T + 60_000, token: 'x', setStatus: async () => {}, send });
-  assert.equal(cards.filter((c) => /还没批准/.test(c.title)).length, 1);
+  assert.equal(cards.filter((c) => /到点了但没上线/.test(c.title) && /没批准/.test(JSON.stringify(c.rows))).length, 1);
 });
 
 test('飞书:没开审批时,跟随的活动还是草稿 → 提醒说「活动还是草稿」,不叫人审核', async () => {
@@ -126,8 +126,8 @@ test('飞书:没开审批时,跟随的活动还是草稿 → 提醒说「活动�
   store.update(SHOP, (s) => { s.settings.larkWebhook = 'https://open.larksuite.com/open-apis/bot/v2/hook/abc'; });
   const cards = [];
   await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: async () => {}, send: async (c, card) => cards.push(card) });
-  const c = cards.find((x) => /活动还是草稿/.test(x.title));
-  assert.ok(c, '有「活动还是草稿」的提醒');
+  const c = cards.find((x) => /到点了但没上线/.test(x.title) && /还是草稿/.test(JSON.stringify(x.rows)));
+  assert.ok(c, '有「跟随的活动还是草稿」的提醒');
   assert.ok(!JSON.stringify(cards).includes('审核'));
 });
 

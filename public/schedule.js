@@ -3215,8 +3215,8 @@
         </section>` : ''}
         <section class="panel">
           <div class="panel__h"><h3>飞书通知</h3></div>
-          <p class="muted">哪些通知要发、发给谁、私信还是发群,都在「通知中心」里设(原来的群和开关已经带过去了)。</p>
-          <button class="btn btn-sm" type="button" data-open-notify>打开通知中心</button>
+          <p class="muted">每类通知的样式、内容、推给谁、私信还是发群、什么时候推,都在「消息中心」里设(原来的群和开关已经带过去了)。</p>
+          <button class="btn btn-sm" type="button" data-open-notify>打开消息中心</button>
         </section>
         <section class="panel">
           <div class="panel__h"><h3>定时器</h3><span class="stb stb--live"><span class="dot"></span>运行中</span></div>
@@ -5136,7 +5136,7 @@
         return;
       }
       if (sec === 'price') { nav.click(); const r = await window.cgpNav.when('cgpPriceRoute'); await r?.(a || ''); return; }
-      if (sec === 'notify') { nav.click(); window.cgpNotifyRoute?.(a || ''); return; }
+      if (sec === 'notify') { nav.click(); await window.cgpNotifyRoute?.(a || '', b); return; }
       if (sec === 'metaobjects' || sec === 'promo' || sec === 'metafields') { showSection(sec); return; }
       nav.click();
       if (sec === 'settings' && SET_PANELS[a]) { setTimeout(() => $(SET_PANELS[a])?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300); return; }

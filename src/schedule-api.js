@@ -24,6 +24,8 @@ import { loadHistory, saveHistory, historyRecorder, recordVersion, backfillBase 
 import { diffOrder, diffSummary } from './order-diff.js';
 import { loadItemHistory, recordAction, changedKeys, pruneItemHistory } from './item-history.js';
 import { titleOf, allOf } from './schedule-actions.js';
+import { changeEvents } from './notifier.js';
+import { dispatch } from './notify-center.js';
 
 // 当前运行的版本(Railway 会自动带上部署的提交号),方便确认新代码已经上线
 const APP_VERSION = { commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'local', startedAt: Date.now() };
@@ -185,8 +187,11 @@ export function scheduleRouter() {
       needPage(req, action.type === 'purge' ? 'settings' : KIND_MOD[kind] || 'overview');
     }
     const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
-    let before = null; let who = '';
-    const out = await performAction(shop, req.ctx, (state) => { before = state; const a = actorFor(state, req.ctx.user); who = a.name; return applyAction(state, action, a); }, { appUrl: info.appUrl });
+    let before = null; let who = ''; let actorId = null;
+    const out = await performAction(shop, req.ctx, (state) => { before = state; const a = actorFor(state, req.ctx.user); who = a.name; actorId = a.id; return applyAction(state, action, a); }, { appUrl: info.appUrl });
+    // 消息中心:已创建 / 已修改 / 调整顺序 / 暂停恢复结束 / 已删除(推给谁、怎么推按规则;发不出去不影响保存)
+    try { const evs = changeEvents(before, out.state, action, actorId, { id: out.id }); if (evs.length) dispatch(shop, evs, { sched: out.state, appUrl: info.appUrl }).catch((e) => console.error('[notify]', e.message)); }
+    catch (e) { console.error('[notify]', e.message); }
     // 历史版本:动过的那条内容记一版(轮播顺序不算)
     if (action.type !== 'order' && action.id !== '__order') {
       const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', end: '结束', delete: '删除', purge: '批量清理' };

@@ -191,7 +191,8 @@ test('Collection 在店里被删了:记一笔、通知一次,之后不再碰它,
   assert.equal(io.v.get('a').price, '100.00');
   assert.ok(st.log.some((l) => /Black Friday」在店里已经被删除/.test(l.note)));
   const msgs = reportMessages(st, r, { members: [{ id: 'ou_admin', status: 'active', roles: ['admin'] }] });
-  assert.deepEqual(msgs.map((m) => m.card.title), ['🔙 改价已恢复', '🗂 Collection 已被删除']);
+  assert.deepEqual(msgs.map((m) => m.ev), ['price.restored', 'price.gone']); // 2026-11-09 v2:模块只给事件 + 数据,卡片由消息中心按样式拼
+  assert.equal(msgs[1].data.collection, 'Black Friday');
   // 之后再跑:不再碰这个 Collection
   const calls = io.calls;
   const r2 = await run(shop, io, 10 * H + 60_000);

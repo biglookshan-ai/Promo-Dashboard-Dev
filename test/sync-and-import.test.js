@@ -130,8 +130,10 @@ test('每日汇总:10 点前不发;明天上线的 + 3 天内下架的', () => {
   const at10 = Date.UTC(2026, 9, 1, 9, 5);
   const m = digestEvents(s, { now: at10 });
   assert.equal(m.length, 2);
-  assert.match(m[0].card.lines.join('\n'), /NotApproved.*还没批准/);
-  assert.match(m[1].card.title, /3 天内下架/);
+  assert.equal(m[0].ev, 'daily.tomorrow');
+  assert.match(m[0].data.items.join('\n'), /NotApproved.*还没批准/);
+  assert.equal(m[1].ev, 'daily.ending');
+  assert.match(m[1].data.items.join('\n'), /Ending/);
 });
 
 test('写入:Shopify 不收空字符串时,去掉空字段再写一次', async () => {

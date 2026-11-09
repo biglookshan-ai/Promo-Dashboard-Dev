@@ -2,8 +2,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { appLink, itemPath, planPath, oneOr } from '../src/app-links.js';
-import { actionEvents, schedulerEvents, digestEvents } from '../src/notifier.js';
-import { eventMessages, reportMessages } from '../src/price/notifier.js';
+import { actionEvents, schedulerEvents, digestEvents, changeEvents } from '../src/notifier.js';
+import { eventMessages, reportMessages, planChangeEvents } from '../src/price/notifier.js';
+import { EV, renderCard, defaultStyle } from '../src/notify-catalog.js';
 import { pinEvents } from '../src/scheduler.js';
 
 const APP = 'https://admin.shopify.com/store/cinegearpro/apps/promo-dashboard-dev';
@@ -24,38 +25,57 @@ test('网址:后台地址后面接 app 里的网址;首页不加斜杠;没有后
   assert.equal(oneOr(['/a', '/b'], '/'), '/');
 });
 
-test('网站内容的通知:批准 → 打开那一条;等审批 → 审核页;一次上下线好几条 → 概览', () => {
+// 2026-11-09 消息中心 v2:模块只给这一条的网址(path),按钮由消息中心按样式拼(打开这一条 / 打开列表…)
+const btnUrl = (m) => renderCard(EV[m.ev], defaultStyle(EV[m.ev]), m.data, { url: (p) => appLink(APP, p), path: m.path }).buttons[0]?.url;
+test('网站内容的通知:批准 → 打开那一条;等审批 → 审核页;每日提醒 → 概览', () => {
   const d = doc({ banners: [banner(), banner({ id: 'b2', title: '周末' })] });
-  const [dec] = actionEvents(d, { event: 'decision', id: 'b1', approved: true, actor: 'boss', to: 'des' }, { appUrl: APP, now: T });
-  assert.equal(dec.card.button.url, `${APP}/banners/b1`);
-  const [sub] = actionEvents(d, { event: 'submit', id: 'b1' }, { appUrl: APP, now: T });
-  assert.equal(sub.card.button.url, `${APP}/reviews`);
-  const one = schedulerEvents(d, { changes: [{ id: 'b1', kind: 'banner', title: '黑五', to: 'ACTIVE' }] }, { appUrl: APP, now: T })[0];
-  assert.equal(one.card.button.url, `${APP}/banners/b1`);
-  assert.equal(one.cards.des.button.url, `${APP}/banners/b1`);
-  const two = schedulerEvents(d, { changes: [{ id: 'b1', kind: 'banner', title: '黑五', to: 'ACTIVE' }, { id: 'b2', kind: 'banner', title: '周末', to: 'PAUSED' }] }, { appUrl: APP, now: T })[0];
-  assert.equal(two.card.button.url, APP);
-  // 每天 10:00:明天上线的只有一条 → 直接打开它
+  const [dec] = actionEvents(d, { event: 'decision', id: 'b1', approved: true, actor: 'boss', to: 'des' }, { now: T });
+  assert.equal(btnUrl(dec), `${APP}/banners/b1`);
+  const [sub] = actionEvents(d, { event: 'submit', id: 'b1' }, { now: T });
+  assert.equal(btnUrl(sub), `${APP}/reviews`);
+  const ups = schedulerEvents(d, { changes: [{ id: 'b1', kind: 'banner', title: '黑五', to: 'ACTIVE' }, { id: 'b2', kind: 'banner', title: '周末', to: 'PAUSED' }] }, { now: T });
+  assert.deepEqual(ups.map((m) => [m.ev, m.path]), [['banner.live', '/banners/b1'], ['banner.off', '/banners/b2']]);
+  assert.equal(btnUrl(ups[0]), `${APP}/banners/b1`);
   const tom = doc({ banners: [banner({ start: T + 20 * H })] });
-  const dg = digestEvents(tom, { appUrl: APP, now: Date.UTC(2026, 10, 9, 10, 30) });
-  assert.equal(dg[0].card.button.url, `${APP}/banners/b1`);
+  const dg = digestEvents(tom, { now: Date.UTC(2026, 10, 9, 10, 30) });
+  assert.equal(btnUrl(dg[0]), APP);
 });
 
-test('改价的通知:打开那个计划;暂停接管 → 受管产品;好几个计划一起失败 → 改价页', () => {
+test('改价的通知:打开那个计划;暂停接管 → 受管产品;好几个计划一起失败 → 每个计划一条', () => {
   const plan = (id) => ({ id, name: id, kind: 'window', state: 'approved', owner: 'boss', slots: [{ id: 's1', start: T, end: T + H, items: [] }] });
   const st = { plans: [plan('p1'), plan('p2')], notified: {} };
-  assert.equal(eventMessages(st, { event: 'pause', id: 'p1' }, { appUrl: APP, members })[0].card.button.url, `${APP}/price/p1`);
-  const rep = { written: [{ planId: 'p1', plan: 'p1', op: 'start' }], collections: [], holds: [{ planId: 'p1', variantId: 'v1', reason: 'manual' }], recovered: [], finished: [],
+  assert.equal(btnUrl(eventMessages(st, { event: 'pause', id: 'p1' }, { members })[0]), `${APP}/price/p1`);
+  const rep = { written: [{ planId: 'p1', plan: 'p1', op: 'start', title: '镜头' }], collections: [], holds: [{ planId: 'p1', variantId: 'v1', reason: 'manual' }], recovered: [], finished: [],
     failures: [{ planId: 'p1', variantId: 'v1', message: 'x' }, { planId: 'p2', variantId: 'v2', message: 'y' }] };
-  const msgs = reportMessages(st, rep, { appUrl: APP, now: T, members });
-  const by = (ev) => msgs.find((m) => m.ev === ev).card.button;
-  assert.equal(by('price.live').url, `${APP}/price/p1`);
-  assert.equal(by('price.hold').url, `${APP}/price/vault`);
-  assert.deepEqual(by('price.failure'), { text: '打开改价', url: `${APP}/price` });
+  const msgs = reportMessages(st, rep, { now: T, members });
+  const by = (ev) => msgs.find((m) => m.ev === ev);
+  assert.equal(btnUrl(by('price.live')), `${APP}/price/p1`);
+  assert.deepEqual(by('price.live').data.products, ['镜头']);
+  assert.equal(btnUrl(by('price.hold')), `${APP}/price/vault`);
+  assert.deepEqual(msgs.filter((m) => m.ev === 'price.failure').map((m) => m.path), ['/price/p1', '/price/p2']);
 });
 
 test('Collection 排序的通知:这个 Collection 只有一份置顶排序 → 打开它', () => {
   const d = doc({ pins: [{ id: 'pn1', kind: 'pin', collection: { id: 'gid://shopify/Collection/42' }, by: 'des' }] });
   const [m] = pinEvents(d, { holds: [{ fresh: true, collection: '42', title: 'Lens' }], failures: [] }, T);
   assert.equal(m.path, '/pins/pn1');
+  assert.equal(m.data.collection, 'Lens');
+});
+
+test('有人动手:新建 / 修改(写清改了什么)/ 删除 / 暂停;改价计划同样', () => {
+  const before = doc({ banners: [banner()] });
+  const after = doc({ banners: [banner({ title: '黑五 2', end: T + H })] });
+  const [u] = changeEvents(before, after, { type: 'save', id: 'b1' }, 'des', { now: T });
+  assert.equal(u.ev, 'banner.updated'); assert.equal(u.actor, 'des'); assert.equal(u.data.changes, '标题、结束时间'); assert.equal(u.data.actor, '设计');
+  const [c] = changeEvents(doc(), after, { type: 'save', isNew: true }, 'des', { now: T, id: 'b1' });
+  assert.equal(c.ev, 'banner.created');
+  const [del] = changeEvents(before, doc(), { type: 'delete', id: 'b1' }, 'des', { now: T });
+  assert.deepEqual([del.ev, del.path, del.data.name], ['banner.deleted', '/banners', '黑五']);
+  const [o] = changeEvents(before, after, { type: 'order', kind: 'banner' }, 'des', { now: T });
+  assert.equal(o.ev, 'banner.order');
+  const p0 = { id: 'p1', name: '黑五', kind: 'window', slots: [{ id: 's', start: T, end: T + H, items: [] }], groups: [{ rule: { mode: 'percent_off', value: 15 } }] };
+  const p1 = { ...p0, groups: [{ rule: { mode: 'percent_off', value: 20 } }] };
+  const [pu] = planChangeEvents([p0], [p1], { type: 'save', id: 'p1' }, 'boss', { members });
+  assert.deepEqual([pu.ev, pu.data.changes, pu.data.discount, pu.path], ['price.updated', '改价分组 / 折扣', '降 20%', '/price/p1']);
+  assert.equal(planChangeEvents([], [p0], { type: 'save', isNew: true }, 'boss', { members, id: 'p1' })[0].ev, 'price.created');
 });

@@ -4,7 +4,7 @@ import { load, save, withLock, appendLog, readLedger } from './store.js';
 import { planStatus } from './price-core.js';
 import { applyAction, ActionError, planSummary } from './price-actions.js';
 import { runOnce } from './executor.js';
-import { eventMessages } from './notifier.js';
+import { eventMessages, planChangeEvents } from './notifier.js';
 import { dispatch } from '../notify-center.js';
 import * as catalog from './catalog.js';
 import { load as loadSchedule } from '../schedule-store.js';
@@ -91,7 +91,8 @@ export function priceRouter() {
         recordPlanAction(shop, beforePlans, doc.plans, [action.id, id], { action: action.historyNote ? '回滚' : (action.type === 'save' ? ACT[action.mode] : ACT[action.type]) || action.type, by: actor.name, note: action.historyNote || '' });
       } catch (e) { console.error('[plan-history]', e.message); }
       const members = loadSchedule(shop).members || [];
-      const msgs = effects.filter((e) => e.type === 'notify').flatMap((e) => eventMessages(state, e, { appUrl: state.appUrl, members, actor: actor.id }));
+      const msgs = [...planChangeEvents(beforePlans, doc.plans, action, actor.id, { members, id }), // 已创建 / 已修改 / 已删除
+        ...effects.filter((e) => e.type === 'notify').flatMap((e) => eventMessages(state, e, { members, actor: actor.id }))];
       return { state, effects, message, id, msgs };
     });
     if (out.msgs.length) dispatch(shop, out.msgs, { sched: loadSchedule(shop), priceNotify: out.state.settings.notify }).catch((e) => console.error('[notify]', e.message)); // 通知中心按规则发

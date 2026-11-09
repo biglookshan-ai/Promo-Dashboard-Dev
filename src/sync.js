@@ -80,7 +80,7 @@ export async function runEffects(ctx, state, effects, { gql = graphql, now = Dat
   }
   // 通知:发给谁 / 发群还是私信由通知中心按规则定
   const notes = effects.filter((x) => x.type === 'notify');
-  const sent = await dispatch(ctx.shop, notes.flatMap((x) => actionEvents(state, x, { appUrl, now })), { sched: state, now, sendGroup: send, sendDm });
+  const sent = await dispatch(ctx.shop, notes.flatMap((x) => actionEvents(state, x, { now })), { sched: state, now, appUrl, sendGroup: send, sendDm });
   return { errors, larkErrors: sent.errors };
 }
 

@@ -1582,8 +1582,8 @@ function settingsHtml() {
   const s = S.settings; const ap = isAdmin();
   return `
   <div class="pr-card"><div class="pr-card__t">通知</div>
-    <p class="muted">改价的通知发给谁(相关的人 / 同部门 / 管理员 / 飞书群)、马上发还是每天 10:00 汇总,都在「通知中心」里设(2026-11-09 起,原来这里的开关已经带过去了)。</p>
-    ${ap ? '<div class="row" style="margin-top:8px"><button class="btn btn-sm" type="button" data-a="opennotify">打开通知中心</button></div>' : ''}</div>
+    <p class="muted">改价每类通知(开始、结束、被接管、失败、已创建…)的样式、内容、推给谁、私信还是发群、什么时候推,都在「消息中心」里设(原来这里的开关已经带过去了)。</p>
+    ${ap ? '<div class="row" style="margin-top:8px"><button class="btn btn-sm" type="button" data-a="opennotify">打开消息中心</button></div>' : ''}</div>
   <div class="pr-card"><div class="pr-card__t">安全</div>
     <div class="grid2"><label class="pr-fld">降幅上限 % <em>超过的在预览里标黄提醒</em><input class="inp" type="number" id="maxoff" value="${s.maxDiscountPct}" ${ap ? '' : 'disabled'}/></label>
       <label class="pr-fld">巡检间隔(分钟)<em>多久核对一次「正在活动价上的产品有没有被人手动改过」</em><input class="inp" type="number" id="sweep" value="${s.sweepMinutes}" ${ap ? '' : 'disabled'}/></label></div>

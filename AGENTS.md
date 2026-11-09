@@ -47,16 +47,22 @@
 - **只有已批准的内容能被定时器上线**;审核人自己的改动自动批准。
 - **上下线只靠切 metaobject 的 publishable 状态**(DRAFT ↔ ACTIVE)。Liquid 遍历 `.values` 只返回 ACTIVE,主题里**不要写日期判断来决定显示与否**。开了 publishable 后新建条目默认是 DRAFT。
 - 飞书通知用**群机器人 webhook**(lark-ops 是本地个人 token 工具,Railway 用不了)。webhook 地址不进代码仓库。
-- **通知中心**(2026-11-09 用户:要能规定哪些通知、发给谁、怎么发;`src/notify-center.js` + `src/notify-api.js` + 页面 `public/notify.js`,导航「通知中心」只给管理员):
-  各模块只说「发生了什么、和谁有关」—— `{ ev, key?, card, cards?(每人专属卡片), related, approvers, actor, page? }`(`src/notifier.js` 网站内容、`src/price/notifier.js` 改价、`scheduler.js` 的 `pinEvents` + 联合推广失败);
-  **发给谁全由规则定**(`state.notifyCenter = { groups, rules: { 事件: { on, to: { related, dept, admins, page, approver, roles, people, groups }, when: now|digest } } }`),⛔ 别再在模块里写死收件人。
-  用户定的:管理员定规则 + 每个人在「我的账号 → 我的通知」关掉自己不想收的(`members[].notifyMute`,**只有日常通知能关**,出问题 / 审批的关不掉);
-  默认 日常 = 相关的人 + 管理员(「管理员看全部」)、出问题 = 相关的人 + **同部门**(和相关的人同一个非管理员角色、能看这类页面)+ 管理员;改价能选发群或发给不同的人。
-  还没保存过规则时按老开关(设置 → 飞书通知 / 改价设置 → 通知,`settings.notify`)推默认,原来的群 webhook 变成群「飞书群(原来设置的)」照旧收网站内容的通知,改价默认不进群;第一次改规则时整套存下来。
-  出问题却谁都收不到 → 兜底给管理员;`skipActor` 的事件(暂停 / 继续 / 提前结束、批准退回)不发给点按钮的人自己。日常通知能选「每天 10:00 汇总」(`flushDigest`,定时器每分钟调,当天只发一次)。
-  发送记录 / 汇总队列 / 去重放 `DATA_DIR/notify/<店>.log.jsonl` / `.box.json`(和排期数据分开放;第一次用时把排期的 `notified` 接过来,免得当天汇总重发)。没有店铺名(测试)时不写盘。
-  新加的两种(以前只进操作记录):Collection 排序有人在后台手改暂停接管(`pins.hold`)/ 排序失败(`pins.failure`,同一原因一天一次)、联合推广同步失败(`joint.failure`,同一条一天一次)。
-  新加通知:在 `EVENTS` 里登记(mod / level / name / desc / page),模块里产生 `{ ev, related … }` 交给 `dispatch`;别再新写发送逻辑。
+- **消息中心**(v1 2026-11-09 上午「通知中心」;**v2 同一天下午** —— 用户:只是开关不够,每一类通知都要能自定义样式、内容、推给谁、怎么推、什么时候推;**不按活动 / 品牌细分**(用户:太细太复杂)。导航「消息中心」只给管理员):
+  · `src/notify-catalog.js`(纯函数,**页面预览和服务器发飞书共用**,页面经 `/lib/notify-catalog.js` 读):分类 `CATS`(改价 / Banner / 顶栏 / 首页商品模块 / Collection 排序 / 促销链接 / 产品页推广 / 活动 / 每日提醒 / 审批 / 系统)、
+    通知目录 `EVENTS`(key = `<分类>.<事件>`:网站内容每种类型各一组 created / updated / order(Banner、顶栏)/ paused / deleted / live / off / notlive / failure;改价 created / updated / deleted / live / switch / restored / finished / control / hold / failure / collection / gone / moved / recovered + 审批;`pins.hold` / `pins.failure` / `joint.failure` / `daily.*` / `content.submit|decision|due` / `system.failure`)、
+    每种通知**能选哪些字段**(`avail`,只放它真有的数据)、默认标题 / 颜色 / 字段 / 按钮、示例数据(预览 + 试发),和拼卡片 `renderCard` / `renderList`(同一种几条合成一张)/ `renderDigest`(汇总按分类列)。
+  · **模块只给数据**:`{ ev, data: { 字段: 值 }, path: 这一条的网址, related, approvers, actor, page?, key? }` —— `src/notifier.js`(`changeEvents` 有人动手、`actionEvents` 审批、`schedulerEvents`、`digestEvents`)、`src/price/notifier.js`(`planChangeEvents`、`eventMessages`、`reportMessages`)、`scheduler.js` 的 `pinEvents` + 联合推广失败。⛔ 别在模块里拼卡片、写死收件人。
+    「已创建 / 已修改 / 删除 / 暂停 / 调顺序」在 `/api/schedule/act`、`/api/price/act` 之后按动作前后对比产生(改了什么 = `diffText` / `planDiffText` 按字段说人话)。
+  · **规则**(`state.notifyCenter = { v2, tz, groups, rules: { key: { on, to, via, when, style } } }`,`src/notify-center.js`):
+    to = 推给谁(related / dept / admins / page / approver / roles / people / **notActor 不发给动手的人**);via = 怎么推(`dm` 飞书私信、`groups` 哪几个群、`at` 群里 @ 相关的人);
+    when = 什么时候(`now` 马上 / `merge` N 分钟内同一种合成一条 / `digest` 每天 HH:MM 汇总,只有日常通知能选 / `work` 只在工作时间,下班的攒到上班);style = null 用默认,或 { title, color, layout full|brief, titleName, fields 顺序, buttons, max }。
+    时区(汇总时间 / 工作时间按哪里算)= `tz`,英国 / 北京两种。v1 存的规则按 `OLD_KEY` 带到新通知上(老的「自动上下线」→ 每种内容的上线 / 下线);没保存过按老开关推默认。
+  · 发送:`dispatch` 马上发的同一轮同一种按收件人合成一张(收到一样一组的人合起来发一次);其余进队列(`DATA_DIR/notify/<店>.box.json` 的 `queue[]`),定时器每分钟 `flushQueue` 发到点的。队列读写有每店一把锁(`withBox`)。发送记录 `.log.jsonl`(排队的标 queued)。
+  · 默认:日常 = 相关的人 + 管理员(管理员看全部)、出问题 = + 同部门、有人动手的不发给动手的人;新加的「已创建 / 已修改…」默认不进群;出问题谁都收不到 → 兜底私信管理员;个人在「我的账号 → 我的通知」只能关日常通知(`members[].notifyMute`)。
+  · 页面 `public/notify.js`:左边分类、右边通知列表(开关 + 一句话说清怎么发)→ 编辑(① 样式 ② 内容:勾字段、拖 ⋮⋮ 或 ↑↓ 排序、按钮文字 ③ 推给谁 ④ 怎么推 ⑤ 什么时候推;右边实时预览 =「飞书里就是这样」、「发给我试试」(私信自己或发到群,用示例数据和没保存的设置)、「恢复默认」、「套用到其他通知」(选套哪几块:推给谁 / 怎么推 / 什么时候 / 样式 / 开关;样式不套标题、字段只留对方有的;快速选「每种内容的『已修改』」)。
+    网址 `/notify/rule/<分类>-<事件>`(网址里不能有点)。飞书卡片 `src/lark.js` `buildCard`:短信息两个一行、清单一段、多个按钮、`at`。
+  · 新加通知:在 `notify-catalog.js` 的 `EVENTS` 登记(cat / level / name / desc / title / color / fields / avail / buttons / sample),模块里产生 `{ ev, data, path, related … }` 交给 `dispatch`。
+  · **下一步(用户定的第二步)**:app 里的消息收件箱(未读、紧急的置顶直到处理、问题解决了自动算已处理、汇总列未处理的)。
 - 店铺**不是 Shopify Plus**(主题仓库 CLAUDE.md 误写 Plus)。
 - **只有改价模块能写产品数据,且只写两样**:变体的 `price` / `compareAtPrice`,以及改价时段指定的**手动合集**成员(v3 起,用户 10/10 决定并入改价)。活动圈定产品仍 = 活动自身存的合集 + 标签 + 指定产品;别给产品写 metafield / 打标签。改价的安全规则(原价保险库、写前意图、读回核对、手动改价暂停接管)照搬 `../price-scheduler-app/AGENTS.md` 铁律。
 - **Banner 是竖图卡片 430×600**(手机 320×450),后台预览一律按主题真实尺寸 / 字号 / 角标颜色画(`scripts/build-demo-seed.mjs` 从主题设置读出,别写死横图比例)。

@@ -8,10 +8,25 @@ export function larkSign(secret, timestamp) {
 
 export const isLarkWebhook = (url) => /^https:\/\/open\.(larksuite\.com|feishu\.cn)\/open-apis\/bot\/v2\/hook\/[\w-]+$/.test(String(url || '').trim());
 
-// card:{ title, color, lines: [markdown…], button?: { text, url } }
-export function buildCard({ title, color = 'blue', lines = [], button }) {
-  const elements = [{ tag: 'div', text: { tag: 'lark_md', content: lines.filter(Boolean).join('\n') } }];
-  if (button?.url) elements.push({ tag: 'action', actions: [{ tag: 'button', text: { tag: 'plain_text', content: button.text }, type: 'primary', url: button.url }] });
+// 卡片(消息中心 src/notify-catalog.js 拼好的):{ title, color, rows: [{ label, value } | { label, list }], line?, buttons: [{ text, url }], at?: [open_id] }
+// 老写法 { title, color, lines: [markdown…], button?: { text, url } } 照样能用。短的信息两个一行(飞书卡片的 fields),长的 / 清单单独一段。
+export const SHORT = 26; // 页面预览(public/notify.js)用同一个长度判断
+export function buildCard({ title, color = 'blue', rows = [], line, lines = [], button, buttons, at = [] }) {
+  const md = (content) => ({ tag: 'div', text: { tag: 'lark_md', content } });
+  const elements = []; let shorts = [];
+  const flush = () => { if (shorts.length) elements.push({ tag: 'div', fields: shorts.map((r) => ({ is_short: true, text: { tag: 'lark_md', content: `**${r.label}**\n${r.value}` } })) }); shorts = []; };
+  for (const r of rows) {
+    if (r.list) { flush(); elements.push(md(`${r.label ? `**${r.label}**\n` : ''}${r.list.map((x) => `· ${x}`).join('\n')}`)); }
+    else if (String(r.value).length <= SHORT) shorts.push(r);
+    else { flush(); elements.push(md(`**${r.label}**:${r.value}`)); }
+  }
+  flush();
+  if (line) elements.push(md(line));
+  if (lines.filter(Boolean).length) elements.push(md(lines.filter(Boolean).join('\n')));
+  if (at.length) elements.push(md(at.map((id) => `<at id=${id}></at>`).join(' ')));
+  const btns = (buttons || (button ? [button] : [])).filter((b) => b?.url);
+  if (btns.length) elements.push({ tag: 'action', actions: btns.map((b, i) => ({ tag: 'button', text: { tag: 'plain_text', content: b.text }, type: i === 0 ? 'primary' : 'default', url: b.url })) });
+  if (!elements.length) elements.push(md(' '));
   return { config: { wide_screen_mode: true }, header: { template: color, title: { tag: 'plain_text', content: title } }, elements };
 }
 

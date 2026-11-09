@@ -101,11 +101,11 @@ test('私信:提交 → 审批人;批准 → 提交人 + 负责人 + 抄送(不�
 test('私信:上下线发给负责人和抄送(各自一张只列自己的)+ 管理员看全部;截止提醒发给负责人', () => {
   const d = doc({ banners: [banner({ owner: 'm-ops', cc: ['m-des'] }), banner({ id: 'b2', state: 'draft', owner: 'm-ops', due: T + 5 * H, title: '黑五' }), banner({ id: 'b3', state: 'rejected', by: 'm-des', due: T - H, title: '过期' })] });
   const out = schedulerEvents(d, { changes: [{ id: 'b1', kind: 'banner', title: 'A', to: 'ACTIVE' }] }, { now: T });
-  const up = out.find((m) => m.ev === 'content.updown');
+  const up = out.find((m) => m.ev === 'banner.live'); // 2026-11-09 v2:每类通知单独设,一条一个(同一轮几条由消息中心合成一张)
   assert.deepEqual(up.related.sort(), ['m-des', 'm-ops']);
   assert.deepEqual(to(d, up), ['m-admin', 'm-des', 'm-ops']);
-  assert.match(up.cards['m-ops'].title, /你相关的内容自动上线了/);
-  assert.equal(up.cards['m-admin'], undefined, '管理员收的是全部的汇总卡片');
+  assert.equal(up.path, '/banners/b1');
+  assert.equal(up.data.name, 'A');
   const soon = out.find((m) => m.key?.startsWith('due-soon:b2'));
   assert.deepEqual(to(d, soon), ['m-ops']);
   const over = out.find((m) => m.key?.startsWith('due-over:b3'));
@@ -120,5 +120,5 @@ test('动作的副作用:群消息照发,另外私信给审批人(接到 runEffe
   const out = await runEffects({}, r.doc, r.effects, { appUrl: 'u', now: T, send: async (_, card) => { group.push(card.title); }, sendDm: async (to, card) => { dms.push({ to, title: card.title }); return []; } });
   assert.deepEqual(out.errors, []);
   assert.equal(group.length, 1);
-  assert.deepEqual(dms, [{ to: ['m-lead'], title: '📝 有新内容等审批' }]);
+  assert.equal(dms.length, 1); assert.deepEqual(dms[0].to, ['m-lead']); assert.match(dms[0].title, /有内容等审批 · N/);
 });
