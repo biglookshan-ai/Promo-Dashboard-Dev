@@ -156,6 +156,16 @@ const ORDER = { running: 0, paused: 1, scheduled: 2, pending: 3, rejected: 4, dr
 const LV = { by: ['campaign', 'brand'].includes(localStorage.getItem('cgp-pr-by2')) ? localStorage.getItem('cgp-pr-by2') : 'campaign',
   chip: '__all', q: '', sel: new Set(), newFolder: false };
 const BY = [['campaign', '按活动'], ['brand', '按品牌']];
+// 列表排序(2026-11-09 用户):创建时间(默认,最后建的在最上面)/ 编辑时间 / 改价开始时间 / 改价结束时间;旁边按钮反过来
+const SORTS = [['created', '按创建时间'], ['edited', '按编辑时间'], ['start', '按改价开始时间'], ['end', '按改价结束时间']];
+LV.sort = SORTS.some(([k]) => k === localStorage.getItem('cgp-pr-sort')) ? localStorage.getItem('cgp-pr-sort') : 'created';
+LV.sortDir = localStorage.getItem('cgp-pr-sortdir') === 'asc' ? 'asc' : 'desc';
+function planSorter() {
+  const keyOf = (p) => { const sm = A.planSummary(p);
+    return LV.sort === 'edited' ? p.updatedAt || p.approvedAt || p.createdAt || 0 : LV.sort === 'start' ? sm.start ?? 0 : LV.sort === 'end' ? sm.end ?? Infinity : p.createdAt || p.updatedAt || sm.start || 0; };
+  const d = LV.sortDir === 'asc' ? 1 : -1;
+  return (a, b) => { const x = keyOf(a.p), y = keyOf(b.p); return (x === y ? 0 : x < y ? -1 : 1) * d || String(a.p.name || '').localeCompare(String(b.p.name || ''), 'zh'); };
+}
 const NONE = { folder: '未分组', campaign: '没关联活动', brand: '还没有产品' };
 const foldersAll = () => [...new Set([...S.plans.map((p) => p.folder), ...(S.folders || [])].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
 // 计划里的品牌,按选项数多到少
@@ -213,7 +223,7 @@ function plansHtml() {
   const f = FILTERS.find((x) => x[0] === filter) || FILTERS[0];
   const ovIdx = core.overlapIndex(S.plans, now()); // 还没结束的限时计划之间,改到同一个产品又时间重叠的
   const base = st.filter(({ p, s }) => f[2](s, p) && searchMatch(p));
-  const list = base.filter(({ p }) => chipMatch(p)).sort((a, b) => ORDER[a.s] - ORDER[b.s] || A.planSummary(a.p).start - A.planSummary(b.p).start);
+  const list = base.filter(({ p }) => chipMatch(p)).sort(planSorter());
   return `
   <div class="stats">
     <button class="stat" data-a="filter" data-f="running"><div class="stat__n">${count(FILTERS[1][2])}</div><div class="stat__l">进行中的计划</div></button>
@@ -230,6 +240,8 @@ function plansHtml() {
     <span class="spacer"></span>
   </div>
   <div class="pl-top"><div class="pr-tabs">${FILTERS.filter(([k]) => k !== 'pending' || showPending).map(([k, label, fn]) => `<button class="${k === filter ? 'is-on' : ''}" data-a="filter" data-f="${k}">${label} ${count(fn)}</button>`).join('')}</div>
+    <span class="pl-sort"><select class="sel sel--sm" data-lv="sort" title="列表怎么排">${SORTS.map(([k, l]) => `<option value="${k}" ${LV.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <button type="button" class="btn btn-sm btn-ghost" data-a="lsortdir" title="点一下反过来">${LV.sortDir === 'desc' ? '↓ 新 / 晚的在上' : '↑ 旧 / 早的在上'}</button></span>
     <input class="inp inp--sm pl-top__q" data-lv="q" placeholder="搜计划 / 产品 / SKU / 品牌" value="${esc(LV.q)}"/></div>
   ${LV.q && !S.allPlans ? '<p class="muted pl-top__more">已结束的计划还没一起搜。<button type="button" class="linkbtn" data-a="filter" data-f="all">连已结束的一起搜</button></p>' : ''}
   ${groupBarHtml(base, list)}
@@ -337,7 +349,7 @@ function ganttHtml() {
         const tip = [`${p.name}${mv ? ` · ${vName(p, s.version)}` : p.slots.length > 1 ? ` · 第 ${i + 1} 段` : ''}`, `${fmtT(s.start)}${s.end ? ' → ' + fmtT(s.end) : ' 起'} · ${s.items.length} 个选项`,
           ...(mv || groupsOf(p).length > 1 ? groupsOf(p).map((g, gi) => `${groupsOf(p).length > 1 ? `${gName(g, gi)}:` : ''}${ruleSay(ruleAt(g, s.version))}`) : [])].join('\n');
         return `<div class="gantt__slot ${layerCls(p)} ${p.state === 'pending' ? 'is-pending' : ''}" style="${mv ? `background:${vColor(p, s.version)};` : p.color ? `background:${esc(p.color)};` : ''}left:${pct(s.start)};width:calc(${pct(end)} - ${pct(s.start)})" data-a="open" data-id="${p.id}" data-slot="${i}"
-          title="${esc(tip)}">${p.kind === 'permanent' ? '永久' : mv ? esc(vName(p, s.version)) : p.slots.length > 1 ? `第 ${i + 1} 段` : esc(p.name)}</div>`;
+          title="${esc(tip)}">${p.kind === 'permanent' ? '永久' : mv ? esc(`${p.name}-${vName(p, s.version)}`) : p.slots.length > 1 ? esc(`${p.name}-第 ${i + 1} 段`) : esc(p.name)}</div>`; // 2026-11-09 用户:计划名在前,如「test2-黑五」
       }).join('')}<div class="gantt__now" style="left:${nowLeft}"></div></div>`).join('')}
   </div></div>`;
 }
@@ -1660,6 +1672,7 @@ document.addEventListener('click', async (ev) => {
       case 'lsel': { const id = el.dataset.id; el.checked ? LV.sel.add(id) : LV.sel.delete(id); if (LV.sel.size) loadCampaigns(); render(); break; }
       case 'lselgrp': { const ids = el.dataset.ids.split(',').filter(Boolean); ids.forEach((id) => (el.checked ? LV.sel.add(id) : LV.sel.delete(id))); if (LV.sel.size) loadCampaigns(); render(); break; }
       case 'lnone': LV.sel.clear(); render(); break;
+      case 'lsortdir': LV.sortDir = LV.sortDir === 'desc' ? 'asc' : 'desc'; localStorage.setItem('cgp-pr-sortdir', LV.sortDir); render(); break;
       case 'lby': LV.by = el.dataset.v; LV.chip = '__all'; LV.newFolder = false; localStorage.setItem('cgp-pr-by2', LV.by); render(); break;
       case 'lchip': LV.chip = el.dataset.k; render(); break;
       case 'lnewf': if (!LV.sel.size) { toast('先在下面勾选要放进新分组的计划,再点「＋ 新分组」', false); return; } LV.newFolder = true; render(); document.querySelector('#pl-newf')?.focus(); break;
@@ -1853,6 +1866,7 @@ document.addEventListener('change', async (ev) => {
   if (!el.closest('#section-price')) return;
   if (el.dataset.a === 'notify') { try { await api('PUT', '/api/price/settings', { notify: { [el.dataset.k]: el.checked } }); await load(); } catch (e) { toast(e.message, false); } return; }
   if (el.id === 'lplan') { ledgerQ.plan = el.value; ledgerQ.offset = 0; loadLedger(); return; }
+  if (el.dataset.lv === 'sort') { LV.sort = el.value; LV.sortDir = ['start', 'end'].includes(el.value) ? 'asc' : 'desc'; localStorage.setItem('cgp-pr-sort', LV.sort); localStorage.setItem('cgp-pr-sortdir', LV.sortDir); render(); return; } // 开始 / 结束时间默认早的在上,创建 / 编辑时间默认新的在上
   if (el.id === 'ukloc') { try { await api('PUT', '/api/price/settings', { ukLocation: el.value }); STK.map.clear(); STK.loc = null; STK.err = ''; toast('已保存:UK 可售按这个仓库算'); await load(); render(); } catch (e) { toast(e.message, false); } return; }
   if (!E) return;
   if (el.name === 'rmode') {
