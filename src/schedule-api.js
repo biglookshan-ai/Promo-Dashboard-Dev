@@ -12,7 +12,7 @@ import { uploadImage, imageById } from './files.js';
 import { scopeCounts, calloutScope, calloutOptions, productCampaigns, tabProducts, collectionProducts, productsInfo, productsStock, productVariants } from './counts.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { graphql } from './shopify.js';
-import { actorOf, pagesOf, isAdmin, canSee, pageNames, approvalsOn } from './members.js';
+import { actorOf, pagesOf, isAdmin, canSee, pageNames, approvalsOn, levelOf, levelsOf, capOf, capsOf, CAPS, LEVEL_CN } from './members.js';
 import { KIND_MOD } from './audit.js';
 import { teamEnabled } from './lark-login.js';
 import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
@@ -102,10 +102,11 @@ async function shopInfo(ctx) {
 }
 
 // 认人:第一个打开的人自动成为审核人;之后新来的默认是编辑,审核人可以在「设置」里改
-function actorFor(state, userId) {
+// page:按这个人在这一页的档位给身份(2026-11-10 部门负责人:能上线 = 直接生效,能编辑 = 保存要提交给负责人)
+function actorFor(state, userId, page = null) {
   // v3 飞书登录:成员就是身份(管理员 = 审核人,其他 = 编辑;3.2 改成每项指定审批人)
   const member = teamEnabled() && (state.members || []).find((x) => x.id === userId);
-  if (member) { member.lastSeen = Date.now(); return actorOf(member); }
+  if (member) { member.lastSeen = Date.now(); return actorOf(member, state, page); }
   const id = userId || 'admin-token';
   let u = state.staff.find((x) => x.id === id);
   if (!u) {
@@ -124,7 +125,7 @@ function clientView(state, { me, setup, store, site, themePin = null }) {
     mode: 'live', me, setup, store, site, themePin, // themePin:正在用的主题能不能在前台按清单排(null = 不知道)
     // 飞书模式下「成员」代替旧的 Shopify 员工名单(名字 / 角色给页面显示用)
     // pages:每人能看哪些页面(分工里选审批人 / 负责人时,只列看得到这类内容的人)
-    staff: teamEnabled() ? (state.members || []).filter((m) => m.status === 'active').map((m) => ({ ...actorOf(m), avatar: m.avatar || '', admin: isAdmin(m), pages: pagesOf(state, m) })) : state.staff.map((u) => ({ ...u, role: 'approver' })),
+    staff: teamEnabled() ? (state.members || []).filter((m) => m.status === 'active').map((m) => ({ ...actorOf(m), avatar: m.avatar || '', admin: isAdmin(m), pages: pagesOf(state, m), levels: levelsOf(state, m), caps: capsOf(state, m) })) : state.staff.map((u) => ({ ...u, role: 'approver' })),
     lark: teamEnabled(), // 页面按它显示 / 隐藏飞书登录、成员与角色
     approvals: approvalsOn(), // 2026-10-28 起默认关:审批人 / 分工 / 我的工作 / 审核页 / 审批私信都不显示,保存直接生效
     banners: state.banners, topbar: state.topbar, tbstyles: state.tbstyles, campaigns: state.campaigns, pmodules: state.pmodules || [],
@@ -157,6 +158,18 @@ export function scheduleRouter() {
     if (!m || !list.some((p) => canSee(s, m, p))) throw new ActionError(`你没有「${list.map((p) => pageNames()[p] || p).join(' / ')}」页面的权限,请找管理员开通`);
   };
   const needApprover = (state, req) => { const a = actorFor(state, req.ctx.user); if (a.role !== 'approver') throw new ActionError('只有审核人能做这个操作'); return a; };
+  // 2026-11-10 部门负责人:这一页至少几档(2 = 能编辑,3 = 能上线);敏感功能
+  const needLevel = (req, page, n) => {
+    if (!teamEnabled()) return;
+    const m = req.ctx.member; const s = load(req.ctx.shop);
+    const l = m ? levelOf(s, m, page) : 0;
+    if (l < n) throw new ActionError(`你在「${pageNames()[page] || page}」是「${LEVEL_CN[l]}」,做不了这个操作;要更多权限请找部门负责人`);
+  };
+  const needCap = (req, key) => {
+    if (!teamEnabled()) return;
+    const m = req.ctx.member;
+    if (!m || !capOf(load(req.ctx.shop), m, key)) throw new ActionError(`你没有「${CAPS[key].name}」的权限,请找部门负责人`);
+  };
 
   async function view(req, state) {
     const shop = req.ctx.shop;
@@ -185,10 +198,12 @@ export function scheduleRouter() {
       const s0 = load(shop);
       const kind = action.kind || findItem(s0, action.id)?.kind;
       needPage(req, action.type === 'purge' ? 'settings' : KIND_MOD[kind] || 'overview');
+      if (action.type !== 'purge') needLevel(req, KIND_MOD[kind] || 'overview', 2); // 只看的不能改
     }
     const info = await cached(shop, 'shop', 3600_000, () => shopInfo(req.ctx));
     let before = null; let who = ''; let actorId = null;
-    const out = await performAction(shop, req.ctx, (state) => { before = state; const a = actorFor(state, req.ctx.user); who = a.name; actorId = a.id; return applyAction(state, action, a); }, { appUrl: info.appUrl });
+    const pageOfAct = KIND_MOD[action.kind || findItem(load(shop), action.id)?.kind] || null; // 按这一页的档位:能上线 = 直接生效,能编辑 = 提交
+    const out = await performAction(shop, req.ctx, (state) => { before = state; const a = actorFor(state, req.ctx.user, pageOfAct); who = a.name; actorId = a.id; return applyAction(state, action, a); }, { appUrl: info.appUrl });
     // 消息中心:已创建 / 已修改 / 调整顺序 / 暂停恢复结束 / 已删除(推给谁、怎么推按规则;发不出去不影响保存)
     try { const evs = changeEvents(before, out.state, action, actorId, { id: out.id }); if (evs.length) dispatch(shop, evs, { sched: out.state, appUrl: info.appUrl }).catch((e) => console.error('[notify]', e.message)); }
     catch (e) { console.error('[notify]', e.message); }
@@ -245,8 +260,8 @@ export function scheduleRouter() {
   // ---- 联合推广:在 app 里直接建合集(兼容产品那个套活动页模板;能发布就发布到网店)----
   r.post('/collection-create', wrap(async (req) => {
     needPage(req, 'callouts');
-    const a = actorFor(load(req.ctx.shop), req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有管理员能建 Collection');
+    const a = actorFor(load(req.ctx.shop), req.ctx.user, 'callouts');
+    if (a.role !== 'approver') throw new ActionError('只有「产品页推广」能上线的人能建 Collection');
     let out;
     try { out = await createJointCollection(req.ctx, { title: req.body?.title, landing: !!req.body?.landing }, graphql); }
     catch (e) { throw new ActionError(`Collection 没建成:${e.message}`); }
@@ -270,8 +285,8 @@ export function scheduleRouter() {
   r.post('/joint-sync', wrap((req) => withLock(req.ctx.shop, async () => {
     needPage(req, 'callouts');
     const s = load(req.ctx.shop);
-    const a = actorFor(s, req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有管理员能同步 Collection');
+    const a = actorFor(s, req.ctx.user, 'callouts');
+    if (a.role !== 'approver') throw new ActionError('只有「产品页推广」能上线的人能同步 Collection');
     const it = (s.callouts || []).find((x) => x.id === req.body?.id);
     if (!isJoint(it)) throw new ActionError('这条不是联合推广,或者还没选兼容产品 Collection');
     if (it.state !== 'approved') throw new ActionError('先保存上线(或排期)再同步');
@@ -454,6 +469,7 @@ export function scheduleRouter() {
   // ---- 图片上传(Banner)----
   r.post('/upload', express.raw({ type: 'image/*', limit: '20mb' }), wrap(async (req) => {
     needPage(req, ['banners', 'callouts', 'campaigns', 'topbar']);
+    if (teamEnabled() && !['banners', 'callouts', 'campaigns', 'topbar'].some((p) => levelOf(load(req.ctx.shop), req.ctx.member, p) >= 2)) throw new ActionError('只看的不能上传图片;要更多权限请找部门负责人');
     if (!req.body?.length) throw new ActionError('没收到图片');
     const name = String(req.query.filename || 'banner.jpg').replace(/[^\w.\-]+/g, '_').slice(0, 80);
     return uploadImage(req.ctx, req.body, name, req.headers['content-type']);
@@ -485,8 +501,8 @@ export function scheduleRouter() {
   r.post('/col-hold', wrap((req) => withLock(req.ctx.shop, async () => {
     needPage(req, 'pins');
     const s = load(req.ctx.shop);
-    const a = actorFor(s, req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能重新接管');
+    const a = actorFor(s, req.ctx.user, 'pins');
+    if (a.role !== 'approver') throw new ActionError('只有「Collection 排序」能上线的人能重新接管');
     const key = String(req.body?.collection || '').split('/').pop();
     const st = (s.colState || {})[key];
     if (!st) throw new ActionError('这个 Collection 现在没有被接管');
@@ -514,8 +530,9 @@ export function scheduleRouter() {
   r.post('/col-sort', wrap((req) => withLock(req.ctx.shop, async () => {
     needPage(req, 'pins');
     const s = load(req.ctx.shop);
-    const a = actorFor(s, req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有管理员能改 Collection 的默认排序');
+    const a = actorFor(s, req.ctx.user, 'pins');
+    if (a.role !== 'approver') throw new ActionError('只有「Collection 排序」能上线的人能改 Collection 的默认排序');
+    needCap(req, 'pins.defsort');
     const { id, ...want } = req.body || {};
     if (!id) throw new ActionError('还没选 Collection');
     let r2;
@@ -534,8 +551,9 @@ export function scheduleRouter() {
   r.post('/col-copy-order', wrap((req) => withLock(req.ctx.shop, async () => {
     needPage(req, 'pins');
     const s = load(req.ctx.shop);
-    const a = actorFor(s, req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有管理员能改 Collection 的顺序');
+    const a = actorFor(s, req.ctx.user, 'pins');
+    if (a.role !== 'approver') throw new ActionError('只有「Collection 排序」能上线的人能改 Collection 的顺序');
+    needCap(req, 'pins.defsort');
     const { id, from, preview } = req.body || {};
     try {
       if (preview) return { preview: await previewCopy(req.ctx, { target: id, from }, { gql: graphql }) };
@@ -567,8 +585,8 @@ export function scheduleRouter() {
   r.post('/col-run', wrap((req) => withLock(req.ctx.shop, async () => {
     needPage(req, 'pins');
     const s = load(req.ctx.shop);
-    const a = actorFor(s, req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能手动执行');
+    const a = actorFor(s, req.ctx.user, 'pins');
+    if (a.role !== 'approver') throw new ActionError('只有「Collection 排序」能上线的人能手动执行');
     delete s.colNoScope; // 手动点就重试一次,不受「今天别再试」限制
     const record = historyRecorder(req.ctx.shop);
     const rep = await alignCollections(req.ctx, s, { now: Date.now(), gql: graphql, record });
@@ -679,8 +697,9 @@ export function scheduleRouter() {
   r.post('/col-rollback', wrap((req) => withLock(req.ctx.shop, async () => {
     needPage(req, 'pins');
     const s = load(req.ctx.shop);
-    const a = actorFor(s, req.ctx.user);
-    if (a.role !== 'approver') throw new ActionError('只有审核人 / 管理员能回滚');
+    const a = actorFor(s, req.ctx.user, 'pins');
+    if (a.role !== 'approver') throw new ActionError('只有「Collection 排序」能上线的人能回滚');
+    needCap(req, 'pins.rollback');
     const cid = colNid(req.body?.id);
     const v = (loadHistory(req.ctx.shop)[cid] || []).find((x) => String(x.at) === String(req.body?.at));
     if (!v) throw new ActionError('找不到这个版本');

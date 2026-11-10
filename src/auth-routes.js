@@ -7,7 +7,8 @@ import { load, replace, appendLog } from './schedule-store.js';
 import { withLock } from './sync.js';
 import { knownShops } from './token-store.js';
 import { teamEnabled, authorizeUrl, loginWithCode, issueSession, newLoginState, takeLoginState, finishLoginState, loginStatus, redeemLoginState } from './lark-login.js';
-import { PAGES, pageNames, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, addInvite, updateInvite, removeInvite, invLabel, setTestMode, testModeOn, testModeLeft, canStartTestMode, TEST_MODE_MAX_HOURS, MemberError } from './members.js';
+import { PAGES, pageNames, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, addInvite, updateInvite, removeInvite, invLabel, setTestMode, testModeOn, testModeLeft, canStartTestMode, TEST_MODE_MAX_HOURS, MemberError,
+  levelsOf, capsOf, leadDepts, deptView, setGrant, joinDept, leaveDept, CAPS, LEVEL_CN } from './members.js';
 
 const SESSION_KEY = 'cgp-app-session'; // 和 public/auth.js 一致
 const COOKIE = 'cgp_lark_login';
@@ -116,6 +117,7 @@ export function apiAuthRouter() {
     if (m && m.status === 'active' && !req.ctx.testMode) noteOpen(req.ctx.shop, m);
     return { larkEnabled: teamEnabled(), fromAdmin: !!req.ctx.fromAdmin, member: m ? { id: m.id, name: m.name, avatar: m.avatar, roles: m.roles, status: m.status } : null,
       admin: isAdmin(m), pages: pagesOf(s, m), pageNames: pageNames(), adminPinned: !!process.env.LARK_ADMIN_IDS,
+      levels: m ? levelsOf(s, m) : {}, caps: m ? capsOf(s, m) : [], leadOf: m ? leadDepts(s, m).map((r) => r.key) : [], // 2026-11-10 部门负责人
       testMode: testModeOn(s) ? { on: true, left: testModeLeft(s), byName: s.testMode.byName || '', iam: !!req.ctx.testMode } : { on: false },
       canStartTestMode: canStartTestMode(m, adminIds()), testModeMaxHours: TEST_MODE_MAX_HOURS, roles: rolesOf(s).map((x) => ({ key: x.key, name: x.name })),
       // 管理员才看:有几个新登录的人等着分配角色
@@ -197,8 +199,49 @@ export function apiAuthRouter() {
     const me = (s.members || []).find((x) => x.id === needRealLogin(req).id);
     const roles = saveRoles(s, me, req.body?.roles || []);
     replace(req.ctx.shop, s);
-    req.audit = { mod: 'members', text: `改角色能看的页面:${roles.filter((r) => r.key !== 'admin').map((r) => `${r.name}(${r.pages.length} 个页面)`).join('、')}` };
+    req.audit = { mod: 'members', text: `改部门:${roles.filter((r) => r.key !== 'admin').map((r) => `${r.name}(${r.pages.length} 个页面${r.leads?.length ? `,负责人 ${r.leads.map((id) => (s.members || []).find((x) => x.id === id)?.name || id).join('、')}` : ''})`).join('、')}` };
     return { ok: true, roles };
+  })));
+
+  // ---- 部门负责人(2026-11-10):看本部门、给员工定档位、拉待分配的进来、移出 ----
+  const leadOrAdmin = (req) => {
+    const me = needLogin(req); const s = load(req.ctx.shop);
+    const m = req.ctx.testMode ? me : (s.members || []).find((x) => x.id === me.id) || me;
+    if (!isAdmin(m) && !leadDepts(s, m).length) throw new MemberError('只有部门负责人和管理员能管部门');
+    return { s, m };
+  };
+  const nameOfM = (s, id) => (s.members || []).find((x) => x.id === id)?.name || id;
+  const deptName = (s, key) => rolesOf(s).find((r) => r.key === key)?.name || key;
+  r.get('/depts', wrap(async (req) => {
+    const { s, m } = leadOrAdmin(req);
+    return { depts: deptView(s, m), admin: isAdmin(m), pages: PAGES, caps: CAPS, levels: LEVEL_CN,
+      // 能拉进来的人:待分配的新同事 + 别的部门的同事(不含管理员 / 停用)
+      candidates: (s.members || []).filter((x) => x.status !== 'disabled' && !isAdmin(x)).map((x) => ({ id: x.id, name: x.name, avatar: x.avatar || '', status: x.status, depts: (x.roles || []).filter((k) => k !== 'admin') })) };
+  }));
+  r.put('/depts/:key/grants/:id', wrap((req) => withLock(req.ctx.shop, async () => {
+    const { s, m } = leadOrAdmin(req);
+    if (req.ctx.testMode) throw new MemberError('测试模式下不能改权限,请先用飞书登录');
+    const out = setGrant(s, m, req.params.key, req.params.id, req.body || {});
+    replace(req.ctx.shop, s);
+    const lv = Object.entries(out.grant.levels).map(([p, n]) => `${PAGES[p] || p} ${LEVEL_CN[n]}`).join('、');
+    req.audit = { mod: 'members', text: `${deptName(s, req.params.key)}:「${out.member.name}」的权限 → ${lv}${out.grant.capsOff.length ? `;关掉 ${out.grant.capsOff.map((k) => CAPS[k]?.name || k).join('、')}` : ''}` };
+    return { ok: true, depts: deptView(s, m) };
+  })));
+  r.post('/depts/:key/members', wrap((req) => withLock(req.ctx.shop, async () => {
+    const { s, m } = leadOrAdmin(req);
+    if (req.ctx.testMode) throw new MemberError('测试模式下不能改成员,请先用飞书登录');
+    const out = joinDept(s, m, req.params.key, String(req.body?.id || ''));
+    replace(req.ctx.shop, s);
+    req.audit = { mod: 'members', text: `把「${out.member.name}」${out.wasPending ? '(新同事)' : ''}拉进${out.dept.name}` };
+    return { ok: true, depts: deptView(s, m) };
+  })));
+  r.delete('/depts/:key/members/:id', wrap((req) => withLock(req.ctx.shop, async () => {
+    const { s, m } = leadOrAdmin(req);
+    if (req.ctx.testMode) throw new MemberError('测试模式下不能改成员,请先用飞书登录');
+    const out = leaveDept(s, m, req.params.key, req.params.id);
+    replace(req.ctx.shop, s);
+    req.audit = { mod: 'members', text: `把「${nameOfM(s, req.params.id)}」移出${out.dept.name}${out.pending ? '(没有别的部门了,回到待分配)' : ''}` };
+    return { ok: true, depts: deptView(s, m) };
   })));
   return r;
 }

@@ -8,7 +8,7 @@ import { eventMessages, planChangeEvents } from './notifier.js';
 import { dispatch } from '../notify-center.js';
 import * as catalog from './catalog.js';
 import { load as loadSchedule } from '../schedule-store.js';
-import { actorOf, isAdmin, canSee, approvalsOn } from '../members.js';
+import { actorOf, isAdmin, canSee, approvalsOn, levelOf, capOf, CAPS } from '../members.js';
 import { loadPlanHistory, recordPlanAction } from './plan-history.js';
 import { changedKeys } from '../item-history.js';
 import { teamEnabled } from '../lark-login.js';
@@ -21,7 +21,13 @@ const numId = (gid) => String(gid || '').split('/').pop();
 const toGid = (type, id) => (String(id).startsWith('gid://') ? String(id) : `gid://shopify/${type}/${id}`);
 
 // 谁在操作:飞书成员(管理员 = 'approver');没开飞书的旧模式下按单个管理员处理
-const actorOfReq = (req) => (req.ctx.member ? actorOf(req.ctx.member) : { id: req.ctx.user || 'admin-token', name: '管理员', role: 'approver', ...(approvalsOn() ? {} : { direct: true }) });
+// 2026-11-10 部门负责人:按这个人在「改价」的档位 —— 能上线 = 审核人(直接生效、能做改价设置),能编辑 = 保存要提交给负责人
+const actorOfReq = (req) => (req.ctx.member ? actorOf(req.ctx.member, loadSchedule(req.ctx.shop), 'price') : { id: req.ctx.user || 'admin-token', name: '管理员', role: 'approver', ...(approvalsOn() ? {} : { direct: true }) });
+// 改价的敏感功能(暂停继续提前结束 / 处理被接管 / 导出)
+const needPriceCap = (req, key) => {
+  if (!teamEnabled() || !req.ctx.member) return;
+  if (!capOf(loadSchedule(req.ctx.shop), req.ctx.member, key)) throw new ActionError(`你没有「${CAPS[key].name}」的权限,请找部门负责人`);
+};
 // 能被选成审批人 / 负责人 / 抄送的人:启用中、能看改价页面的成员
 function pricePeople(shop) {
   if (!teamEnabled()) return []; // 「多人协作」关着:不分工
@@ -73,6 +79,9 @@ export function priceRouter() {
       const state = load(shop);
       const part = { plans: state.plans, vault: state.vault, log: state.log, settings: state.settings };
       const action = req.body?.action || {}; const actor = actorOfReq(req);
+      if (teamEnabled() && req.ctx.member && levelOf(loadSchedule(shop), req.ctx.member, 'price') < 2) throw new ActionError('你在「改价」是「只看」,不能改;要更多权限请找部门负责人');
+      if (['pause', 'resume', 'stop'].includes(action.type)) needPriceCap(req, 'price.control');
+      if (action.type === 'resolve') needPriceCap(req, 'price.hold');
       const { doc, effects, message, id } = applyAction(part, action, actor, Date.now());
       { // 操作记录:写上是哪个改价计划
         const pl = doc.plans.find((x) => x.id === (action.id || id)) || state.plans.find((x) => x.id === action.id);
@@ -167,6 +176,7 @@ export function priceRouter() {
   }));
   // 还原表格:app 万一挂了,照这张表在后台手工改回原价
   r.get('/export/vault.csv', wrap((req, res) => {
+    needPriceCap(req, 'price.export');
     const state = load(req.ctx.shop);
     const plan = (id) => state.plans.find((p) => p.id === id)?.name || '';
     const rows = [['产品', 'SKU', '变体ID', '产品ID', '原价', '原划线价', '现在的活动价', '现在的划线价', '计划', '状态']];
@@ -177,6 +187,7 @@ export function priceRouter() {
     res.type('text/csv').set('Content-Disposition', 'attachment; filename="price-restore.csv"').send(csv(rows));
   }));
   r.get('/export/ledger.csv', wrap((req, res) => {
+    needPriceCap(req, 'price.export');
     const state = load(req.ctx.shop);
     let rows = readLedger(req.ctx.shop);
     if (req.query.plan) rows = rows.filter((x) => x.planId === req.query.plan);
