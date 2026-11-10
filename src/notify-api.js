@@ -127,7 +127,7 @@ export function notifyRouter() {
     const m = (s.members || []).find((x) => x.id === me.id) || me;
     const s0 = { ...s, members: (s.members || []).map((x) => (x.id === m.id ? { ...x, notifyMute: [] } : x)) };
     return {
-      events: eventsOn().filter((ev) => cfg.rules[ev.key]?.on && cfg.rules[ev.key].via.dm).map((ev) => {
+      events: eventsOn(s).filter((ev) => cfg.rules[ev.key]?.on && cfg.rules[ev.key].via.dm).map((ev) => {
         // 我在不在收件人里:当成「和我有关」那样算一遍(相关的人 / 同部门要看具体哪条通知);做这件事的不是我
         const asRelated = recipients(s0, cfg, { ev: ev.key, related: [m.id], approvers: [m.id], actor: '__other' });
         const fixed = recipients(s0, cfg, { ev: ev.key, related: [], approvers: [], actor: '__other' });

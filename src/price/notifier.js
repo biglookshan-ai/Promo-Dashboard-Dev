@@ -7,6 +7,7 @@
 import { planStatus, STATUS_CN } from './price-core.js';
 import { planSummary } from './price-actions.js';
 import { planPath } from '../app-links.js';
+import { leadApprovers } from '../members.js';
 import { changedKeys } from '../item-history.js';
 
 const TZ = 'Europe/London';
@@ -20,9 +21,12 @@ export function relatedOf(p, members) {
   const act = activeSet(members);
   return [...new Set([p.owner, p.approver, p.createdBy, p.submittedBy, p.approvedBy, ...(p.cc || [])].filter((id) => id && act.has(id)))];
 }
-export function approversOf(p, members) {
+// 审批人:计划指定的 → 提交人所在部门里「改价」能上线的负责人(2026-11-10,要传 sched)→ 管理员们
+export function approversOf(p, members, sched = null) {
   const act = activeSet(members);
   if (p?.approver && act.has(p.approver)) return [p.approver];
+  const leads = sched ? leadApprovers(sched, p?.pendingChange?.by || p?.submittedBy || p?.createdBy, 'price') : [];
+  if (leads.length) return leads;
   return members.filter((m) => m.status === 'active' && (m.roles || []).includes('admin')).map((m) => m.id);
 }
 
@@ -76,11 +80,11 @@ export function planChangeEvents(beforePlans = [], afterPlans = [], action = {},
 }
 
 // ---------- 审批 / 暂停继续提前结束;actor = 点按钮的人 ----------
-export function eventMessages(state, effect, { members = [], actor = null, now = Date.now() } = {}) {
+export function eventMessages(state, effect, { members = [], actor = null, now = Date.now(), sched = null } = {}) {
   const p = state.plans.find((x) => x.id === effect.id);
   if (!p) return [];
   if (effect.event === 'submit') {
-    return [{ ...msgOf(p, 'price.submit', members, { submitter: nameOf(members, effect.change ? p.pendingChange?.by : p.submittedBy), note: effect.change ? '批准前按原计划执行' : '不批准不会改价' }, now), actor }];
+    return [{ ...msgOf(p, 'price.submit', members, { submitter: nameOf(members, effect.change ? p.pendingChange?.by : p.submittedBy), note: effect.change ? '批准前按原计划执行' : '不批准不会改价' }, now), approvers: approversOf(p, members, sched), actor }];
   }
   if (effect.event === 'decision') {
     const st = planStatus(p);

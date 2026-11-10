@@ -47,7 +47,7 @@ function migrateRole(r) {
     x = { ...x, pages: [...pages], v: 2 };
   }
   const ceiling = x.ceiling ? Object.fromEntries(PAGE_KEYS().map((p) => [p, lv(x.ceiling[p])])) : Object.fromEntries(PAGE_KEYS().map((p) => [p, (x.pages || []).includes(p) ? 3 : 0]));
-  return { ...x, v: 3, ceiling, pages: PAGE_KEYS().filter((p) => ceiling[p] > 0), leads: [...(x.leads || [])], capsOff: [...(x.capsOff || [])], grants: x.grants || {} };
+  return { ...x, v: 3, ceiling, pages: PAGE_KEYS().filter((p) => ceiling[p] > 0), leads: [...(x.leads || [])], capsOff: [...(x.capsOff || [])], grants: x.grants || {}, notify: x.notify || { group: null, rules: {} } };
 }
 export const rolesOf = (state) => (state.roles?.length ? state.roles.map(migrateRole) : DEFAULT_ROLES.map(migrateRole));
 export const isAdmin = (m) => !!m && m.status === 'active' && (m.roles || []).includes('admin');
@@ -82,14 +82,31 @@ export function capOf(state, m, key) {
     && (isLeadOf(r, m) || !(r.grants?.[m.id]?.capsOff || []).includes(key)));
 }
 export const capsOf = (state, m) => Object.keys(CAPS).filter((k) => capOf(state, m, k));
+// 有没有人是「能编辑」档(保存要提交给负责人批准)—— 有的话「审核」页、待审核状态、审批通知才有意义
+export const reviewsOn = (state) => (state.members || []).some((m) => m.status === 'active' && !isAdmin(m) && PAGE_KEYS().some((p) => levelOf(state, m, p) === 2));
+// 谁来批这个人在这一页的提交:他所在部门里、这一页「能上线」的负责人(都没有 = 空,由调用方退回管理员)
+export function leadApprovers(state, memberId, page) {
+  const m = (state.members || []).find((x) => x.id === memberId);
+  if (!m) return [];
+  const out = new Set();
+  for (const r of deptsOf(state)) {
+    if (!(m.roles || []).includes(r.key)) continue;
+    for (const id of r.leads || []) {
+      const l = (state.members || []).find((x) => x.id === id);
+      if (l && l.id !== m.id && levelIn(r, l, page) >= 3 && l.status === 'active') out.add(l.id);
+    }
+  }
+  return [...out];
+}
 
 // 这个成员能看哪些页面(管理员 = 全部;待分配 / 停用 = 没有)
 export function pagesOf(state, m) {
   if (!m || m.status !== 'active') return [];
-  const names = pageNames();
+  const rv = approvalsOn() || reviewsOn(state); // 有人要审批:都能看「审核」(只列他能批的;能编辑的看自己提交的)
+  const names = { ...pageNames(), ...(rv ? { reviews: '审核' } : {}) };
   if (isAdmin(m)) return Object.keys(names);
   const set = new Set(PAGE_KEYS().filter((p) => levelOf(state, m, p) >= 1));
-  if (approvalsOn()) set.add('reviews');       // 开了审批:谁都能看「审核」(只列他能批的)
+  if (rv) set.add('reviews');
   return Object.keys(names).filter((p) => set.has(p));
 }
 export const canSee = (state, m, page) => pagesOf(state, m).includes(page);
@@ -258,7 +275,7 @@ export function saveRoles(state, actor, roles) {
     out.push(migrateRole({ key, name, v: 3, ceiling,
       capsOff: (r.capsOff ?? prev?.capsOff ?? []).filter((k) => CAPS[k]),
       leads: (r.leads ?? prev?.leads ?? []).filter((id) => memberIds.has(id)),
-      grants: prev?.grants || {} }));
+      grants: prev?.grants || {}, notify: prev?.notify || { group: null, rules: {} } }));
   }
   if (!out.some((r) => r.key === 'admin')) out.unshift(DEFAULT_ROLES[0]);
   // 负责人一定在这个部门里(待分配的顺便启用)
@@ -333,11 +350,44 @@ export function leaveDept(state, actor, key, memberId) {
   if (!m.roles.length) m.status = 'pending';
   return { member: m, dept: r, pending: m.status === 'pending' };
 }
+// ---------- 部门通知(2026-11-10,用户定:负责人管本部门谁收、发哪个部门群、什么时候;样式内容仍由管理员在消息中心统一)----------
+// r.notify = { group: { name, webhook, secret } | null, rules: { 通知 key: { on, to: related|all|leads, notActor, group, when } } }
+//   某种通知「本部门自己定」= rules 里有它:本部门的人(管理员除外)按这条收,不再按消息中心的规则;管理员 / 指定的人 / 公司群照旧。
+// webhook 地址格式在这里只粗查,发送那边(src/lark.js isLarkWebhook)会再拦。
+const DEPT_TO = ['related', 'all', 'leads'];
+const hhmm = (x, d) => (/^\d{1,2}:\d{2}$/.test(String(x || '')) && Number(String(x).split(':')[0]) < 25 && Number(String(x).split(':')[1]) < 60 ? String(x).padStart(5, '0') : d);
+export function setDeptNotify(state, actor, key, { group, rules } = {}, { info = () => true } = {}) {
+  if (!canManageDept(state, actor, key)) fail('只有这个部门的负责人(或管理员)能改部门通知');
+  const r = rawDept(state, key);
+  const cur = r.notify || { group: null, rules: {} };
+  let g = cur.group;
+  if (group !== undefined) {
+    if (!group || !String(group.webhook || '').trim()) g = null;
+    else {
+      const w = String(group.webhook).trim();
+      if (!/^https:\/\/open\.(larksuite\.com|feishu\.cn)\/open-apis\/bot\/v2\/hook\/[\w-]+$/.test(w)) fail('部门群的 webhook 地址格式不对(群设置 → 群机器人 → 自定义机器人 → 复制 webhook)');
+      g = { name: String(group.name || '').trim().slice(0, 30) || `${r.name}群`, webhook: w, secret: String(group.secret ?? cur.group?.secret ?? '').trim() };
+    }
+  }
+  let rs = cur.rules || {};
+  if (rules !== undefined) {
+    rs = {};
+    for (const [ev, x] of Object.entries(rules || {})) {
+      if (!x) continue; // null = 跟消息中心
+      const mode = ['now', 'merge', 'digest', 'work'].includes(x.when?.mode) ? x.when.mode : 'now';
+      rs[ev] = { on: !!x.on, to: DEPT_TO.includes(x.to) ? x.to : 'related', notActor: !!x.notActor, group: !!x.group,
+        when: { mode: mode === 'digest' && !info(ev) ? 'now' : mode, merge: Math.min(240, Math.max(1, Math.round(Number(x.when?.merge) || 10))), at: hhmm(x.when?.at, '10:00'), from: hhmm(x.when?.from, '09:00'), to: hhmm(x.when?.to, '18:00') } };
+    }
+  }
+  r.notify = { group: g, rules: rs };
+  return r;
+}
 // 负责人看到的:他管的部门,每个员工每页最终档位
 export function deptView(state, actor) {
   const keys = isAdmin(actor) ? deptsOf(state).map((r) => r.key) : leadDepts(state, actor).map((r) => r.key);
   return deptsOf(state).filter((r) => keys.includes(r.key)).map((r) => ({
     key: r.key, name: r.name, ceiling: r.ceiling, capsOff: r.capsOff, leads: r.leads,
+    notify: { group: r.notify?.group ? { name: r.notify.group.name, tail: `…${String(r.notify.group.webhook).slice(-6)}`, signed: !!r.notify.group.secret } : null, rules: r.notify?.rules || {} },
     members: (state.members || []).filter((m) => (m.roles || []).includes(r.key) && m.status !== 'disabled').map((m) => ({
       id: m.id, name: m.name, avatar: m.avatar || '', status: m.status, lead: isLeadOf(r, m), admin: isAdmin(m),
       levels: Object.fromEntries(PAGE_KEYS().map((p) => [p, levelIn(r, m, p)])), capsOff: r.grants?.[m.id]?.capsOff || [] })),

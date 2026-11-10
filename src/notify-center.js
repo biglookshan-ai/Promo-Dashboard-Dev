@@ -11,7 +11,7 @@
 // v1(上午那版)存的规则按 OLD_KEY 带到新的通知上。发送记录 / 待发队列 / 去重放 DATA_DIR/notify/(和排期数据分开:schedule 目录里的文件会被 listShops 当成店铺)。
 import fs from 'node:fs';
 import path from 'node:path';
-import { isAdmin, canSee, rolesOf, approvalsOn } from './members.js';
+import { isAdmin, canSee, rolesOf, approvalsOn, reviewsOn, deptsOf } from './members.js';
 import { sendDMs } from './lark-bot.js';
 import { sendLark, isLarkWebhook } from './lark.js';
 import { appLink } from './app-links.js';
@@ -20,7 +20,8 @@ import { EVENTS, EV, CAT, CATS, OLD_KEY, defaultStyle, cleanStyle, renderCard, r
 export { EVENTS, EV };
 const DAY = 86400000;
 export const TZS = { 'Europe/London': '英国时间', 'Asia/Shanghai': '北京时间' };
-export const eventsOn = () => EVENTS.filter((e) => !e.approvals || approvalsOn());
+// 审批类通知:开了全员审批,或有人是「能编辑」档(保存要负责人批准,2026-11-10)才显示
+export const eventsOn = (sched = {}) => EVENTS.filter((e) => !e.approvals || approvalsOn() || reviewsOn(sched));
 
 // ---------- 时间(按消息中心设的时区)----------
 function parts(ms, tz) {
@@ -101,7 +102,9 @@ export function centerOf(sched = {}, priceNotify = {}) {
     if (!r && saved.rules) { const k = Object.keys(OLD_KEY).find((o) => saved.rules[o] && OLD_KEY[o](ev.key)); if (k) r = saved.rules[k]; }
     rules[ev.key] = r ? normRule(ev, r) : defaultRule(ev, ctx);
   }
-  return { saved: !!saved.rules, tz: TZS[saved.tz] ? saved.tz : 'Europe/London', groups, rules };
+  // 部门群(部门负责人在「部门」页设的,2026-11-10):只给那个部门自己定的通知用
+  const deptGroups = deptsOf(sched).filter((d) => d.notify?.group?.webhook).map((d) => ({ id: `d:${d.key}`, name: d.notify.group.name || `${d.name}群`, webhook: d.notify.group.webhook, secret: d.notify.group.secret || '', dept: d.key }));
+  return { saved: !!saved.rules, tz: TZS[saved.tz] ? saved.tz : 'Europe/London', groups: [...groups, ...deptGroups], rules };
 }
 export const styleOf = (cfg, key) => cfg.rules[key]?.style || defaultStyle(EV[key]);
 
@@ -147,13 +150,29 @@ export function recipients(sched, cfg, msg) {
   r.to.people.forEach(add);
   if (r.to.notActor && msg.actor) ids.delete(msg.actor);
   if (ev.level === 'info') for (const m of act) if ((m.notifyMute || []).includes(ev.key)) ids.delete(m.id); // 个人关掉的(出问题的关不掉)
-  const people = r.via.dm ? [...ids] : [];
+  let people = r.via.dm ? [...ids] : [];
   const groups = r.via.groups.map((gid) => cfg.groups.find((g) => g.id === gid)).filter(Boolean);
+  // 部门自己定的(2026-11-10):这种通知某个部门的负责人选了「本部门自己定」→ 这个部门的人(管理员除外)按部门的设置收,
+  // 不再按上面的规则(规则里点名的人照旧);部门群也在这里。每个部门一份「额外发送」,可以有自己的推送时间
+  const extra = []; const byDept = new Set();
+  for (const d of deptsOf(sched)) {
+    const dr = d.notify?.rules?.[ev.key];
+    if (!dr || !page || (d.ceiling?.[page] || 0) < 1) continue;
+    const mem = act.filter((m) => (m.roles || []).includes(d.key) && !isAdmin(m) && canSee(sched, m, page));
+    mem.forEach((m) => byDept.add(m.id));
+    if (!dr.on) continue;
+    let dp = dr.to === 'all' ? mem.map((m) => m.id) : dr.to === 'leads' ? mem.filter((m) => (d.leads || []).includes(m.id)).map((m) => m.id) : mem.filter((m) => related.includes(m.id)).map((m) => m.id);
+    if (dr.notActor && msg.actor) dp = dp.filter((id) => id !== msg.actor);
+    if (ev.level === 'info') dp = dp.filter((id) => !(act.find((m) => m.id === id)?.notifyMute || []).includes(ev.key));
+    const dg = dr.group ? cfg.groups.filter((g) => g.id === `d:${d.key}`) : [];
+    if (dp.length || dg.length) extra.push({ people: dp, groups: dg, at: [], when: dr.when, dept: d.key });
+  }
+  if (byDept.size) people = people.filter((id) => !byDept.has(id) || r.to.people.includes(id));
   // 出问题却谁都收不到(规则里的人都停用了 / 没相关的人 / 私信关了又没群):兜底私信管理员,别让问题没人知道
-  if (!people.length && !groups.length && ev.level !== 'info') act.filter(isAdmin).forEach((m) => people.push(m.id));
+  if (!people.length && !groups.length && !extra.length && ev.level !== 'info') act.filter(isAdmin).forEach((m) => people.push(m.id));
   // 群里 @ 谁:这条通知相关的人(启用中的)
   const at = r.via.at && groups.length ? related : [];
-  return { people, groups, at, rule: r };
+  return { people, groups, at, rule: r, extra };
 }
 
 // ---------- 发送记录 / 待发队列 / 去重(DATA_DIR/notify/)----------
@@ -240,28 +259,37 @@ export async function dispatch(shop, msgs, { sched, priceNotify = {}, now = Date
     for (const msg of msgs) {
       if (msg.key && box.sent[msg.key]) continue;
       const ev = EV[msg.ev]; const to = ev && recipients(sched, cfg, msg);
-      if (!to || (!to.people.length && !to.groups.length)) continue;
+      if (!to || (!to.people.length && !to.groups.length && !to.extra.length)) continue;
       const style = to.rule.style || defaultStyle(ev);
       const data = msg.data || {};
-      const entry = { ev: ev.key, at: now, name: ev.name, line: briefLine(ev, style, data), url: url(msg.path || '/'), related: to.at, key: msg.key || null,
+      const base = { ev: ev.key, at: now, name: ev.name, line: briefLine(ev, style, data), url: url(msg.path || '/'), key: msg.key || null,
         card: renderCard(ev, style, data, { url, path: msg.path || '/' }) };
-      const targets = [...to.people.map((id) => `p:${id}`), ...to.groups.map((g) => `g:${g.id}`)];
-      const w = to.rule.when;
-      let mode = w.mode;
-      if (mode === 'work' && inWindow(now, w.from, w.to, cfg.tz)) mode = 'now';
-      if (mode === 'now') {
-        if (!batch.has(ev.key)) batch.set(ev.key, new Map());
-        for (const t of targets) { const b = batch.get(ev.key); if (!b.has(t)) b.set(t, []); b.get(t).push(entry); }
-        continue;
+      // 按消息中心规则的一份 + 各部门自己定的几份(各有各的推送时间);同一个人 / 群只发一次
+      const done = new Set(); let queued = false;
+      const deliveries = [{ people: to.people, groups: to.groups, at: to.at, when: to.rule.when }, ...to.extra];
+      for (const d of deliveries) {
+        const targets = [...d.people.map((id) => `p:${id}`), ...d.groups.map((g) => `g:${g.id}`)].filter((t) => !done.has(t));
+        targets.forEach((t) => done.add(t));
+        if (!targets.length) continue;
+        const entry = { ...base, related: d.at };
+        const w = d.when;
+        let mode = w.mode;
+        if (mode === 'work' && inWindow(now, w.from, w.to, cfg.tz)) mode = 'now';
+        if (mode === 'now') {
+          if (!batch.has(ev.key)) batch.set(ev.key, new Map());
+          for (const t of targets) { const b = batch.get(ev.key); if (!b.has(t)) b.set(t, []); b.get(t).push(entry); }
+          continue;
+        }
+        // 合成一条:同一个收件人、同一种通知,从第一条起等 N 分钟;每天汇总:到设定的时间;工作时间:等到上班
+        for (const t of targets) {
+          const same = mode === 'merge' && box.queue.find((q) => q.mode === 'merge' && q.target === t && q.ev === ev.key);
+          const due = same ? same.due : mode === 'merge' ? now + w.merge * 60_000 : mode === 'digest' ? nextAt(now, w.at, cfg.tz) : nextAt(now, w.from, cfg.tz);
+          box.queue.push({ ...entry, target: t, mode, due });
+        }
+        queued = true;
+        appendNotifyLog(shop, { at: now, ev: ev.key, title: entry.card.title, ...who(sched, cfg, targets), mode, ok: true, queued: true, ...(d.dept ? { dept: d.dept } : {}) });
       }
-      // 合成一条:同一个收件人、同一种通知,从第一条起等 N 分钟;每天汇总:到设定的时间;工作时间:等到上班
-      for (const t of targets) {
-        const same = mode === 'merge' && box.queue.find((q) => q.mode === 'merge' && q.target === t && q.ev === ev.key);
-        const due = same ? same.due : mode === 'merge' ? now + w.merge * 60_000 : mode === 'digest' ? nextAt(now, w.at, cfg.tz) : nextAt(now, w.from, cfg.tz);
-        box.queue.push({ ...entry, target: t, mode, due });
-      }
-      if (msg.key) box.sent[msg.key] = now;
-      appendNotifyLog(shop, { at: now, ev: ev.key, title: entry.card.title, ...who(sched, cfg, targets), mode, ok: true, queued: true });
+      if (queued && msg.key) box.sent[msg.key] = now;
     }
     let sent = 0; const errors = [];
     for (const [evKey, byTarget] of batch) {
@@ -332,8 +360,8 @@ export function centerView(sched, priceNotify) {
   const cfg = centerOf(sched, priceNotify);
   return {
     saved: cfg.saved, tz: cfg.tz, tzs: TZS,
-    cats: CATS.filter((c) => !c.approvals || approvalsOn()).map((c) => c.key),
-    events: eventsOn().map((e) => e.key),
+    cats: CATS.filter((c) => !c.approvals || approvalsOn() || reviewsOn(sched)).map((c) => c.key),
+    events: eventsOn(sched).map((e) => e.key),
     rules: cfg.rules,
     groups: cfg.groups.map((g) => ({ id: g.id, name: g.name, tail: `…${String(g.webhook).slice(-6)}`, signed: !!g.secret })),
     roles: rolesOf(sched).map((r) => ({ key: r.key, name: r.name, pages: r.pages })),

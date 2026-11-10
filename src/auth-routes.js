@@ -8,7 +8,9 @@ import { withLock } from './sync.js';
 import { knownShops } from './token-store.js';
 import { teamEnabled, authorizeUrl, loginWithCode, issueSession, newLoginState, takeLoginState, finishLoginState, loginStatus, redeemLoginState } from './lark-login.js';
 import { PAGES, pageNames, rolesOf, pagesOf, isAdmin, upsertOnLogin, updateMember, saveRoles, addInvite, updateInvite, removeInvite, invLabel, setTestMode, testModeOn, testModeLeft, canStartTestMode, TEST_MODE_MAX_HOURS, MemberError,
-  levelsOf, capsOf, leadDepts, deptView, setGrant, joinDept, leaveDept, CAPS, LEVEL_CN } from './members.js';
+  levelsOf, capsOf, leadDepts, deptView, setGrant, joinDept, leaveDept, setDeptNotify, CAPS, LEVEL_CN } from './members.js';
+import { EV } from './notify-catalog.js';
+import { sendLark } from './lark.js';
 
 const SESSION_KEY = 'cgp-app-session'; // 和 public/auth.js 一致
 const COOKIE = 'cgp_lark_login';
@@ -121,7 +123,7 @@ export function apiAuthRouter() {
       testMode: testModeOn(s) ? { on: true, left: testModeLeft(s), byName: s.testMode.byName || '', iam: !!req.ctx.testMode } : { on: false },
       canStartTestMode: canStartTestMode(m, adminIds()), testModeMaxHours: TEST_MODE_MAX_HOURS, roles: rolesOf(s).map((x) => ({ key: x.key, name: x.name })),
       // 管理员才看:有几个新登录的人等着分配角色
-      pendingCount: isAdmin(m) ? (s.members || []).filter((x) => x.status === 'pending').length : 0 };
+      pendingCount: isAdmin(m) || (m && leadDepts(s, m).length) ? (s.members || []).filter((x) => x.status === 'pending').length : 0 };
   }));
 
   // ---- 成员与角色(管理员)----
@@ -243,5 +245,25 @@ export function apiAuthRouter() {
     req.audit = { mod: 'members', text: `把「${nameOfM(s, req.params.id)}」移出${out.dept.name}${out.pending ? '(没有别的部门了,回到待分配)' : ''}` };
     return { ok: true, depts: deptView(s, m) };
   })));
+  // 部门通知:部门群 + 哪些通知本部门自己定(谁收 / 发不发部门群 / 什么时候)
+  r.put('/depts/:key/notify', wrap((req) => withLock(req.ctx.shop, async () => {
+    const { s, m } = leadOrAdmin(req);
+    if (req.ctx.testMode) throw new MemberError('测试模式下不能改,请先用飞书登录');
+    const body = req.body || {};
+    const rules = body.rules === undefined ? undefined : Object.fromEntries(Object.entries(body.rules || {}).filter(([k]) => EV[k]));
+    const d = setDeptNotify(s, m, req.params.key, { group: body.group, rules }, { info: (k) => EV[k]?.level === 'info' });
+    replace(req.ctx.shop, s);
+    const n = Object.keys(d.notify.rules).length;
+    req.audit = { mod: 'settings', text: `${d.name}的部门通知:${body.group !== undefined ? (d.notify.group ? `部门群「${d.notify.group.name}」;` : '去掉部门群;') : ''}${n} 种通知本部门自己定` };
+    return { ok: true, depts: deptView(s, m) };
+  })));
+  r.post('/depts/:key/notify/test', wrap(async (req) => {
+    const { s } = leadOrAdmin(req);
+    const d = rolesOf(s).find((x) => x.key === req.params.key);
+    const g = d?.notify?.group; if (!g) throw new MemberError('这个部门还没设部门群');
+    try { await sendLark({ webhook: g.webhook, secret: g.secret }, { title: `✅ ${d.name}的部门通知会发到这个群`, color: 'green', lines: [`在「部门 → ${d.name} → 部门通知」里给哪些通知勾上「发部门群」,就会发到这里`] }); }
+    catch (e) { throw new MemberError(`没发出去:${e.message}`); }
+    return { ok: true };
+  }));
   return r;
 }

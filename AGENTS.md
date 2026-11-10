@@ -63,6 +63,22 @@
     网址 `/notify/rule/<分类>-<事件>`(网址里不能有点)。飞书卡片 `src/lark.js` `buildCard`:短信息两个一行、清单一段、多个按钮、`at`。
   · 新加通知:在 `notify-catalog.js` 的 `EVENTS` 登记(cat / level / name / desc / title / color / fields / avail / buttons / sample),模块里产生 `{ ev, data, path, related … }` 交给 `dispatch`。
   · **下一步(用户定的第二步)**:app 里的消息收件箱(未读、紧急的置顶直到处理、问题解决了自动算已处理、汇总列未处理的)。
+- **部门负责人**(2026-11-10 用户,方案 `docs/departments/PLAN.md`,用户 4 点都选了推荐):原来的「角色」升级成**部门**(数据还叫 `state.roles`,key 不变)。
+  · 每个部门:`ceiling`(每页上限 0 不能看 / 1 只看 / 2 能编辑 / 3 能上线,管理员定)、`leads`(负责人,管理员指定,自动算进这个部门)、`capsOff`(整个部门关掉的敏感功能)、
+    `grants[成员] = { levels, capsOff }`(负责人在上限内给员工的,没写 = 和上限一样)、`notify`(部门通知,见下)。老数据 `pages` 自动换算成 上限 = 能上线(谁都不少权限)。
+  · 一个人某页的档位 `levelOf` = 他所在各部门 min(上限, 负责人给的) 取最高;负责人 = 上限;管理员 = 3。`pagesOf` = 档位 ≥ 1 的页面(设置 / 工具只给管理员)。
+    敏感功能 `CAPS`(改价:暂停继续提前结束 / 处理被接管 / 导出;Collection 排序:默认设置 / 回滚)跟着那一页「能上线」,部门 / 个人可单独关(`capOf`)。新加敏感功能在 `CAPS` 登记 + 接口里 `needCap` / `needPriceCap`。
+  · **服务器按档位拦**(别只藏按钮):`/api/schedule/act` 至少 2、`actorFor(state, user, 页面)` 按这一页给身份(能上线 = approver 直接生效;能编辑 = editor,保存走提交);Collection 排序 / 联合推广那几个接口按页面 + 敏感功能;
+    改价 `actorOfReq` 按 `price` 页,`/api/price/act` 至少 2,暂停继续提前结束 / 处理被接管 / 导出要敏感功能。页面:`schedule.js` 的 `meFor(kind)` / `canPage` / `hasCap`(staff 里带 levels / caps),`price.js` 照服务器给的 `me.admin`。
+  · 审批:有人是「能编辑」档 → `reviewsOn` → 「审核」页对大家出现、审批类通知在消息中心出现;提交发给**提交人所在部门里这一页能上线的负责人**(`leadApprovers`,`approversOf` 先看指定的审批人,都没有才管理员)。
+    `APPROVALS=on`(老开关,全员审批)照旧有效。
+  · 负责人能做的(`members.js`):`setGrant`(不超过上限,不能动别的负责人)/ `joinDept`(待分配的拉进来就启用,别的部门的人也能加)/ `leaveDept`(没部门了回待分配;负责人只有管理员能移出;不能移出自己)/ `setDeptNotify`;
+    接口 `GET /api/depts`、`PUT /api/depts/:key/grants/:id`、`POST|DELETE /api/depts/:key/members`、`PUT /api/depts/:key/notify`、`POST /api/depts/:key/notify/test`(管理员或那个部门的负责人;测试模式不能改)。改部门设置走老的 `PUT /api/roles`(管理员)。都记操作记录。
+  · **部门通知**(`role.notify = { group, rules }`):负责人给某种通知选「本部门自己定」= 本部门的人(管理员除外)按部门的设置收(相关的人 / 部门全部 / 只有负责人 / 不收 + 发部门群 + 不发给动手的人 + 什么时候),
+    不再按消息中心的规则(规则里点名的人照旧);管理员和公司群照旧按消息中心。部门群在 `centerOf` 里变成群 `d:<部门>`;`recipients` 多回一个 `extra`(每个部门一份,各有推送时间),`dispatch` 同一个人 / 群只发一次。样式内容仍由消息中心统一。
+  · 页面 `public/dept.js`(导航「部门」,管理员和负责人才有):每个部门一块 —— 管理员多一个「部门设置」(名字 / 负责人 / 每页上限 / 敏感功能 / 删部门)+ 底下「加部门」;
+    员工表(每页一个档位下拉,改了马上存)+ 敏感功能勾选 + 移出;「拉进来」(待分配的新同事 / 别的部门的同事);「部门通知」折叠段。设置页「成员」表的「角色」改叫「部门」,原来的「角色能看的页面」换成指向「部门」页。
+    负责人登录时顶部「有 N 个同事等分配」指向「部门」页。
 - 店铺**不是 Shopify Plus**(主题仓库 CLAUDE.md 误写 Plus)。
 - **只有改价模块能写产品数据,且只写两样**:变体的 `price` / `compareAtPrice`,以及改价时段指定的**手动合集**成员(v3 起,用户 10/10 决定并入改价)。活动圈定产品仍 = 活动自身存的合集 + 标签 + 指定产品;别给产品写 metafield / 打标签。改价的安全规则(原价保险库、写前意图、读回核对、手动改价暂停接管)照搬 `../price-scheduler-app/AGENTS.md` 铁律。
 - **Banner 是竖图卡片 430×600**(手机 320×450),后台预览一律按主题真实尺寸 / 字号 / 角标颜色画(`scripts/build-demo-seed.mjs` 从主题设置读出,别写死横图比例)。

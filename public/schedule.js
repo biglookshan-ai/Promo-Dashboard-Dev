@@ -165,15 +165,21 @@
   const approvalsOn = () => !!S.approvals;
   const me = () => { const u = S.staff.find((x) => x.id === S.me) || S.staff[0] || { id: '?', name: '我', role: 'editor' }; return approvalsOn() ? u : { ...u, role: 'approver', direct: true }; };
   const isApprover = () => me().role === 'approver'; // 管理员
+  // 2026-11-10 部门负责人:每页一档(0 不能看 / 1 只看 / 2 能编辑 / 3 能上线),服务器给在 staff 的 levels / caps 里(演示模式没有 = 都能)
+  const PAGE_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pins', salelink: 'salelinks', callout: 'callouts', campaign: 'campaigns' };
+  const lvlOf = (page) => { const u = me(); return u.levels && page ? (u.levels[page] ?? 0) : 3; };
+  const canPage = (page, n) => lvlOf(page) >= n;
+  const hasCap = (k) => { const u = me(); return !u.caps || u.caps.includes(k); };
+  // 按这条内容所在的页给身份:能上线 = 直接生效 / 批准别人的;能编辑 = 保存要提交给负责人
+  const meFor = (kind) => { const u = me(); if (approvalsOn() || !u.levels || !PAGE_OF[kind]) return u; const l = lvlOf(PAGE_OF[kind]); return { ...u, role: l >= 3 ? 'approver' : 'editor', level: l }; };
   const who = (id) => (S.staff.find((u) => u.id === id) || {}).name || '同事';
   // ---- v3 分工:每条内容的负责人 / 审批人 / 抄送 / 截止(规则在 /lib/schedule-actions.js)----
   const appr = () => ((S.settings ||= {}).approvers ||= {});
   const effAppr = (it) => A.effApprover(S, it);
-  const canAppr = (it) => A.canApprove(me(), S, it);
+  const canAppr = (it) => A.canApprove(meFor(it?.kind), S, it);
   const canOrd = (kind) => A.canOrder(me(), S, kind);
   const apprName = (it) => { const a = effAppr(it); return a ? who(a) : '管理员'; };
   // 能被选进分工的人:正式数据 = 看得到这类内容所在页面的成员;演示 = 名单里所有人
-  const PAGE_OF = { banner: 'banners', topbar: 'topbar', tbstyle: 'topbar', pmodule: 'pmodules', pin: 'pmodules', salelink: 'pmodules', callout: 'pmodules', campaign: 'campaigns' };
   const peopleFor = (kind) => S.staff.filter((u) => !u.pages || u.admin || u.pages.includes(PAGE_OF[kind]));
   const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: 'Collection 置顶排序', salelink: '促销链接', callout: '产品页推广', price: '改价' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
@@ -1364,7 +1370,7 @@
       <em>${type === 'lensColl' ? '建成空的手动 Collection,自动套上活动页模板;产品由下面的条件自动同步进去' : '建成空的手动 Collection;下面选的推广产品保存后自动放进去'}</em>`;
     return `<div class="rowin">${c ? `<span class="chip"><span class="chip__t">${esc(c.title)}</span>${linkPair('collections', c)}<button type="button" class="chip__x" data-co="un${type}" aria-label="移除">${I.x}</button></span>` : '<span class="muted">还没选</span>'}
       <button type="button" class="btn btn-sm" data-pick="${type}">${c ? '换一个' : '选已有的'}</button>
-      ${MODE === 'live' && isApprover() ? `<button type="button" class="btn btn-sm btn-ghost" data-co="new${type}">${I.plus}新建</button>` : ''}</div>
+      ${MODE === 'live' && canPage('callouts', 3) ? `<button type="button" class="btn btn-sm btn-ghost" data-co="new${type}">${I.plus}新建</button>` : ''}</div>
       ${note ? `<div class="cosync__note ${note.ok ? '' : 'is-warn'}">${note.html}</div>` : ''}`; };
   // ---- 联合推广的折扣(在 KitBundle):这里填百分比 → 一键打开 KitBundle 填好的新活动;有没有生效读兼容产品上的 KitBundle 标记 ----
   const KB_APP = 'f7b9d6e29086498ce53bd02ed0d8ff44'; // KitBundle 的 client id(同 src/joint-coll.js KITBUNDLE_APP)
@@ -1406,7 +1412,7 @@
   function coSyncHtml(it) {
     if (MODE !== 'live') return '<p class="muted">演示模式不同步;正式数据里保存后会马上把推广产品、命中的兼容产品分别同步进两个 Collection。</p>';
     const r = (S.jointSync || {})[it.id];
-    const canRun = it.id && byId(it.id)?.state === 'approved' && isApprover();
+    const canRun = it.id && byId(it.id)?.state === 'approved' && canPage('callouts', 3);
     const line = (x, what) => (x.error ? `<span>⚠️ ${what}:${esc(x.error)}</span>`
       : `<span>✓ ${what}「${esc(x.collection?.title || '')}」现在 <b>${x.count}</b> 个产品(这次加了 ${x.added}、移出 ${x.removed})</span>`);
     const lines = !r ? ['<span class="muted">还没同步过(保存上线后马上同步一次,之后每小时一次)</span>']
@@ -1978,7 +1984,7 @@
     reset();
     const pins = csPins(c.id);
     const taken = (S.colState || {})[c.id];
-    const canEdit = isApprover() && canWrite();
+    const canEdit = canPage('pins', 3) && hasCap('pins.defsort') && canWrite();
     const want = () => ({ mode: st.mode, n: Number(st.n), sortOrder: st.sortOrder, toManual: st.toManual });
     root.innerHTML = '<div class="csopts" data-r="opts"></div><div class="csnotes" data-r="notes"></div><div class="cspv" data-r="pv"></div>';
     const R = (k) => root.querySelector(`[data-r="${k}"]`);
@@ -2007,7 +2013,7 @@
       if (st.mode === 'shopify' && pins.length && !blocked) notes.push(`<div class="note note--sm">这个 Collection 有 ${pins.length} 份置顶排序。后台不是「手动」排序时,置顶排序只能在前台排(店里的顺序不会被改)。</div>`);
       if (blocked) notes.push(`<div class="note note--danger note--sm">这个 Collection 的顺序现在由「${esc(pinNm(taken))}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了 —— 等这份置顶排序结束后再改。</div>`);
       if (c.held) notes.push(`<div class="note note--ok note--sm">「${esc(c.held)}」生效期间,Collection 页暂时完全按本次排序;这里改的是默认设置,置顶排序结束后就用新的。</div>`);
-      if (!canEdit) notes.push(`<div class="note note--sm">${!isApprover() ? '只有管理员能改 Collection 的默认排序' : 'app 还没有「改产品 / Collection」的权限,改不了'}</div>`);
+      if (!canEdit) notes.push(`<div class="note note--sm">${!(canPage('pins', 3) && hasCap('pins.defsort')) ? '你没有改 Collection 默认设置的权限(要「Collection 排序」能上线,并且负责人没关掉这一项)' : 'app 还没有「改产品 / Collection」的权限,改不了'}</div>`);
       R('notes').innerHTML = notes.join('');
       R('pv').innerHTML = `<div><span class="muted">现在</span>${esc(CS.describe(c))}</div>
         <div class="${p?.changed ? 'is-chg' : ''}"><span class="muted">保存后</span>${err ? `<span class="cs-err">${esc(err)}</span>` : p.changed ? esc(CS.describe(p.after)) : '和现在一样'}</div>`;
@@ -2073,7 +2079,7 @@
   function csCopy(root, c, { onDone }) {
     if (!root) return;
     if (MODE !== 'live') { root.innerHTML = '<div class="note note--sm">演示模式里不能用:要在 Shopify 后台打开 app,才能读写 Collection 的顺序。</div>'; return; }
-    const canEdit = isApprover() && canWrite();
+    const canEdit = canPage('pins', 3) && hasCap('pins.defsort') && canWrite();
     const others = (csRows || []).filter((x) => x.id !== c.id).sort((a, b) => String(a.title).localeCompare(String(b.title)));
     const man = others.filter((x) => x.sortOrder === 'MANUAL'), auto = others.filter((x) => x.sortOrder !== 'MANUAL');
     const opts = (list) => list.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}${x.count != null ? `(${x.count})` : ''}</option>`).join('');
@@ -2100,7 +2106,7 @@
       out.innerHTML = `<div class="note note--warn note--sm"><ul style="margin:0;padding-left:18px">${li.map((x) => `<li>${x}</li>`).join('')}</ul></div>
         <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <button type="button" class="btn ${armed ? 'btn-danger' : 'btn-primary'}" data-cc="go" ${!canEdit || busy ? 'disabled' : ''}>${busy ? '排序中…' : armed ? '再点一次确认' : `照「${esc(st)}」排一遍`}</button>
-          ${!canEdit ? `<span class="muted">${!isApprover() ? '只有管理员能改 Collection 的顺序' : 'app 还没有「改产品 / Collection」的权限,改不了'}</span>` : armed ? '<span class="muted">会马上改店里的顺序</span>' : ''}</div>`;
+          ${!canEdit ? `<span class="muted">${!(canPage('pins', 3) && hasCap('pins.defsort')) ? '你没有改 Collection 顺序的权限(要「Collection 排序」能上线,并且负责人没关掉这一项)' : 'app 还没有「改产品 / Collection」的权限,改不了'}</span>` : armed ? '<span class="muted">会马上改店里的顺序</span>' : ''}</div>`;
     };
     root.addEventListener('change', (e) => {
       if (e.target.dataset?.cc !== 'from') return;
@@ -2198,7 +2204,7 @@
     };
     $('#pn-root').innerHTML = `
       ${pageHead('Collection 排序', '让 Collection 页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
-        need ? '' : `${MODE === 'live' && isApprover() ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶排序</button>`)}
+        need ? '' : `${MODE === 'live' && canPage('pins', 3) ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}${canPage('pins', 2) ? `<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶排序</button>` : ''}`)}
       ${subTabsHtml('pnview', pnView, [['pins', '置顶排序', (S.pins || []).length], ['defsort', 'Collection 默认设置']])}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
       <div class="note note--sm">💡 这里排的是<b>Collection 本来那一页</b>。促销链接(?onsale,只放打折产品)只要固定了产品或选了排序,就<b>完全按它自己的</b>,这里影响不到;只有什么都没设的促销链接,才跟着这里的顺序。只想排打折那一页?打开那条促销链接直接拖。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
@@ -2954,7 +2960,7 @@
       <div class="mrow">${me.member?.avatar ? `<img class="avatar-img" src="${esc(me.member.avatar)}" alt=""/>` : `<span class="avatar">${esc((me.member?.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(me.member?.name || '')}</b>
         <span class="muted">${(me.member?.roles || []).map(roleName).join('、') || '—'}</span>
         <button class="btn btn-sm btn-ghost" id="st-logout" type="button" style="margin-left:auto">退出登录</button></div>
-      <p class="muted">名字和头像来自飞书。能看哪些页面由管理员分配的角色决定。</p>
+      <p class="muted">名字和头像来自飞书。能看哪些页面、能做到哪一步由你所在的部门和部门负责人决定。</p>
       ${me.testMode?.on ? `<div class="note note--danger">测试模式开着(${esc(me.testMode.byName || '')} 开的),还有 ${Math.max(1, Math.round(me.testMode.left / 60000))} 分钟自动关。
         <button class="btn btn-sm" data-tm="off" type="button">立即关闭</button></div>`
         : me.canStartTestMode ? `<div class="note">想不登录飞书直接试?打开<b>测试模式</b>:从 Shopify 后台打开 app 的人不用登录、直接是管理员(直接开网址的人不受影响,仍要登录)。
@@ -2967,11 +2973,13 @@
     if (!me.admin) return `<div class="stgrid">${mine}${myNt}</div>`;
     return `<div class="stgrid">${mine}${myNt}
       <section class="panel"><div class="panel__h"><h3>怎么加同事</h3></div>
-        <p class="muted">两种方式:① <b>先预设</b> —— 在下面「预先添加同事」里填他的名字、勾好角色,他第一次用飞书登录时名字对上就<b>自动开通</b>;
-        ② <b>先登录</b> —— 让他在 Shopify 后台打开这个 app(或直接打开 app 网址)用飞书登录一次,他会出现在成员表的「待分配」里,给他勾上角色就能用了。
+        <p class="muted">两种方式:① <b>先预设</b> —— 在下面「预先添加同事」里填他的名字、勾好部门,他第一次用飞书登录时名字对上就<b>自动开通</b>;
+        ② <b>先登录</b> —— 让他在 Shopify 后台打开这个 app(或直接打开 app 网址)用飞书登录一次,他会出现在成员表的「待分配」里,给他勾上部门(或让部门负责人在「部门」页把他拉进去)就能用了。
         飞书应用的「可用范围」里也要有他,否则飞书不让他授权。</p></section></div>
-      <section class="panel"><div class="panel__h"><h3>成员</h3><span class="muted">管理员能看全部页面、管成员;其他角色只看勾选的页面</span></div><div id="st-members"><p class="muted">加载中…</p></div></section>
-      <section class="panel"><div class="panel__h"><h3>角色能看的页面</h3><span class="muted">设置、工具只有管理员能看</span></div><div id="st-roles"><p class="muted">加载中…</p></div></section>`;
+      <section class="panel"><div class="panel__h"><h3>成员</h3><span class="muted">管理员能看全部页面、管成员;其他人按所在部门和负责人给的档位</span></div><div id="st-members"><p class="muted">加载中…</p></div></section>
+      <section class="panel" id="st-roles"><div class="panel__h"><h3>部门</h3></div>
+        <p class="muted">每个部门每页的上限(不能看 / 只看 / 能编辑 / 能上线)、部门负责人、敏感功能,以及每个员工的档位,都在左边的「部门」页里设。</p>
+        <button class="btn btn-sm" type="button" data-go="dept">打开部门页</button></section>`;
   }
   async function bindLarkPanels() {
     $('#st-logout')?.addEventListener('click', () => window.cgpLogout());
@@ -2987,7 +2995,7 @@
     }));
     if (!window.CGP_ME?.admin) return;
     try { MEM = await api('GET', '/api/members'); } catch (e) { $('#st-members').innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
-    drawMembers(); drawRoles();
+    drawMembers();
   }
   const ST_CN = { pending: '待分配', active: '启用', disabled: '停用' };
   function drawMembers() {
@@ -3031,13 +3039,13 @@
             <td class="nowrap"><button class="linkbtn" type="button" data-invdel="${esc(v.id)}">删除</button></td></tr>`).join('')}</tbody></table>` : ''}
       </div>
       ${recent.length ? `<div class="note note--sm">最近按预设自动开通:${recent.map((m) => `<b>${esc(m.name)}</b>(${m.fromInvite.via === 'email' ? '邮箱' : '名字'}对上,${fAgo(m.fromInvite.at)})`).join('、')}。核对一下是不是本人;不对就把他停用。</div>` : ''}`;
-    el.innerHTML = `${invHtml}<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>角色</th><th>能看的页面</th><th>最近登录</th></tr></thead><tbody>
+    el.innerHTML = `${invHtml}<table class="mtable"><thead><tr><th>成员</th><th>状态</th><th>部门</th><th>能看的页面</th><th>最近登录</th></tr></thead><tbody>
       ${list.map((m) => `<tr data-mid="${esc(m.id)}"><td>${m.avatar ? `<img class="avatar-img" src="${esc(m.avatar)}" alt=""/>` : `<span class="avatar">${esc((m.name || '?').slice(0, 1).toUpperCase())}</span>`}<b>${esc(m.name)}</b>${m.id === window.CGP_ME.member.id ? ' <span class="muted">(我)</span>' : ''}${m.fromInvite ? ` <span class="tag tag--accent" title="${esc(m.fromInvite.by || '管理员')}预设了「${esc(m.fromInvite.name)}」,他第一次登录时${m.fromInvite.via === 'email' ? '邮箱' : '名字'}对上自动开通">按预设自动开通</span>` : ''}${(m.emails || []).length ? `<div class="mtable__mail">${esc(m.emails.join(' · '))}</div>` : ''}</td>
         <td><select class="sel sel--sm" data-mstatus>${Object.entries(ST_CN).map(([k, v]) => `<option value="${k}" ${m.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
         <td>${MEM.roles.map((r) => `<label class="chk"><input type="checkbox" data-mrole="${esc(r.key)}" ${(m.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
         <td style="font-size:12.5px">${canSeeOf(m)}</td>
         <td class="muted">${m.lastSeen ? fAgo(m.lastSeen) : '—'}</td></tr>`).join('')}</tbody></table>
-      ${list.some((m) => m.status === 'pending') ? '<p class="muted">「待分配」的人勾上角色后会自动启用。</p>' : ''}`;
+      ${list.some((m) => m.status === 'pending') ? '<p class="muted">「待分配」的人勾上部门后会自动启用;每页具体到哪一档在「部门」页里设。</p>' : ''}`;
     const reload = async (msg) => { if (msg) toast(msg); MEM = await api('GET', '/api/members'); drawMembers(); };
     $('#inv-add')?.addEventListener('click', async (e) => {
       const name = $('#inv-name').value.trim(), email = $('#inv-email').value.trim(); const roles = $$('#st-members [data-invnew]:checked').map((x) => x.dataset.invnew);
@@ -3072,30 +3080,6 @@
       tr.querySelectorAll('[data-mrole]').forEach((c) => c.addEventListener('change', () => save({ roles: [...tr.querySelectorAll('[data-mrole]:checked')].map((x) => x.dataset.mrole) })));
     });
   }
-  function drawRoles() {
-    const el = $('#st-roles'); if (!el || !MEM) return;
-    const pages = Object.entries(MEM.pages).filter(([k]) => !['settings', 'tools'].includes(k));
-    el.innerHTML = `<table class="mtable"><thead><tr><th>角色</th>${pages.map(([, v]) => `<th>${esc(v)}</th>`).join('')}<th></th></tr></thead><tbody>
-      ${MEM.roles.map((r) => `<tr data-rkey="${esc(r.key)}"><td><b>${esc(r.name)}</b></td>
-        ${pages.map(([k]) => `<td><input type="checkbox" data-rpage="${k}" ${r.key === 'admin' ? 'checked disabled' : r.pages.includes(k) ? 'checked' : ''}/></td>`).join('')}
-        <td>${r.key === 'admin' || r.builtin ? '' : `<button class="linkbtn" data-rdel="${esc(r.key)}">删除</button>`}</td></tr>`).join('')}</tbody></table>
-      <div class="rowin" style="margin-top:10px"><input class="inp" id="st-newrole" placeholder="新角色名称,比如:摄影" maxlength="20"/><button class="btn btn-sm" id="st-addrole" type="button">加角色</button>
-        <button class="btn btn-sm btn-primary" id="st-saveroles" type="button">保存角色设置</button></div>`;
-    const collect = () => MEM.roles.map((r) => {
-      const tr = el.querySelector(`tr[data-rkey="${CSS.escape(r.key)}"]`);
-      return { ...r, pages: tr ? [...tr.querySelectorAll('[data-rpage]:checked')].map((x) => x.dataset.rpage) : r.pages };
-    });
-    $('#st-addrole').addEventListener('click', () => {
-      const name = $('#st-newrole').value.trim(); if (!name) return toast('先填角色名称', false);
-      MEM.roles = [...collect(), { key: 'r' + Date.now().toString(36), name, pages: ['overview', 'campaigns'] }]; drawRoles();
-    });
-    el.querySelectorAll('[data-rdel]').forEach((b) => b.addEventListener('click', () => { MEM.roles = collect().filter((r) => r.key !== b.dataset.rdel); drawRoles(); }));
-    $('#st-saveroles').addEventListener('click', async () => {
-      try { const r = await api('PUT', '/api/roles', { roles: collect() }); MEM.roles = r.roles; toast('角色设置已保存;成员下次刷新页面生效'); drawRoles(); drawMembers(); }
-      catch (e) { toast(e.message, false); }
-    });
-  }
-
   // ================= 设置 → 清理内容(一次删掉测试时建的内容;规则在 /lib/schedule-actions.js 的 purge)=================
   const cl = { q: '', sel: new Set(), sure: 0 };
   const CL_KINDS = [['campaign', '活动'], ['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', 'Collection 置顶排序'], ['salelink', '促销链接'], ['callout', '产品页推广']];
@@ -4337,7 +4321,8 @@
       }
       return h;
     };
-    const acts = actsHtml(approver);
+    const viewOnly = !canPage(PAGE_OF[kind], 2); // 只看:没有保存按钮
+    const acts = viewOnly ? '<span class="muted">你在这一页是「只看」,不能改;要更多权限请找部门负责人</span>' : actsHtml(approver);
     const canDelete = !isNew && !it.isDefault && ['draft', 'rejected', 'ended', 'paused'].includes(s);
     const notes = [];
     if (endingSoon(it)) notes.push(`<div class="note note--warn">⚠️ ${relDay(win(it).end)}(${fDT(win(it).end)})自动下架。要继续显示就把结束时间往后改${win(it).via ? '(它跟随活动,要改活动的结束时间)' : ''}。</div>`);
@@ -5064,7 +5049,7 @@
           <b class="pg__sum">${same ? '和现在一模一样' : `回滚会:${esc(OD.diffSummary(d))}`}</b></div>
         <div class="hist__bar">${viewToggleHtml()}</div>
         <div class="pg pg--ro${pgCls()}">${target.map(card).join('')}</div>`;
-      if (!same && isApprover()) {
+      if (!same && canPage('pins', 3) && hasCap('pins.rollback')) {
         $('#hist-acts').innerHTML = '<button class="btn btn-primary" id="hist-rb" type="button">回滚到这个版本</button>';
         $('#hist-rb').onclick = async (e) => {
           const b = e.currentTarget;
@@ -5174,6 +5159,7 @@
     const o = e.target.closest('[data-open]');
     if (o && o.closest('.section')) { const x = byId(o.dataset.open); if (x) openEditor(x.kind, x.id); return; }
     const n = e.target.closest('[data-new]');
+    if (n && n.closest('.section') && !canPage(PAGE_OF[n.dataset.new], 2)) { toast('你在这一页是「只看」,不能新建;要更多权限请找部门负责人', false); return; }
     if (n && n.closest('.section')) { openEditor(n.dataset.new, null, n.dataset.module ? { module: n.dataset.module } : n.dataset.parent ? { parent: n.dataset.parent } : n.dataset.for ? { campaign: n.dataset.for, channel: n.dataset.channel } : n.dataset.tbpreset ? { tbpreset: n.dataset.tbpreset } : undefined); return; }
     const hd = e.target.closest('[data-hday]'); // 主活动时间轴:点日期看那天网站上的组合
     if (hd && hd.closest('.section')) { hubDay = hd.dataset.hday === 'now' ? null : +hd.dataset.hday + 12 * HOUR; renderCampaigns(); return; }

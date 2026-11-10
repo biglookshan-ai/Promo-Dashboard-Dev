@@ -101,7 +101,7 @@ export function priceRouter() {
       } catch (e) { console.error('[plan-history]', e.message); }
       const members = loadSchedule(shop).members || [];
       const msgs = [...planChangeEvents(beforePlans, doc.plans, action, actor.id, { members, id }), // 已创建 / 已修改 / 已删除
-        ...effects.filter((e) => e.type === 'notify').flatMap((e) => eventMessages(state, e, { members, actor: actor.id }))];
+        ...effects.filter((e) => e.type === 'notify').flatMap((e) => eventMessages(state, e, { members, actor: actor.id, sched: loadSchedule(shop) }))];
       return { state, effects, message, id, msgs };
     });
     if (out.msgs.length) dispatch(shop, out.msgs, { sched: loadSchedule(shop), priceNotify: out.state.settings.notify }).catch((e) => console.error('[notify]', e.message)); // 通知中心按规则发

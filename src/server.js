@@ -56,7 +56,7 @@ app.use((req, res, next) => {
 const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || String(Date.now());
 const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8')
   // 用「/」开头的地址:app 里每个页面都有自己的网址(/price/xxx),相对地址会变成 /price/style.css(2026-11-09)
-  .replace(/(href|src)="(style\.css|auth\.js|nav\.js|app\.js|tips\.js|registry\.js|schedule\.js|notify\.js|price\.js)"/g, `$1="/$2?v=${BUILD}"`);
+  .replace(/(href|src)="(style\.css|auth\.js|nav\.js|app\.js|tips\.js|registry\.js|schedule\.js|notify\.js|dept\.js|price\.js)"/g, `$1="/$2?v=${BUILD}"`);
 function sendIndex(req, res) {
   res.set('Cache-Control', 'no-store');
   res.set('Content-Type', 'text/html').send(indexHtml.replaceAll('%%API_KEY%%', API_KEY));

@@ -7,7 +7,7 @@
 //   每天英国时间 10:00:明天要上线的 + 3 天内要下架的 —— digestEvents
 import { itemStatus, effectiveWindow, campaignIndex, ENDING_SOON_MS } from './schedule-core.js';
 import { titleOf, KIND_CN, findItem, effApprover } from './schedule-actions.js';
-import { approvalsOn } from './members.js';
+import { approvalsOn, leadApprovers } from './members.js';
 import { changedKeys } from './item-history.js';
 import { itemPath, PAGE_OF_KIND } from './app-links.js';
 import { CAT_OF_KIND } from './notify-catalog.js';
@@ -33,13 +33,15 @@ export function relatedOf(state, it, extra = []) {
   const act = activeIds(state);
   return [...new Set([it.owner, ...(it.cc || []), it.by, it.approvedBy, ...extra].filter((id) => id && act.has(id)))];
 }
-// 这条内容的审批人(没指定、没默认 → 管理员们)
-export function approversOf(state, it) {
+// 这条内容的审批人:指定的 / 这类默认的 → 提交人所在部门里这一页「能上线」的负责人(2026-11-10)→ 管理员们
+export function approversOf(state, it, submitter = null) {
   const a = effApprover(state, it);
-  return a && activeIds(state).has(a) ? [a] : adminIds(state);
+  if (a && activeIds(state).has(a)) return [a];
+  const leads = leadApprovers(state, submitter || it.pendingChange?.by || it.by, PAGE_OF_KIND[it.kind]);
+  return leads.length ? leads : adminIds(state);
 }
 const orderApprovers = (state, kind) => { const a = state.settings?.approvers?.[kind]; return a && activeIds(state).has(a) ? [a] : adminIds(state); };
-const apprName = (state, it) => { const a = effApprover(state, it); return a ? who(state, a) : adminNames(state); };
+const apprName = (state, it) => { const a = effApprover(state, it); if (a) return who(state, a); const l = leadApprovers(state, it.pendingChange?.by || it.by, PAGE_OF_KIND[it.kind]); return l.length ? l.map((id) => who(state, id)).join('、') : adminNames(state); };
 
 // ---------- 一条内容的数据(卡片上能显示的信息)----------
 const winText = (w) => (w.start == null && w.end == null ? '长期显示' : `${w.start != null ? fDT(w.start) : '保存后马上'} → ${w.end != null ? fDT(w.end) : '长期'}`);
