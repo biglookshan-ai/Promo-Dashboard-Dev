@@ -2423,3 +2423,5 @@ body.nav-mini .mechip .avatar { font-size: 12px; }
 #section-dept .dp-ntr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 5px 0; border-top: 1px solid var(--border); }
 #section-dept .dp-ntr__n { min-width: 190px; }
 #section-dept .dp-ntr .chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+#section-dept .dp-mx .panel__h .muted { font-size: 12px; }
+#section-dept .dp-mx td { padding: 6px 8px; }

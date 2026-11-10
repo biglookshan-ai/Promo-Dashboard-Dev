@@ -89,11 +89,20 @@
       <div class="dp-set__b">
         <div class="rowin"><span class="dp-lab">名字</span><input class="inp inp--sm" data-dname value="${esc(r.name)}" maxlength="20"/></div>
         <div class="rowin dp-top"><span class="dp-lab">负责人</span><span class="dp-picks">${active.length ? active.map((m) => `<label class="chk"><input type="checkbox" data-dlead value="${esc(m.id)}" ${(r.leads || []).includes(m.id) ? 'checked' : ''}/>${esc(m.name)}</label>`).join('') : '<span class="muted">还没有同事登录过</span>'}</span></div>
-        <div class="rowin dp-top"><span class="dp-lab">每页上限</span><span class="dp-ceil">${allPages().map((p) => `<label><span>${esc(D.pages[p])}</span>${lvSel(`data-dceil="${p}"`, r.ceiling?.[p] || 0, 3, false)}</label>`).join('')}</span></div>
         <div class="rowin dp-top"><span class="dp-lab">敏感功能</span><span class="dp-picks">${Object.entries(D.caps).map(([k, c]) => `<label class="chk" title="那一页「能上线」的人才有"><input type="checkbox" data-dcap="${k}" ${(r.capsOff || []).includes(k) ? '' : 'checked'}/>${esc(c.name)}</label>`).join('')}</span></div>
         <div class="rowin"><span class="dp-lab"></span><button class="btn btn-sm btn-primary" type="button" data-dsave="${esc(d.key)}">保存部门设置</button>
           ${r.builtin ? '' : `<button class="btn btn-sm btn-ghost btn-danger-t" type="button" data-ddel="${esc(d.key)}">删除这个部门</button>`}</div>
       </div></details>`;
+  }
+  // 管理员:每个部门能看哪些页面(2026-11-10 用户:「我如何设置每个部门能看什么页面」—— 放在部门页最上面,一行一个部门、一列一个页面,改了马上存)
+  function matrixHtml() {
+    const depts = ROLES.filter((r) => r.key !== 'admin');
+    if (!depts.length) return '';
+    const pages = allPages();
+    return `<section class="panel dp-mx"><div class="panel__h"><h3>每个部门能看哪些页面</h3><span class="muted">选「不能看」= 导航里没有这一页;这里是部门的上限,负责人只能在这个范围内给员工。管理员能看全部。改了马上保存</span></div>
+      <div class="dp-scroll"><table class="mtable dp-t"><thead><tr><th>部门</th>${pages.map((p) => `<th>${esc(D.pages[p])}</th>`).join('')}</tr></thead><tbody>
+        ${depts.map((r) => `<tr data-mx="${esc(r.key)}"><td class="dp-who"><b>${esc(r.name)}</b></td>${pages.map((p) => `<td>${lvSel(`data-mxp="${p}"`, r.ceiling?.[p] || 0, 3, false)}</td>`).join('')}</tr>`).join('')}
+      </tbody></table></div></section>`;
   }
   function draw() {
     const root = $('#dp-root'); if (!root || !D) return;
@@ -101,6 +110,7 @@
     const y = window.scrollY;
     root.innerHTML = `<div class="phead"><div><h2>部门</h2><p class="muted">${D.admin ? '管理员定每个部门的上限和负责人;' : ''}负责人给本部门每个员工定每一页能做到哪一档(不超过部门上限),改了马上生效。「能编辑」的员工保存后要你批准才上线。</p></div></div>
       <div class="dp-legend">${LV_SHORT.map((t, i) => `<span><b class="dp-lv dp-lv--${i}">${t}</b>${LV_TIP[i]}</span>`).join('')}</div>
+      ${D.admin && ROLES ? matrixHtml() : ''}
       ${D.depts.map((d) => `<section class="panel dp-dept" data-dk="${esc(d.key)}"><div class="panel__h"><h3>${esc(d.name)}</h3>
           <span class="muted">${d.members.length} 人 · 负责人:${d.leads.length ? esc(d.leads.map((id) => d.members.find((m) => m.id === id)?.name || MEMBERS.find((m) => m.id === id)?.name || id).join('、')) : '还没有'}</span></div>
         ${D.admin ? adminHtml(d) : ''}
@@ -131,13 +141,21 @@
   const collectDept = (key) => {
     const box = $(`[data-set="${CSS.escape(key)}"]`); const r = ROLES.find((x) => x.key === key);
     return { ...r, name: $('[data-dname]', box).value.trim() || r.name,
-      ceiling: Object.fromEntries($$('[data-dceil]', box).map((s) => [s.dataset.dceil, Number(s.value)])),
+      ceiling: r.ceiling, // 每页能看到哪一档在页面最上面的总表里改
       capsOff: $$('[data-dcap]', box).filter((c) => !c.checked).map((c) => c.dataset.dcap),
       leads: $$('[data-dlead]:checked', box).map((c) => c.value) };
   };
 
   document.addEventListener('change', async (e) => {
     if (!e.target.closest('#dp-root')) return;
+    const mx = e.target.closest('tr[data-mx]');
+    if (mx && e.target.matches('[data-mxp]')) {
+      if (busy) return; busy = true;
+      const key = mx.dataset.mx; const page = e.target.dataset.mxp; const n = Number(e.target.value);
+      try { await saveRoles(ROLES.map((r) => (r.key === key ? { ...r, ceiling: { ...r.ceiling, [page]: n } } : r)), `已保存:${ROLES.find((r) => r.key === key)?.name}在「${D.pages[page]}」是「${LV_SHORT[n]}」;同事刷新页面后生效`); }
+      catch (err) { toast(err.message, false); draw(); }
+      busy = false; return;
+    }
     const nbox = e.target.closest('details[data-nt]');
     if (nbox && e.target.closest('.dp-ntr')) {
       if (busy) return; busy = true;

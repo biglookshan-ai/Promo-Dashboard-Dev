@@ -194,7 +194,7 @@ export function addInvite(state, actor, { name, email, roles } = {}, now = Date.
   const n = String(name || '').trim().slice(0, 30);
   const e = cleanEmail(email);
   if (!n && !e) fail('先填同事的飞书邮箱或名字(和他飞书里的一样)');
-  const rs = inviteRoles(state, roles, '至少勾一个角色(管理员不能预设,要等他登录后在成员表里给)');
+  const rs = inviteRoles(state, roles, '至少勾一个部门(管理员不能预设,要等他登录后在成员表里给)');
   // 已经登录过的:待分配的直接开通,别的提示去成员表改。按邮箱找;没填邮箱(或这人登录时飞书没给邮箱)才按名字找
   const members = state.members || [];
   const m = (e && members.find((x) => (x.emails || []).includes(e)))
@@ -216,7 +216,7 @@ export function addInvite(state, actor, { name, email, roles } = {}, now = Date.
 export function updateInvite(state, actor, id, { roles, email } = {}) {
   if (!isAdmin(actor)) fail('只有管理员能改');
   const inv = (state.invites || []).find((x) => x.id === id) || fail('找不到这条预设');
-  if (roles !== undefined) inv.roles = inviteRoles(state, roles, '至少勾一个角色;不要了就删掉这条预设');
+  if (roles !== undefined) inv.roles = inviteRoles(state, roles, '至少勾一个部门;不要了就删掉这条预设');
   if (email !== undefined) {
     const e = cleanEmail(email);
     if (!e && !inv.name) fail('这条预设只有邮箱,不能清空;不要了就删掉');

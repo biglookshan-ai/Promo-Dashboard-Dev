@@ -2978,7 +2978,7 @@
         飞书应用的「可用范围」里也要有他,否则飞书不让他授权。</p></section></div>
       <section class="panel"><div class="panel__h"><h3>成员</h3><span class="muted">管理员能看全部页面、管成员;其他人按所在部门和负责人给的档位</span></div><div id="st-members"><p class="muted">加载中…</p></div></section>
       <section class="panel" id="st-roles"><div class="panel__h"><h3>部门</h3></div>
-        <p class="muted">每个部门每页的上限(不能看 / 只看 / 能编辑 / 能上线)、部门负责人、敏感功能,以及每个员工的档位,都在左边的「部门」页里设。</p>
+        <p class="muted"><b>每个部门能看哪些页面</b>:打开「部门」页,最上面的表一行一个部门、一列一个页面,每格选 不能看 / 只看 / 能编辑 / 能上线。部门负责人、敏感功能、每个员工的档位也在那一页。</p>
         <button class="btn btn-sm" type="button" data-go="dept">打开部门页</button></section>`;
   }
   async function bindLarkPanels() {
@@ -3026,13 +3026,13 @@
             ${MEM.loginScope ? '' : '<li>发布了还是没有:在 Railway 加变量 <code>LARK_LOGIN_SCOPE</code> = <code>contact:user.email:readonly</code>(一定要先完成第 1、2 步,不然谁都登录不了)。</li>'}
           </ol></details></div>`;
     const invHtml = `<div class="invbox">
-        <div class="invbox__h"><b>预先添加同事</b><span class="muted">还没登录过的同事:填他的<b>飞书邮箱</b>(最准)或<b>飞书里显示的名字</b>,勾好角色,他第一次用飞书登录时对上就自动开通。管理员不能预设。</span></div>
+        <div class="invbox__h"><b>预先添加同事</b><span class="muted">还没登录过的同事:填他的<b>飞书邮箱</b>(最准)或<b>飞书里显示的名字</b>,勾好部门,他第一次用飞书登录时对上就自动开通。管理员不能预设。</span></div>
         ${mailNote}
         <div class="invbox__f"><input class="inp" id="inv-email" type="email" placeholder="飞书邮箱,如:tom@cinegearpro.co.uk" maxlength="80" autocomplete="off"/>
           <input class="inp inp--name" id="inv-name" placeholder="名字(可不填)" maxlength="30"/>
           <span class="invbox__roles">${invRoles.map((r) => `<label class="chk"><input type="checkbox" data-invnew="${esc(r.key)}"/>${esc(r.name)}</label>`).join('')}</span>
           <button class="btn btn-sm btn-primary" id="inv-add" type="button">添加</button></div>
-        ${invs.length ? `<table class="mtable mtable--inv"><thead><tr><th>等登录的同事</th><th>飞书邮箱</th><th>预设的角色</th><th></th></tr></thead><tbody>
+        ${invs.length ? `<table class="mtable mtable--inv"><thead><tr><th>等登录的同事</th><th>飞书邮箱</th><th>预设的部门</th><th></th></tr></thead><tbody>
           ${invs.map((v) => `<tr data-inv="${esc(v.id)}"><td><span class="avatar avatar--ghost">${esc((v.name || v.email || '?').slice(0, 1).toUpperCase())}</span><b>${esc(v.name || v.email)}</b> <span class="tag">等他登录</span><div class="mtable__mail">${fAgo(v.at)}添加${v.by ? ` · ${esc(v.by)}` : ''}</div></td>
             <td><input class="inp inp--sm" data-invmail type="email" value="${esc(v.email || '')}" placeholder="补上邮箱更准" maxlength="80" autocomplete="off"/></td>
             <td>${invRoles.map((r) => `<label class="chk"><input type="checkbox" data-invrole="${esc(r.key)}" ${(v.roles || []).includes(r.key) ? 'checked' : ''}/>${esc(r.name)}</label>`).join('')}</td>
@@ -3056,7 +3056,7 @@
     $$('#inv-name, #inv-email').forEach((x) => x.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#inv-add').click(); } }));
     $$('#st-members tr[data-inv]').forEach((tr) => {
       tr.querySelectorAll('[data-invrole]').forEach((c) => c.addEventListener('change', async () => {
-        try { await api('PUT', `/api/invites/${encodeURIComponent(tr.dataset.inv)}`, { roles: [...tr.querySelectorAll('[data-invrole]:checked')].map((x) => x.dataset.invrole) }); await reload('预设的角色已更新'); }
+        try { await api('PUT', `/api/invites/${encodeURIComponent(tr.dataset.inv)}`, { roles: [...tr.querySelectorAll('[data-invrole]:checked')].map((x) => x.dataset.invrole) }); await reload('预设的部门已更新'); }
         catch (err) { toast(err.message, false); drawMembers(); }
       }));
       const mail = tr.querySelector('[data-invmail]');

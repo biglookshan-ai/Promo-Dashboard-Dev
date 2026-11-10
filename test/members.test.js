@@ -181,7 +181,7 @@ test('预设的限制:不能给管理员、不能重复、已登录过的待分�
   const boss = upsertOnLogin(s, u('ou_boss', '老板'), { fromAdmin: true });
   const staff = upsertOnLogin(s, u('ou_s', '员工'), { fromAdmin: false });
   assert.throws(() => addInvite(s, staff, { name: 'A', roles: ['design'] }), /只有管理员/);
-  assert.throws(() => addInvite(s, boss, { name: 'A', roles: ['admin'] }), /至少勾一个角色/); // 管理员不能预设
+  assert.throws(() => addInvite(s, boss, { name: 'A', roles: ['admin'] }), /至少勾一个部门/); // 管理员不能预设
   assert.throws(() => addInvite(s, boss, { name: '  ', roles: ['design'] }), /名字/);
   addInvite(s, boss, { name: 'A', roles: ['design', 'admin'] });
   assert.deepEqual(s.invites[0].roles, ['design']);
@@ -193,7 +193,7 @@ test('预设的限制:不能给管理员、不能重复、已登录过的待分�
   // 改 / 删
   const id = s.invites[0].id;
   updateInvite(s, boss, id, { roles: ['pricing'] }); assert.deepEqual(s.invites[0].roles, ['pricing']);
-  assert.throws(() => updateInvite(s, boss, id, { roles: [] }), /至少勾一个角色/);
+  assert.throws(() => updateInvite(s, boss, id, { roles: [] }), /至少勾一个部门/);
   saveRoles(s, boss, [{ key: 'admin' }, { key: 'design', name: '设计', pages: ['overview'] }]); // 删掉了 pricing
   assert.deepEqual(s.invites[0].roles, []);
   // 预设的角色全被删掉了:对上名字也只是待分配
