@@ -3512,7 +3512,7 @@
     }
     if (kind === 'callout') return { ...baseIt, id: rid('co-'), name: '', title: '', text: '', linkText: '', link: '', promo: null, image: '', imageId: '', rules: [{ f: 'vendor', n: false, v: [] }], collections: [], tags: [], vendors: [], products: [], exProducts: [], exTags: [], priority: 10, start: null, end: null };
     if (kind === 'salelink') return { ...baseIt, id: rid('sl-'), name: '', slug: '', collection: null, products: [], inStock: false, minDiscount: null, limit: null, sort: '', heading: '', start: null, end: null };
-    if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: null, products: [], onlyListed: false, countdown: false, badge: '', start: null, end: null }; // 2026-10-29 用户:默认长期显示
+    if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: preset.collection || null, products: [], onlyListed: false, countdown: false, badge: '', start: null, end: null }; // 2026-10-29 用户:默认长期显示;preset.collection = 从 Shopify 后台 Collection 页面的卡片点「新建置顶排序」
     const pc = preset.parent ? camp(preset.parent) : null; // 从主活动页点「新建子活动」:时间先用主活动的
     return { ...baseIt, id: rid('c-'), name: '', start: pc?.start ?? dayStart(3), end: pc?.end ?? dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10, parent: pc ? pc.id : null };
   }
@@ -5117,6 +5117,13 @@
         nav.click();
         if (want === 'defsort' && !csRows) await loadColSorts();
         if (a === 'collection' && b) { if ((csRows || []).some((x) => x.id === String(b))) openColSort(b); else if (csRows) miss(' Collection'); }
+        else if (a === 'new' && b) { // /pins/new/<Collection id>:Shopify 后台 Collection 页面卡片上的「新建置顶排序」,Collection 先选好
+          if (!canPage('pins', 2)) { toast('你没有新建置顶排序的权限,请找管理员开通', false); return; }
+          if (!csRows) await loadColSorts();
+          const c = (csRows || []).find((x) => x.id === String(b));
+          if (!c) { miss(' Collection'); return; }
+          openEditor('pin', null, { collection: { id: c.id, title: c.title, handle: c.handle } });
+        }
         else if (a && want === 'pins') { const it = byId(a); if (it?.kind === 'pin') openEditor('pin', a); else miss('置顶排序'); }
         return;
       }

@@ -17,6 +17,7 @@ import { scheduleRouter, warmCaches } from './schedule-api.js';
 import { priceRouter } from './price/api.js';
 import { startExecutor } from './price/executor.js';
 import { notifyRouter } from './notify-api.js';
+import { extRouter } from './ext-api.js';
 import { auditTrail, readAudit, MOD_CN } from './audit.js';
 import { load as loadScheduleState } from './schedule-store.js';
 import { teamEnabled } from './lark-login.js';
@@ -79,6 +80,8 @@ app.get('/api/config', (req, res) =>
 // 飞书登录(v3):公开的跳转 / 回调页,和「飞书登录开没开」
 app.use('/auth', publicAuthRouter());
 app.get('/api/auth/config', authConfig);
+// Shopify 后台扩展(Collection 页面上的「CGP 排序」卡片):只认 Shopify 身份凭证、只读,要在下面的 /api(飞书登录)之前
+app.use('/api/ext', extRouter());
 
 // 下面都要认人:Shopify session token(后台里打开)和 / 或 app 会话(飞书登录)。没配飞书时和以前一样只认 Shopify。
 const api = express.Router();

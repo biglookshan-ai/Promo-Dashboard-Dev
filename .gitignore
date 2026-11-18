@@ -4,3 +4,8 @@ node_modules/
 out/
 scripts/demo-catalog.json
 scripts/price-catalog.json
+
+# Shopify CLI:扩展打包产物、本地 CLI 状态
+extensions/*/dist/
+.shopify/
+extensions/*/manifest.json

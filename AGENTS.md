@@ -321,6 +321,15 @@
     「保留后台排序」= 状态标 `released`(**别删 colState**:2026-10-26 前是直接删,清单还在生效时下一分钟会重新接管、又把顺序排回去):这份清单内容没改就不再排;
     清单结束只复原临时加 / 移出的产品,顺序保持人排的(`restored[].keptOrder`);改了清单内容再保存 → 以当时的顺序为底重新接管。
   ⛔ **合集 / 产品 id 有时是数字、有时是 gid**(Shopify 资源选择器给 gid,种子数据和主题导入给数字)—— 比较一律用 `numId()` 取末尾数字,直接 `===` 会静默漏掉(2026-10-12 踩过:置顶清单对不上首页页签)。
+  **Shopify 后台 Collection 页面上的「CGP 排序」卡片**(2026-11-18 用户:在每个 Collection 的后台页面提示排序有没有被 app 接管,能一键去 app):
+  后台卡片扩展 `extensions/collection-sort-status`(位置 `admin.collection-details.block.render`,Preact + Shopify 后台组件,接口版本 2026-07)。**卡片只负责画**,内容由
+  `GET /api/ext/collection-status?id=`(`src/ext-api.js`:只认 Shopify 身份凭证、只读、放行跨域;卡片里没有飞书登录,所以不看成员权限、不记操作记录;挂在 `/api` 飞书登录那层之前)
+  + `src/col-status.js` 的 `colCard`(纯函数,`test/col-status.test.js`)给:徽章 + 几行字 + 按钮,**文字在服务器拼好,改说法只改服务器、不用重新部署扩展**;时间写成 `{{t:毫秒}}`,卡片按看的人电脑时区换成「11/20 00:00」。
+  状态(先后):接管已暂停(`colState.hold`)→ 正在还原(`restoring`)→ 顺序交给后台(`released`)→ app 接管中(真的在改后台顺序)→ 只在网站上排(生效中但不改后台,写原因:不是手动 / 没权限 / 要移出超过 100 个 / 刚保存)→ 未接管(写清「网站只照前 N 个,第 N+1 个起按新到旧」—— 用户 11/18 说后台排了 20 个以为都有效)。
+  按钮 = `app:<网址>`:`/pins/collection/<id>`(排序设置)、`/pins/<置顶排序 id>`、`/pins/new/<Collection id>`(新:打开新建置顶排序、Collection 已选好,`cgpNav.open` + `newItem` 的 `preset.collection`)、`/pins`(暂停时去列表处理)。
+  **部署**:根目录 `shopify.app.toml` 是 2026-11-18 用 `shopify app config link --client-id <Client ID>` 从线上原样拉下来的(这个 app 的设置以前一直在开发者后台网页上填)。`shopify app deploy` 会把这个文件**当成 app 设置一起上传** ——
+  ⛔ 线上改过网址 / 权限后,部署前先重新 `config link` 拉一次,别让旧文件盖掉线上设置。扩展的依赖装在扩展自己的文件夹(`extensions/collection-sort-status/package.json`,Railway 不用),新电脑先在那里 `npm install`;`shopify app build` 可在本地试打包。
+  ⛔ **别跑 `shopify app dev`**:没有单独的开发店,它会把正式 app 的网址换成本地隧道。卡片要在 Collection 页面上手动加一次(Shopify 规定 app 卡片由人加上 / 固定)。本地 harness 能测接口(页面里 `shopify.idToken()` 拿凭证去 fetch),卡片的样子只能部署后在正式后台看。
 - **联合推广**(2026-10-22,产品页推广 `callout` 的升级,`joint = true`):比如「Smart Fusion × 兼容手动镜头」——兼容产品页(A 面)和推广产品页(B 面)各一张卡片,都链到**活动页 = 兼容产品合集的页面**(主题模板 `collection.joint-promo` + `sections/cgp-joint-promo.liquid`:优惠一句话、标题、介绍、大图、推广产品、玩法、条款)。
   用户 2026-10-22 定:**兼容产品名单以 app 条件为准,自动同步进合集**(`src/joint-sync.js`:保存 / 批准后马上一次 + 定时器每小时一次;`POST /api/schedule/joint-sync` 立即同步);折扣**直接做 KitBundle**「加购优惠」(1 支镜头配 1 套,只给推广产品打折;KitBundle 里触发选兼容产品合集、打折产品选推广产品合集 —— 两边认同一对合集);活动页内容在这里编辑。
   这个合集是唯一名单:A 面卡片、活动页、KitBundle 的触发条件都认它。⛔ 同步只动推广块里选的**那一个手动合集**的成员(collectionAdd/RemoveProducts);合集可以选已有的,也可以**在编辑器里直接新建**(2026-10-23 用户:不想去后台建;多个牌子的镜头可以共用一个兼容产品合集);
