@@ -43,7 +43,7 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
     const camps = campaignIndex(state.campaigns);
     const todo = allItems(state)
       .filter((it) => it.state === 'approved' && it.shopifyId)
-      .map((it) => ({ it, want: desiredPublishStatus(it, camps, now) }))
+      .map((it) => ({ it, want: desiredPublishStatus(it, camps, now, { colState: state.colState }) }))
       .filter(({ it, want }) => it.syncedStatus !== want);
 
     const changes = [], failures = [];
@@ -75,6 +75,13 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
       record.flush();
       logColReport(state, col, '定时器', now);
       extra.push(...pinEvents(state, col, now));
+      // 这一轮刚发现有人在后台改了顺序(暂停接管)/ 重新接管了:排序计划在网站上的开关马上跟着变,不等下一分钟
+      for (const it of (state.pins || []).filter((p) => p.state === 'approved' && p.shopifyId)) {
+        const want = desiredPublishStatus(it, camps, now, { colState: state.colState });
+        if (it.syncedStatus === want) continue;
+        try { await setStatus({ shop, token }, it.shopifyId, want); it.syncedStatus = want; it.syncedAt = now; it.syncError = null; }
+        catch (e) { it.syncError = String(e.message || e); }
+      }
     }
 
     // 联合推广:每小时把兼容产品同步进合集一次(新上架的符合条件的产品自动进名单)
@@ -110,22 +117,22 @@ export function runOnce(shop, { now = Date.now(), token = getToken(shop), setSta
   });
 }
 
-// Collection 排序出的问题 → 通知(相关的人 = 管这个 Collection 的置顶排序是谁建 / 改的)
+// Collection 排序出的问题 → 通知(相关的人 = 管这个 Collection 的排序计划是谁建 / 改的)
 const cid = (x) => String(x?.id ?? x ?? '').split('/').pop();
 export function pinEvents(state, col, now = Date.now()) {
   const out = [];
   const pinsOf = (c) => (state.pins || []).filter((p) => cid(p.collection) === cid(c));
   const rel = (c) => [...new Set(pinsOf(c).flatMap((p) => relatedOf(state, p)))];
-  // 按钮:这个 Collection 只有一份置顶排序就打开它,否则打开 Collection 排序页
+  // 按钮:这个 Collection 只有一份排序计划就打开它,否则打开 Collection 排序页
   const pathOf = (c) => oneOr(pinsOf(c).map(itemPath), '/pins');
   for (const h of col.holds || []) if (h.fresh) out.push({ ev: 'pins.hold', page: 'pins', path: pathOf(h.collection), related: rel(h.collection),
-    data: { collection: h.title || '', name: h.pin || '', note: 'app 已暂停接管,不会覆盖别人的改动;请在「Collection 排序」里选「按本次排序」或「保留后台排序」' } });
+    data: { collection: h.title || '', name: h.pin || '', note: 'app 已暂停接管,网站先按后台顺序显示,不会覆盖别人的改动;请在「Collection 排序」里选「按本次排序」或「保留后台排序」' } });
   for (const f of col.failures || []) out.push({ ev: 'pins.failure', key: `pin-fail:${cid(f.collection)}:${londonDate(now)}:${f.message}`, page: 'pins', path: f.collection ? pathOf(f.collection) : '/pins', related: f.collection ? rel(f.collection) : [],
     data: { collection: f.title || (typeof f.collection === 'object' ? f.collection?.title : '') || '', reason: f.message, note: '下一分钟会自动重试;同一个原因一天只报一次' } });
   return out;
 }
 
-// 2026-10-29 用户:置顶排序的「产品卡上的促销标签」(倒计时 / 徽章)整个去掉。以前设过的:清掉、店里的条目重写一次(写的是空),
+// 2026-10-29 用户:排序计划的「产品卡上的促销标签」(倒计时 / 徽章)整个去掉。以前设过的:清掉、店里的条目重写一次(写的是空),
 // 每份记一笔操作日志(写清原来是什么,要的话去活动里设)。写失败就把值放回去,下一分钟再试
 export async function dropPinPromo(ctx, state, { now = Date.now(), gql = graphql } = {}) {
   const out = [];
@@ -138,7 +145,7 @@ export async function dropPinPromo(ctx, state, { now = Date.now(), gql = graphql
       catch (e) { Object.assign(it, old); appendLog(state, { at: now, action: 'failure', kind: 'pin', title: titleOf(it), note: `去掉产品卡上的促销标签时写店铺失败:${String(e.message || e)},下一分钟再试`, by: '系统' }); continue; }
     }
     const what = [old.badge && `徽章「${old.badge}」`, old.countdown && '倒计时'].filter(Boolean).join('和');
-    appendLog(state, { at: now, action: 'edit', kind: 'pin', title: titleOf(it), note: `去掉了产品卡上的${what}(置顶排序不再管促销标签;要的话在活动里设)`, by: '系统' });
+    appendLog(state, { at: now, action: 'edit', kind: 'pin', title: titleOf(it), note: `去掉了产品卡上的${what}(排序计划不再管促销标签;要的话在活动里设)`, by: '系统' });
     out.push({ id: it.id, ...old });
   }
   return out;

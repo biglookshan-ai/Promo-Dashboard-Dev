@@ -132,7 +132,7 @@ test('飞书:没开审批时,跟随的活动还是草稿 → 提醒说「活动�
 });
 
 
-test('置顶排序的促销标签整个去掉(2026-10-29):设过的清掉、店里重写一次(写空)、每份记一笔;写失败就放回去下次再试', async () => {
+test('排序计划的促销标签整个去掉(2026-10-29):设过的清掉、店里重写一次(写空)、每份记一笔;写失败就放回去下次再试', async () => {
   const pin = (o) => ({ kind: 'pin', state: 'approved', name: 'Flash', collection: { id: '1', title: 'C' }, products: [], hidden: [], start: null, end: null, ...o });
   const state = { campaigns: [], log: [], pins: [
     pin({ id: 'p1', shopifyId: 'gid://shopify/Metaobject/9', badge: 'Flash Deal', countdown: true }),
@@ -167,4 +167,22 @@ test('主题编辑器里的备用 Banner(2026-11-02):同步了记一笔;出错�
   await runOnce(SHOP, { now: T, token: 'x', setStatus: f.setStatus, collections: null, themeBanners: bad });
   await runOnce(SHOP, { now: T + 60_000, token: 'x', setStatus: f.setStatus, collections: null, themeBanners: bad });
   assert.equal(store.load(SHOP).log.filter((x) => x.action === 'failure' && /没权限/.test(x.note)).length, 1);
+});
+
+// 2026-11-18:后台被人改了顺序(暂停接管)→ 同一轮里就把这份排序计划在网站上暂停,不等下一分钟;点「按本次排序」后恢复
+test('排序计划:发现有人在后台改了顺序 → 同一轮就在网站上暂停(店里条目切草稿)', async () => {
+  const pin = { id: 'pin-x', kind: 'pin', state: 'approved', name: 'Flash', collection: { id: 'gid://shopify/Collection/77' }, products: [{ id: 1 }], hidden: [],
+    start: T - H, end: T + H, shopifyId: 'gid://shopify/Metaobject/9', syncedStatus: 'ACTIVE' };
+  seed({ pins: [pin], colState: { 77: { pinId: 'pin-x', pinName: 'Flash', at: T - 10 * 60_000 } } });
+  const f = fakeShopify();
+  // 假的「对齐 Collection」:这一轮发现后台被人改了 → 标 hold(和 collection-order.js 一样)
+  const collections = async (ctx, state) => { state.colState['77'].hold = 'manual'; return { applied: [], restored: [], holds: [{ collection: '77', title: 'C', pin: 'Flash', fresh: true }], failures: [], skipped: [] }; };
+  await runOnce(SHOP, { themeBanners: null, now: T, token: 'x', setStatus: f.setStatus, collections, send: async () => ({}), sendDm: async () => ({}) });
+  assert.deepEqual(f.calls, [{ id: 'gid://shopify/Metaobject/9', status: 'DRAFT' }]);
+  assert.equal(store.load(SHOP).pins[0].syncedStatus, 'DRAFT');
+  // 点了「按本次排序」(hold 清掉)→ 下一轮恢复
+  store.update(SHOP, (s) => { delete s.colState['77'].hold; });
+  const g = fakeShopify();
+  await runOnce(SHOP, { themeBanners: null, now: T + 60_000, token: 'x', setStatus: g.setStatus, collections: async () => ({ applied: [], restored: [], holds: [], failures: [], skipped: [] }), send: async () => ({}), sendDm: async () => ({}) });
+  assert.deepEqual(g.calls, [{ id: 'gid://shopify/Metaobject/9', status: 'ACTIVE' }]);
 });

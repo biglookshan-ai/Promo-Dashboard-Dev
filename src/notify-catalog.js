@@ -57,7 +57,7 @@ const SAMPLE_PRICE = { plan: 'Black Friday · DZO 85 折', pkind: '限时改价'
 // ---------- 通知目录 ----------
 // level:info 日常(个人能关、能合进汇总)/ problem 出问题(个人关不掉;没人收时兜底给管理员)/ approval 审批(开了审批才有)
 // self:做这件事的人自己默认不收(改了 Banner 不用再通知改的人)
-const KN = { banner: 'Banner', topbar: '顶栏', pmodule: '首页商品模块', pin: '置顶排序', salelink: '促销链接', callout: '产品页推广', campaign: '活动' };
+const KN = { banner: 'Banner', topbar: '顶栏', pmodule: '首页商品模块', pin: '排序计划', salelink: '促销链接', callout: '产品页推广', campaign: '活动' };
 // 每种通知只能选它真的有的信息(比如「上下线失败」没有「改了什么」)
 const IB = ['kind', 'name', 'status', 'time', 'campaign', 'owner'];
 const ITEM_AVAIL = [...IB, 'actor', 'note'];
@@ -102,7 +102,7 @@ const PRICE_EVENTS = [
   pev('unapproved', { level: 'approval', name: '改价快开始了还没批准', desc: '开始前 2 小时提醒审批人', title: '⏰ 改价计划快开始了,还没批准', color: 'orange', fields: ['plan', 'time', 'note'], avail: [...PB, 'note'], approvals: true }),
 ];
 const OTHER_EVENTS = [
-  { key: 'pins.hold', cat: 'pin', level: 'problem', page: 'pins', name: '有人在后台改了 Collection 顺序', desc: 'app 已暂停接管,不覆盖别人的改动;要在 Collection 排序里选怎么处理', title: '✋ 有人在后台手动改了 Collection 顺序', color: 'orange', fields: ['collection', 'name', 'note'], avail: ['collection', 'name', 'note'], buttons: ['open', 'list', 'app'], sample: { collection: 'Black Friday Deals', name: 'BF 置顶排序', note: '请在「Collection 排序」里选「按本次排序」或「保留后台排序」' } },
+  { key: 'pins.hold', cat: 'pin', level: 'problem', page: 'pins', name: '有人在后台改了 Collection 顺序', desc: 'app 已暂停接管,网站先按后台顺序显示、不覆盖别人的改动;要在 Collection 排序里选怎么处理', title: '✋ 有人在后台手动改了 Collection 顺序', color: 'orange', fields: ['collection', 'name', 'note'], avail: ['collection', 'name', 'note'], buttons: ['open', 'list', 'app'], sample: { collection: 'Black Friday Deals', name: 'BF 排序计划', note: '请在「Collection 排序」里选「按本次排序」或「保留后台排序」' } },
   { key: 'pins.failure', cat: 'pin', level: 'problem', page: 'pins', name: 'Collection 排序失败', desc: '同一个 Collection 同一个原因一天只报一次', title: '⚠️ Collection 排序失败', color: 'red', fields: ['collection', 'reason', 'note'], avail: ['collection', 'reason', 'note'], buttons: ['open', 'list', 'app'], sample: { collection: 'Black Friday Deals', reason: 'Shopify 返回错误:Throttled', note: '下一分钟会自动重试' } },
   { key: 'joint.failure', cat: 'callout', level: 'problem', page: 'callouts', name: '联合推广同步失败', desc: '兼容产品没能同步进 Collection;同一条一天只报一次', title: '⚠️ 联合推广同步 Collection 失败', color: 'red', fields: ['name', 'reason', 'note'], avail: ['name', 'reason', 'note'], buttons: ['open', 'list', 'app'], sample: { name: 'DZO × Thypoch', reason: 'Collection 不存在', note: '下一个小时会自动再试' } },
   { key: 'daily.tomorrow', cat: 'daily', level: 'info', name: '明天要上线的', desc: '每天英国时间 10:00 列出明天要上线的内容', title: '📅 明天要上线', color: 'blue', fields: ['items'], avail: ['items', 'note'], buttons: ['app'], sample: SAMPLE_ITEM },

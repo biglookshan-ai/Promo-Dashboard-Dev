@@ -2,7 +2,7 @@
 // 每个页面、每条内容、每个改价计划都有自己的网址,在 app 里换页面时地址栏跟着变(能直接复制、浏览器后退也能用):
 //   /                          概览
 //   /<页面>                     banners topbar pmodules callouts pins salelinks campaigns price mywork reviews history audit notify settings metafields metaobjects promo
-//   /<内容页面>/<内容 id>        打开那条内容的编辑(Banner / 顶栏 / 商品模块 / 推广块 / 置顶排序 / 促销链接)
+//   /<内容页面>/<内容 id>        打开那条内容的编辑(Banner / 顶栏 / 商品模块 / 推广块 / 排序计划 / 促销链接)
 //   /campaigns/<活动 id>[/web|/price|/lark|/edit]   活动页(哪个分页)/ 活动设置
 //   /pins/collection/<Collection id>                 Collection 默认排序设置
 //   /price[/<计划 id>|/vault|/ledger|/settings]       改价:某个计划 / 受管产品 / 价格账本 / 改价设置

@@ -15,8 +15,8 @@ import { graphql } from './shopify.js';
 import { actorOf, pagesOf, isAdmin, canSee, pageNames, approvalsOn, levelOf, levelsOf, capOf, capsOf, CAPS, LEVEL_CN } from './members.js';
 import { KIND_MOD } from './audit.js';
 import { teamEnabled } from './lark-login.js';
-import { alignCollections, readCollection, movesFor, nid as colNid } from './collection-order.js';
-import { listColSorts, readColSort, applyColSort } from './col-sort-shop.js';
+import { alignCollections, readCollection, movesFor, nid as colNid, sig as colSig } from './collection-order.js';
+import { listColSorts, readColSort, applyColSort, enableManualSort } from './col-sort-shop.js';
 import { previewCopy, copyOrder } from './col-copy.js';
 import { syncJoint, isJoint, syncNotes } from './joint-sync.js';
 import { createJointCollection, jointDealStatus } from './joint-coll.js';
@@ -212,7 +212,7 @@ export function scheduleRouter() {
       const ACT = { draft: '存草稿', submit: '提交审核', publish: '直接保存', approve: '批准', reject: '退回', end: '结束', delete: '删除', purge: '批量清理' };
       const it = findItem(out.state, action.id || out.id);
       const name = action.type === 'save' ? ACT[action.mode] : action.type === 'pause' ? (it?.paused ? '暂停' : '恢复显示') : ACT[action.type] || action.type;
-      const KCN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 置顶排序', salelink: '促销链接', callout: '产品页推广' };
+      const KCN = { banner: 'Banner', topbar: '顶栏公告', tbstyle: '顶栏样式', campaign: '活动', pmodule: '首页商品模块', pin: 'Collection 排序计划', salelink: '促销链接', callout: '产品页推广' };
       const k = it?.kind || action.kind;
       req.audit = action.type === 'purge' ? { mod: 'settings', text: `批量删除 ${(out.ids || []).length} 条内容` }
         : { mod: KIND_MOD[k] || 'other', text: `${action.type === 'save' && action.isNew ? '新建' : name === '直接保存' ? '保存' : name}${KCN[k] || '内容'}${it ? `「${titleOf(it)}」` : ''}` };
@@ -507,16 +507,24 @@ export function scheduleRouter() {
     const st = (s.colState || {})[key];
     if (!st) throw new ActionError('这个 Collection 现在没有被接管');
     // 保留后台的改动:不删状态(删了下一分钟会重新接管),标成 released —— 这份清单生效期间不再排,结束只复原临时加 / 移出的产品
-    if (req.body?.release) { delete st.hold; st.released = Date.now(); appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: `保留后台改过的顺序:「${st.pinName || '置顶排序'}」剩下的时间不再排这个 Collection,结束时也不还原顺序`, by: a.name }); }
-    else { delete st.hold; delete st.signature; delete st.released; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个 Collection 的顺序(下一轮按置顶排序重排)', by: a.name }); }
+    // 记下这一刻排序计划的内容(signature):「改回按本次排序」会清掉它,一分钟内又点「保留后台排序」时没有它,定时器会当成计划改过、又接管回去(2026-11-18 踩过)
+    if (req.body?.release) { delete st.hold; st.released = Date.now(); { const cur = st.pinId ? findItem(s, st.pinId) : null; if (cur) st.signature = colSig(cur); } appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: `保留后台改过的顺序:「${st.pinName || '排序计划'}」剩下的时间不再排这个 Collection,结束时也不还原顺序`, by: a.name }); }
+    else { delete st.hold; delete st.signature; delete st.released; appendLog(s, { action: 'edit', kind: 'pin', title: st.title, note: '重新接管这个 Collection 的顺序(下一轮按排序计划重排)', by: a.name }); }
+    // 网站那一层跟着变:保留后台排序 = 这份排序计划在网站上也暂停(店里条目设成草稿);改回按本次排序 = 恢复(2026-11-18)
+    const p = st.pinId ? findItem(s, st.pinId) : null;
+    let note = '';
+    if (p && p.state === 'approved' && p.shopifyId) {
+      const r = await runEffects(req.ctx, s, [{ type: 'sync', id: p.id }], { gql: graphql });
+      if (r?.errors?.length) note = `网站那一层没改成:${r.errors[0]}(下一分钟定时器会再试)`;
+    }
     replace(req.ctx.shop, s);
-    return { ok: true };
+    return { ok: true, note };
   })));
 
   // ---- 合集页「平时」的默认排序(规则 src/col-sort.js):全部合集的设置 + 改一个 ----
   // 清单「生效期间完全按我排的顺序」正开着的合集,店里的 cgp_sort_off 是清单临时设的 → 列表里换回平时的值(flag.prev),并标出被哪份清单临时改着
   const withFlags = (rows, s) => rows.map((c) => { const fl = (s.sortFlags || {})[c.id];
-    return fl ? { ...c, off: fl.prev?.value === 'true', offSet: !!fl.prev, held: fl.pinName || '置顶排序' } : c; });
+    return fl ? { ...c, off: fl.prev?.value === 'true', offSet: !!fl.prev, held: fl.pinName || '排序计划' } : c; });
   r.get('/col-sorts', wrap(async (req) => {
     if (req.query.fresh) bust(req.ctx.shop, 'colsorts');
     const rows = await cached(req.ctx.shop, 'colsorts', 60_000, () => listColSorts(req.ctx, graphql));
@@ -565,6 +573,36 @@ export function scheduleRouter() {
       bust(req.ctx.shop, 'colsorts');
       return r2;
     } catch (e) { if (e instanceof ActionError) throw e; throw new ActionError(e.message); }
+  })));
+
+  // ---- 一键同步(2026-11-18 用户:「未设置同步」的 Collection 一键改成能同步)----
+  // 后台排序方式改成「手动」、顺序保持原样(src/col-sort-shop.js enableManualSort);有排序计划生效就马上按计划排好后台。
+  // 权限和改 Collection 默认设置一样(能上线 + 敏感功能「改 Collection 默认设置」)。Shopify 后台 Collection 页面卡片上的按钮打开 app 再确认,不在卡片里直接改。
+  r.post('/col-sync', wrap((req) => withLock(req.ctx.shop, async () => {
+    needPage(req, 'pins');
+    const s = load(req.ctx.shop);
+    const a = actorFor(s, req.ctx.user, 'pins');
+    if (a.role !== 'approver') throw new ActionError('只有「Collection 排序」能上线的人能一键同步');
+    needCap(req, 'pins.defsort');
+    const id = String(req.body?.id || '').split('/').pop();
+    if (!/^\d+$/.test(id)) throw new ActionError('还没选 Collection');
+    let r2;
+    try { r2 = await enableManualSort(req.ctx, id, { gql: graphql, record: (cid, ids, meta) => recordVersion(req.ctx.shop, cid, ids, { ...meta, by: a.name }) }); }
+    catch (e) { throw new ActionError(e.message); }
+    let synced = false;
+    if (!r2.already) {
+      appendLog(s, { action: 'edit', kind: 'pin', title: r2.title, by: a.name, note: `一键同步:Shopify 后台排序方式「${r2.from}」→「手动」,顺序保持原样(${r2.count} 个产品)` });
+      // 有排序计划生效:马上按计划排好后台(和保存排序计划后一样,不等定时器)
+      const record = historyRecorder(req.ctx.shop);
+      const rep = await alignCollections(req.ctx, s, { now: Date.now(), gql: graphql, record }).catch((e) => ({ applied: [], restored: [], holds: [], skipped: [], failures: [{ message: String(e.message || e) }] }));
+      record.flush();
+      logColReport(s, rep, a.name, Date.now());
+      synced = (rep.applied || []).some((x) => colNid(x.collection) === id);
+    }
+    replace(req.ctx.shop, s);
+    bust(req.ctx.shop, 'colsorts');
+    req.audit = { mod: 'pins', text: r2.already ? `一键同步「${r2.title}」(本来就是手动)` : `一键同步「${r2.title}」:后台排序方式「${r2.from}」→「手动」${synced ? ',并按排序计划排好' : ''}` };
+    return { ...r2, synced };
   })));
 
   // ---- 合集排序:立即跑一次(不用等定时器那一分钟),顺便把结果说清楚 ----
@@ -727,10 +765,13 @@ export function scheduleRouter() {
     // 这个合集正被某份清单接管着 → app 停手,免得下一分钟又排回去
     const st = (s.colState || {})[cid];
     if (st) { st.hold = 'rollback'; st.holdAt = Date.now(); }
+    // 暂停接管 = 这份排序计划在网站上也暂停(网站按回滚后的后台顺序),点「按本次排序」才恢复
+    const heldPin = st?.pinId ? findItem(s, st.pinId) : null;
+    if (heldPin && heldPin.state === 'approved' && heldPin.shopifyId) await runEffects(req.ctx, s, [{ type: 'sync', id: heldPin.id }], { gql: graphql }).catch(() => {});
     const extra = now2.filter((id) => !v.ids.includes(id)).length;
     const movedN = diffOrder(now2, target).moved.size;
     appendLog(s, { action: 'edit', kind: 'pin', title: col.title, by: a.name,
-      note: `回滚到 ${when} 那一版:${movedN} 个换位置${missing.length ? `、${missing.length} 个加回 Collection` : ''}${extra ? `;${extra} 个后来才加进 Collection 的排到最后(没删)` : ''}${st ? ';这个 Collection 的置顶排序接管已暂停' : ''}` });
+      note: `回滚到 ${when} 那一版:${movedN} 个换位置${missing.length ? `、${missing.length} 个加回 Collection` : ''}${extra ? `;${extra} 个后来才加进 Collection 的排到最后(没删)` : ''}${st ? ';这个 Collection 的排序计划接管已暂停' : ''}` });
     replace(req.ctx.shop, s);
     return { ok: true, moved: movedN, added: missing.length, extra, paused: !!st };
   })));

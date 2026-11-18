@@ -149,7 +149,7 @@ export async function readCollection(ctx, id, gql) {
 const CHUNK = 200;
 export const MAX_REMOVE = 100; // 一份清单最多临时移出这么多产品,再多就不动店里的合集(交给前台排)
 const SETTLE_MS = 15 * 60_000; // 带条件的合集:加进 / 排除的产品 Shopify 在后台慢慢算,最多等 15 分钟
-async function reorder(ctx, id, moves, gql) {
+export async function reorder(ctx, id, moves, gql) {
   for (let i = 0; i < moves.length; i += CHUNK) {
     const d = await gql(ctx, REORDER, { id: gid(id), moves: moves.slice(i, i + CHUNK) });
     const e = d.collectionReorderProducts?.userErrors?.[0];
@@ -295,7 +295,7 @@ export async function alignCollections(ctx, state, { now = Date.now(), gql, reco
       const msg = String(e.message || e);
       if (/access denied|not approved|permission/i.test(msg)) { // 没权限:记一下,今天别再试了
         state.colNoScope = now;
-        rep.failures.push({ collection: cid, message: `${msg}(app 还没有「改产品 / Collection」的权限,这类置顶排序暂时只能用前台排序)` });
+        rep.failures.push({ collection: cid, message: `${msg}(app 还没有「改产品 / Collection」的权限,这类排序计划暂时只能用前台排序)` });
         return rep;
       }
       rep.failures.push({ collection: cid, message: msg });

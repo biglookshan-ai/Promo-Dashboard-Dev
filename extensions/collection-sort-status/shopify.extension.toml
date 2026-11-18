@@ -1,4 +1,4 @@
-# Shopify 后台 Collection 页面上的「CGP 排序」卡片(2026-11-18)
+# Shopify 后台 Collection 页面上的「产品排序」卡片(2026-11-18)
 # 显示这个 Collection 的排序有没有被 app 接管 + 一键去 app。内容由 app 服务器的 /api/ext/collection-status 给(src/col-status.js),
 # 这里只负责画 —— 改说法不用重新部署扩展。
 api_version = "2026-07"

@@ -45,7 +45,7 @@ export async function syncItem(ctx, state, it, { gql = graphql, now = Date.now()
       tab.shopifyId = await upsertTab(ctx, tab, gql, { campaignGid: tabCampaignGid }); tabGids.push(tab.shopifyId);
     }
   }
-  const status = desiredPublishStatus(it, camps, now);
+  const status = desiredPublishStatus(it, camps, now, { colState: state.colState });
   const prio = it.kind === 'campaign' ? effPriority(it, state.campaigns) : undefined; // 子活动自动比主活动优先
   const r = await upsertItem(ctx, it, { status, win: effectiveWindow(it, camps), campaignGid, tabGids, prio }, gql);
   Object.assign(it, { shopifyId: r.id, syncedStatus: r.status, syncedAt: now, syncError: null });

@@ -35,10 +35,21 @@ export function itemStatus(item, campaignsById, t = Date.now()) {
 // Shopify 上这条 metaobject 应该是什么状态:只有「此刻上线中」的是 ACTIVE,其余一律 DRAFT(前台看不到)。
 // 顶栏默认样式永远 ACTIVE。
 // 促销链接设了「结束后去哪」(跳回合集 / 跳到指定链接):结束后也保持 ACTIVE,主题按 ends_at 判断已结束,打开就跳走。
-export function desiredPublishStatus(item, campaignsById, t = Date.now()) {
+// 排序计划在网站上暂停 = 店里条目设成草稿,主题就不再按它排,网站完全按后台顺序(2026-11-18 用户:角标 = 网站前台按哪个显示,要是真的)。
+//   · 选过「保留后台排序」(colState.released)
+//   · 有人在后台改了顺序 / 回滚过,app 暂停接管、等人处理(colState.hold)—— 绝不覆盖别人的改动:网站先听后台的,
+//     点「按本次排序」才回到计划(以前只是 app 不再改后台,网站那一层照样把计划里的产品排最前)
+//   只认这一份(pinId 对得上);同一个 Collection 的别的计划不受影响
+export function pinFrontPaused(item, colState) {
+  if (item?.kind !== 'pin' || !item.collection || !colState) return false;
+  const st = colState[String(item.collection.id ?? '').split('/').pop()];
+  return !!(st && (st.released || st.hold) && st.pinId === item.id);
+}
+export function desiredPublishStatus(item, campaignsById, t = Date.now(), { colState = null } = {}) {
   if (item.isDefault && item.state === 'approved') return 'ACTIVE';
   const s = itemStatus(item, campaignsById, t);
   if (s === 'ended' && item.kind === 'salelink' && item.state === 'approved' && ['collection', 'url'].includes(item.afterEnd)) return 'ACTIVE';
+  if (s === 'live' && pinFrontPaused(item, colState)) return 'DRAFT';
   return s === 'live' ? 'ACTIVE' : 'DRAFT';
 }
 

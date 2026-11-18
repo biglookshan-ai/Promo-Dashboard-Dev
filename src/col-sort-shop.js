@@ -2,6 +2,7 @@
 // 只写这个合集的三样:字段 custom.cgp_sort_off、custom.cgp_pin_manual,以及(用户 2026-10-21 同意)Shopify 合集的排序方式 sortOrder。
 import { NEW_COLLECTIONS } from './shopify.js';
 import { planSort, describe, sortCn } from './col-sort.js';
+import { readCollection, movesFor, reorder } from './collection-order.js';
 
 const nid = (x) => String(x ?? '').split('/').pop();
 const gid = (x) => (String(x).startsWith('gid://') ? String(x) : `gid://shopify/Collection/${nid(x)}`);
@@ -57,7 +58,7 @@ export async function applyColSort(ctx, id, want, { gql, state }) {
   const cur = fl ? { ...live, off: fl.prev?.value === 'true', offSet: !!fl.prev } : live;
   const { ops, after, changed } = planSort(cur, want);
   const st = state.colState?.[cid];
-  if (st && ops.sortOrder && ops.sortOrder !== 'MANUAL') throw new Error(`这个 Collection 的顺序现在由「${st.pinName || '置顶排序'}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了、结束也还原不了 —— 等这份置顶排序结束后再改`);
+  if (st && ops.sortOrder && ops.sortOrder !== 'MANUAL') throw new Error(`这个 Collection 的顺序现在由「${st.pinName || '排序计划'}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了、结束也还原不了 —— 等这份排序计划结束后再改`);
   if (!changed) return { title: live.title, before: describe(cur), after: describe(after), changed: false, row: { ...cur, held: fl?.pinName || null } };
   // 先改排序方式(失败就什么都没动),再改字段
   if (ops.sortOrder) check(await gql(ctx, SORT_UPDATE, { c: { id: gid(cid), sortOrder: ops.sortOrder } }), 'collectionUpdate');
@@ -75,4 +76,21 @@ export async function applyColSort(ctx, id, want, { gql, state }) {
   if (del.length) check(await gql(ctx, MF_DEL, { m: del }), 'metafieldsDelete');
   const row = { ...live, ...after, offSet: after.off, held: fl?.pinName || null }; // 列表里显示的是「平时」的设置
   return { title: live.title, before: describe(cur), after: describe(after), changed: true, sortChanged: ops.sortOrder ? { from: sortCn(live.sortOrder), to: sortCn(ops.sortOrder) } : null, held: !!fl, row };
+}
+
+// 一键同步(2026-11-18 用户:「未设置同步」的 Collection 要能一键改成能同步):把后台排序方式改成「手动」,**顺序保持改之前的样子**
+// (不交给 Shopify 决定起始顺序:先记下现在的顺序,改完按原样排回去)。只动排序方式和顺序,平时的排法(cgp_* 字段)不动。
+// 有排序计划生效的,由调用方接着跑一次 alignCollections 按计划排好后台。record(cid, ids, meta) = 记历史版本(可回滚)
+export async function enableManualSort(ctx, id, { gql, record = () => {} } = {}) {
+  const cid = nid(id);
+  const before = await readCollection(ctx, cid, gql);
+  if (!before) throw new Error('找不到这个 Collection');
+  if (before.sortOrder === 'MANUAL') return { title: before.title, already: true, from: sortCn('MANUAL'), moved: 0 };
+  record(cid, before.ids, { why: `一键同步之前(后台是「${sortCn(before.sortOrder)}」)`, title: before.title });
+  check(await gql(ctx, SORT_UPDATE, { c: { id: gid(cid), sortOrder: 'MANUAL' } }), 'collectionUpdate');
+  const after = await readCollection(ctx, cid, gql);
+  const moves = movesFor(after?.ids || [], before.ids);
+  if (moves.length) await reorder(ctx, cid, moves, gql);
+  record(cid, before.ids, { why: '一键同步:后台排序方式改成手动,顺序保持原样', title: before.title });
+  return { title: before.title, already: false, from: sortCn(before.sortOrder), moved: moves.length, count: before.ids.length };
 }

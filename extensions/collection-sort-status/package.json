@@ -2,7 +2,7 @@
   "name": "collection-sort-status",
   "private": true,
   "version": "1.0.0",
-  "description": "Shopify 后台 Collection 页面上的「CGP 排序」卡片(只在 shopify app deploy 打包时用,app 服务器不用)",
+  "description": "Shopify 后台 Collection 页面上的「产品排序」卡片(只在 shopify app deploy 打包时用,app 服务器不用)",
   "license": "UNLICENSED",
   "dependencies": {
     "@preact/signals": "^2.11.4",

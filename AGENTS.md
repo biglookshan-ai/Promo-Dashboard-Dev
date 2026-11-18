@@ -116,7 +116,7 @@
   → ② 显示时间(新建默认**长期显示**)→ ③ 排序设置(「完全按本次排序」在前、「只显示前 N 个」在后;「产品卡上的促销标签」(倒计时 / 徽章)收在折叠里,写明一般不用)→ ④ 顺序(网格放最后)。
   「Collection 顺序历史 / 回滚」放在窗口顶上(`#wx-hist`,和这份置顶排序自己的「历史版本」并排),不在 Collection 那一行。
   网格:**点卡片 = 多选**(Shift 连选),选中条贴顶(`#wx-selbar`:移到第几位 / 置顶 / 不显示),拖选中的其中一张 = 一起移;输入序号移动后**页面不跟着跳**(用户在第 40 个检查,调到第 12 位后要接着往下看);产品图框白底(白底产品图配灰框像排版错)。
-  **叫法**(2026-10-29 用户):界面上一律叫「置顶排序」(不说「清单」)、子页叫「Collection 默认设置」、开关叫「完全按本次排序」。内容类型定义名(metaobjects.js)不改。
+  **叫法**(2026-10-29 用户;**2026-11-18 改名**):界面上一律叫「**排序计划**」(以前叫「置顶排序」,更早叫「清单」;按钮上的「置顶」= 移到第 1 位,是动作,不改)、Shopify 后台的顺序叫「后台排序」、子页叫「Collection 默认设置」、开关叫「完全按本次排序」。内容类型定义名(metaobjects.js)不改。
   合集排序列表:每个合集默认只显示**这一刻生效的那条**(没有就按 上线中 → 已排期 → … 排第一的那条),其余点「显示全部 N 条调整记录」才展开(`pnOpen`);行首不放缩略图、产品小图不带序号。
   合集排序网格的产品卡:一行最多 4 个、标题最多 4 行、草稿写「Draft」、库存「UK:1 EW:2」(`POST /api/schedule/products-stock`;2026-10-21 用户:**不读仓库**,读店里已同步好的款式字段 `custom.uk_inventory`(UK Inventory → UK)、`custom.es_inventory`(EW Inventory → EW,用户要和后台名字一样),和主题 `stock-logic-compute.liquid` 同一组;所有款式加起来、只列有货的、全 0 =「无库存」、没这两个字段 = 不显示;只要 read_products)。
   主按钮文案自动写成「保存 · 马上上线 / 保存 · 10/24 上线」(已上线的是「保存修改」);保存出错用 `showFormErr` 标到字段上(`ERR_FIELD` 按错误文字找字段,新加校验文字记得补映射)。
@@ -317,20 +317,32 @@
   **照另一个 Collection 的顺序排**(2026-10-28 用户:Black Friday 的产品顺序要完全照 Autumn Sale):合集默认排序的设置抽屉第 2 段。规则 / 执行在 `src/col-copy.js`(`planCopy` 纯函数),`POST /api/schedule/col-copy-order { id, from, preview }`(管理员)。
   一次性:目标店里的手动顺序排成和来源一样(两边都有的照来源;只在目标里有的排最后、保持原先后;只在来源里有的**不加进目标**),「平时怎么排」也照来源设(需要时后台排序方式改成手动,走 `applyColSort`)。
   来源是自动排序 → 不复制(提示把目标也设成同一种自动排序);目标正被置顶清单接管(`colState` 没 released)→ 拦住。排之前 / 之后各记一版历史,可回滚。以后来源再调,目标不会自动跟着变。
-  ⛔ 有人在 Shopify 后台手动改过顺序(我们排最前的那几个不在最前了)→ **暂停接管**,绝不覆盖别人的改动;界面上给「按本次排序 / 保留后台排序」两个按钮(2026-10-26 用户定的名字)(`POST /api/schedule/col-hold`)。
+  ⛔ 有人在 Shopify 后台手动改过顺序(我们排最前的那几个不在最前了,app 自己写完 3 分钟内不算)→ **暂停接管**(`colState.hold`),绝不覆盖别人的改动;界面上给「按本次排序 / 保留后台排序」两个按钮(2026-10-26 用户定的名字)(`POST /api/schedule/col-hold`)。
+    ★ **2026-11-18 起暂停接管 / 保留后台排序 = 这份排序计划在网站上也暂停**(用户:卡片角标 = 网站前台按哪个显示,要是真的):`schedule-core.pinFrontPaused`(colState 的 `hold` 或 `released` 且 pinId 是这一份)
+    → `desiredPublishStatus(it, camps, now, { colState })` 给 DRAFT(店里条目草稿,主题不再按它排,网站完全按后台);scheduler 和 sync.js 都传 colState。
+    定时器在对齐 Collection **之后**再扫一遍排序计划的状态(刚发现被人改过的同一轮就切草稿);`col-hold` / `col-rollback` 改完马上 sync 那一份。点「按本次排序」= 清掉 hold / released → 马上 ACTIVE、下一分钟重新排后台。
+    「保留后台排序」时记下当时计划的 `signature`(「按本次排序」会清掉它,一分钟内又点保留时没有它,定时器会当成计划改过、又接管回去 —— 2026-11-18 踩过)。
     「保留后台排序」= 状态标 `released`(**别删 colState**:2026-10-26 前是直接删,清单还在生效时下一分钟会重新接管、又把顺序排回去):这份清单内容没改就不再排;
     清单结束只复原临时加 / 移出的产品,顺序保持人排的(`restored[].keptOrder`);改了清单内容再保存 → 以当时的顺序为底重新接管。
   ⛔ **合集 / 产品 id 有时是数字、有时是 gid**(Shopify 资源选择器给 gid,种子数据和主题导入给数字)—— 比较一律用 `numId()` 取末尾数字,直接 `===` 会静默漏掉(2026-10-12 踩过:置顶清单对不上首页页签)。
-  **Shopify 后台 Collection 页面上的「CGP 排序」卡片**(2026-11-18 用户:在每个 Collection 的后台页面提示排序有没有被 app 接管,能一键去 app):
+  **Shopify 后台 Collection 页面上的「产品排序」卡片**(2026-11-18 用户:在每个 Collection 的后台页面提示排序有没有被 app 接管,能一键去 app;同一天改了四版,最后这样):
   后台卡片扩展 `extensions/collection-sort-status`(位置 `admin.collection-details.block.render`,Preact + Shopify 后台组件,接口版本 2026-07)。**卡片只负责画**,内容由
   `GET /api/ext/collection-status?id=`(`src/ext-api.js`:只认 Shopify 身份凭证、只读、放行跨域;卡片里没有飞书登录,所以不看成员权限、不记操作记录;挂在 `/api` 飞书登录那层之前)
-  + `src/col-status.js` 的 `colCard`(纯函数,`test/col-status.test.js`)给:徽章 + 几行字 + 按钮,**文字在服务器拼好,改说法只改服务器、不用重新部署扩展**;时间写成 `{{t:毫秒}}`,卡片按看的人电脑时区换成「11/20 00:00」。
-  状态(先后):接管已暂停(`colState.hold`)→ 正在还原(`restoring`)→ 顺序交给后台(`released`)→ app 接管中(真的在改后台顺序)→ 只在网站上排(生效中但不改后台,写原因:不是手动 / 没权限 / 要移出超过 100 个 / 刚保存)→ 未接管(写清「网站只照前 N 个,第 N+1 个起按新到旧」—— 用户 11/18 说后台排了 20 个以为都有效)。
-  按钮 = `app:<网址>`:`/pins/collection/<id>`(排序设置)、`/pins/<置顶排序 id>`、`/pins/new/<Collection id>`(新:打开新建置顶排序、Collection 已选好,`cgpNav.open` + `newItem` 的 `preset.collection`)、`/pins`(暂停时去列表处理)。
+  + `src/col-status.js` 的 `colCard`(纯函数,`test/col-status.test.js`)给,**文字在服务器拼好,改说法只改服务器、不用重新部署扩展**;时间写成 `{{t:毫秒}}`,卡片按看的人电脑时区换成「11/20 00:00」。
+  每一行 `{ label, value, tone?, parts?(一行里分段上色), segs?(网站显示的分段) }`;`lines` 是给 11/18 第一版卡片的纯文字(新卡片已上线,可删)。
+  · **角标** = 网站前台现在按哪个显示:「APP 排序生效中」(有排序计划在网站上生效)/「后台排序生效中」。
+  · **同步状态** = 后台顺序和排序计划一致吗(不重复角标):已同步(绿)/ 同步中(蓝:刚保存、刚点按本次排序 = 没 `signature`、等 Shopify 算完 = `pending`)/ 同步中断(被后台接管 / 回滚过,待处理,黄)/
+    未设置同步(保留后台排序)= 后台不是手动,带「一键同步」/ 已设置同步(当前没有排序计划)= 后台手动没计划(绿)/ 同步已关闭(保留后台排序)/ 未同步(没权限 / 要移出超过 100 个)/ 还原中。
+  · 固定字段:同步状态 → 排序计划(名字 · 到几号 + 彩色状态:生效中绿 / 网站上暂停黄 / 已排期蓝 / 已结束灰)→ 后台排序方式 → **网站显示**(按位置分段 `siteSegs`:「第 1–3 位 排序计划指定的 3 个 / 第 4–15 位 后台顺序 / 第 16 位起 上架时间新到旧」,
+    产品少的截短,空 Collection 写「没有产品」—— 用户:箭头读起来像一步一步,其实是叠起来的几块)→ 计划产品(有计划时)→ 注意(需要时)。
+  按钮 = `app:<网址>`:`/pins/collection/<id>`(排序设置)、`/pins/collection/<id>/sync`(**一键同步**,主按钮)、`/pins/<排序计划 id>`、`/pins/new/<Collection id>`(新建排序计划、Collection 已选好)、`/pins`(去处理暂停)。
+  **一键同步**(2026-11-18 用户):`src/col-sort-shop.js` `enableManualSort` —— 后台排序方式改成「手动」,**顺序按改之前的样子排回去**(不交给 Shopify 决定起始顺序),前后各记一版历史;
+  `POST /api/schedule/col-sync { id }`(权限同改默认设置:能上线 + 敏感功能 `pins.defsort`),有排序计划生效就接着跑 `alignCollections` 按计划排好后台(返回 `synced`)。
+  卡片按钮只是打开 app 的 Collection 设置窗口(最上面一块「一键同步」说明 + 确认按钮),**不在卡片里直接改**(卡片认不出是哪个同事,会绕过部门权限)。平时的排法(cgp_* 字段)不动。
   **部署**:根目录 `shopify.app.toml` 是 2026-11-18 用 `shopify app config link --client-id <Client ID>` 从线上原样拉下来的(这个 app 的设置以前一直在开发者后台网页上填)。`shopify app deploy` 会把这个文件**当成 app 设置一起上传** ——
   ⛔ 线上改过网址 / 权限后,部署前先重新 `config link` 拉一次,别让旧文件盖掉线上设置。扩展的依赖装在扩展自己的文件夹(`extensions/collection-sort-status/package.json`,Railway 不用),新电脑先在那里 `npm install`;`shopify app build` 可在本地试打包。
   ⛔ **别跑 `shopify app dev`**:没有单独的开发店,它会把正式 app 的网址换成本地隧道。本地 harness 能测接口(页面里 `shopify.idToken()` 拿凭证去 fetch),卡片的样子只能部署后在正式后台看。
-  **已上线**(2026-11-18,app 版本 `cgp-promo-dashboard-dev-9`,上一版 -8):在 Collection 页面最下面「Blocks → + Block → CGP 排序」加上、点图钉固定 = **对所有同事、所有 Collection 页面都生效**(Shopify 提示 pinned for all staff),以后不用再加。
+  **已上线**(2026-11-18,第一版 app 版本 `cgp-promo-dashboard-dev-9`,上一版 -8;第四版见 PROGRESS):在 Collection 页面最下面「Blocks → + Block → 产品排序(第一版叫 CGP 排序)」加上、点图钉固定 = **对所有同事、所有 Collection 页面都生效**(Shopify 提示 pinned for all staff),以后不用再加。
   整页刷新打开 Collection 页时卡片要等几秒才出来。⚠️ 在后台测试时别点 Collection 页右边条件下面那个「+」—— 那是给 Collection 加一组条件(会出现 Unsaved changes,点 Discard 撤销)。
 - **联合推广**(2026-10-22,产品页推广 `callout` 的升级,`joint = true`):比如「Smart Fusion × 兼容手动镜头」——兼容产品页(A 面)和推广产品页(B 面)各一张卡片,都链到**活动页 = 兼容产品合集的页面**(主题模板 `collection.joint-promo` + `sections/cgp-joint-promo.liquid`:优惠一句话、标题、介绍、大图、推广产品、玩法、条款)。
   用户 2026-10-22 定:**兼容产品名单以 app 条件为准,自动同步进合集**(`src/joint-sync.js`:保存 / 批准后马上一次 + 定时器每小时一次;`POST /api/schedule/joint-sync` 立即同步);折扣**直接做 KitBundle**「加购优惠」(1 支镜头配 1 套,只给推广产品打折;KitBundle 里触发选兼容产品合集、打折产品选推广产品合集 —— 两边认同一对合集);活动页内容在这里编辑。

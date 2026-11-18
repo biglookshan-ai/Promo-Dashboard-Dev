@@ -104,3 +104,35 @@ test('app 正在真的改这个 Collection 的顺序:不许改成自动排序', 
   await applyColSort({}, '42', { mode: 'manual' }, { gql: f.gql, state }); // 手动照样可以
   assert.deepEqual(f.calls, [['set', 'cgp_sort_off', 'true', 'boolean']]);
 });
+
+// 2026-11-18 一键同步:后台排序方式改成「手动」,顺序保持改之前的样子(Shopify 改成手动后起始顺序不一定一样 → 按原样排回去)
+test('一键同步:改成手动 + 顺序保持原样 + 前后各记一版', async () => {
+  const { enableManualSort } = await import('../src/col-sort-shop.js');
+  let sortOrder = 'BEST_SELLING'; let ids = ['5', '3', '9', '1']; // 现在按畅销是这个顺序
+  const calls = [];
+  const gql = async (ctx, q, v) => {
+    if (q.includes('collectionUpdate')) { calls.push(['update', v.c.sortOrder]); sortOrder = v.c.sortOrder; ids = ['1', '3', '5', '9']; return { collectionUpdate: { collection: { id: v.c.id, sortOrder }, userErrors: [] } }; } // 改成手动后 Shopify 打乱了
+    if (q.includes('collectionReorderProducts')) {
+      calls.push(['reorder', v.moves.length]);
+      for (const m of v.moves) { const id = m.id.split('/').pop(); ids.splice(ids.indexOf(id), 1); ids.splice(+m.newPosition, 0, id); }
+      return { collectionReorderProducts: { job: { id: 'j' }, userErrors: [] } };
+    }
+    if (q.includes('collection(id: $id)')) return { collection: { id: v.id, title: 'Clearance', sortOrder, ruleSet: null, sources: [], products: { nodes: ids.map((id) => ({ id: `gid://shopify/Product/${id}` })), pageInfo: { hasNextPage: false } } } };
+    throw new Error(`没想到的查询:${q.slice(0, 60)}`);
+  };
+  const rec = [];
+  const r = await enableManualSort({ shop: 's', token: 't' }, '77', { gql, record: (cid, list, meta) => rec.push([cid, list.join(), meta.why]) });
+  assert.equal(sortOrder, 'MANUAL');
+  assert.deepEqual(ids, ['5', '3', '9', '1']); // 排回原来的顺序
+  assert.deepEqual(calls[0], ['update', 'MANUAL']);
+  assert.equal(calls[1][0], 'reorder');
+  assert.deepEqual({ title: r.title, already: r.already, from: r.from, count: r.count }, { title: 'Clearance', already: false, from: '最畅销', count: 4 });
+  assert.equal(rec.length, 2);
+  assert.deepEqual(rec[0].slice(0, 2), ['77', '5,3,9,1']);
+  assert.equal(rec[0][2], '一键同步之前(后台是「最畅销」)');
+  // 本来就是手动:什么都不改
+  calls.length = 0;
+  const r2 = await enableManualSort({ shop: 's', token: 't' }, '77', { gql });
+  assert.equal(r2.already, true);
+  assert.deepEqual(calls, []);
+});

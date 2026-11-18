@@ -181,7 +181,7 @@
   const apprName = (it) => { const a = effAppr(it); return a ? who(a) : '管理员'; };
   // 能被选进分工的人:正式数据 = 看得到这类内容所在页面的成员;演示 = 名单里所有人
   const peopleFor = (kind) => S.staff.filter((u) => !u.pages || u.admin || u.pages.includes(PAGE_OF[kind]));
-  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: 'Collection 置顶排序', salelink: '促销链接', callout: '产品页推广', price: '改价' };
+  const KIND = { banner: 'Banner', topbar: '顶栏', tbstyle: '顶栏样式', campaign: '活动', pmodule: '商品模块', pin: 'Collection 排序计划', salelink: '促销链接', callout: '产品页推广', price: '改价' };
   const titleOf = (it) => (it.kind === 'banner' ? (it.title || '未命名 Banner')
     : it.kind === 'topbar' ? `${it.emoji || ''} ${it.text || ''}`.trim() || '未命名公告' : it.name || '未命名');
   const rid = (p) => p + Math.random().toString(36).slice(2, 9);
@@ -556,7 +556,7 @@
             <div class="pvside__g"><span>顶栏公告</span><b>${msgs.length} 条</b>${msgs.map((m) => `<button class="pvside__i" data-open="${m.id}" type="button">${esc(titleOf(m))}</button>`).join('') || '<span class="muted">无</span>'}</div>
             <div class="pvside__g"><span>Banner</span><b>${bns.length} 张</b></div>
             ${mods.map(({ m, v }) => `<div class="pvside__g"><span>${MODULE_CN[m]}</span><b>${esc(v.name || '平时版本')}</b><span class="muted">${(v.tabs || []).map((t) => esc(tabLabel(t))).join(' · ')}</span></div>`).join('')}
-            <div class="pvside__g"><span>Collection 置顶排序</span>${pins.length ? pins.map((p) => `<button class="pvside__i" data-open="${p.id}" type="button">${esc(p.collection?.title || titleOf(p))}:${(p.products || []).length} 个${p.onlyListed ? '(只显示这些)' : ''}</button>`).join('') : '<span class="muted">无</span>'}</div>
+            <div class="pvside__g"><span>Collection 排序计划</span>${pins.length ? pins.map((p) => `<button class="pvside__i" data-open="${p.id}" type="button">${esc(p.collection?.title || titleOf(p))}:${(p.products || []).length} 个${p.onlyListed ? '(只显示这些)' : ''}</button>`).join('') : '<span class="muted">无</span>'}</div>
           </aside>
         </div>
         <p class="muted">这里画的是 app 排期的部分。顾客实际看到的还有主题里固定的区块(导航、Top Categories 等),那些不归这里管。</p>
@@ -1037,7 +1037,7 @@
   // 关联的飞书任务:链接 + 名字(任务状态在接好飞书任务权限后显示)
   const larkTaskGuid = (url) => (String(url).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0] || '';
   // 活动页:① 活动设置(时间 / 产品 / 产品上显示什么,一眼看清)→ ② 需要留意(有问题才出现)→ ③ 网站内容(按类型分组)→ ④ 改价 → ⑤ 飞书任务
-  const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', 'Collection 置顶排序'], ['salelink', '促销链接'], ['callout', '产品页推广']];
+  const HUB_KINDS = [['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', 'Collection 排序计划'], ['salelink', '促销链接'], ['callout', '产品页推广']];
   const dhm = (ms) => { const m = Math.max(0, Math.floor(ms / 60000)); return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h ${m % 60}m`; };
   // 徽章点了去哪(活动的 badgeLink):'' 自动 / 'none' 不能点 / 链接
   const blMode = (v) => (v === 'none' ? 'none' : v ? 'url' : '');
@@ -1179,7 +1179,7 @@
     const add = (kind, label) => `<button type="button" class="btn btn-sm" data-new="${kind}" data-for="${c.id}">${I.plus}${label}</button>`;
     const needType = (flag, label) => `<button type="button" class="btn btn-sm" data-go="settings" title="先到「设置 → 店铺连接」点「在店里创建内容类型」补建">${label}(要先补建内容类型)</button>`;
     const adds = add('banner', 'Banner') + add('topbar', '顶栏公告') + add('tbstyle', '顶栏样式') + add('pmodule', '首页商品模块')
-      + (MODE === 'live' && S.setup && S.setup.pinReady === false ? needType('pin', 'Collection 置顶排序') : add('pin', 'Collection 置顶排序'))
+      + (MODE === 'live' && S.setup && S.setup.pinReady === false ? needType('pin', 'Collection 排序计划') : add('pin', 'Collection 排序计划'))
       + (MODE === 'live' && S.setup && S.setup.slReady === false ? needType('salelink', '促销链接') : add('salelink', '促销链接'))
       + (MODE === 'live' && S.setup && S.setup.coReady === false ? needType('callout', '产品页推广') : add('callout', '产品页推广'));
     const groups = HUB_KINDS.map(([k, label]) => { const list = mine(k); return list.length
@@ -1685,7 +1685,7 @@
       ${edSec(2, '显示哪些产品', '', `      <label class="tgl"><input type="checkbox" name="inStock" ${it.inStock ? 'checked' : ''}/><span class="tgl__ui"></span><span><b>只显示有货的</b><span class="muted">预订(Pre Order)和缺货的不显示,和前台卡片上的「In Stock」一致</span></span></label>
       <div class="fld2">${fld('最低折扣 %', `<input class="inp" type="number" min="0" max="95" name="minDiscount" value="${esc(it.minDiscount ?? '')}" placeholder="不限"/>`, '比如 20 = 只显示 20% off 以上的')}
         ${fld('最多显示几个', `<input class="inp" type="number" min="0" name="limit" value="${esc(it.limit ?? '')}" placeholder="不限"/>`, '按下面的排法取前面几个')}</div>
-      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '只有没固定产品、又选「和 Collection 平时一样」时,这条链接才跟着 Collection(置顶排序 → 默认设置);固定了产品或选了别的排序,就完全按这条链接自己的,置顶排序影响不到。顾客自己选了 Sort by 就按他选的')}
+      ${fld('排序', `<select class="sel" name="sort">${SL.SALE_SORTS.map(([k, l]) => `<option value="${k}" ${(it.sort || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '只有没固定产品、又选「和 Collection 平时一样」时,这条链接才跟着 Collection(排序计划 → 默认设置);固定了产品或选了别的排序,就完全按这条链接自己的,排序计划影响不到。顾客自己选了 Sort by 就按他选的')}
       ${fld('页面上的标题', inp('heading', it.heading, '如:DZOFiLM Autumn Deals'), '显示在结果数前面;不填显示「On Sale」')}
 `)}
       ${edSec(3, '产品顺序', '拖动产品卡片调整顾客看到的顺序', `      <div class="fld"><span>固定位置的产品 <em>拖动产品卡片排序:右边直接拖,或点「放大排序」铺满整个窗口来排;这里按顺序列出固定了位置的,照样要打折(勾了有货还要有货)才会显示</em></span>
@@ -1712,7 +1712,7 @@
   function slSortSync() {
     const el = $('#ed-form [name="sort"]'); if (!el || !sl) return;
     const fixed = sl.products.length > 0; const o = el.querySelector('option[value=""]');
-    if (o) { o.disabled = fixed; o.textContent = fixed ? '和 Collection 平时一样(固定了产品就不能选)' : '和 Collection 平时一样(跟着置顶排序和默认设置)'; }
+    if (o) { o.disabled = fixed; o.textContent = fixed ? '和 Collection 平时一样(固定了产品就不能选)' : '和 Collection 平时一样(跟着排序计划和默认设置)'; }
     if (fixed && !el.value) el.value = 'discount';
   }
   function redrawSl() {
@@ -1835,7 +1835,7 @@
         <label class="tgl tgl--sm"><input type="checkbox" data-slall ${all ? 'checked' : ''}/><span class="tgl__ui"></span><span>也显示现在不会出现的产品<span class="muted">(没打折 / 没货 / 折扣不够的,灰色;活动前先排好,开始打折后就在这个位置出现)</span></span></label>
         ${sl.products.length ? `<span class="slord__sum">固定了前 <b>${sl.products.length}</b> 个位置</span><button type="button" class="btn btn-sm btn-ghost" data-slclear title="清掉手动排的顺序">全部按排序规则</button>` : ''}
       </div>
-      <p class="muted pv-cap">拖动卡片调整顾客看到的顺序,或点左上角的序号输入第几位;红框 = 这条链接固定了位置${fromPin.size ? ',蓝框 = 位置来自 Collection 置顶排序' : ''}。没动过的按左边的「排序」排,以后新打折的产品排在固定的后面。</p>
+      <p class="muted pv-cap">拖动卡片调整顾客看到的顺序,或点左上角的序号输入第几位;红框 = 这条链接固定了位置${fromPin.size ? ',蓝框 = 位置来自 Collection 排序计划' : ''}。没动过的按左边的「排序」排,以后新打折的产品排在固定的后面。</p>
       ${cards ? `<div class="slgrid${sl.big ? ' slgrid--big' : ''}">${cards}</div>${list.length > MAXC ? `<p class="muted">……还有 ${list.length - MAXC} 个,按排序规则排在后面</p>` : ''}` : '<p class="muted">按现在的设置一个产品都没有,顾客打开会看到「没有产品」。</p>'}
       <p class="muted pv-cap">数据来自前台(和顾客看到的一样),两分钟内不重复读;刚改过价格 / 库存就点「刷新」。</p>`;
   }
@@ -1866,15 +1866,15 @@
   function wxSlHtml() {
     if (!wx?.collection) return '<span class="muted">先选 Collection</span>';
     const links = salesOf(wx.collection.id);
-    if (!links.length) return '<span class="muted">没有 —— 这份置顶排序只管 Collection 本来那一页</span>';
+    if (!links.length) return '<span class="muted">没有 —— 这份排序计划只管 Collection 本来那一页</span>';
     // 2026-10-26 用户定:促销链接有自定义(固定了产品 / 选了排序)就完全独立;什么都没设才跟着这份清单
     return `<div class="slrel">${links.map((x) => {
       const n = (x.products || []).length; const k = Math.min(n, slMax());
       const own = [k ? `固定了 ${k} 个产品${n > slMax() ? `(排了 ${n} 个,网站只认前 ${slMax()} 个)` : ''}` : '', x.sort ? `排序选了「${esc(SORT_LABEL()[x.sort] || x.sort)}」` : k ? '其余按折扣从大到小' : ''].filter(Boolean).join(',');
       return `<div class="slrel__i"><span class="slrel__t">${badge(x)}<b>${esc(titleOf(x))}</b><span class="mono muted">?onsale${x.slug ? `=${esc(x.slug)}` : ''}</span></span>
         <span class="slrel__w">${SL.isCustom(x)
-          ? `<span class="tag">独立排序,不受影响</span>这条链接${own},完全按它自己的顺序;这份置顶排序怎么改都影响不到它`
-          : '<span class="tag tag--accent">跟着这份置顶排序</span>这条链接没设自己的排序,所以链接里<b>打折的</b>产品按这份置顶排序 → Collection 默认设置的顺序排(没打折的不会出现在链接里)'}</span>
+          ? `<span class="tag">独立排序,不受影响</span>这条链接${own},完全按它自己的顺序;这份排序计划怎么改都影响不到它`
+          : '<span class="tag tag--accent">跟着这份排序计划</span>这条链接没设自己的排序,所以链接里<b>打折的</b>产品按这份排序计划 → Collection 默认设置的顺序排(没打折的不会出现在链接里)'}</span>
         <button type="button" class="btn btn-sm btn-ghost" data-wx="opensl" data-id="${esc(x.id)}">打开</button></div>`;
     }).join('')}</div>`;
   }
@@ -1885,7 +1885,7 @@
     const sortCn = (k) => esc(SORT_LABEL()[k] || k);
     if (SL.isCustom(link)) { // 有自定义:完全独立,置顶清单 / Collection 默认设置都影响不到
       const n = sl.products.length; const k = Math.min(n, slMax()); const es = SL.effSort(link);
-      return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序 · <b>这条链接独立排序</b>,Collection 置顶排序和默认设置都影响不到</li>
+      return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序 · <b>这条链接独立排序</b>,Collection 排序计划和默认设置都影响不到</li>
         ${li(1, `<b>这条链接固定的</b> ${k ? `${n > slMax() ? '前 ' : ''}${k} 个 <span class="slsrc__lg slsrc__lg--pin"></span>红框${n > slMax() ? `<span class="warn">;你排的第 ${slMax() + 1}–${n} 个网站不认,按第 2 层排</span>` : ''}` : '<span class="muted">没有</span>'}<em>在下面拖动卡片,或点卡片上的「置顶」</em>`)}
         ${li(2, `<b>其余打折的</b> 按「${sortCn(es)}」${!v.sort ? '<em>固定了产品、没另外选排序,就按折扣从大到小;可以在左边「排序」里换</em>' : ''}<em>一样大的按最新上架在前</em>`)}
       </ol>`;
@@ -1898,10 +1898,10 @@
     const r = d.sortRule || { off: false, pinManual: 12, pinNew: 0 };
     const rule = r.off ? '按 Collection 后台的顺序' : CS.describe({ ...r, sortOrder: 'MANUAL' });
     return `<ol class="slsrc"><li class="slsrc__h">顾客看到的顺序 · 这条链接没设自己的排序,<b>跟着 Collection 本来那一页</b></li>
-      ${li(1, ap ? `<b>Collection 置顶排序「${esc(titleOf(ap))}」</b>里打折的 ${fromList} 个 <span class="slsrc__lg slsrc__lg--list"></span>蓝框<em>${win(ap).end != null ? `到 ${fDT(win(ap).end)} 结束,之后这一层就没有了` : '长期生效'};要改在「Collection 排序」里改 <button type="button" class="linkbtn" data-sl="openpin" data-id="${esc(ap.id)}">打开这份置顶排序</button></em>`
-        : `<b>Collection 置顶排序</b> <span class="muted">这一刻没有生效的</span>${next ? `<em>「${esc(titleOf(next))}」${fDT(win(next).start)} 开始,到时这里会跟着变</em>` : ''}`)}
+      ${li(1, ap ? `<b>Collection 排序计划「${esc(titleOf(ap))}」</b>里打折的 ${fromList} 个 <span class="slsrc__lg slsrc__lg--list"></span>蓝框<em>${win(ap).end != null ? `到 ${fDT(win(ap).end)} 结束,之后这一层就没有了` : '长期生效'};要改在「Collection 排序」里改 <button type="button" class="linkbtn" data-sl="openpin" data-id="${esc(ap.id)}">打开这份排序计划</button></em>`
+        : `<b>Collection 排序计划</b> <span class="muted">这一刻没有生效的</span>${next ? `<em>「${esc(titleOf(next))}」${fDT(win(next).start)} 开始,到时这里会跟着变</em>` : ''}`)}
       ${li(2, `<b>其余打折的</b> 按 Collection 默认设置:${esc(rule)}`)}
-      <li class="slsrc__tip">想让这条链接独立排序:在下面拖动卡片固定位置,或在左边「排序」选一种 —— 之后置顶排序和 Collection 默认设置都影响不到它</li>
+      <li class="slsrc__tip">想让这条链接独立排序:在下面拖动卡片固定位置,或在左边「排序」选一种 —— 之后排序计划和 Collection 默认设置都影响不到它</li>
     </ol>`;
   }
   // ================= 合集默认排序(合集页「平时」怎么排;规则在 /lib/col-sort.js,和服务器同一份)=================
@@ -1930,8 +1930,8 @@
     return `<div class="irow">
       <span class="irow__lead">${c.image ? `<span class="irow__thumb" style="background-image:url('${esc(thumb(c.image, 160))}')"></span>` : `<span class="irow__thumb">${I.sort}</span>`}</span>
       <button class="irow__main" type="button" data-csopen="${esc(c.id)}">
-        <span class="irow__t"><span class="irow__name">${esc(c.title)}</span>${def ? '' : '<span class="tag tag--accent">单独设过</span>'}${c.held ? `<span class="tag tag--ok" title="这份置顶排序生效期间 Collection 页暂时完全按本次排序,结束后回到这里的设置">「${esc(c.held)}」生效中</span>` : ''}</span>
-        <span class="irow__s">后台排序:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}${pins ? ` · ${pins} 份置顶排序` : ''}</span>
+        <span class="irow__t"><span class="irow__name">${esc(c.title)}</span>${def ? '' : '<span class="tag tag--accent">单独设过</span>'}${c.held ? `<span class="tag tag--ok" title="这份排序计划生效期间 Collection 页暂时完全按本次排序,结束后回到这里的设置">「${esc(c.held)}」生效中</span>` : ''}</span>
+        <span class="irow__s">后台排序:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}${pins ? ` · ${pins} 份排序计划` : ''}</span>
       </button>
       <span class="irow__when cs-mode${def ? ' is-def' : ''}">${esc(CS.describe(c))}</span>
       <span></span>
@@ -1951,9 +1951,9 @@
         ${ilistHtml(inQ.filter(fn).map(csRowHtml), csRows.length ? '没有符合条件的 Collection' : '店里还没有 Collection')}`;
     }
     $('#pn-root').innerHTML = `
-      ${pageHead('Collection 排序', '每个 Collection 的默认设置:没有置顶排序生效时,Collection 页默认怎么排。')}
-      ${subTabsHtml('pnview', pnView, [['pins', '置顶排序', (S.pins || []).length], ['defsort', 'Collection 默认设置']])}
-      <div class="note note--sm">💡 没单独设过的 Collection 都是:<b>前 ${CS.DEFAULT_N} 个按手动顺序,其余按新到旧</b>(新品自动往前)。只管顾客没选别的 Sort by 时的顺序;生效中的置顶排序优先。${MODE === 'demo' ? '演示模式用的是示例 Collection,改动只存在这台电脑。' : ''}</div>
+      ${pageHead('Collection 排序', '每个 Collection 的默认设置:没有排序计划生效时,Collection 页默认怎么排。')}
+      ${subTabsHtml('pnview', pnView, [['pins', '排序计划', (S.pins || []).length], ['defsort', 'Collection 默认设置']])}
+      <div class="note note--sm">💡 没单独设过的 Collection 都是:<b>前 ${CS.DEFAULT_N} 个按手动顺序,其余按新到旧</b>(新品自动往前)。只管顾客没选别的 Sort by 时的顺序;生效中的排序计划优先。${MODE === 'demo' ? '演示模式用的是示例 Collection,改动只存在这台电脑。' : ''}</div>
       ${body}`;
     wirePnView();
     $$('#pn-root [data-csf]').forEach((b) => b.addEventListener('click', () => { csF.f = b.dataset.csf; renderPins(); }));
@@ -1974,7 +1974,7 @@
   // 演示模式:合集的「平时」设置只存在这台电脑
   const demoColRow = (c) => ({ id: numId(c.id), title: c.title, handle: c.handle, sortOrder: /clearance/.test(c.handle || '') ? 'BEST_SELLING' : 'MANUAL',
     count: c.count ?? null, image: null, off: false, offSet: false, pinManual: null, pinNew: 0, ...((S.demoColSort || {})[numId(c.id)] || {}) });
-  const pinNm = (x) => x?.pinName || (x?.pinId && byId(x.pinId) ? titleOf(byId(x.pinId)) : '') || '另一份置顶排序';
+  const pinNm = (x) => x?.pinName || (x?.pinId && byId(x.pinId) ? titleOf(byId(x.pinId)) : '') || '另一份排序计划';
   // 合集「平时怎么排」的设置面板:合集默认排序的抽屉、置顶清单编辑器里展开的那块共用。c = 合集这一行(会被改成保存后的样子)
   let csUid = 0;
   function csPanel(root, c, { saveBtn, onSaved }) {
@@ -2008,11 +2008,11 @@
       const notes = [];
       if (st.mode === 'top' && notManual) notes.push(`<div class="note note--warn note--sm">这个 Collection 后台现在按「${from}」排${st.toManual ? '。' : `,所以「前 ${esc(String(st.n))} 个」是${from}的前几个,不是你排的。`}
         <label class="ck"><input type="checkbox" data-cs="tomanual" ${st.toManual ? 'checked' : ''}/>同时把后台排序方式改成「手动」</label></div>`);
-      if (p?.ops.sortOrder === 'MANUAL') notes.push(`<div class="note note--warn note--sm">保存时会把 Shopify 后台的排序方式从「${from}」改成「手动」。起始顺序由 Shopify 决定,改完到前台看一眼;要调就在 Shopify 后台拖,或新建置顶排序。</div>`);
+      if (p?.ops.sortOrder === 'MANUAL') notes.push(`<div class="note note--warn note--sm">保存时会把 Shopify 后台的排序方式从「${from}」改成「手动」。起始顺序由 Shopify 决定,改完到前台看一眼;要调就在 Shopify 后台拖,或新建排序计划。</div>`);
       else if (p?.ops.sortOrder && !blocked) notes.push(`<div class="note note--warn note--sm">保存时会把 Shopify 后台的排序方式从「${from}」改成「${CS.sortCn(p.ops.sortOrder)}」。</div>`);
-      if (st.mode === 'shopify' && pins.length && !blocked) notes.push(`<div class="note note--sm">这个 Collection 有 ${pins.length} 份置顶排序。后台不是「手动」排序时,置顶排序只能在前台排(店里的顺序不会被改)。</div>`);
-      if (blocked) notes.push(`<div class="note note--danger note--sm">这个 Collection 的顺序现在由「${esc(pinNm(taken))}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了 —— 等这份置顶排序结束后再改。</div>`);
-      if (c.held) notes.push(`<div class="note note--ok note--sm">「${esc(c.held)}」生效期间,Collection 页暂时完全按本次排序;这里改的是默认设置,置顶排序结束后就用新的。</div>`);
+      if (st.mode === 'shopify' && pins.length && !blocked) notes.push(`<div class="note note--sm">这个 Collection 有 ${pins.length} 份排序计划。后台不是「手动」排序时,排序计划只能在前台排(店里的顺序不会被改)。</div>`);
+      if (blocked) notes.push(`<div class="note note--danger note--sm">这个 Collection 的顺序现在由「${esc(pinNm(taken))}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了 —— 等这份排序计划结束后再改。</div>`);
+      if (c.held) notes.push(`<div class="note note--ok note--sm">「${esc(c.held)}」生效期间,Collection 页暂时完全按本次排序;这里改的是默认设置,排序计划结束后就用新的。</div>`);
       if (!canEdit) notes.push(`<div class="note note--sm">${!(canPage('pins', 3) && hasCap('pins.defsort')) ? '你没有改 Collection 默认设置的权限(要「Collection 排序」能上线,并且负责人没关掉这一项)' : 'app 还没有「改产品 / Collection」的权限,改不了'}</div>`);
       R('notes').innerHTML = notes.join('');
       R('pv').innerHTML = `<div><span class="muted">现在</span>${esc(CS.describe(c))}</div>
@@ -2053,12 +2053,25 @@
       } catch (err) { toast(err.message, false); b.textContent = label; b.disabled = false; }
     };
   }
-  function openColSort(id) {
+  function openColSort(id, { sync = false } = {}) {
     const c = (csRows || []).find((x) => x.id === String(id)); if (!c) return;
+    // 一键同步(2026-11-18):后台不是「手动」= 未设置同步,app 不能把排序计划同步到后台。改成手动、顺序保持原样;有排序计划生效就马上按计划排好
+    const syncBox = c.sortOrder !== 'MANUAL' && MODE === 'live' ? (() => {
+      const can = canPage('pins', 3) && hasCap('pins.defsort') && canWrite();
+      const live = csPins(c.id).filter((p) => status(p) === 'live');
+      return `<div class="note ${sync ? 'note--warn' : 'note--sm'} cs-sync" id="cs-sync"><div><b>一键同步</b> · 现在是「未设置同步」:后台是「${esc(CS.sortCn(c.sortOrder))}」,app 不能把排序计划同步到后台</div>
+        <ul style="margin:6px 0 0;padding-left:18px">
+          <li>后台排序方式「${esc(CS.sortCn(c.sortOrder))}」→「手动」,顺序保持现在的样子(改之前会存一版,可以在「历史版本」回滚)</li>
+          <li>${live.length ? `有排序计划「${esc(titleOf(live[0]))}」在生效:马上按计划排好后台` : '现在没有排序计划:只改成手动,以后的排序计划会自动同步到后台'}</li>
+          <li>改成手动后,后台不会再按「${esc(CS.sortCn(c.sortOrder))}」自动变;网站上平时怎么排(下面第 1 段)不变</li></ul>
+        <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="btn btn-primary" data-cssync ${can ? '' : 'disabled'}>确认一键同步</button>
+          ${can ? '' : `<span class="muted">${!(canPage('pins', 3) && hasCap('pins.defsort')) ? '你没有改 Collection 顺序的权限(要「Collection 排序」能上线,并且负责人没关掉「改 Collection 默认设置」)' : 'app 还没有「改产品 / Collection」的权限'}</span>`}</div></div>`;
+    })() : '';
     hidePop(); drawerPath = `/pins/collection/${encodeURIComponent(c.id)}`;
     $('#drawer').innerHTML = `<div class="drawer__h"><div><span class="kchip">Collection 排序</span> <b>${esc(c.title)} · Collection 默认设置</b></div>
         <button class="btn btn-ghost" data-act="close" type="button" aria-label="关闭">${I.x}</button></div>
       <div class="drawer__b drawer__b--cs"><div>
+        ${syncBox}
         ${edSec(1, '怎么排', '顾客没选别的 Sort by 时,Collection 页默认的顺序', `<div id="cs-panel"></div>
           <div class="cs-links">${MODE === 'live' && c.handle ? linkPair('collections', c) : ''}<button class="btn btn-sm btn-ghost" type="button" data-cslink>${I.link}复制链接</button><span class="muted">Shopify 后台的排序方式:${esc(CS.sortCn(c.sortOrder))}${c.count != null ? ` · ${c.count} 个产品` : ''}</span></div>`)}
         ${edSec(2, '照另一个 Collection 的顺序排', '一次性把这个 Collection 的产品顺序排成和另一个一样(平时怎么排也照它)', '<div id="cs-copy"></div>')}
@@ -2073,6 +2086,15 @@
       if (MODE === 'live') { await load(); renderAll(); } else renderPins();
     } });
     csCopy($('#cs-copy'), c, { onDone: async () => { closeDrawer(); await load(); renderAll(); } });
+    $('#drawer [data-cssync]')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget; btn.disabled = true; btn.textContent = '同步中…';
+      try {
+        const r = await api('POST', '/api/schedule/col-sync', { id: c.id });
+        toast(r.already ? `「${r.title}」后台本来就是手动,已经能同步` : `「${r.title}」已一键同步:后台排序方式「${r.from}」→「手动」,顺序保持原样${r.synced ? ',并按排序计划排好了后台' : ''}`);
+        closeDrawer(); await loadColSorts(true); await load(); renderAll();
+      } catch (err) { toast(err.message, false); btn.disabled = false; btn.textContent = '确认一键同步'; }
+    });
+    if (sync) $('#cs-sync')?.scrollIntoView({ block: 'start' });
   }
   // 照另一个 Collection 的顺序排(2026-10-28 用户:Black Friday 的产品顺序完全照 Autumn Sale)。
   // 选来源 → 看看会怎么排(不写店里)→ 再点一次确认才真的排;一次性的,排之前 / 之后各存一版,可以在「历史」回滚。服务器:src/col-copy.js
@@ -2158,7 +2180,7 @@
         try { c = (await api('GET', `/api/schedule/col-sort?id=${encodeURIComponent(row.id)}`)).collection; }
         catch (e) { body.innerHTML = `<p class="muted">${esc(e.message)}</p>`; delete d.dataset.ready; return; }
       }
-      body.innerHTML = `<div data-r="panel"></div><div class="csin__f"><span class="muted">这是 Collection 自己的设置,和这份置顶排序分开保存,点了马上生效</span>
+      body.innerHTML = `<div data-r="panel"></div><div class="csin__f"><span class="muted">这是 Collection 自己的设置,和这份排序计划分开保存,点了马上生效</span>
         <button class="btn btn-sm btn-primary" type="button">保存默认设置</button></div>`;
       csPanel(body.querySelector('[data-r="panel"]'), c, { saveBtn: body.querySelector('.csin__f .btn'), onSaved: async (r) => {
         d.querySelector('.csin__v').textContent = CS.describe(c);
@@ -2199,13 +2221,13 @@
       return itemRow(p, { badge: badgeAt(p, T), thumb: '', cls: 'irow--pin',
         tags: `${p.fullOrder ? '<span class="tag tag--accent">完全按本次排序</span>' : ''}${p.onlyListed ? '<span class="tag tag--warn">只显示前几个</span>' : ''}`,
         sub: `${prods.length} 个产品排在前面${(p.hidden || []).length ? ` · ${(p.hidden || []).length} 个不显示` : ''}`,
-        act: `${['draft', 'rejected', 'ended', 'paused'].includes(status(p)) ? `<button class="btn btn-sm btn-ghost btn-danger-t" type="button" data-pindel="${p.id}" title="删除这份置顶排序(不影响别的置顶排序和 Collection 本身)">删除</button>` : ''}<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
+        act: `${['draft', 'rejected', 'ended', 'paused'].includes(status(p)) ? `<button class="btn btn-sm btn-ghost btn-danger-t" type="button" data-pindel="${p.id}" title="删除这份排序计划(不影响别的排序计划和 Collection 本身)">删除</button>` : ''}<button class="btn btn-sm" type="button" data-pindup="${p.id}">复制成下一天</button>`,
         extra: prods.length ? `<span class="pnrow__ps">${prods.slice(0, 14).map((x) => `<span class="pnrow__p" title="${esc(x.title)}">${x.image ? `<img src="${esc(thumb(x.image, 100))}" alt="" loading="lazy">` : ''}</span>`).join('')}${prods.length > 14 ? `<span class="muted">…共 ${prods.length} 个</span>` : ''}</span>` : '' });
     };
     $('#pn-root').innerHTML = `
       ${pageHead('Collection 排序', '让 Collection 页和首页商品模块里,指定的产品排在最前面。可以按时间排,Flash 每天一组。',
-        need ? '' : `${MODE === 'live' && canPage('pins', 3) ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}${canPage('pins', 2) ? `<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建置顶排序</button>` : ''}`)}
-      ${subTabsHtml('pnview', pnView, [['pins', '置顶排序', (S.pins || []).length], ['defsort', 'Collection 默认设置']])}
+        need ? '' : `${MODE === 'live' && canPage('pins', 3) ? '<button class="btn" id="pn-run" type="button">立即执行一次</button>' : ''}${canPage('pins', 2) ? `<button class="btn btn-primary" data-new="pin" type="button">${I.plus}新建排序计划</button>` : ''}`)}
+      ${subTabsHtml('pnview', pnView, [['pins', '排序计划', (S.pins || []).length], ['defsort', 'Collection 默认设置']])}
       ${need ? '<div class="note note--warn">这个功能要先在店里建一个内容类型。到「设置 → 店铺连接」点「在店里创建内容类型」补建一下,再回来。<button class="btn btn-sm" data-go="settings" type="button">去补建</button></div>' : ''}
       <div class="note note--sm">💡 这里排的是<b>Collection 本来那一页</b>。促销链接(?onsale,只放打折产品)只要固定了产品或选了排序,就<b>完全按它自己的</b>,这里影响不到;只有什么都没设的促销链接,才跟着这里的顺序。只想排打折那一页?打开那条促销链接直接拖。<button class="btn btn-sm" data-go="salelinks" type="button">去促销链接</button></div>
       ${alertsHtml(['pin'])}
@@ -2214,7 +2236,7 @@
         ${tlHtml('pn', points, pnAt)}
         ${tlChanges(points, pnAt)}
       </section>
-      ${ptoolHtml('pins', S.pins || [], '', { ph: '搜索置顶排序或 Collection' })}
+      ${ptoolHtml('pins', S.pins || [], '', { ph: '搜索排序计划或 Collection' })}
       ${rows.length ? rows.map((g) => {
         const act = activePin(g.cid, T);
         // 首页哪些模块页签也吃这个合集(同名的只说一次)
@@ -2229,28 +2251,28 @@
         const st0 = (p) => win(p).start ?? 0;
         return `<div class="ilist pngroup">
           <div class="ilist__grp pngrp"><b>${esc(g.title)}</b>
-            ${cs?.released ? `<span class="tag" title="之前选了「保留后台排序」:「${esc(pinNm(cs))}」剩下的时间 app 不再排这个 Collection,结束时也不还原顺序(临时加 / 移出的产品照样复原)">顺序交给后台了</span>` : ''}
-            ${cs && !cs.hold && !cs.released ? `<span class="tag tag--ok" title="店里这个 Collection 现在真的按「${esc(pinNm(cs))}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了 Collection` : ''};结束会自动还原成接管前的顺序">店里已按置顶排序排好</span>` : ''}
+            ${cs?.released ? `<span class="tag" title="之前选了「保留后台排序」:「${esc(pinNm(cs))}」剩下的时间 app 不再排这个 Collection,网站上也暂停这份排序计划、完全按后台顺序;结束时也不还原顺序(临时加 / 移出的产品照样复原)">后台排序优先</span>` : ''}
+            ${cs && !cs.hold && !cs.released ? `<span class="tag tag--ok" title="店里这个 Collection 现在真的按「${esc(pinNm(cs))}」排着${cs.removed?.length ? `,另有 ${cs.removed.length} 个产品临时移出了 Collection` : ''};结束会自动还原成接管前的顺序">店里已按排序计划排好</span>` : ''}
             ${sf ? `<span class="tag tag--accent" title="「${esc(pinNm(sf))}」生效期间 Collection 页完全按本次排序显示,结束自动恢复默认设置">完全按本次排序</span>` : ''}
-            ${!act ? '<span class="muted">这一刻没有置顶排序生效</span>' : ''}
+            ${!act ? '<span class="muted">这一刻没有排序计划生效</span>' : ''}
             ${used.length ? `<span class="muted" title="${esc(used.map((u) => `首页「${u}」`).join('、'))}也用这个 Collection">首页${esc(used[0])}${used.length > 1 ? ` 等 ${used.length} 个页签` : ''}也用</span>` : ''}
             ${sls.length ? `<span class="muted" title="${esc(sls.map((x) => `「${titleOf(x)}」${SL.isCustom(x) ? '设了自己的排序,完全独立,这里影响不到' : '没设自己的排序,打折的产品跟着这里的顺序'}`).join('\n'))}">${slFollow.length
               ? `促销链接${slFollow.length === 1 ? `「${esc(titleOf(slFollow[0]))}」` : ` ${slFollow.length} 条`}跟着这个顺序${sls.length > slFollow.length ? `(另外 ${sls.length - slFollow.length} 条独立排序)` : ''}`
               : `${sls.length === 1 ? `促销链接「${esc(titleOf(sls[0]))}」` : `${sls.length} 条促销链接`}独立排序,不受这里影响`}</span>` : ''}
             ${MODE === 'live' && g.cid !== '?' ? `<span class="ilist__grpact"><button class="btn btn-sm btn-ghost" type="button" data-colhist="${esc(String(g.cid))}" data-title="${esc(g.title)}">${I.clock}历史版本</button></span>` : ''}</div>
-          ${cs?.hold ? `<div class="note note--warn note--sm"><div>有人在 Shopify 后台改过这个 Collection 的顺序(「${esc(pinNm(cs))}」排在最前的产品被挪动了),<b>app 先停手</b>,没有覆盖。选一个:</div>
-              <div class="holdopts"><button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按本次排序</button><span class="muted">按这份置顶排序重新排,后台的改动会被盖掉;置顶排序结束照常还原</span></div>
-              <div class="holdopts"><button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">保留后台排序</button><span class="muted">这份置顶排序剩下的时间不再排;结束时顺序也不还原,只把临时加 / 移出的产品复原</span></div></div>` : ''}
-          ${cs?.released && act && numId(act.id) === numId(cs.pinId) ? `<div class="note note--sm">「${esc(pinNm(cs))}」生效中,但顺序已经交给后台(之前选了「保留后台排序」),app 不再排。
+          ${cs?.hold ? `<div class="note note--warn note--sm"><div>有人在 Shopify 后台改过这个 Collection 的顺序(「${esc(pinNm(cs))}」排在最前的产品被挪动了),<b>app 先停手</b>,网站上也先按后台顺序显示,没有覆盖。选一个:</div>
+              <div class="holdopts"><button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">按本次排序</button><span class="muted">网站和后台都回到这份排序计划,后台的改动会被盖掉;排序计划结束照常还原</span></div>
+              <div class="holdopts"><button class="btn btn-sm" type="button" data-colrelease="${esc(String(g.cid))}">保留后台排序</button><span class="muted">这份排序计划剩下的时间不再排,网站上也暂停、完全按后台顺序;结束时顺序也不还原,只把临时加 / 移出的产品复原</span></div></div>` : ''}
+          ${cs?.released && act && numId(act.id) === numId(cs.pinId) ? `<div class="note note--sm">「${esc(pinNm(cs))}」生效中,但之前选了「保留后台排序」:app 不再排,网站上也暂停这份排序计划,完全按后台顺序。
               <button class="btn btn-sm" type="button" data-colhold="${esc(String(g.cid))}">改回按本次排序</button></div>` : ''}
-          ${live.length > 1 ? `<div class="note note--warn note--sm">这一刻有 ${live.length} 份置顶排序同时生效,${live.filter((p) => st0(p) === st0(act)).length > 1
+          ${live.length > 1 ? `<div class="note note--warn note--sm">这一刻有 ${live.length} 份排序计划同时生效,${live.filter((p) => st0(p) === st0(act)).length > 1
             ? '而且开始时间一样,<b>前台和店里可能各用一份,顺序会打架</b> —— 请暂停不用的那份,或者给它们设不同的开始时间。'
             : `只有开始最晚的「${esc(titleOf(act))}」会用上。不需要的可以暂停或删掉。`}</div>` : ''}
           ${(open ? g.list : g.list.slice(0, 1)).map(card).join('')}
           ${rest.length ? `<button type="button" class="pnmore" data-pnmore="${esc(String(g.cid))}">${open ? `收起<svg class="ico pnmore__i is-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`
             : `显示全部 ${g.list.length} 条调整记录<span class="muted">(${esc(restSum)})</span><svg class="ico pnmore__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`}</button>` : ''}
         </div>`;
-      }).join('') : (need ? '' : empty((S.pins || []).length ? '没有符合条件的置顶排序' : '还没有置顶排序。点右上角新建一个,选 Collection、拖好顺序就行。'))}`;
+      }).join('') : (need ? '' : empty((S.pins || []).length ? '没有符合条件的排序计划' : '还没有排序计划。点右上角新建一个,选 Collection、拖好顺序就行。'))}`;
     wireTimeline('pn', points, () => pnAt, (v) => { pnAt = v; renderPins(); });
     wirePnView();
     // 立即执行一次:不用等定时器那一分钟,而且把「做了什么 / 为什么没做」直接说出来
@@ -2260,7 +2282,7 @@
         const { rep } = await api('POST', '/api/schedule/col-run');
         const say = colSay(rep);
         await load(); renderAll();
-        toast(say.length ? say.join(' · ') : '这一刻没有生效中的置顶排序,什么都不用做', !rep.failures.length);
+        toast(say.length ? say.join(' · ') : '这一刻没有生效中的排序计划,什么都不用做', !rep.failures.length);
       } catch (err) { toast(err.message, false); }
       b.disabled = false; b.textContent = old2;
     });
@@ -2282,8 +2304,8 @@
       const release = 'colrelease' in b.dataset;
       b.disabled = true;
       try {
-        await api('POST', '/api/schedule/col-hold', { collection: release ? b.dataset.colrelease : b.dataset.colhold, release });
-        await load(); renderAll(); toast(release ? '好,保留后台排序:这份置顶排序剩下的时间不再排' : '好,下一分钟按本次排序重新排');
+        const r = await api('POST', '/api/schedule/col-hold', { collection: release ? b.dataset.colrelease : b.dataset.colhold, release });
+        await load(); renderAll(); toast(r?.note || (release ? '好,保留后台排序:这份排序计划剩下的时间不再排,网站上也已暂停' : '好,下一分钟按本次排序重新排,网站上也恢复'), !r?.note);
       } catch (e) { toast(e.message, false); b.disabled = false; }
     }));
     $$('#pn-root [data-pindup]').forEach((b) => b.addEventListener('click', (e) => {
@@ -2295,7 +2317,7 @@
       const end = w.start == null ? dayStart(2) : (w.end == null ? null : w.end + DAY);
       // 名字:原来叫「… 第 N 天」就自动变成第 N+1 天,否则换成新的日期
       const old = String(p.name || ''); const dayN = old.match(/第\s*(\d+)\s*天\s*$/);
-      const stem = old.replace(/[\s·\-—]*(第\s*\d+\s*天|\d+月\d+日|\d+\/\d+(\s*周.)?)\s*$/, '').trim() || p.collection?.title || '置顶排序';
+      const stem = old.replace(/[\s·\-—]*(第\s*\d+\s*天|\d+月\d+日|\d+\/\d+(\s*周.)?)\s*$/, '').trim() || p.collection?.title || '排序计划';
       openEditor('pin', null, { dup: {
         ...p, id: rid('pin-'), state: 'new', shopifyId: null, syncedStatus: null, pendingChange: null, paused: false, by: S.me,
         name: dayN ? `${stem} 第 ${+dayN[1] + 1} 天` : `${stem} ${fDate(start)}`, start, end,
@@ -3082,7 +3104,7 @@
   }
   // ================= 设置 → 清理内容(一次删掉测试时建的内容;规则在 /lib/schedule-actions.js 的 purge)=================
   const cl = { q: '', sel: new Set(), sure: 0 };
-  const CL_KINDS = [['campaign', '活动'], ['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', 'Collection 置顶排序'], ['salelink', '促销链接'], ['callout', '产品页推广']];
+  const CL_KINDS = [['campaign', '活动'], ['banner', 'Banner'], ['topbar', '顶栏公告'], ['tbstyle', '顶栏样式'], ['pmodule', '首页商品模块'], ['pin', 'Collection 排序计划'], ['salelink', '促销链接'], ['callout', '产品页推广']];
   const clFollowers = (c) => all().filter((x) => x.campaign === c.id && x.start == null && x.end == null);
   const clMatch = (x) => { const q = cl.q.trim().toLowerCase(); return !q || [titleOf(x), x.name, x.slug, x.collection?.title].some((v) => String(v || '').toLowerCase().includes(q)); };
   const clItems = () => all().filter((x) => !x.isDefault && clMatch(x));
@@ -3090,7 +3112,7 @@
     const box = $('#st-clean'); if (!box) return;
     box.innerHTML = `<section class="panel">
         <div class="panel__h"><h3>清理内容</h3><span class="muted">一次删掉测试时建的内容</span></div>
-        <p class="muted">勾上要删的,点「删除选中的」。店铺里对应的条目会一起删掉:<b>正在网站上显示的会立刻消失</b>,Collection 置顶排序删了 Collection 会恢复原来的顺序。
+        <p class="muted">勾上要删的,点「删除选中的」。店铺里对应的条目会一起删掉:<b>正在网站上显示的会立刻消失</b>,Collection 排序计划删了 Collection 会恢复原来的顺序。
           默认样式和商品模块的「平时版本」不能删;改价计划在「改价」页里单独删。</p>
         <div class="cltools"><input class="inp" id="cl-q" placeholder="按名字筛选,比如 test、测试、bfcm" value="${esc(cl.q)}"/>
           <button class="btn btn-sm" data-clpick="draft" type="button">勾上所有草稿</button><button class="btn btn-sm" data-clpick="ended" type="button">勾上所有已结束</button>
@@ -3314,7 +3336,7 @@
 
   // ---- 店铺连接(真实接口):权限 / 4 个内容类型 / 定时器 ----
   // 只有在 Shopify 后台里打开才有 session token;本地预览会提示。
-  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: 'Collection 置顶排序', cgp_sale_link: '促销链接', cgp_pdp_callout: '产品页推广块' };
+  const DEF_CN = { cgp_campaign: '活动(促销)', cgp_banner_slide: '首页 Banner', cgp_topbar_message: '顶栏公告', cgp_topbar_style: '顶栏样式', cgp_product_tab: '首页商品页签', cgp_product_module: '首页商品模块版本', cgp_collection_pin: 'Collection 排序计划', cgp_sale_link: '促销链接', cgp_pdp_callout: '产品页推广块' };
   let connCache = null;
   async function renderConn(force) {
     const box = $('#st-conn'); if (!box) return;
@@ -3512,7 +3534,7 @@
     }
     if (kind === 'callout') return { ...baseIt, id: rid('co-'), name: '', title: '', text: '', linkText: '', link: '', promo: null, image: '', imageId: '', rules: [{ f: 'vendor', n: false, v: [] }], collections: [], tags: [], vendors: [], products: [], exProducts: [], exTags: [], priority: 10, start: null, end: null };
     if (kind === 'salelink') return { ...baseIt, id: rid('sl-'), name: '', slug: '', collection: null, products: [], inStock: false, minDiscount: null, limit: null, sort: '', heading: '', start: null, end: null };
-    if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: preset.collection || null, products: [], onlyListed: false, countdown: false, badge: '', start: null, end: null }; // 2026-10-29 用户:默认长期显示;preset.collection = 从 Shopify 后台 Collection 页面的卡片点「新建置顶排序」
+    if (kind === 'pin') return { ...baseIt, id: rid('pin-'), name: '', collection: preset.collection || null, products: [], onlyListed: false, countdown: false, badge: '', start: null, end: null }; // 2026-10-29 用户:默认长期显示;preset.collection = 从 Shopify 后台 Collection 页面的卡片点「新建排序计划」
     const pc = preset.parent ? camp(preset.parent) : null; // 从主活动页点「新建子活动」:时间先用主活动的
     return { ...baseIt, id: rid('c-'), name: '', start: pc?.start ?? dayStart(3), end: pc?.end ?? dayStart(10), collections: [], tags: [], products: [], badge: '', countdown: true, priority: 10, parent: pc ? pc.id : null };
   }
@@ -3716,7 +3738,7 @@
     if (realMember && wxAll?.selectionOk && removeN) warns.push(`「这段时间不显示」的 ${removeN} 个产品,生效时会加进这个 Collection 的「排除」名单(不动条件),结束再拿掉。`);
     if (!realMode && wxAll && !wxAll.demo && prefix > 50) warns.push(`前台排序最多能固定前 50 个位置,你现在排到了第 ${prefix} 位 —— 第 51 位以后的调整前台不会生效。`);
     if (!realMember && wxAll && !wxAll.demo && wx.hidden.length > 50) warns.push(`前台排序最多能隐藏 50 个产品,你现在隐藏了 ${wx.hidden.length} 个。`);
-    if (realMember && removeN > 100) warns.push(`要临时移出 Collection 的产品有 ${removeN} 个(超过 100 个)—— 这份置顶排序会改用前台排序,不动店里的 Collection。`);
+    if (realMember && removeN > 100) warns.push(`要临时移出 Collection 的产品有 ${removeN} 个(超过 100 个)—— 这份排序计划会改用前台排序,不动店里的 Collection。`);
     // 合集这一行:几个短标签说清现在的方式,长说明收进「怎么生效?」(2026-10-20 改版)
     const how = (txt) => `<details class="hint"><summary>怎么生效?</summary><div>${txt}</div></details>`;
     const colNote = !wx.collection ? '' : wxBusy ? '<em>正在读这个 Collection 现在的顺序…</em>'
@@ -3725,10 +3747,11 @@
           : wxAll ? `<div class="pgcol">${!wxAll.manualOk || !canWrite() || (realMember && removeN > 100) ? `<span class="tag tag--warn" title="Shopify 后台里这个 Collection 的顺序不会变,只在网站前台按你排的显示">只在网站前台排序</span>` : ''}
               ${!wxAll.manualOk && S.themePin === false ? '<span class="tag tag--danger">正在用的主题还没装前台排序代码</span>' : ''}
               <span class="tag">共 ${wxAll.total ?? wxAll.products.length} 个产品${wxAll.truncated ? `(只列出前 ${wxAll.products.length} 个)` : ''}</span>
-              ${wxAll.takenBy ? (wxAll.takenBy.released ? `<span class="tag" title="之前选了「保留后台排序」,app 不再排;改了置顶排序的内容再保存就会重新排">「${esc(pinNm(wxAll.takenBy))}」的顺序已交给后台</span>`
-                : `<span class="tag tag--accent">现在由「${esc(pinNm(wxAll.takenBy))}」接管</span>`) : ''}
+              ${wxAll.takenBy ? (wxAll.takenBy.released ? `<span class="tag" title="之前选了「保留后台排序」,app 不再排、网站上也暂停这份排序计划;改了排序计划的内容再保存就会重新排">「${esc(pinNm(wxAll.takenBy))}」:后台排序优先</span>`
+                : wxAll.takenBy.hold ? `<span class="tag tag--warn" title="有人在后台改了顺序(或回滚过),app 暂停接管,网站先按后台顺序;到 Collection 排序列表里选「按本次排序」或「保留后台排序」">「${esc(pinNm(wxAll.takenBy))}」暂停接管,待处理</span>`
+                  : `<span class="tag tag--accent">现在由「${esc(pinNm(wxAll.takenBy))}」接管</span>`) : ''}
               ${how(`${!wxAll.manualOk
-            ? `这个 Collection 现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的 Collection 调顺序,所以这份置顶排序<b>用前台排序</b>:后台里的顺序不会变,顾客看到的 Collection 页和首页模块按你排的显示。想让后台也变,在 Shopify 后台把这个 Collection 的排序改成「手动」(带条件的 Collection 也可以)。`
+            ? `这个 Collection 现在的排序方式是<b>「${esc(SORT_CN[wxAll.sortOrder] || wxAll.sortOrder || '别的方式')}」</b>,不是「手动」—— Shopify 只让手动排序的 Collection 调顺序,所以这份排序计划<b>用前台排序</b>:后台里的顺序不会变,顾客看到的 Collection 页和首页模块按你排的显示。想让后台也变,在 Shopify 后台把这个 Collection 的排序改成「手动」(带条件的 Collection 也可以)。`
             : !canWrite() ? '手动排序的 Collection,但 app 现在<b>没有「改产品 / Collection」的权限</b> —— 先用前台排序;装上权限后就会真的改店里的 Collection。'
               : wxAll.selectionOk ? '带条件的 Collection,排序方式是「手动」—— 到点会<b>真的</b>改店里的 Collection:顺序照网格,Collection 外的产品加进「单独加的产品」、不显示的加进「排除」名单,<b>你设的条件不动</b>;结束自动撤掉、顺序还原。'
                 : wxAll.automated ? `带条件的 Collection,排序方式是「手动」—— 到点会<b>真的</b>按网格里的顺序改店里的 Collection,结束自动还原;单个产品的加 / 移出交给前台${wxAll.needsNewApi ? '(把 API 版本升到 2026-07 后,app 就能直接改这个 Collection 的「单独加的产品 / 排除」名单)' : wxAll.sharedSource ? '(这个 Collection 的条件来源是共享的,app 不碰)' : ''}。`
@@ -3781,7 +3804,7 @@
       ${warns.map((w) => `<div class="note note--warn note--sm">${w}</div>`).join('')}
       <div class="pgsel" id="wx-selbar" ${wxSel.size ? '' : 'hidden'}>${wxSelBarHtml()}</div>
       <div class="pg${pgCls()}${wxSel.size ? ' has-sel' : ''}" id="pg">${grid || '<p class="muted">这个 Collection 里还没有产品</p>'}</div>
-      ${wx.hidden.length ? `<div class="pg__hidh">这段时间不显示的产品(${wx.hidden.length} 个)<em>只在这份置顶排序生效时藏起来,结束自动恢复</em></div>
+      ${wx.hidden.length ? `<div class="pg__hidh">这段时间不显示的产品(${wx.hidden.length} 个)<em>只在这份排序计划生效时藏起来,结束自动恢复</em></div>
         <div class="pg pg--hidden${pgCls()}">${wx.hidden.map((p, i) => `<div class="pg__card is-cut">
           <span class="pg__img">${p.image ? `<img src="${esc(thumb(p.image, 240))}" alt="" loading="lazy">` : ''}</span>
           <span class="pg__t">${esc(p.title)}</span>
@@ -3843,10 +3866,10 @@
       // 倒计时 / 徽章(当初给没建活动的 Flash 用)整个去掉了 —— 产品卡上的促销标签只从活动和改价来
       return `${edSec(1, 'Collection 与名称', '', `<div id="wx-coll">${pinBoxHtml('coll')}</div>
           <div class="pname">${fld('排序名称', inp('name', it.name, wx.collection ? `留空就叫「${wx.collection.title}」` : '如:Flash Sale 第 1 天'), '只是给自己看的,列表和记录里显示')}</div>
-          <div class="pdef"><span class="pdef__k">Collection 默认设置<em>Collection 自己的,没有置顶排序生效时这样排;改了马上生效</em></span><div id="wx-cs"><span class="muted">先选 Collection</span></div></div>
-          <div class="pdef pdef--sl"><span class="pdef__k">这个 Collection 的促销链接<em>只放打折产品的另一页(?onsale),和这份置顶排序谁优先</em></span><div id="wx-sl">${wxSlHtml()}</div></div>`)}
+          <div class="pdef"><span class="pdef__k">Collection 默认设置<em>Collection 自己的,没有排序计划生效时这样排;改了马上生效</em></span><div id="wx-cs"><span class="muted">先选 Collection</span></div></div>
+          <div class="pdef pdef--sl"><span class="pdef__k">这个 Collection 的促销链接<em>只放打折产品的另一页(?onsale),和这份排序计划谁优先</em></span><div id="wx-sl">${wxSlHtml()}</div></div>`)}
         ${edSec(2, '显示时间', '', timeBlock(it, 'pin'))}
-        ${edSec(3, '排序设置', '这份置顶排序生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
+        ${edSec(3, '排序设置', '这份排序计划生效时', `<div id="wx-opts" class="pset__tgls">${pinBoxHtml('opts')}</div>`)}
         ${edSec(4, '顺序', '拖动卡片排序,点序号输入第几位;点卡片可以多选,一起移动', `<div id="wx-box">${pinBoxHtml()}</div>`)}`;
     }
     return '';
@@ -3983,7 +4006,7 @@
       ${sec(5, '关联的飞书任务', '可不填 · 具体要求、设计、文案放在飞书任务里', `
         <div id="ed-lark">${larkEdHtml()}</div>
         <div class="rowin"><input class="inp" id="lk-url" placeholder="粘贴飞书任务 / 任务清单链接"/><input class="inp" id="lk-label" placeholder="名字,如「设计」(可不填)" style="max-width:170px"/><button type="button" class="btn btn-sm" data-lk="add">添加</button></div>`)}
-      ${it.state === 'new' ? '<div class="note">保存后会打开这个活动的页面,在那里加 Banner、顶栏、首页商品模块、Collection 置顶排序、促销链接和改价。</div>'
+      ${it.state === 'new' ? '<div class="note">保存后会打开这个活动的页面,在那里加 Banner、顶栏、首页商品模块、Collection 排序计划、促销链接和改价。</div>'
         : cpHub === it.id && isActive('campaigns') ? '' : `<div class="note">挂在这个活动下的内容(${attached} 条)在活动页里管理。<button type="button" class="linkbtn" data-hubgo="${it.id}">打开活动页</button></div>`}`;
   }
 
@@ -4337,7 +4360,7 @@
     $('#drawer').innerHTML = `
       <div class="drawer__h">
         <div>${kindChip(kind)} <b>${isNew ? `新建${/^[A-Za-z]/.test(KIND[kind]) ? ' ' : ''}${KIND[kind]}` : esc(titleOf(it))}</b> ${isNew ? '' : badge(it)}
-          ${!isNew && MODE === 'live' ? `<button class="btn btn-sm btn-ghost" type="button" data-act="history" ${kind === 'pin' ? 'title="这份置顶排序每次保存的版本"' : ''}>${I.clock}历史版本</button>` : ''}
+          ${!isNew && MODE === 'live' ? `<button class="btn btn-sm btn-ghost" type="button" data-act="history" ${kind === 'pin' ? 'title="这份排序计划每次保存的版本"' : ''}>${I.clock}历史版本</button>` : ''}
           ${kind === 'pin' ? '<span id="wx-hist"></span>' : ''}
           ${!isNew ? `<button class="btn btn-sm btn-ghost" type="button" data-act="dup" title="复制成一条新的(连同你还没保存的修改),原来这条不变">${I.copy}复制一份</button>` : ''}
           ${!isNew ? `<button class="btn btn-sm btn-ghost" type="button" data-act="copylink" title="复制这条内容的链接,同事点开直接打开这条">${I.link}复制链接</button>` : ''}</div>
@@ -4948,7 +4971,7 @@
       const kindOfAct = a.dataset.act;
       if (kindOfAct === 'close') return closeDrawer();
       if (kindOfAct === 'history') return openItemHistory(it.id);
-      if (kindOfAct === 'colhist') { // 置顶排序:这个 Collection 的顺序历史(会关掉编辑窗口:有没保存的调整先提醒一次)
+      if (kindOfAct === 'colhist') { // 排序计划:这个 Collection 的顺序历史(会关掉编辑窗口:有没保存的调整先提醒一次)
         if (wxDirty() && !a.dataset.sure) { a.dataset.sure = '1'; a.textContent = '有还没保存的调整,再点一次会丢掉并打开历史'; return; }
         const c = wx.collection; closeDrawer(); openColHistory(numId(c.id), c.title); return;
       }
@@ -4992,11 +5015,11 @@
   function colSay(rep, onlyCol) { // onlyCol:只说这个合集的(保存某份清单时,别把其他合集的情况也念一遍)
     if (!rep) return [];
     if (onlyCol) { const k = numId(onlyCol); const f = (x) => !x.collection || numId(x.collection) === k; rep = { applied: rep.applied.filter(f), restored: rep.restored.filter(f), skipped: rep.skipped.filter(f), holds: rep.holds.filter(f), failures: rep.failures.filter(f), sortOn: (rep.sortOn || []).filter(f), sortOff: (rep.sortOff || []).filter(f) }; }
-    const WHY = { 'too-many': '要临时移出的产品太多,改用前台排序(店里的 Collection 不动)', 'no-scope': 'app 还没有「改产品 / Collection」的权限', released: '之前选了「保留后台排序」,这份置顶排序剩下的时间 app 不再排(改了置顶排序的内容再保存就会重新排)' };
+    const WHY = { 'too-many': '要临时移出的产品太多,改用前台排序(店里的 Collection 不动)', 'no-scope': 'app 还没有「改产品 / Collection」的权限', released: '之前选了「保留后台排序」,这份排序计划剩下的时间 app 不再排(改了排序计划的内容再保存就会重新排)' };
     const sortWhy = (x) => `这个 Collection 的排序方式是「${SORT_CN[String(x.why).slice(5)] || String(x.why).slice(5)}」,不是「手动」→ 后台顺序没法改,只在前台按你排的显示(在 Shopify 后台把排序改成「手动」就能真的改)`;
     return [
       ...rep.applied.map((x) => `✅ 店里的「${x.title}」已按「${x.pin}」排好:${x.moved} 个产品换了位置${x.added ? `,${x.added} 个加进了 Collection` : ''}${x.removed ? `,${x.removed} 个临时移出` : ''}${!x.moved && !x.added && !x.removed ? '(本来就已经是这个顺序,没动)' : ''}${x.front?.hidden ? `;${x.front.hidden} 个「不显示」的由前台隐藏(产品还在 Collection 里)` : ''}${x.front?.outside ? `;${x.front.outside} 个 Collection 外的产品加不进去(要先在后台单独加进 Collection)` : ''}${x.front?.needsNewApi && (x.front.hidden || x.front.outside) ? '。把 API 版本升到 2026-07,app 就能直接改带条件的 Collection' : ''}${x.pending ? ';加进 / 排除的产品 Shopify 还在后台生效中,生效后会自动把顺序排好' : ''}`),
-      ...rep.restored.map((x) => (x.keptOrder ? `↩️ 「${x.title}」置顶排序结束:顺序保持后台改过的样子,临时加 / 移出的产品已复原` : `↩️ 「${x.title}」已还原成接管前的顺序`)),
+      ...rep.restored.map((x) => (x.keptOrder ? `↩️ 「${x.title}」排序计划结束:顺序保持后台改过的样子,临时加 / 移出的产品已复原` : `↩️ 「${x.title}」已还原成接管前的顺序`)),
       ...rep.skipped.map((x) => `⏭ ${x.title ? `「${x.title}」` : ''}${WHY[x.why] || (String(x.why || '').startsWith('sort:') ? sortWhy(x) : x.why)}`),
       ...rep.holds.map((x) => `⏸ 「${x.title}」有人在后台手动改过,app 已停手`),
       ...(rep.sortOn || []).map((x) => `📐 「${x.title}」Collection 页改成完全按本次排序显示`),
@@ -5057,7 +5080,7 @@
           b.disabled = true; b.textContent = '回滚中…';
           try {
             const x = await api('POST', '/api/schedule/col-rollback', { id: cid, at });
-            toast(`已回滚:${x.moved} 个换位置${x.added ? `、${x.added} 个加回 Collection` : ''}${x.extra ? `;${x.extra} 个后来加的排到了最后` : ''}${x.paused ? ';这个 Collection 的置顶排序接管已暂停' : ''}`);
+            toast(`已回滚:${x.moved} 个换位置${x.added ? `、${x.added} 个加回 Collection` : ''}${x.extra ? `;${x.extra} 个后来加的排到了最后` : ''}${x.paused ? ';这个 Collection 的排序计划接管已暂停' : ''}`);
             await load(); renderAll(); openColHistory(cid, title);
           } catch (err) { toast(err.message, false); b.disabled = false; b.textContent = '回滚到这个版本'; delete b.dataset.sure; b.classList.remove('btn-danger'); }
         };
@@ -5096,7 +5119,7 @@
     };
     // 打开一个网址:点左边对应的导航(各页面「点开时才读」的都会照常触发),再打开具体那一条
     window.cgpNav.open = async (path) => {
-      const [sec = 'overview', a, b] = path.split('/').filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
+      const [sec = 'overview', a, b, c3] = path.split('/').filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
       const nav = $(`#modnav [data-section="${sec}"]`) || ($(`#toolnav [data-section="${sec}"]`) && $('#modnav [data-group]'));
       if (!nav || sec === 'detail') { toast('这个链接打不开(页面地址不对),已回到首页', false); closeDrawer(); showSection('overview'); return; }
       if (nav.hidden) { toast('你没有这个页面的权限,请找管理员开通', false); return; }
@@ -5116,15 +5139,15 @@
         if (pnView !== want) { pnView = want; renderPins(); }
         nav.click();
         if (want === 'defsort' && !csRows) await loadColSorts();
-        if (a === 'collection' && b) { if ((csRows || []).some((x) => x.id === String(b))) openColSort(b); else if (csRows) miss(' Collection'); }
-        else if (a === 'new' && b) { // /pins/new/<Collection id>:Shopify 后台 Collection 页面卡片上的「新建置顶排序」,Collection 先选好
-          if (!canPage('pins', 2)) { toast('你没有新建置顶排序的权限,请找管理员开通', false); return; }
+        if (a === 'collection' && b) { if ((csRows || []).some((x) => x.id === String(b))) openColSort(b, { sync: c3 === 'sync' }); else if (csRows) miss(' Collection'); } // …/sync = Shopify 后台卡片上的「一键同步」
+        else if (a === 'new' && b) { // /pins/new/<Collection id>:Shopify 后台 Collection 页面卡片上的「新建排序计划」,Collection 先选好
+          if (!canPage('pins', 2)) { toast('你没有新建排序计划的权限,请找管理员开通', false); return; }
           if (!csRows) await loadColSorts();
           const c = (csRows || []).find((x) => x.id === String(b));
           if (!c) { miss(' Collection'); return; }
           openEditor('pin', null, { collection: { id: c.id, title: c.title, handle: c.handle } });
         }
-        else if (a && want === 'pins') { const it = byId(a); if (it?.kind === 'pin') openEditor('pin', a); else miss('置顶排序'); }
+        else if (a && want === 'pins') { const it = byId(a); if (it?.kind === 'pin') openEditor('pin', a); else miss('排序计划'); }
         return;
       }
       if (sec === 'price') { nav.click(); const r = await window.cgpNav.when('cgpPriceRoute'); await r?.(a || ''); return; }

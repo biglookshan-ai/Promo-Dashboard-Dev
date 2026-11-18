@@ -55,7 +55,7 @@ test('改价的通知:打开那个计划;暂停接管 → 受管产品;好几个
   assert.deepEqual(msgs.filter((m) => m.ev === 'price.failure').map((m) => m.path), ['/price/p1', '/price/p2']);
 });
 
-test('Collection 排序的通知:这个 Collection 只有一份置顶排序 → 打开它', () => {
+test('Collection 排序的通知:这个 Collection 只有一份排序计划 → 打开它', () => {
   const d = doc({ pins: [{ id: 'pn1', kind: 'pin', collection: { id: 'gid://shopify/Collection/42' }, by: 'des' }] });
   const [m] = pinEvents(d, { holds: [{ fresh: true, collection: '42', title: 'Lens' }], failures: [] }, T);
   assert.equal(m.path, '/pins/pn1');
