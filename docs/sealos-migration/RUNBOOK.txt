@@ -1,0 +1,57 @@
+Promotion / Sealos 部署与数据交接说明（2026-11-23）
+
+一、当前状态
+- 用户最新要求：白天保持原系统运行，今晚工作时间结束后才切换。具体北京时间待确定；此前只做准备，不冻结写入、不改正式入口、不启动新执行器。
+- 正式服务仍在 Railway，未暂停现有计划，未修改 Shopify 应用入口或飞书回调。
+- Sealos 新实例：promotion-sealos，Singapore，ns-hyizeqfa。
+- 验收入口：https://promotion-cgp-hyizeqfa.cloud.sealos.io
+- /healthz 返回200、mode=staging；所有 /api 和 /auth 返回503，这是验收保护。
+- 镜像：ghcr.io/biglookshan-ai/promotion-sealos:staging-20261123-v3
+  固定摘要：sha256:8b33ba6db7d6cb10b50290adfb11e8167ce787e3b414f90d831b233377727b56
+- 数据PVC：promotion-sealos-data，1Gi；备份PVC：promotion-sealos-backups，2Gi。
+- 单实例，Recreate更新；禁止扩成两份，JSON文件锁只在单个进程内有效。
+- 当前恢复的是16:12的完整线上备份（40个计划），供验收用。16:42只读快照已有41个计划，不能直接以验收盘接管。
+
+二、价格保护
+- 产品实际价格保存在Shopify。拷贝数据和恢复到隔离实例不会改价。
+- 必须保留整个 /data：price下计划、vault原价、intent、账本、历史，以及schedule、成员、通知、tokens等。
+- 不能通过暂停/停止所有计划来迁移：这可能让旧执行器把活动价恢复原价。
+- 验收同时采用：MIGRATION_MODE=staging、两个执行器禁用标记、数据盘只读、Shopify外网阻断。
+- 服务普通模式启动5秒后会补跑执行器，最终交接前绝不能解除保护。
+- 16:42采集/核对：41计划、31进行中、631原价条目；626可读变体现价与最新写入记录一致，无未完成写前意图、无预测价格写入。
+- 5个旧变体ID读不到：4个所属产品存在但旧ID不在现有变体中，1个所属产品也读不到。保留原记录，不据此新建/改价/清理原价保险库；最终同步后再只读确认。
+
+三、备份结构
+- /data：业务持久盘；应用独占写入，备份进程只读。
+- /backups：独立快速备份盘；最近18个标准tar.gz+SHA256。
+- 每10分钟执行一次；JSON/JSONL解析检查、复制前后源文件哈希核对、原子发布压缩包。
+- 上传前由restic加密；对象存储桶为private，备份不依赖同一数据盘。
+- 远端保留24小时档、30日档、8周档、12月档。遗忘快照不立即prune，待维护时定期压缩回收。
+- 在线文件备份不提供跨文件事务保证。故障恢复后先验收；最终迁移必须先停写再全量采集。
+- 目标恢复点间隔10分钟；备份失败时保留原副本，检查/backups/status.json时间、last-error.json及backup容器日志，不能只看旧的ok。
+- 已验证：14文件约4.95MB；加密仓库read-data检查通过；从对象存储下载+解压校验约7.9秒。实际交接时间还包括停写、最终同步、入口更新与业务验证，不能据此承诺切换用时。
+
+四、便携恢复命令（只对私有数据目录或空的验收盘执行）
+node scripts/data-snapshot.mjs create <数据目录> <私有备份目录>
+node scripts/data-snapshot.mjs restore <tar.gz> <空目录> <SHA256>
+node scripts/migration-check.mjs --data <恢复目录> --shopify-read-only --output <私有核对报告.json>
+先使用restic snapshots / restore取回压缩包和.sha256，再用上述命令核验恢复。
+restic密码保存在代码库外的object-storage-recovery.json中；没有密码不能解密。
+
+五、正式交接（尚未执行）
+1. 提前准备同一个Shopify应用的新入口配置，保持client_id、安装关系及授权；不卸载/重装应用。
+2. 飞书OAuth允许新回调：https://promotion-cgp-hyizeqfa.cloud.sealos.io/auth/lark/callback 。先配置并验证，再安排停写窗口。
+3. 协调同事短暂停止后台编辑。重新列出即将开始/结束的计划，避开时段边界。
+4. 在不改变计划状态的前提下，安全停止旧执行器/旧服务；确认没有自动重启、没有未决的写前意图。若不能确认，则不切换。
+5. 对停止写入后的全部/data重新备份、取完整环境配置、逐文件核验。当前在线备份和两文件只读快照都不能代替这一步。
+6. 新实例维持禁用执行器及业务接口，恢复最终数据；校验计划、vault原价与written/intent、账本、成员、内容、当前Shopify价格。
+7. 确认差异可解释后更新应用入口/新回调/生产配置；解除只读和Shopify网络限制，确保仅新实例执行。
+8. 看至少一轮执行与日志，核对价格、计划和通知；创建第一份新环境生产备份。旧卷和最终快照暂留。
+9. 如果新实例执行过价格后要回退，先停新实例、同步最新状态到旧端再核价；禁止直接把旧快照接回去，避免重复执行或错误恢复原价。
+
+六、私有恢复材料
+/Users/chillmungc/Documents/CGP Backups/promo-manager/2026-11-23_155326
+  原始完整生产备份、运行环境及新旧代码，原临时SSH权限已撤销。
+/Users/chillmungc/Documents/CGP Backups/promo-manager/sealos-migration-20261123
+  对象存储恢复密码/凭证、镜像拉取凭证、准备好的隔离运行配置、最新只读价格核对、部署材料。
+以上含可用凭证，只在私有目录保存，不提交Git、不放网页、不同步飞书、不发给同事。

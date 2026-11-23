@@ -21,6 +21,7 @@ import { extRouter } from './ext-api.js';
 import { auditTrail, readAudit, MOD_CN } from './audit.js';
 import { load as loadScheduleState } from './schedule-store.js';
 import { teamEnabled } from './lark-login.js';
+import { assertDeploymentData, stagingGate, stagingMode } from './deployment-safety.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -34,7 +35,10 @@ if (fs.existsSync(envPath)) {
 }
 
 const API_KEY = process.env.SHOPIFY_API_KEY || '';
+assertDeploymentData();
 const app = express();
+app.get('/healthz', (req, res) => res.json({ ok: true, mode: stagingMode() ? 'staging' : 'live', build: process.env.APP_BUILD || 'local' }));
+app.use(stagingGate);
 // 2026-10-28 用户:整个系统加载慢 —— 返回的数据和页面脚本都压缩传输(schedule.js 46 万字节 → 14 万;改价 / 排期的数据也小很多)
 app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: '2mb' }));
@@ -54,7 +58,7 @@ app.use((req, res, next) => {
 
 // Serve the embedded UI with the API key injected (App Bridge needs it).
 // 每次部署给页面资源加版本号,免得浏览器还用旧缓存(Railway 注入提交号;本地用启动时间)
-const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || String(Date.now());
+const BUILD = (process.env.APP_BUILD || process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 12) || String(Date.now());
 const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8')
   // 用「/」开头的地址:app 里每个页面都有自己的网址(/price/xxx),相对地址会变成 /price/style.css(2026-11-09)
   .replace(/(href|src)="(style\.css|auth\.js|nav\.js|app\.js|tips\.js|registry\.js|schedule\.js|notify\.js|dept\.js|price\.js)"/g, `$1="/$2?v=${BUILD}"`);
@@ -187,7 +191,9 @@ app.get(/^\/(?!api(?:\/|$))(?!.*\.[a-z0-9]+$).*/i, sendIndex);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`promo-manager (embedded) on :${PORT}`));
-startScheduler();
-startExecutor(); // 改价执行器:每分钟把店里价格对齐到「此刻应有的价」
+if (!stagingMode()) {
+  startScheduler();
+  startExecutor(); // 改价执行器:每分钟把店里价格对齐到「此刻应有的价」
+} else console.log('[migration] 验收模式：API、登录与所有执行器均关闭');
 // 启动几秒后先把店铺设置 / 主题读进缓存(读主题要好几秒),第一个打开 app 的人不用等
-if (process.env.SCHEDULER_DISABLED !== '1') setTimeout(() => warmCaches(knownShops(), getToken).catch((e) => console.warn('[cache] 预热失败', e.message)), 3000);
+if (!stagingMode() && process.env.SCHEDULER_DISABLED !== '1') setTimeout(() => warmCaches(knownShops(), getToken).catch((e) => console.warn('[cache] 预热失败', e.message)), 3000);
