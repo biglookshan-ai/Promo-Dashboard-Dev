@@ -307,6 +307,7 @@
   `custom.cgp_sort_off` 设成 true,结束 / 暂停 / 删除 / 取消勾选时恢复成改之前的值(原来没有就删掉)——`alignSortFlags`,记在 `state.sortFlags`。
   **不改主题、不改别的合集**。连着两份都勾了的清单(Flash 第 1 天 → 第 2 天)中间不恢复。编辑器没开时会在网格第(前缀 + 12)位画一条「前台从这里开始按新到旧」的线。
   **合集默认排序**(2026-10-21,合集排序页的子页「合集默认排序」):每个合集「平时」(没有清单生效、顾客没选别的 Sort by)怎么排,三种 ——
+  **区间随机排序（2026-11-23 用户新增，本地开发）**：默认设置可保存 `custom.cgp_random_ranges`（json，`[{start:16,end:40}]`）。区间作用于计划和默认设置排好后的完整列表，前台每次页面打开/刷新洗牌，同次筛选、分页、加载更多复用种子；不能写随机后的后台顺序。自选 Sort by、独立促销链接优先；随机配置独立于计划，暂停计划不会清掉随机配置。复用能上线 + `pins.defsort` 权限和 `/col-sort` 校验，最多 20 段、1–1000 位、不重叠；旧调用不带字段时保留配置，复制另一合集基础顺序也保留目标随机配置。主题三文件及 Search Panel 的 theme-module 副本一起维护。详见 `docs/collection-random/PLAN.md`。
   前 N 个按手动顺序 + 其余新到旧(默认 12,可改,0 = 全部新到旧)/ 完全按手动顺序 / 完全按 Shopify 的自动排序(畅销 / 最新 / 价格 / 字母)。
   规则 `src/col-sort.js`(纯函数,浏览器经 `/lib/col-sort.js` 共用),写店铺 `src/col-sort-shop.js`(`GET /api/schedule/col-sorts` 全部合集、`POST /api/schedule/col-sort` 改一个,只有管理员)。
   写的只有:合集字段 `custom.cgp_sort_off`(boolean)、`custom.cgp_pin_manual`(number_integer;等于 12 就删掉回默认),以及**合集的排序方式 `sortOrder`**

@@ -7,6 +7,23 @@
 // 三种方式:top = 前 N 个按手动顺序,其余按新到旧(默认 12) / manual = 完全按手动顺序 / shopify = 完全按 Shopify 的自动排序
 export const DEFAULT_N = 12;
 export const MAX_N = 250;
+export const MAX_RANDOM_POSITION = 1000;
+export const MAX_RANDOM_RANGES = 20;
+// Positions refer to the final default order, including an active sorting plan.
+// Only the storefront shuffles these ranges; Shopify's saved order stays fixed.
+export function randomRanges(value) {
+  if (!Array.isArray(value) || value.length > MAX_RANDOM_RANGES) throw new Error(`随机排序最多设置 ${MAX_RANDOM_RANGES} 个区间`);
+  const ranges = value.map((r) => ({ start: Number(r?.start), end: Number(r?.end) }));
+  for (const r of ranges) {
+    if (!Number.isInteger(r.start) || !Number.isInteger(r.end) || r.start < 1 || r.end > MAX_RANDOM_POSITION || r.start >= r.end) {
+      throw new Error(`随机区间须为 1 至 ${MAX_RANDOM_POSITION} 的整数，结束位置须大于起始位置`);
+    }
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  if (ranges.some((r, i) => i > 0 && r.start <= ranges[i - 1].end)) throw new Error('随机排序区间不可重叠');
+  return ranges;
+}
+export const randomDescription = (ranges) => (ranges || []).map((r) => `第 ${r.start} 至 ${r.end} 位`).join('、');
 export const SORT_CN = { MANUAL: '手动', BEST_SELLING: '最畅销', CREATED_DESC: '最新上架', CREATED: '最早上架', PRICE_ASC: '价格从低到高', PRICE_DESC: '价格从高到低', ALPHA_ASC: '字母 A–Z', ALPHA_DESC: '字母 Z–A' };
 export const AUTO_SORTS = ['BEST_SELLING', 'CREATED_DESC', 'CREATED', 'PRICE_ASC', 'PRICE_DESC', 'ALPHA_ASC', 'ALPHA_DESC'];
 export const sortCn = (s) => SORT_CN[s] || s || '未知';
@@ -18,16 +35,19 @@ export function modeOf(c) {
   return { mode: 'top', n, sortOrder: c.sortOrder };
 }
 // 没单独设过(和全站默认一样)
-export const isDefault = (c) => !c.off && (c.pinManual == null || c.pinManual === DEFAULT_N) && !(c.pinNew > 0);
+export const isDefault = (c) => !c.off && (c.pinManual == null || c.pinManual === DEFAULT_N) && !(c.pinNew > 0) && !c.randomRanges?.length;
 
 // 顾客在合集页默认看到的顺序,一句话
-export function describe(c) {
+function describeBase(c) {
   const m = modeOf(c);
   const by = !c.sortOrder || c.sortOrder === 'MANUAL' ? '手动顺序' : `「${sortCn(c.sortOrder)}」`;
   if (m.mode === 'manual') return '完全按手动顺序';
   if (m.mode === 'shopify') return `完全按${by}`;
   if (m.n <= 0) return '全部按新到旧';
   return `${c.pinNew > 0 ? `最新 ${c.pinNew} 个放最前,再` : ''}前 ${m.n} 个按${by},其余按新到旧`;
+}
+export function describe(c) {
+  return describeBase(c) + (c.randomRanges?.length ? `；${randomDescription(c.randomRanges)}每次打开随机排序` : '');
 }
 
 // 要改哪些:cur = 现在的样子,want = { mode, n, sortOrder, toManual }
@@ -54,6 +74,13 @@ export function planSort(cur, want) {
     pinManual: ops.n === undefined ? cur.pinManual ?? null : ops.n,
     pinNew: cur.pinNew || 0,
   };
-  const changed = ops.off !== undefined || ops.n !== undefined || !!ops.sortOrder;
+  // Older callers (including copy-order) preserve this independent setting.
+  if (Object.hasOwn(cur, 'randomRanges')) after.randomRanges = cur.randomRanges;
+  if (Object.hasOwn(want, 'randomRanges')) {
+    const ranges = randomRanges(want.randomRanges);
+    after.randomRanges = ranges;
+    if (JSON.stringify(ranges) !== JSON.stringify(cur.randomRanges || [])) ops.randomRanges = ranges;
+  }
+  const changed = ops.off !== undefined || ops.n !== undefined || !!ops.sortOrder || ops.randomRanges !== undefined;
   return { ops, after, changed };
 }

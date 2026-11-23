@@ -1951,7 +1951,7 @@
         ${ilistHtml(inQ.filter(fn).map(csRowHtml), csRows.length ? '没有符合条件的 Collection' : '店里还没有 Collection')}`;
     }
     $('#pn-root').innerHTML = `
-      ${pageHead('Collection 排序', '每个 Collection 的默认设置:没有排序计划生效时,Collection 页默认怎么排。')}
+      ${pageHead('Collection 排序', '设置 Collection 的基础排法和每次打开时随机排序的区间。')}
       ${subTabsHtml('pnview', pnView, [['pins', '排序计划', (S.pins || []).length], ['defsort', 'Collection 默认设置']])}
       <div class="note note--sm">💡 没单独设过的 Collection 都是:<b>前 ${CS.DEFAULT_N} 个按手动顺序,其余按新到旧</b>(新品自动往前)。只管顾客没选别的 Sort by 时的顺序;生效中的排序计划优先。${MODE === 'demo' ? '演示模式用的是示例 Collection,改动只存在这台电脑。' : ''}</div>
       ${body}`;
@@ -1973,23 +1973,29 @@
   }
   // 演示模式:合集的「平时」设置只存在这台电脑
   const demoColRow = (c) => ({ id: numId(c.id), title: c.title, handle: c.handle, sortOrder: /clearance/.test(c.handle || '') ? 'BEST_SELLING' : 'MANUAL',
-    count: c.count ?? null, image: null, off: false, offSet: false, pinManual: null, pinNew: 0, ...((S.demoColSort || {})[numId(c.id)] || {}) });
+    count: c.count ?? null, image: null, off: false, offSet: false, pinManual: null, pinNew: 0, randomRanges: [], ...((S.demoColSort || {})[numId(c.id)] || {}) });
   const pinNm = (x) => x?.pinName || (x?.pinId && byId(x.pinId) ? titleOf(byId(x.pinId)) : '') || '另一份排序计划';
   // 合集「平时怎么排」的设置面板:合集默认排序的抽屉、置顶清单编辑器里展开的那块共用。c = 合集这一行(会被改成保存后的样子)
   let csUid = 0;
   function csPanel(root, c, { saveBtn, onSaved }) {
     const uid = ++csUid;
     let st;
-    const reset = () => { const m0 = CS.modeOf(c); st = { mode: m0.mode, n: m0.n, sortOrder: CS.AUTO_SORTS.includes(c.sortOrder) ? c.sortOrder : 'BEST_SELLING', toManual: false }; };
+    const reset = () => { const m0 = CS.modeOf(c); st = { mode: m0.mode, n: m0.n, sortOrder: CS.AUTO_SORTS.includes(c.sortOrder) ? c.sortOrder : 'BEST_SELLING', toManual: false, randomRanges: (c.randomRanges || []).map((r) => ({ ...r })) }; };
     reset();
     const pins = csPins(c.id);
     const taken = (S.colState || {})[c.id];
     const canEdit = canPage('pins', 3) && hasCap('pins.defsort') && canWrite();
-    const want = () => ({ mode: st.mode, n: Number(st.n), sortOrder: st.sortOrder, toManual: st.toManual });
-    root.innerHTML = '<div class="csopts" data-r="opts"></div><div class="csnotes" data-r="notes"></div><div class="cspv" data-r="pv"></div>';
+    const want = () => ({ mode: st.mode, n: Number(st.n), sortOrder: st.sortOrder, toManual: st.toManual, randomRanges: st.randomRanges });
+    root.innerHTML = '<div class="csopts" data-r="opts"></div><div class="edsec" data-r="random"></div><div class="csnotes" data-r="notes"></div><div class="cspv" data-r="pv"></div>';
     const R = (k) => root.querySelector(`[data-r="${k}"]`);
     const F = (k) => root.querySelector(`[data-cs="${k}"]`);
     const plan = () => { try { return { p: CS.planSort(c, want()) }; } catch (e) { return { err: e.message }; } };
+    const drawRandom = () => {
+      R('random').innerHTML = `<div class="edsec__h"><b>区间随机排序</b><em>按排序计划和默认设置排好后，仅打乱指定区间内的产品。重新打开或刷新页面重新随机；翻页、加载更多和筛选保持本次顺序。顾客自选 Sort by 或促销链接有独立排序时，不执行随机。</em></div>
+        ${st.randomRanges.map((r, i) => `<div class="rowin" style="margin:10px 0;flex-wrap:wrap;gap:8px"><span>第</span><input class="inp inp--xs" style="width:72px;min-width:72px;flex:0 0 72px;padding:6px 8px" type="number" min="1" max="${CS.MAX_RANDOM_POSITION}" data-cs-rand="start" data-range="${i}" aria-label="随机区间 ${i + 1} 起始位置" value="${esc(String(r.start))}"/><span>至</span><input class="inp inp--xs" style="width:72px;min-width:72px;flex:0 0 72px;padding:6px 8px" type="number" min="2" max="${CS.MAX_RANDOM_POSITION}" data-cs-rand="end" data-range="${i}" aria-label="随机区间 ${i + 1} 结束位置" value="${esc(String(r.end))}"/><span>位随机</span><button type="button" class="btn btn-sm btn-ghost" data-cs-rm-rand="${i}" ${canEdit ? '' : 'disabled'}>移除区间</button></div>`).join('')}
+        <button type="button" class="btn btn-sm" data-cs-add-rand ${canEdit && st.randomRanges.length < CS.MAX_RANDOM_RANGES ? '' : 'disabled'}>＋ 添加随机区间</button>
+        ${st.randomRanges.length ? '' : '<span class="muted"> 未设置随机区间</span>'}`;
+    };
     const drawOpts = () => {
       const opt = (k, title, sub, extra = '') => `<label class="csopt ${st.mode === k ? 'is-on' : ''}"><input type="radio" name="csmode-${uid}" data-cs="mode" value="${k}" ${st.mode === k ? 'checked' : ''}/>
         <span class="csopt__b"><b>${title}</b><em>${sub}</em>${st.mode === k && extra ? `<span class="csopt__x">${extra}</span>` : ''}</span></label>`;
@@ -2012,14 +2018,14 @@
       else if (p?.ops.sortOrder && !blocked) notes.push(`<div class="note note--warn note--sm">保存时会把 Shopify 后台的排序方式从「${from}」改成「${CS.sortCn(p.ops.sortOrder)}」。</div>`);
       if (st.mode === 'shopify' && pins.length && !blocked) notes.push(`<div class="note note--sm">这个 Collection 有 ${pins.length} 份排序计划。后台不是「手动」排序时,排序计划只能在前台排(店里的顺序不会被改)。</div>`);
       if (blocked) notes.push(`<div class="note note--danger note--sm">这个 Collection 的顺序现在由「${esc(pinNm(taken))}」接管着(app 在真的改店里的顺序),改成自动排序会让它排不了 —— 等这份排序计划结束后再改。</div>`);
-      if (c.held) notes.push(`<div class="note note--ok note--sm">「${esc(c.held)}」生效期间,Collection 页暂时完全按本次排序;这里改的是默认设置,排序计划结束后就用新的。</div>`);
+      if (c.held) notes.push(`<div class="note note--ok note--sm">「${esc(c.held)}」生效期间，基础排法由计划控制，结束后恢复这里的设置；随机区间保存后即适用于当前网站顺序。</div>`);
       if (!canEdit) notes.push(`<div class="note note--sm">${!(canPage('pins', 3) && hasCap('pins.defsort')) ? '你没有改 Collection 默认设置的权限(要「Collection 排序」能上线,并且负责人没关掉这一项)' : 'app 还没有「改产品 / Collection」的权限,改不了'}</div>`);
       R('notes').innerHTML = notes.join('');
       R('pv').innerHTML = `<div><span class="muted">现在</span>${esc(CS.describe(c))}</div>
         <div class="${p?.changed ? 'is-chg' : ''}"><span class="muted">保存后</span>${err ? `<span class="cs-err">${esc(err)}</span>` : p.changed ? esc(CS.describe(p.after)) : '和现在一样'}</div>`;
       saveBtn.disabled = !canEdit || !!err || !p?.changed || blocked;
     };
-    drawOpts(); drawRest();
+    drawOpts(); drawRandom(); drawRest();
     root.addEventListener('change', (e) => {
       const k = e.target.dataset?.cs; if (!k) return;
       e.stopPropagation(); // 别让置顶清单编辑器把它当成清单的改动
@@ -2028,9 +2034,21 @@
       if (k === 'tomanual') { st.toManual = e.target.checked; drawRest(); return; }
       if (k === 'n') { drawOpts(); drawRest(); }
     });
-    root.addEventListener('input', (e) => { if (e.target.dataset?.cs === 'n') { e.stopPropagation(); st.n = e.target.value; drawRest(); } });
+    root.addEventListener('input', (e) => {
+      if (e.target.dataset?.csRand) { e.stopPropagation(); st.randomRanges[Number(e.target.dataset.range)][e.target.dataset.csRand] = e.target.value; drawRest(); return; }
+      if (e.target.dataset?.cs === 'n') { e.stopPropagation(); st.n = e.target.value; drawRest(); }
+    });
+    root.addEventListener('change', (e) => { if (e.target.dataset?.csRand) e.stopPropagation(); });
     root.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.dataset?.cs === 'n') { e.preventDefault(); e.target.blur(); } });
-    root.addEventListener('click', (e) => { if (e.target.dataset?.cs === 'n12') { st.n = CS.DEFAULT_N; drawOpts(); drawRest(); } });
+    root.addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.hasAttribute('data-cs-add-rand') && canEdit && st.randomRanges.length < CS.MAX_RANDOM_RANGES) {
+        e.stopPropagation(); const start = st.randomRanges.length ? Number(st.randomRanges.at(-1).end) + 1 : 16;
+        st.randomRanges.push({ start, end: start + 24 }); drawRandom(); drawRest();
+      } else if (b.hasAttribute('data-cs-rm-rand') && canEdit) {
+        e.stopPropagation(); st.randomRanges.splice(Number(b.dataset.csRmRand), 1); drawRandom(); drawRest();
+      } else if (e.target.dataset?.cs === 'n12') { st.n = CS.DEFAULT_N; drawOpts(); drawRest(); }
+    });
     saveBtn.onclick = async (e) => {
       e.preventDefault();
       const b = saveBtn; const label = b.textContent; b.disabled = true; b.textContent = '保存中…';
@@ -2043,12 +2061,12 @@
         } else {
           const { after } = CS.planSort(c, want());
           Object.assign(c, after, { offSet: after.off });
-          (S.demoColSort ||= {})[c.id] = { sortOrder: c.sortOrder, off: c.off, offSet: c.offSet, pinManual: c.pinManual, pinNew: c.pinNew }; save();
+          (S.demoColSort ||= {})[c.id] = { sortOrder: c.sortOrder, off: c.off, offSet: c.offSet, pinManual: c.pinManual, pinNew: c.pinNew, randomRanges: c.randomRanges }; save();
           toast(`演示:「${c.title}」默认设置:${CS.describe(after)}(只存在这台电脑)`);
           r = { row: c, changed: true, sortChanged: null };
         }
         const i = (csRows || []).findIndex((x) => x.id === c.id); if (i >= 0) csRows[i] = { ...csRows[i], ...c };
-        b.textContent = label; reset(); drawOpts(); drawRest();
+        b.textContent = label; reset(); drawOpts(); drawRandom(); drawRest();
         await onSaved?.(r);
       } catch (err) { toast(err.message, false); b.textContent = label; b.disabled = false; }
     };

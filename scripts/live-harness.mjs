@@ -143,7 +143,7 @@ function gql(query, v) {
     const all = [...cat.collections].sort((a, b) => a.title.localeCompare(b.title));
     const nodes = all.slice(start, start + 100).map((c) => { const meta = (k) => colMeta.get(`${c.id}:${k}`) || null;
       return { id: `gid://shopify/Collection/${c.id}`, title: c.title, handle: c.handle, sortOrder: sortOrderOf(c), productsCount: { count: membersOf(c).length }, image: null, // 和 collection(id) 那个假接口同一套成员
-        sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new') }; });
+        sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new'), randomRanges: meta('cgp_random_ranges') }; });
     return { collections: { nodes, pageInfo: { hasNextPage: start + 100 < all.length, endCursor: String(start + 100) } } };
   }
   // 带条件的合集:改它的「单独加的产品 / 排除」名单(API 2026-07 的 collectionUpdate → sourcesToUpdate)
@@ -256,7 +256,7 @@ function gql(query, v) {
     const sources = automated ? [{ __typename: 'CollectionConditionsSource', id: `gid://shopify/CollectionConditionsSource/${c.id}`, shareable: false, inclusion: { conditions: [{ __typename: 'CollectionSourceInclusionCondition' }] } }] : [];
     const meta = (k) => colMeta.get(`${c.id}:${k}`) || null;
     return { collection: { id: `gid://shopify/Collection/${c.id}`, title: c.title, handle: c.handle, image: null, sortOrder: sortOrderOf(c), ruleSet: automated ? { appliedDisjunctively: false } : null, sources,
-      metafield: meta('cgp_sort_off'), sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new'),
+      metafield: meta('cgp_sort_off'), sortOff: meta('cgp_sort_off'), pinManual: meta('cgp_pin_manual'), pinNew: meta('cgp_pin_new'), randomRanges: meta('cgp_random_ranges'),
       productsCount: { count: all.length }, products: { nodes, pageInfo: { hasNextPage: start + first < all.length, endCursor: String(start + first) } } } };
   }
   // 产品页推广块:命中多少 + 前几个(假店没有品牌 / 类型 / 合集成员:品牌 = 标题第一个词,类型按标题猜,合集 = 标题里带合集名的产品)

@@ -1,7 +1,7 @@
 // 合集页「平时」的默认排序:读全部合集的设置 + 改一个合集(规则在 ./col-sort.js,浏览器共用)。
-// 只写这个合集的三样:字段 custom.cgp_sort_off、custom.cgp_pin_manual,以及(用户 2026-10-21 同意)Shopify 合集的排序方式 sortOrder。
+// 只写这个合集的排序方式和 custom.cgp_sort_off / cgp_pin_manual / cgp_random_ranges 字段。
 import { NEW_COLLECTIONS } from './shopify.js';
-import { planSort, describe, sortCn } from './col-sort.js';
+import { planSort, describe, sortCn, randomRanges } from './col-sort.js';
 import { readCollection, movesFor, reorder } from './collection-order.js';
 
 const nid = (x) => String(x ?? '').split('/').pop();
@@ -9,10 +9,12 @@ const gid = (x) => (String(x).startsWith('gid://') ? String(x) : `gid://shopify/
 const FIELDS = `id title handle sortOrder productsCount { count } image { url }
   sortOff: metafield(namespace: "custom", key: "cgp_sort_off") { value }
   pinManual: metafield(namespace: "custom", key: "cgp_pin_manual") { value }
-  pinNew: metafield(namespace: "custom", key: "cgp_pin_new") { value }`;
+  pinNew: metafield(namespace: "custom", key: "cgp_pin_new") { value }
+  randomRanges: metafield(namespace: "custom", key: "cgp_random_ranges") { value }`;
+const readRandom = (mf) => { try { return randomRanges(JSON.parse(mf?.value || '[]')); } catch { return []; } };
 const num = (mf) => (mf?.value != null && mf.value !== '' && Number.isFinite(Number(mf.value)) ? Number(mf.value) : null);
 export const colRow = (c) => ({ id: nid(c.id), title: c.title, handle: c.handle, sortOrder: c.sortOrder, count: c.productsCount?.count ?? null, image: c.image?.url || null,
-  off: c.sortOff?.value === 'true', offSet: !!c.sortOff, pinManual: num(c.pinManual), pinNew: num(c.pinNew) || 0 });
+  off: c.sortOff?.value === 'true', offSet: !!c.sortOff, pinManual: num(c.pinManual), pinNew: num(c.pinNew) || 0, randomRanges: readRandom(c.randomRanges) });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function gqlRetry(ctx, gql, q, v) {
@@ -71,6 +73,10 @@ export async function applyColSort(ctx, id, want, { gql, state }) {
   }
   if (ops.n !== undefined) {
     if (ops.n === null) del.push(mf('cgp_pin_manual')); else set.push({ ...mf('cgp_pin_manual'), type: 'number_integer', value: String(ops.n) });
+  }
+  if (ops.randomRanges !== undefined) {
+    if (ops.randomRanges.length) set.push({ ...mf('cgp_random_ranges'), type: 'json', value: JSON.stringify(ops.randomRanges) });
+    else del.push(mf('cgp_random_ranges'));
   }
   if (set.length) check(await gql(ctx, MF_SET, { m: set }), 'metafieldsSet');
   if (del.length) check(await gql(ctx, MF_DEL, { m: del }), 'metafieldsDelete');

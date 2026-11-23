@@ -14,7 +14,7 @@
 //   · 网站显示按位置分段(第 1–3 位 排序计划指定的 3 个 / 第 4–15 位 后台顺序 / 第 16 位起 上架时间新到旧)—— 用户:箭头读起来像一步一步,其实是叠起来的几块
 // 每一行:{ label, value(纯文字,老卡片用), tone?, parts?(一行里分段上色), segs?(网站显示的分段) }
 import { itemStatus, campaignIndex, effectiveWindow } from './schedule-core.js';
-import { sortCn, DEFAULT_N } from './col-sort.js';
+import { sortCn, DEFAULT_N, randomDescription } from './col-sort.js';
 
 const nid = (x) => String(x ?? '').split('/').pop();
 const T = (ms) => `{{t:${ms}}}`;
@@ -85,9 +85,10 @@ export function colCard(state, col, now = Date.now()) {
   const sortRow = row('后台排序方式', sortName);
   const out = (appOn, rows, buttons) => {
     const rs = rows.filter(Boolean);
+    if (col.randomRanges?.length) rs.push(row('区间随机排序', `${randomDescription(col.randomRanges)}每次打开重新随机；后台同步基础顺序，翻页与筛选保持本次顺序`));
     return {
       heading: '产品排序',
-      badge: appOn ? { text: 'APP 排序生效中', tone: 'success' } : { text: '后台排序生效中', tone: 'neutral' },
+      badge: appOn ? { text: 'APP 排序生效中', tone: 'success' } : col.randomRanges?.length ? { text: '区间随机排序生效中', tone: 'success' } : { text: '后台排序生效中', tone: 'neutral' },
       rows: rs,
       lines: rs.map((r) => ({ text: `${r.label}:${r.value}`, ...(r.tone ? { tone: r.tone } : {}) })), // 11/18 第一版卡片只认 lines,新卡片部署后可以删
       buttons: buttons.filter(Boolean),
