@@ -1,6 +1,17 @@
 Promotion / Sealos 部署与数据交接说明（2026-11-23）
 
-一、当前状态
+当前正式状态（2026-11-23 晚间，已完成切换）
+- 用户在线授权切换并已确认飞书登录和后台页面正常。
+- 正式入口：https://promotion-cgp-hyizeqfa.cloud.sealos.io ；Shopify版本 sealos-cutover-20261123，原应用身份、权限和扩展保留。
+- 生产DATA_DIR=/data/live-20261123（PVC挂载点仍/data）。/data根目录的旧验收副本不用于生产，严禁改回该路径启动执行器。
+- MIGRATION_MODE=live，SCHEDULER_DISABLED=0，EXECUTOR_DISABLED=0，REQUIRE_RESTORED_DATA=1；配置在必需Secret promotion-app-env。
+- 只有Sealos运行：Railway旧部署已REMOVED，卷未删除。本次临时SSH密钥已撤销、代理停止、私钥删除，账号列表确认已无该指纹。
+- 最终源13文件约4.96MB逐文件SHA匹配；41计划、631原价、6成员等保留。8读取/登录接口通过；626可读变体现价一致，两个执行器无错误、无迁移触发改价。
+- Collection随机区间后台接口/界面已上线；正式主题3文件回读与已测试版完全相同，用户保存指定Collection区间后生效。
+- 网络策略对象保留，生产Cilium策略增加公网HTTP(S)出站，保留DNS与对象存储规则，避免破坏现有Shopify、飞书及上传功能。
+- 未来恢复必须先使用staging及禁用标记验收，旧实例停写并最终同步后，才启用一个执行器。
+
+一、白天验收阶段记录（历史）
 - 用户最新要求：保持原系统运行，等用户今晚下班后在线发出明确切换指令；用户会在切换后立即测试检查。没有具体时间，不安排自动切换。收到指令前只做准备，不冻结写入、不改正式入口、不启动新执行器。
 - 正式服务仍在 Railway，未暂停现有计划，未修改 Shopify 应用入口或飞书回调。
 - Sealos 新实例：promotion-sealos，Singapore，ns-hyizeqfa。
@@ -38,7 +49,7 @@ node scripts/migration-check.mjs --data <恢复目录> --shopify-read-only --out
 先使用restic snapshots / restore取回压缩包和.sha256，再用上述命令核验恢复。
 restic密码保存在代码库外的object-storage-recovery.json中；没有密码不能解密。
 
-五、正式交接（尚未执行）
+五、正式交接步骤（本轮已完成，未来迁移参考）
 1. 提前准备同一个Shopify应用的新入口配置，保持client_id、安装关系及授权；不卸载/重装应用。
 2. 飞书OAuth允许新回调：https://promotion-cgp-hyizeqfa.cloud.sealos.io/auth/lark/callback 。先配置并验证，再安排停写窗口。
 3. 协调同事短暂停止后台编辑。重新列出即将开始/结束的计划，避开时段边界。

@@ -2,7 +2,7 @@
 
 client_id = "5b93039ec344bef1718ed63abbe0b33c"
 name = "CGP-Promo Dashboard-Dev"
-application_url = "https://promo-dashboard-dev-production.up.railway.app"
+application_url = "https://promotion-cgp-hyizeqfa.cloud.sealos.io"
 embedded = true
 
 [access_scopes]

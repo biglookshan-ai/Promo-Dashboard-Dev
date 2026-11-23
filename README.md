@@ -18,7 +18,7 @@
 
 ## 部署（Railway）
 
-2026-11-23：Railway 无法继续部署，正在转移至 Sealos；正式服务目前仍由 Railway 运行。新环境已完成隔离验收，尚未接管业务。参见 `docs/sealos-migration/RUNBOOK.txt`，不要直接启用两个实例的定时任务。
+2026-11-23 晚间：已正式迁移到 Sealos，入口为 `https://promotion-cgp-hyizeqfa.cloud.sealos.io`。Railway 旧部署已移除，卷暂留作备份。以下 Railway 步骤仅供历史参考；当前恢复和部署以 `docs/sealos-migration/RUNBOOK.txt` 为准，禁止同时启用两套执行器。
 1. push 到 GitHub → Railway → Deploy from GitHub → 本仓库。
 2. 加一个 **Volume** 挂到 `/data`（换 token 后跨部署留存）。
 3. **Variables**：
@@ -51,7 +51,7 @@ npm start               # 仍需从 Shopify 后台打开才能拿到 session tok
 
 ## Sealos 数据与备份
 
-保留现有 JSON 数据格式，`DATA_DIR=/data` 挂独立持久盘，单实例运行，更新策略为 Recreate。迁移验收设置 `MIGRATION_MODE=staging`、`SCHEDULER_DISABLED=1`、`EXECUTOR_DISABLED=1`，业务接口与登录回调统一返回 503，且不启动缓存预热或任何执行器。`REQUIRE_RESTORED_DATA=1` 要求恢复标记和业务文件存在、能正常解析，避免漏挂盘后以空数据启动。`GET /healthz` 用于探针。
+保留现有 JSON 数据格式，持久盘挂在 `/data`，**当前正式 `DATA_DIR=/data/live-20261123`**，单实例运行，更新策略为 Recreate。未来迁移验收设置 `MIGRATION_MODE=staging`、`SCHEDULER_DISABLED=1`、`EXECUTOR_DISABLED=1`，业务接口与登录回调统一返回 503，且不启动缓存预热或任何执行器。正式运行才设 `MIGRATION_MODE=live`、两个禁用标记为 `0`。`REQUIRE_RESTORED_DATA=1` 要求恢复标记和业务文件存在、能正常解析，避免漏挂盘后以空数据启动。`GET /healthz` 用于探针。每次构建的 `APP_BUILD` 前12字符必须唯一，建议使用提交SHA，保证浏览器加载新资源。
 
 `scripts/data-snapshot.mjs` 生成私有 tar.gz 和 SHA-256，恢复前检查压缩包、路径与全部文件哈希，并拒绝覆盖非空目录。`scripts/backup-loop.mjs` 每10分钟备份到独立备份盘，再由 restic 加密上传至私有 S3 兼容对象存储；保留本地最近18份和远端小时/日/周/月副本。在线副本包含跨文件状态，不等于停写后的最终交接快照。密钥、restic 密码、环境配置和备份包全部留在代码仓库外。
 
